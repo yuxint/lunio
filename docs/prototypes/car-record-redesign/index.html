@@ -1,0 +1,1778 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Lunio 车辆保养 App 交互设计稿</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --surface: #ffffff;
+      --surface-2: #f0f4ef;
+      --surface-3: #e8eee8;
+      --ink: #18201b;
+      --muted: #667165;
+      --subtle: #8c9689;
+      --line: #dce3dc;
+      --line-strong: #c9d3c8;
+      --primary: #166c4c;
+      --primary-2: #0f563b;
+      --primary-soft: #ddefd9;
+      --accent: #2459a6;
+      --accent-soft: #e0eaf8;
+      --warning: #c6821b;
+      --warning-soft: #fff1d8;
+      --danger: #b73b35;
+      --danger-soft: #ffe4df;
+      --shadow: 0 18px 48px rgba(24, 32, 27, .14);
+      --shadow-soft: 0 10px 26px rgba(24, 32, 27, .08);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(22, 108, 76, .12), transparent 30%),
+        linear-gradient(135deg, #eef2ed 0%, #f9faf7 46%, #eef4f4 100%);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .stage {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(320px, 430px) minmax(320px, 560px);
+      gap: 36px;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+
+    .phone {
+      position: relative;
+      width: min(430px, calc(100vw - 32px));
+      height: min(892px, calc(100vh - 32px));
+      min-height: 720px;
+      border-radius: 46px;
+      background: #101611;
+      padding: 12px;
+      box-shadow: 0 34px 80px rgba(14, 19, 15, .24);
+    }
+
+    .screen {
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 36px;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .statusbar {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      color: #293029;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+      flex: 0 0 auto;
+    }
+
+    .status-icons {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .signal {
+      width: 18px;
+      height: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, 3px);
+      gap: 2px;
+      align-items: end;
+    }
+
+    .signal i {
+      display: block;
+      width: 3px;
+      border-radius: 2px;
+      background: #293029;
+    }
+
+    .signal i:nth-child(1) { height: 4px; }
+    .signal i:nth-child(2) { height: 6px; }
+    .signal i:nth-child(3) { height: 8px; }
+    .signal i:nth-child(4) { height: 10px; }
+
+    .battery {
+      width: 22px;
+      height: 11px;
+      border: 1.6px solid #293029;
+      border-radius: 3px;
+      position: relative;
+    }
+
+    .battery::before {
+      content: "";
+      position: absolute;
+      right: -4px;
+      top: 3px;
+      width: 2px;
+      height: 4px;
+      border-radius: 1px;
+      background: #293029;
+    }
+
+    .battery::after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      width: 13px;
+      height: 5px;
+      border-radius: 2px;
+      background: #293029;
+    }
+
+    .app {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .page {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 6px 18px 112px;
+      scrollbar-width: none;
+    }
+
+    .page::-webkit-scrollbar {
+      display: none;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+
+    .title-block {
+      min-width: 0;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.12;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .page-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      color: var(--ink);
+      background: var(--surface);
+      box-shadow: var(--shadow-soft);
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+
+    .icon-btn svg {
+      width: 21px;
+      height: 21px;
+      stroke-width: 2;
+    }
+
+    .hero {
+      background: linear-gradient(150deg, #1d7654 0%, #155238 58%, #0f392c 100%);
+      color: #fff;
+      border-radius: var(--radius-xl);
+      padding: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 210px;
+      height: 110px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 999px;
+      right: -72px;
+      top: -18px;
+      transform: rotate(-18deg);
+    }
+
+    .hero-top {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      z-index: 1;
+    }
+
+    .car-name {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 760;
+      line-height: 1.25;
+    }
+
+    .car-meta {
+      margin-top: 6px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, .72);
+      line-height: 1.35;
+    }
+
+    .switch-car {
+      height: 36px;
+      border-radius: 12px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, .13);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 680;
+      white-space: nowrap;
+    }
+
+    .hero-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .metric {
+      min-height: 82px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, .1);
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, .12);
+    }
+
+    .metric-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, .68);
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 780;
+    }
+
+    .metric-value small {
+      font-size: 12px;
+      font-weight: 650;
+      color: rgba(255, 255, 255, .75);
+    }
+
+    .section {
+      margin-top: 20px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      gap: 12px;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.2;
+      font-weight: 760;
+    }
+
+    .text-btn {
+      background: transparent;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 720;
+      padding: 6px 0;
+    }
+
+    .reminder-list,
+    .record-list,
+    .garage-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .reminder-row,
+    .record-card,
+    .garage-card,
+    .panel,
+    .setting-row {
+      background: var(--surface);
+      border: 1px solid rgba(220, 227, 220, .86);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .reminder-row {
+      padding: 14px;
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .ring {
+      width: 58px;
+      height: 58px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at center, #fff 54%, transparent 55%),
+        conic-gradient(var(--ring-color) calc(var(--p) * 1%), #e8eee8 0);
+      color: var(--ring-color);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .ring.danger { --ring-color: var(--danger); }
+    .ring.warning { --ring-color: var(--warning); }
+    .ring.normal { --ring-color: var(--primary); }
+
+    .row-main {
+      min-width: 0;
+    }
+
+    .row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .row-title {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.25;
+      font-weight: 760;
+    }
+
+    .row-note {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.38;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .tag.danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .tag.warning {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .tag.normal {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .action-card {
+      min-height: 88px;
+      padding: 14px;
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
+      text-align: left;
+      color: var(--ink);
+    }
+
+    .action-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: var(--primary);
+      background: var(--primary-soft);
+      margin-bottom: 10px;
+    }
+
+    .action-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .action-title {
+      font-size: 14px;
+      font-weight: 760;
+    }
+
+    .action-subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 16px;
+      background: var(--surface-3);
+      margin-bottom: 14px;
+    }
+
+    .segmented button {
+      height: 38px;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 720;
+      font-size: 13px;
+    }
+
+    .segmented button.active {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 5px 14px rgba(24, 32, 27, .08);
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin-bottom: 14px;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+
+    .filter-bar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .filter-chip {
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 690;
+      white-space: nowrap;
+    }
+
+    .filter-chip.active {
+      border-color: rgba(22, 108, 76, .34);
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .record-card {
+      padding: 15px;
+    }
+
+    .record-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .record-date {
+      font-size: 16px;
+      font-weight: 780;
+      line-height: 1.2;
+    }
+
+    .record-cost {
+      font-size: 15px;
+      font-weight: 780;
+      color: var(--primary);
+      white-space: nowrap;
+    }
+
+    .record-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .item-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .item-pill {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 9px;
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: #354035;
+      font-size: 12px;
+      font-weight: 680;
+      line-height: 1.2;
+    }
+
+    .record-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .small-btn {
+      height: 34px;
+      border-radius: 11px;
+      padding: 0 12px;
+      background: var(--surface-2);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 720;
+    }
+
+    .small-btn.danger {
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .garage-card {
+      padding: 16px;
+    }
+
+    .garage-card.applied {
+      border-color: rgba(22, 108, 76, .35);
+      background: linear-gradient(180deg, #fff, #f5fbf4);
+    }
+
+    .garage-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .garage-name {
+      font-size: 16px;
+      font-weight: 780;
+      line-height: 1.2;
+    }
+
+    .garage-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .car-visual {
+      width: 70px;
+      height: 38px;
+      flex: 0 0 auto;
+      position: relative;
+      margin-top: 4px;
+    }
+
+    .car-visual::before {
+      content: "";
+      position: absolute;
+      left: 5px;
+      right: 5px;
+      bottom: 8px;
+      height: 18px;
+      border-radius: 18px 22px 10px 10px;
+      background: linear-gradient(90deg, #1c7c57, #2459a6);
+    }
+
+    .car-visual::after {
+      content: "";
+      position: absolute;
+      left: 18px;
+      top: 7px;
+      width: 32px;
+      height: 18px;
+      border-radius: 20px 20px 6px 6px;
+      background: #dcebe4;
+      box-shadow: -7px 21px 0 -4px #1b211c, 29px 21px 0 -4px #1b211c;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 58px;
+      padding: 12px 14px;
+      gap: 14px;
+    }
+
+    .setting-copy {
+      min-width: 0;
+    }
+
+    .setting-title {
+      font-size: 14px;
+      font-weight: 740;
+    }
+
+    .setting-subtitle {
+      margin-top: 3px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .switch {
+      width: 48px;
+      height: 28px;
+      border-radius: 999px;
+      background: var(--line-strong);
+      padding: 3px;
+      flex: 0 0 auto;
+      transition: background .2s ease;
+    }
+
+    .switch span {
+      display: block;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: #fff;
+      transition: transform .2s ease;
+      box-shadow: 0 2px 5px rgba(24, 32, 27, .18);
+    }
+
+    .switch.active {
+      background: var(--primary);
+    }
+
+    .switch.active span {
+      transform: translateX(20px);
+    }
+
+    .bottom-nav {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 12px;
+      padding: 8px 8px calc(8px + var(--safe-bottom));
+      min-height: 72px;
+      border-radius: 26px;
+      background: rgba(255, 255, 255, .88);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(220, 227, 220, .9);
+      box-shadow: 0 16px 46px rgba(24, 32, 27, .16);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .nav-item {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 4px;
+      height: 56px;
+      border-radius: 18px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 720;
+    }
+
+    .nav-item svg {
+      width: 21px;
+      height: 21px;
+      stroke-width: 2.1;
+    }
+
+    .nav-item.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .fab {
+      position: absolute;
+      right: 26px;
+      bottom: 98px;
+      width: 58px;
+      height: 58px;
+      border-radius: 20px;
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 18px 34px rgba(22, 108, 76, .28);
+      display: grid;
+      place-items: center;
+      z-index: 5;
+    }
+
+    .fab svg {
+      width: 24px;
+      height: 24px;
+      stroke-width: 2.2;
+    }
+
+    .drawer-backdrop,
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(16, 22, 17, .3);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease;
+      z-index: 20;
+    }
+
+    .drawer-backdrop.show,
+    .modal-backdrop.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 86%;
+      background: var(--surface);
+      border-radius: 30px 30px 0 0;
+      padding: 12px 18px calc(18px + var(--safe-bottom));
+      transform: translateY(105%);
+      transition: transform .22s ease;
+      z-index: 30;
+      box-shadow: 0 -20px 54px rgba(24, 32, 27, .18);
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+
+    .sheet::-webkit-scrollbar {
+      display: none;
+    }
+
+    .sheet.show {
+      transform: translateY(0);
+    }
+
+    .sheet-handle {
+      width: 48px;
+      height: 5px;
+      border-radius: 999px;
+      background: #d4ddd4;
+      margin: 0 auto 16px;
+    }
+
+    .sheet-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .sheet-title {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.2;
+      font-weight: 780;
+    }
+
+    .sheet-subtitle {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      border-radius: 14px;
+      min-height: 48px;
+      padding: 12px 13px;
+      color: var(--ink);
+      outline: 0;
+    }
+
+    .field textarea {
+      resize: vertical;
+      min-height: 76px;
+    }
+
+    .choice-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .choice {
+      min-height: 36px;
+      border-radius: 12px;
+      padding: 0 12px;
+      background: var(--surface-2);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .choice.active {
+      background: var(--primary-soft);
+      border-color: rgba(22, 108, 76, .3);
+      color: var(--primary);
+    }
+
+    .sheet-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .primary-btn,
+    .secondary-btn {
+      height: 50px;
+      border-radius: 16px;
+      font-weight: 760;
+      font-size: 15px;
+    }
+
+    .primary-btn {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .secondary-btn {
+      background: var(--surface-2);
+      color: var(--ink);
+    }
+
+    .toast {
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      top: 52px;
+      z-index: 40;
+      transform: translateY(-90px);
+      opacity: 0;
+      transition: transform .22s ease, opacity .22s ease;
+      min-height: 48px;
+      border-radius: 16px;
+      background: #17231b;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 720;
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .design-panel {
+      max-width: 560px;
+      background: rgba(255, 255, 255, .72);
+      border: 1px solid rgba(220, 227, 220, .85);
+      border-radius: 30px;
+      padding: 28px;
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(18px);
+    }
+
+    .design-panel h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .design-panel p {
+      color: var(--muted);
+      line-height: 1.7;
+      margin: 14px 0 0;
+      font-size: 15px;
+    }
+
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .token {
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 14px;
+    }
+
+    .token strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+
+    .token span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .swatches {
+      display: flex;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .swatch {
+      height: 44px;
+      flex: 1;
+      border-radius: 14px;
+      border: 1px solid rgba(24, 32, 27, .08);
+    }
+
+    .demo-notes {
+      margin-top: 22px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .demo-note {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .demo-note svg {
+      width: 18px;
+      height: 18px;
+      color: var(--primary);
+      flex: 0 0 auto;
+      margin-top: 1px;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 980px) {
+      .stage {
+        grid-template-columns: 1fr;
+        padding: 18px;
+      }
+
+      .design-panel {
+        order: -1;
+        width: min(430px, calc(100vw - 32px));
+        justify-self: center;
+      }
+    }
+
+    @media (max-width: 520px) {
+      body {
+        background: var(--bg);
+      }
+
+      .stage {
+        display: block;
+        padding: 0;
+      }
+
+      .phone {
+        width: 100vw;
+        height: 100vh;
+        min-height: 100vh;
+        padding: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: var(--bg);
+      }
+
+      .screen {
+        border-radius: 0;
+      }
+
+      .design-panel {
+        display: none;
+      }
+
+      .bottom-nav {
+        left: 10px;
+        right: 10px;
+        bottom: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="phone" aria-label="车辆保养 App 可点击原型">
+      <div class="screen">
+        <div class="statusbar" aria-hidden="true">
+          <span>09:41</span>
+          <div class="status-icons">
+            <span class="signal"><i></i><i></i><i></i><i></i></span>
+            <span class="battery"></span>
+          </div>
+        </div>
+
+        <div class="app">
+          <div id="pageReminder" class="page">
+            <header class="topbar">
+              <div class="title-block">
+                <h2 class="page-title">保养提醒</h2>
+                <p class="page-subtitle">按当前应用车辆计算里程与时间进度</p>
+              </div>
+              <button class="icon-btn" data-sheet="carSheet" aria-label="切换车辆">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 7h8l2 4h2v5h-2"/><path d="M6 16H4v-5h2l2-4"/><path d="M7 16h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>
+              </button>
+            </header>
+
+            <section class="hero">
+              <div class="hero-top">
+                <div>
+                  <h3 class="car-name" data-car-name>本田 22款思域</h3>
+                  <div class="car-meta">上路 2023-08-12 · 当前应用车辆</div>
+                </div>
+                <button class="switch-car" data-sheet="carSheet">切换</button>
+              </div>
+              <div class="hero-grid">
+                <div class="metric">
+                  <div class="metric-label">当前里程</div>
+                  <div class="metric-value"><span data-mileage>38,600</span><small> km</small></div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">最急项目</div>
+                  <div class="metric-value">125<small>%</small></div>
+                </div>
+              </div>
+            </section>
+
+            <div class="quick-actions">
+              <button class="action-card" data-sheet="recordSheet">
+                <div class="action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14"/><path d="M5 12h14"/></svg></div>
+                <div class="action-title">新增保养记录</div>
+                <div class="action-subtitle">保存后同步更新车辆里程</div>
+              </button>
+              <button class="action-card" data-tab="records">
+                <div class="action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></div>
+                <div class="action-title">查看历史</div>
+                <div class="action-subtitle">按周期或按项目管理记录</div>
+              </button>
+            </div>
+
+            <section class="section">
+              <div class="section-head">
+                <h3 class="section-title">待关注项目</h3>
+                <button class="text-btn" data-sheet="projectSheet">管理项目</button>
+              </div>
+              <div class="reminder-list" id="reminderList"></div>
+            </section>
+          </div>
+
+          <div id="pageRecords" class="page" hidden>
+            <header class="topbar">
+              <div class="title-block">
+                <h2 class="page-title">保养记录</h2>
+                <p class="page-subtitle">同车同日仅保留一条记录</p>
+              </div>
+              <button class="icon-btn" data-sheet="filterSheet" aria-label="筛选">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+              </button>
+            </header>
+            <div class="segmented">
+              <button class="active" data-mode="cycle">按周期</button>
+              <button data-mode="item">按项目</button>
+            </div>
+            <div class="filter-bar">
+              <button class="filter-chip active">全部年份</button>
+              <button class="filter-chip">2026年</button>
+              <button class="filter-chip">机油、机滤</button>
+              <button class="filter-chip">空调滤芯</button>
+            </div>
+            <div class="record-list" id="recordList"></div>
+          </div>
+
+          <div id="pageGarage" class="page" hidden>
+            <header class="topbar">
+              <div class="title-block">
+                <h2 class="page-title">个人中心</h2>
+                <p class="page-subtitle">车辆、备份恢复与调试日期</p>
+              </div>
+              <button class="icon-btn" data-sheet="carFormSheet" aria-label="添加车辆">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </button>
+            </header>
+            <section class="section" style="margin-top:0">
+              <div class="section-head">
+                <h3 class="section-title">我的车辆</h3>
+                <button class="text-btn" data-sheet="carFormSheet">添加</button>
+              </div>
+              <div class="garage-list" id="garageList"></div>
+            </section>
+            <section class="section">
+              <div class="section-head">
+                <h3 class="section-title">数据与工具</h3>
+              </div>
+              <div class="garage-list">
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <div class="setting-title">JSON 备份</div>
+                    <div class="setting-subtitle">导出全部车辆、项目配置和保养记录</div>
+                  </div>
+                  <button class="small-btn" data-action="backup">导出</button>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <div class="setting-title">恢复数据</div>
+                    <div class="setting-subtitle">先清空当前数据，再导入备份文件</div>
+                  </div>
+                  <button class="small-btn" data-sheet="restoreSheet">恢复</button>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-copy">
+                    <div class="setting-title">手动日期</div>
+                    <div class="setting-subtitle" id="manualDateText">关闭 · 使用系统日期</div>
+                  </div>
+                  <button class="switch" id="manualDateSwitch" aria-label="切换手动日期"><span></span></button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <button class="fab" data-sheet="recordSheet" aria-label="新增保养记录">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        </button>
+
+        <nav class="bottom-nav" aria-label="主导航">
+          <button class="nav-item active" data-tab="reminder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 14v-4"/><path d="M4 14a8 8 0 1 1 16 0"/><path d="M5 19h14"/><path d="M9 19l1-3h4l1 3"/></svg>
+            <span>提醒</span>
+          </button>
+          <button class="nav-item" data-tab="records">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+            <span>记录</span>
+          </button>
+          <button class="nav-item" data-tab="garage">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>我的</span>
+          </button>
+        </nav>
+
+        <div class="toast" id="toast" role="status"></div>
+        <div class="drawer-backdrop" id="backdrop" aria-hidden="true"></div>
+
+        <section class="sheet" id="carSheet" aria-label="切换车辆" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div>
+              <h3 class="sheet-title">选择应用车辆</h3>
+              <p class="sheet-subtitle">提醒、记录和新增保养记录会跟随当前应用车辆</p>
+            </div>
+          </div>
+          <div class="garage-list" id="carSheetList"></div>
+        </section>
+
+        <section class="sheet" id="recordSheet" aria-label="新增保养记录" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div>
+              <h3 class="sheet-title">新增保养记录</h3>
+              <p class="sheet-subtitle">保存前确认下次提醒间隔，避免默认规则过期</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="recordDate">保养日期</label>
+              <input id="recordDate" type="date" value="2026-05-12" />
+            </div>
+            <div class="field">
+              <label for="recordMileage">保养里程</label>
+              <input id="recordMileage" type="number" value="39600" inputmode="numeric" />
+            </div>
+            <div class="field">
+              <label for="recordCost">费用</label>
+              <input id="recordCost" type="number" value="486" inputmode="decimal" />
+            </div>
+            <div class="field">
+              <label>保养项目</label>
+              <div class="choice-grid" id="recordItems"></div>
+            </div>
+            <div class="field">
+              <label for="recordNote">备注</label>
+              <textarea id="recordNote">更换机油机滤，检查胎压。</textarea>
+            </div>
+          </div>
+          <div class="sheet-actions">
+            <button class="secondary-btn" data-close>取消</button>
+            <button class="primary-btn" id="saveRecordBtn">保存记录</button>
+          </div>
+        </section>
+
+        <section class="sheet" id="projectSheet" aria-label="保养项目管理" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div>
+              <h3 class="sheet-title">保养项目</h3>
+              <p class="sheet-subtitle">项目名称可变，默认项目用 catalogKey 保持稳定映射</p>
+            </div>
+          </div>
+          <div class="garage-list" id="projectList"></div>
+          <div class="sheet-actions">
+            <button class="secondary-btn" data-action="addCustomProject">新增自定义项</button>
+            <button class="primary-btn" data-close>完成</button>
+          </div>
+        </section>
+
+        <section class="sheet" id="filterSheet" aria-label="记录筛选" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div>
+              <h3 class="sheet-title">筛选记录</h3>
+              <p class="sheet-subtitle">空筛选表示全部；项目筛选不依赖展示名称作为主键</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>年份</label>
+              <div class="choice-grid">
+                <button class="choice active">全部</button>
+                <button class="choice">2026</button>
+                <button class="choice">2025</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>项目</label>
+              <div class="choice-grid">
+                <button class="choice active">全部</button>
+                <button class="choice">机油、机滤</button>
+                <button class="choice">空调滤芯</button>
+                <button class="choice">轮胎换位</button>
+              </div>
+            </div>
+          </div>
+          <div class="sheet-actions">
+            <button class="secondary-btn" data-close>重置</button>
+            <button class="primary-btn" data-close>应用筛选</button>
+          </div>
+        </section>
+
+        <section class="sheet" id="carFormSheet" aria-label="添加车辆" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div>
+              <h3 class="sheet-title">添加车辆</h3>
+              <p class="sheet-subtitle">同一品牌车型当前只允许添加一辆</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="brandSelect">品牌</label>
+              <select id="brandSelect">
+                <option>本田</option>
+                <option>日产</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="modelSelect">车型</label>
+              <select id="modelSelect">
+                <option>23款CR-V</option>
+                <option>24款雅阁</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="carMileage">当前里程</label>
+              <input id="carMileage" type="number" value="0" inputmode="numeric" />
+            </div>
+            <div class="field">
+              <label for="purchaseDate">上路日期</label>
+              <input id="purchaseDate" type="date" value="2026-05-12" />
+            </div>
+          </div>
+          <div class="sheet-actions">
+            <button class="secondary-btn" data-close>取消</button>
+            <button class="primary-btn" id="saveCarBtn">保存车辆</button>
+          </div>
+        </section>
+
+        <section class="sheet" id="restoreSheet" aria-label="恢复数据" aria-hidden="true">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <div>
+              <h3 class="sheet-title">恢复数据</h3>
+              <p class="sheet-subtitle">恢复会先清空当前车辆、项目和保养记录</p>
+            </div>
+          </div>
+          <div class="panel" style="padding:16px">
+            <div class="row-title">确认使用备份文件恢复？</div>
+            <p class="row-note">导入校验会检查日期格式、车辆 ID、记录 ID、车型配置和项目映射。失败时不保留半导入数据。</p>
+          </div>
+          <div class="sheet-actions">
+            <button class="secondary-btn" data-close>取消</button>
+            <button class="primary-btn" data-action="restore">确认恢复</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <aside class="design-panel">
+      <h1>跨端统一的车辆保养工具设计稿</h1>
+      <p>这个 HTML 是可点击原型，不是营销页。它以业务 PRD 为依据，把提醒、记录、车辆管理、备份恢复和调试日期收敛到同一套移动端组件系统，适合后续分别落到 iOS 与 Android。</p>
+      <div class="swatches" aria-label="颜色系统">
+        <div class="swatch" style="background:#166c4c"></div>
+        <div class="swatch" style="background:#2459a6"></div>
+        <div class="swatch" style="background:#c6821b"></div>
+        <div class="swatch" style="background:#b73b35"></div>
+      </div>
+      <div class="token-grid">
+        <div class="token"><strong>导航模型</strong><span>提醒、记录、我的三 Tab；新增记录为全局浮动动作。</span></div>
+        <div class="token"><strong>组件体系</strong><span>统一卡片、标签、表单、底部弹层、分段控件和反馈 toast。</span></div>
+        <div class="token"><strong>业务约束</strong><span>同车同日唯一、当前应用车辆、日期格式和项目稳定 ID 均体现在交互中。</span></div>
+        <div class="token"><strong>跨平台落地</strong><span>不依赖 iOS 专属控件，Android 可复用相同信息结构与视觉 token。</span></div>
+      </div>
+      <div class="demo-notes">
+        <div class="demo-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 12 4 4L19 6"/></svg><span>点击底部导航可切换三大模块。</span></div>
+        <div class="demo-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 12 4 4L19 6"/></svg><span>点击右下角加号可新增保养记录并更新里程。</span></div>
+        <div class="demo-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 12 4 4L19 6"/></svg><span>点击车辆卡片可切换当前应用车辆。</span></div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const state = {
+      activeTab: "reminder",
+      recordMode: "cycle",
+      appliedCarId: "civic",
+      manualDate: false,
+      selectedItems: new Set(["engine_oil", "ac_filter"]),
+      cars: [
+        { id: "civic", name: "本田 22款思域", mileage: 38600, purchaseDate: "2023-08-12", applied: true },
+        { id: "sylphy", name: "日产 22款轩逸", mileage: 21400, purchaseDate: "2024-03-06", applied: false }
+      ],
+      projects: [
+        { id: "engine_oil", name: "机油、机滤", progress: 125, level: "danger", detail: "按里程提醒：已超 1,250 公里", enabled: true, locked: true },
+        { id: "ac_filter", name: "空调滤芯", progress: 88, level: "normal", detail: "按时间提醒：距离下次约 2个月", enabled: true, locked: true },
+        { id: "tire_rotation", name: "轮胎换位", progress: 103, level: "warning", detail: "按里程提醒：已超 300 公里", enabled: true, locked: true },
+        { id: "brake_fluid", name: "制动液（刹车油）", progress: 42, level: "normal", detail: "按时间提醒：距离下次约 1年7个月", enabled: true, locked: true }
+      ],
+      records: [
+        { id: "r1", date: "2026-02-18", mileage: 36200, cost: 486, items: ["机油、机滤", "空调滤芯"], note: "更换机油机滤，清洁空调风道。" },
+        { id: "r2", date: "2025-09-03", mileage: 30100, cost: 128, items: ["轮胎换位"], note: "前后轮换位，检查胎压。" },
+        { id: "r3", date: "2025-03-21", mileage: 24700, cost: 620, items: ["机油、机滤", "空气滤芯"], note: "常规小保养。" }
+      ]
+    };
+
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+    function formatMileage(value) {
+      return Number(value).toLocaleString("zh-CN");
+    }
+
+    function currentCar() {
+      return state.cars.find(car => car.id === state.appliedCarId) || state.cars[0];
+    }
+
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove("show"), 1900);
+    }
+
+    function openSheet(id) {
+      $("#backdrop").classList.add("show");
+      $("#backdrop").setAttribute("aria-hidden", "false");
+      const sheet = $("#" + id);
+      sheet.classList.add("show");
+      sheet.setAttribute("aria-hidden", "false");
+    }
+
+    function closeSheets() {
+      $("#backdrop").classList.remove("show");
+      $("#backdrop").setAttribute("aria-hidden", "true");
+      $$(".sheet").forEach(sheet => {
+        sheet.classList.remove("show");
+        sheet.setAttribute("aria-hidden", "true");
+      });
+    }
+
+    function renderReminder() {
+      const car = currentCar();
+      $$("[data-car-name]").forEach(node => node.textContent = car.name);
+      $$("[data-mileage]").forEach(node => node.textContent = formatMileage(car.mileage));
+
+      $("#reminderList").innerHTML = state.projects
+        .filter(project => project.enabled)
+        .sort((a, b) => b.progress - a.progress)
+        .map(project => `
+          <article class="reminder-row">
+            <div class="ring ${project.level}" style="--p:${Math.min(project.progress, 100)}">${project.progress}%</div>
+            <div class="row-main">
+              <div class="row-top">
+                <h4 class="row-title">${project.name}</h4>
+                <span class="tag ${project.level}">${project.level === "danger" ? "已超期" : project.level === "warning" ? "到期" : "正常"}</span>
+              </div>
+              <p class="row-note">${project.detail}</p>
+            </div>
+          </article>
+        `).join("");
+    }
+
+    function renderRecords() {
+      const list = $("#recordList");
+      if (state.recordMode === "cycle") {
+        list.innerHTML = state.records.map(record => `
+          <article class="record-card">
+            <div class="record-top">
+              <div>
+                <div class="record-date">${record.date}</div>
+                <div class="record-meta">${formatMileage(record.mileage)} km · ${record.note}</div>
+              </div>
+              <div class="record-cost">¥${record.cost}</div>
+            </div>
+            <div class="item-tags">${record.items.map(item => `<span class="item-pill">${item}</span>`).join("")}</div>
+            <div class="record-actions">
+              <button class="small-btn" data-edit-record="${record.id}">编辑</button>
+              <button class="small-btn danger" data-delete-record="${record.id}">删除</button>
+            </div>
+          </article>
+        `).join("");
+      } else {
+        list.innerHTML = state.records.flatMap(record => record.items.map(item => ({ record, item }))).map(row => `
+          <article class="record-card">
+            <div class="record-top">
+              <div>
+                <div class="record-date">${row.item}</div>
+                <div class="record-meta">${row.record.date} · ${formatMileage(row.record.mileage)} km</div>
+              </div>
+              <div class="record-cost">¥${row.record.cost}</div>
+            </div>
+            <div class="record-actions">
+              <button class="small-btn" data-sheet="recordSheet">编辑项目记录</button>
+              <button class="small-btn danger" data-delete-item="${row.record.id}:${row.item}">移除项目</button>
+            </div>
+          </article>
+        `).join("");
+      }
+    }
+
+    function renderGarage() {
+      $("#garageList").innerHTML = state.cars.map(car => `
+        <article class="garage-card ${car.id === state.appliedCarId ? "applied" : ""}">
+          <div class="garage-top">
+            <div>
+              <div class="garage-name">${car.name}</div>
+              <div class="garage-meta">${formatMileage(car.mileage)} km · 上路 ${car.purchaseDate}</div>
+            </div>
+            <div class="car-visual"></div>
+          </div>
+          <div class="record-actions">
+            <button class="small-btn" data-apply-car="${car.id}">${car.id === state.appliedCarId ? "已应用" : "应用"}</button>
+            <button class="small-btn" data-sheet="carFormSheet">编辑</button>
+          </div>
+        </article>
+      `).join("");
+
+      $("#carSheetList").innerHTML = state.cars.map(car => `
+        <button class="garage-card ${car.id === state.appliedCarId ? "applied" : ""}" data-apply-car="${car.id}" style="text-align:left;width:100%">
+          <div class="garage-top">
+            <div>
+              <div class="garage-name">${car.name}</div>
+              <div class="garage-meta">${formatMileage(car.mileage)} km · ${car.id === state.appliedCarId ? "当前应用" : "点击切换"}</div>
+            </div>
+            <div class="car-visual"></div>
+          </div>
+        </button>
+      `).join("");
+    }
+
+    function renderProjects() {
+      $("#projectList").innerHTML = state.projects.map(project => `
+        <div class="setting-row">
+          <div class="setting-copy">
+            <div class="setting-title">${project.name}</div>
+            <div class="setting-subtitle">${project.locked ? "默认项目 · catalogKey 稳定映射" : "自定义项目 · 无历史记录可删除"}</div>
+          </div>
+          <button class="switch ${project.enabled ? "active" : ""}" data-toggle-project="${project.id}" aria-label="启用或禁用 ${project.name}"><span></span></button>
+        </div>
+      `).join("");
+
+      $("#recordItems").innerHTML = state.projects.filter(project => project.enabled).map(project => `
+        <button class="choice ${state.selectedItems.has(project.id) ? "active" : ""}" data-pick-item="${project.id}">${project.name}</button>
+      `).join("");
+    }
+
+    function setTab(tab) {
+      state.activeTab = tab;
+      $("#pageReminder").hidden = tab !== "reminder";
+      $("#pageRecords").hidden = tab !== "records";
+      $("#pageGarage").hidden = tab !== "garage";
+      $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.tab === tab));
+      $(".fab").hidden = tab === "garage";
+      renderAll();
+    }
+
+    function renderAll() {
+      renderReminder();
+      renderRecords();
+      renderGarage();
+      renderProjects();
+      $("#manualDateSwitch").classList.toggle("active", state.manualDate);
+      $("#manualDateText").textContent = state.manualDate ? "开启 · 2026-05-12" : "关闭 · 使用系统日期";
+    }
+
+    document.addEventListener("click", event => {
+      const sheetTrigger = event.target.closest("[data-sheet]");
+      if (sheetTrigger) {
+        openSheet(sheetTrigger.dataset.sheet);
+        return;
+      }
+
+      const tabTrigger = event.target.closest("[data-tab]");
+      if (tabTrigger) {
+        setTab(tabTrigger.dataset.tab);
+        return;
+      }
+
+      if (event.target.closest("[data-close]") || event.target === $("#backdrop")) {
+        closeSheets();
+        return;
+      }
+
+      const mode = event.target.closest("[data-mode]");
+      if (mode) {
+        state.recordMode = mode.dataset.mode;
+        $$("[data-mode]").forEach(button => button.classList.toggle("active", button === mode));
+        renderRecords();
+        return;
+      }
+
+      const applyCar = event.target.closest("[data-apply-car]");
+      if (applyCar) {
+        state.appliedCarId = applyCar.dataset.applyCar;
+        closeSheets();
+        renderAll();
+        showToast("已切换当前应用车辆");
+        return;
+      }
+
+      const toggleProject = event.target.closest("[data-toggle-project]");
+      if (toggleProject) {
+        const project = state.projects.find(item => item.id === toggleProject.dataset.toggleProject);
+        if (project) {
+          project.enabled = !project.enabled;
+          if (!project.enabled) state.selectedItems.delete(project.id);
+          renderAll();
+        }
+        return;
+      }
+
+      const pickItem = event.target.closest("[data-pick-item]");
+      if (pickItem) {
+        const id = pickItem.dataset.pickItem;
+        if (state.selectedItems.has(id)) state.selectedItems.delete(id);
+        else state.selectedItems.add(id);
+        renderProjects();
+        return;
+      }
+
+      const deleteRecord = event.target.closest("[data-delete-record]");
+      if (deleteRecord) {
+        state.records = state.records.filter(record => record.id !== deleteRecord.dataset.deleteRecord);
+        renderRecords();
+        showToast("已删除保养记录");
+        return;
+      }
+
+      const deleteItem = event.target.closest("[data-delete-item]");
+      if (deleteItem) {
+        const [recordId, item] = deleteItem.dataset.deleteItem.split(":");
+        const record = state.records.find(entry => entry.id === recordId);
+        if (record) {
+          record.items = record.items.filter(name => name !== item);
+          if (record.items.length === 0) state.records = state.records.filter(entry => entry.id !== recordId);
+          renderRecords();
+          showToast("已从记录中移除项目");
+        }
+        return;
+      }
+
+      const action = event.target.closest("[data-action]");
+      if (action) {
+        if (action.dataset.action === "backup") showToast("已生成 car-record-backup-20260512.json");
+        if (action.dataset.action === "restore") {
+          closeSheets();
+          showToast("恢复完成：车辆2辆，记录3条");
+        }
+        if (action.dataset.action === "addCustomProject") {
+          state.projects.push({ id: "custom_" + Date.now(), name: "自定义检查项目", progress: 0, level: "normal", detail: "未产生历史记录", enabled: true, locked: false });
+          renderAll();
+          showToast("已添加自定义项目");
+        }
+      }
+    });
+
+    $("#saveRecordBtn").addEventListener("click", () => {
+      if (state.selectedItems.size === 0) {
+        showToast("请至少选择一个保养项目");
+        return;
+      }
+      const mileage = Number($("#recordMileage").value || 0);
+      const selectedNames = state.projects
+        .filter(project => state.selectedItems.has(project.id))
+        .map(project => project.name);
+      const record = {
+        id: "r" + Date.now(),
+        date: $("#recordDate").value,
+        mileage,
+        cost: Number($("#recordCost").value || 0),
+        items: selectedNames,
+        note: $("#recordNote").value.trim() || "未填写备注"
+      };
+      state.records.unshift(record);
+      const car = currentCar();
+      if (mileage > car.mileage) car.mileage = mileage;
+      closeSheets();
+      setTab("reminder");
+      showToast("记录已保存，提醒间隔已同步");
+    });
+
+    $("#saveCarBtn").addEventListener("click", () => {
+      const brand = $("#brandSelect").value;
+      const model = $("#modelSelect").value;
+      const duplicate = state.cars.some(car => car.name === `${brand} ${model}`);
+      if (duplicate) {
+        showToast("该品牌车型已存在");
+        return;
+      }
+      const id = "car_" + Date.now();
+      state.cars.push({
+        id,
+        name: `${brand} ${model}`,
+        mileage: Number($("#carMileage").value || 0),
+        purchaseDate: $("#purchaseDate").value,
+        applied: false
+      });
+      state.appliedCarId = id;
+      closeSheets();
+      setTab("garage");
+      showToast("车辆已添加并设为当前应用");
+    });
+
+    $("#manualDateSwitch").addEventListener("click", () => {
+      state.manualDate = !state.manualDate;
+      renderAll();
+      showToast(state.manualDate ? "手动日期已开启" : "手动日期已关闭");
+    });
+
+    renderAll();
+  </script>
+</body>
+</html>

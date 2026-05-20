@@ -1,0 +1,101 @@
+import 'dart:convert';
+
+import '../../core/date/local_date.dart';
+import '../../domain/entities/car.dart';
+import '../../domain/entities/maintenance_record.dart';
+import '../../domain/entities/sync_metadata.dart';
+
+class BackupPayload {
+  const BackupPayload({
+    required this.schemaVersion,
+    required this.cars,
+    required this.records,
+  });
+
+  final int schemaVersion;
+  final List<Car> cars;
+  final List<MaintenanceRecord> records;
+}
+
+class BackupCodec {
+  const BackupCodec();
+
+  String encode(BackupPayload payload) {
+    return jsonEncode({
+      'schemaVersion': payload.schemaVersion,
+      'cars': payload.cars.map(_carToJson).toList(),
+      'records': payload.records.map(_recordToJson).toList(),
+    });
+  }
+
+  BackupPayload decode(String json) {
+    final map = jsonDecode(json) as Map<String, Object?>;
+    final version = map['schemaVersion'] as int;
+    if (version != 1) {
+      throw UnsupportedError('Unsupported backup schemaVersion: $version');
+    }
+    return BackupPayload(
+      schemaVersion: version,
+      cars: ((map['cars'] as List?) ?? const [])
+          .cast<Map<String, Object?>>()
+          .map(_carFromJson)
+          .toList(),
+      records: ((map['records'] as List?) ?? const [])
+          .cast<Map<String, Object?>>()
+          .map(_recordFromJson)
+          .toList(),
+    );
+  }
+
+  Map<String, Object?> _carToJson(Car car) {
+    return {
+      'id': car.id,
+      'brand': car.brand,
+      'model': car.model,
+      'currentMileageKm': car.currentMileageKm,
+      'roadDate': car.roadDate.toString(),
+      'sync': car.sync.toJson(),
+    };
+  }
+
+  Car _carFromJson(Map<String, Object?> json) {
+    return Car(
+      id: json['id'] as String,
+      brand: json['brand'] as String,
+      model: json['model'] as String,
+      currentMileageKm: json['currentMileageKm'] as int,
+      roadDate: LocalDate.parse(json['roadDate'] as String),
+      sync: SyncMetadata.fromJson(
+        (json['sync'] as Map).cast<String, Object?>(),
+      ),
+    );
+  }
+
+  Map<String, Object?> _recordToJson(MaintenanceRecord record) {
+    return {
+      'id': record.id,
+      'carId': record.carId,
+      'date': record.date.toString(),
+      'itemIds': record.itemIds,
+      'costCents': record.costCents,
+      'mileageKm': record.mileageKm,
+      'note': record.note,
+      'sync': record.sync.toJson(),
+    };
+  }
+
+  MaintenanceRecord _recordFromJson(Map<String, Object?> json) {
+    return MaintenanceRecord(
+      id: json['id'] as String,
+      carId: json['carId'] as String,
+      date: LocalDate.parse(json['date'] as String),
+      itemIds: (json['itemIds'] as List).cast<String>(),
+      costCents: json['costCents'] as int,
+      mileageKm: json['mileageKm'] as int,
+      note: json['note'] as String?,
+      sync: SyncMetadata.fromJson(
+        (json['sync'] as Map).cast<String, Object?>(),
+      ),
+    );
+  }
+}
