@@ -50,9 +50,21 @@ ThemeData buildLunioTheme() {
         fontWeight: FontWeight.w400,
         height: 1.7,
       ),
+      bodySmall: TextStyle(
+        color: tokens.muted,
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        height: 1.4,
+      ),
       labelLarge: TextStyle(
         color: tokens.ink,
         fontSize: 13,
+        fontWeight: FontWeight.w700,
+        height: 1.35,
+      ),
+      labelSmall: TextStyle(
+        color: tokens.muted,
+        fontSize: 12,
         fontWeight: FontWeight.w700,
         height: 1.35,
       ),
@@ -78,6 +90,9 @@ ThemeData buildLunioTheme() {
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: tokens.surface,
       indicatorColor: tokens.primary,
+      indicatorShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+      ),
       labelTextStyle: WidgetStateProperty.all(
         const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
       ),

@@ -6,6 +6,7 @@ import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart' as domain;
+import '../../domain/rules/applied_car_rules.dart';
 import '../../domain/rules/record_rules.dart';
 import '../backup/backup_codec.dart';
 import '../database/app_database.dart';
@@ -14,6 +15,22 @@ class LunioRepository {
   const LunioRepository(this.database);
 
   final AppDatabase database;
+
+  Future<void> ensureDefaultMaintenanceItems() async {
+    final existing = await database
+        .select(database.vehicleDefaultMaintenanceItems)
+        .get();
+    if (existing.isNotEmpty) {
+      return;
+    }
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime.now(),
+    );
+    for (final item in _builtInDefaultItems(sync)) {
+      await saveVehicleDefaultMaintenanceItem(item);
+    }
+  }
 
   Future<int> createCar(domain.Car car) {
     return database
@@ -31,9 +48,100 @@ class LunioRepository {
         );
   }
 
+  Future<int> createCarWithDefaultItems(domain.Car car) {
+    return database.transaction(() async {
+      final carId = await database
+          .into(database.cars)
+          .insert(
+            CarsCompanion.insert(
+              brand: car.brand,
+              model: car.model,
+              currentMileageKm: car.currentMileageKm,
+              roadDate: car.roadDate.toString(),
+              syncStatus: Value(car.sync.status.name),
+              updatedAt: car.sync.updatedAt.toIso8601String(),
+              version: Value(car.sync.version),
+            ),
+          );
+
+      final defaultRows =
+          await (database.select(database.vehicleDefaultMaintenanceItems)
+                ..where(
+                  (row) =>
+                      row.vehicleBrand.equals(car.brand) &
+                      row.vehicleModel.equals(car.model),
+                )
+                ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
+              .get();
+      for (final item in defaultRows) {
+        await database
+            .into(database.maintenanceItems)
+            .insert(
+              MaintenanceItemsCompanion.insert(
+                carsId: carId,
+                name: item.itemName,
+                isDefault: true,
+                enabled: const Value(true),
+                remindByMileage: item.remindByMileage,
+                remindByTime: item.remindByTime,
+                mileageIntervalKm: Value(item.mileageIntervalKm),
+                timeIntervalMonths: Value(item.timeIntervalMonths),
+                notOverdueUpperLimit: Value(item.notOverdueUpperLimit),
+                overdueUpperLimit: Value(item.overdueUpperLimit),
+                sortOrder: item.sortOrder,
+                syncStatus: Value(car.sync.status.name),
+                updatedAt: car.sync.updatedAt.toIso8601String(),
+                version: Value(car.sync.version),
+              ),
+            );
+      }
+
+      final storedAppliedCarId = await _getAppliedCarIdInTransaction();
+      if (storedAppliedCarId == null) {
+        await _writeAppliedCarId(carId);
+      }
+      return carId;
+    });
+  }
+
   Future<List<domain.Car>> listCars() async {
     final rows = await database.select(database.cars).get();
     return rows.map(_carFromRow).toList();
+  }
+
+  Future<void> updateCar(domain.Car car) {
+    final carId = car.id;
+    if (carId == null) {
+      throw ArgumentError('Car id is required');
+    }
+    return (database.update(
+      database.cars,
+    )..where((row) => row.id.equals(carId))).write(
+      CarsCompanion(
+        currentMileageKm: Value(car.currentMileageKm),
+        roadDate: Value(car.roadDate.toString()),
+        syncStatus: Value(car.sync.status.name),
+        updatedAt: Value(car.sync.updatedAt.toIso8601String()),
+        version: Value(car.sync.version),
+      ),
+    );
+  }
+
+  Future<domain.Car?> getAppliedCar() async {
+    final cars = await listCars();
+    final storedCarId = int.tryParse(await getAppliedCarId() ?? '');
+    final appliedCarId = AppliedCarRules.resolveAppliedCarId(
+      cars: cars,
+      storedCarId: storedCarId,
+    );
+    if (appliedCarId == null) {
+      await setAppliedCarId(null);
+      return null;
+    }
+    if (appliedCarId != storedCarId) {
+      await setAppliedCarId(appliedCarId);
+    }
+    return cars.firstWhere((car) => car.id == appliedCarId);
   }
 
   Future<void> deleteCar(int carId) {
@@ -55,6 +163,12 @@ class LunioRepository {
       await (database.delete(
         database.cars,
       )..where((row) => row.id.equals(carId))).go();
+      final remainingCars = await database.select(database.cars).get();
+      if (remainingCars.isEmpty) {
+        await _writeAppliedCarId(null);
+      } else {
+        await _writeAppliedCarId(remainingCars.first.id);
+      }
     });
   }
 
@@ -122,6 +236,99 @@ class LunioRepository {
         );
   }
 
+  Future<List<domain.MaintenanceItem>> listMaintenanceItemsForCar(
+    int carId,
+  ) async {
+    final rows =
+        await (database.select(database.maintenanceItems)
+              ..where((row) => row.carsId.equals(carId))
+              ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
+            .get();
+    return rows.map(_maintenanceItemFromRow).toList();
+  }
+
+  Future<void> updateMaintenanceItem(domain.MaintenanceItem item) async {
+    item.validate();
+    final itemId = item.id;
+    if (itemId == null) {
+      throw ArgumentError('Maintenance item id is required');
+    }
+    if (!item.enabled) {
+      await _ensureCanDisableMaintenanceItem(
+        carId: item.carsId,
+        itemId: itemId,
+      );
+    }
+    await (database.update(
+      database.maintenanceItems,
+    )..where((row) => row.id.equals(itemId))).write(
+      MaintenanceItemsCompanion(
+        name: Value(item.name),
+        enabled: Value(item.enabled),
+        remindByMileage: Value(item.remindByMileage),
+        remindByTime: Value(item.remindByTime),
+        mileageIntervalKm: Value(item.mileageIntervalKm),
+        timeIntervalMonths: Value(item.timeIntervalMonths),
+        notOverdueUpperLimit: Value(item.notOverdueUpperLimit),
+        overdueUpperLimit: Value(item.overdueUpperLimit),
+        sortOrder: Value(item.sortOrder),
+        syncStatus: Value(item.sync.status.name),
+        updatedAt: Value(item.sync.updatedAt.toIso8601String()),
+        version: Value(item.sync.version),
+      ),
+    );
+  }
+
+  Future<void> setMaintenanceItemEnabled({
+    required int itemId,
+    required bool enabled,
+    required SyncMetadata sync,
+  }) async {
+    final item = await _getMaintenanceItemById(itemId);
+    if (!enabled) {
+      await _ensureCanDisableMaintenanceItem(
+        carId: item.carsId,
+        itemId: itemId,
+      );
+    }
+    await (database.update(
+      database.maintenanceItems,
+    )..where((row) => row.id.equals(itemId))).write(
+      MaintenanceItemsCompanion(
+        enabled: Value(enabled),
+        syncStatus: Value(sync.status.name),
+        updatedAt: Value(sync.updatedAt.toIso8601String()),
+        version: Value(sync.version),
+      ),
+    );
+  }
+
+  Future<bool> maintenanceItemHasHistory(int itemId) async {
+    final count = await (database.select(
+      database.maintenanceRecordItems,
+    )..where((row) => row.itemId.equals(itemId))).get();
+    return count.isNotEmpty;
+  }
+
+  Future<void> deleteMaintenanceItem(int itemId) async {
+    final item = await _getMaintenanceItemById(itemId);
+    if (item.isDefault) {
+      throw ArgumentError('Default maintenance items cannot be deleted');
+    }
+    if (await maintenanceItemHasHistory(itemId)) {
+      throw ArgumentError('Maintenance item has history records');
+    }
+    if (item.enabled) {
+      await _ensureCanDisableMaintenanceItem(
+        carId: item.carsId,
+        itemId: itemId,
+      );
+    }
+    await (database.delete(
+      database.maintenanceItems,
+    )..where((row) => row.id.equals(itemId))).go();
+  }
+
   Future<int> saveMaintenanceRecord(domain.MaintenanceRecord record) {
     RecordRules.validateRecord(record);
     final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
@@ -170,6 +377,99 @@ class LunioRepository {
             .write(CarsCompanion(currentMileageKm: Value(nextMileage)));
       }
       return recordId;
+    });
+  }
+
+  Future<void> updateMaintenanceRecord(domain.MaintenanceRecord record) {
+    final recordId = record.id;
+    if (recordId == null) {
+      throw ArgumentError('Maintenance record id is required');
+    }
+    RecordRules.validateRecord(record);
+    final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
+
+    return database.transaction(() async {
+      await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
+
+      await (database.update(
+        database.maintenanceRecords,
+      )..where((row) => row.id.equals(recordId))).write(
+        MaintenanceRecordsCompanion(
+          date: Value(record.date.toString()),
+          mileageKm: Value(record.mileageKm),
+          costCents: Value(record.costCents),
+          note: Value(record.note),
+          syncStatus: Value(record.sync.status.name),
+          updatedAt: Value(record.sync.updatedAt.toIso8601String()),
+          version: Value(record.sync.version),
+        ),
+      );
+      await (database.delete(
+        database.maintenanceRecordItems,
+      )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
+      for (final itemId in uniqueItemIds) {
+        await database
+            .into(database.maintenanceRecordItems)
+            .insert(
+              MaintenanceRecordItemsCompanion.insert(
+                maintenanceRecordId: recordId,
+                carId: record.carId,
+                itemId: itemId,
+                date: record.date.toString(),
+              ),
+            );
+      }
+
+      final car = await (database.select(
+        database.cars,
+      )..where((row) => row.id.equals(record.carId))).getSingle();
+      final nextMileage = RecordRules.mileageAfterRecord(
+        currentMileageKm: car.currentMileageKm,
+        recordMileageKm: record.mileageKm,
+      );
+      if (nextMileage != car.currentMileageKm) {
+        await (database.update(database.cars)
+              ..where((row) => row.id.equals(record.carId)))
+            .write(CarsCompanion(currentMileageKm: Value(nextMileage)));
+      }
+    });
+  }
+
+  Future<List<domain.MaintenanceRecord>> listMaintenanceRecordsForCar(
+    int carId,
+  ) async {
+    final recordRows =
+        await (database.select(database.maintenanceRecords)
+              ..where((row) => row.carId.equals(carId))
+              ..orderBy([(row) => OrderingTerm.desc(row.date)]))
+            .get();
+    final recordIds = recordRows.map((row) => row.id).toList();
+    final itemRows = recordIds.isEmpty
+        ? <MaintenanceRecordItemRow>[]
+        : await (database.select(
+            database.maintenanceRecordItems,
+          )..where((row) => row.maintenanceRecordId.isIn(recordIds))).get();
+    final itemIdsByRecordId = <int, List<int>>{};
+    for (final row in itemRows) {
+      itemIdsByRecordId
+          .putIfAbsent(row.maintenanceRecordId, () => [])
+          .add(row.itemId);
+    }
+    return recordRows
+        .map(
+          (row) => _recordFromRow(row, itemIdsByRecordId[row.id] ?? const []),
+        )
+        .toList();
+  }
+
+  Future<void> deleteMaintenanceRecord(int recordId) {
+    return database.transaction(() async {
+      await (database.delete(
+        database.maintenanceRecordItems,
+      )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
+      await (database.delete(
+        database.maintenanceRecords,
+      )..where((row) => row.id.equals(recordId))).go();
     });
   }
 
@@ -366,18 +666,61 @@ class LunioRepository {
   }
 
   Future<void> setAppliedCarId(int? carId) async {
-    final existing = await (database.select(
+    return _writeAppliedCarId(carId);
+  }
+
+  Future<String?> getPreferenceValue(String key) async {
+    final row = await (database.select(
+      database.appPreferences,
+    )..where((pref) => pref.key.equals(key))).getSingleOrNull();
+    return row?.value;
+  }
+
+  Future<void> setPreferenceValue(String key, String? value) async {
+    return _writePreferenceValue(key, value);
+  }
+
+  Future<void> clearAllData() {
+    return database.transaction(() async {
+      await database.delete(database.appPreferences).go();
+      await database.delete(database.maintenanceRecordItems).go();
+      await database.delete(database.maintenanceRecords).go();
+      await database.delete(database.maintenanceItems).go();
+      await database.delete(database.cars).go();
+      await database.delete(database.vehicleDefaultMaintenanceItems).go();
+    });
+  }
+
+  Future<String?> _getAppliedCarIdInTransaction() async {
+    final row = await (database.select(
       database.appPreferences,
     )..where((pref) => pref.key.equals('appliedCarId'))).getSingleOrNull();
-    final value = carId?.toString();
+    return row?.value;
+  }
+
+  Future<void> _writeAppliedCarId(int? carId) async {
+    return _writePreferenceValue('appliedCarId', carId?.toString());
+  }
+
+  Future<void> _writePreferenceValue(String key, String? value) async {
+    if (value == null) {
+      await (database.delete(
+        database.appPreferences,
+      )..where((pref) => pref.key.equals(key))).go();
+      return;
+    }
+    final existing = await (database.select(
+      database.appPreferences,
+    )..where((pref) => pref.key.equals(key))).getSingleOrNull();
     final now = DateTime.now().toIso8601String();
     if (existing == null) {
       await database
           .into(database.appPreferences)
           .insert(
             AppPreferencesCompanion.insert(
-              key: 'appliedCarId',
+              key: key,
               value: Value(value),
+              syncStatus: const Value('pendingUpdate'),
               updatedAt: now,
             ),
           );
@@ -385,9 +728,75 @@ class LunioRepository {
     }
     await (database.update(
       database.appPreferences,
-    )..where((pref) => pref.key.equals('appliedCarId'))).write(
-      AppPreferencesCompanion(value: Value(value), updatedAt: Value(now)),
+    )..where((pref) => pref.key.equals(key))).write(
+      AppPreferencesCompanion(
+        value: Value(value),
+        syncStatus: const Value('pendingUpdate'),
+        updatedAt: Value(now),
+      ),
     );
+  }
+
+  List<domain.VehicleDefaultMaintenanceItem> _builtInDefaultItems(
+    SyncMetadata sync,
+  ) {
+    return [
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '本田',
+        vehicleModel: '22款思域',
+        itemName: '机油',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: 6,
+        sortOrder: 1,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '本田',
+        vehicleModel: '22款思域',
+        itemName: '机滤',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: 6,
+        sortOrder: 2,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '本田',
+        vehicleModel: '22款思域',
+        itemName: '空调滤芯',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 20000,
+        timeIntervalMonths: 12,
+        sortOrder: 3,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '日产',
+        vehicleModel: '22款轩逸',
+        itemName: '机油',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: 6,
+        sortOrder: 1,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '日产',
+        vehicleModel: '22款轩逸',
+        itemName: '空气滤芯',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 20000,
+        timeIntervalMonths: 12,
+        sortOrder: 2,
+        sync: sync,
+      ),
+    ];
   }
 
   domain.Car _carFromRow(CarRow row) {
@@ -444,6 +853,33 @@ class LunioRepository {
     }
   }
 
+  Future<domain.MaintenanceItem> _getMaintenanceItemById(int itemId) async {
+    final row = await (database.select(
+      database.maintenanceItems,
+    )..where((row) => row.id.equals(itemId))).getSingleOrNull();
+    if (row == null) {
+      throw ArgumentError('Maintenance item not found');
+    }
+    return _maintenanceItemFromRow(row);
+  }
+
+  Future<void> _ensureCanDisableMaintenanceItem({
+    required int carId,
+    required int itemId,
+  }) async {
+    final enabledRows =
+        await (database.select(database.maintenanceItems)..where(
+              (row) =>
+                  row.carsId.equals(carId) &
+                  row.enabled.equals(true) &
+                  row.id.equals(itemId).not(),
+            ))
+            .get();
+    if (enabledRows.isEmpty) {
+      throw ArgumentError('At least one maintenance item must stay enabled');
+    }
+  }
+
   void _validateBackupReferences(BackupPayload payload) {
     final carIds = payload.cars.map((car) => car.id).whereType<int>().toSet();
     final itemCarIds = <int, int>{};
@@ -493,6 +929,11 @@ class LunioRepository {
         final appliedCarId = int.tryParse(preference.value!);
         if (appliedCarId == null || !carIds.contains(appliedCarId)) {
           throw ArgumentError('Backup appliedCarId references missing car');
+        }
+      }
+      if (preference.key == 'manualDate' && preference.value != null) {
+        if (LocalDate.tryParse(preference.value!) == null) {
+          throw ArgumentError('Backup manualDate is invalid');
         }
       }
     }

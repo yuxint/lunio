@@ -11,7 +11,7 @@ class LunioApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Lunio',
       theme: buildLunioTheme(),
-      routerConfig: appRouter,
+      routerConfig: buildAppRouter(),
       debugShowCheckedModeBanner: false,
     );
   }
