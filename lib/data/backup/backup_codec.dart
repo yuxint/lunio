@@ -2,19 +2,27 @@ import 'dart:convert';
 
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart';
+import '../../domain/entities/maintenance_item.dart';
 import '../../domain/entities/maintenance_record.dart';
 import '../../domain/entities/sync_metadata.dart';
+import '../../domain/entities/vehicle_default_maintenance_item.dart';
 
 class BackupPayload {
   const BackupPayload({
     required this.schemaVersion,
-    required this.cars,
-    required this.records,
+    this.cars = const [],
+    this.defaultMaintenanceItems = const [],
+    this.maintenanceItems = const [],
+    this.records = const [],
+    this.preferences = const {},
   });
 
   final int schemaVersion;
   final List<Car> cars;
+  final List<VehicleDefaultMaintenanceItem> defaultMaintenanceItems;
+  final List<MaintenanceItem> maintenanceItems;
   final List<MaintenanceRecord> records;
+  final Map<String, String?> preferences;
 }
 
 class BackupCodec {
@@ -24,7 +32,12 @@ class BackupCodec {
     return jsonEncode({
       'schemaVersion': payload.schemaVersion,
       'cars': payload.cars.map(_carToJson).toList(),
+      'defaultMaintenanceItems': payload.defaultMaintenanceItems
+          .map(_defaultItemToJson)
+          .toList(),
+      'maintenanceItems': payload.maintenanceItems.map(_itemToJson).toList(),
       'records': payload.records.map(_recordToJson).toList(),
+      'preferences': payload.preferences,
     });
   }
 
@@ -40,10 +53,21 @@ class BackupCodec {
           .cast<Map<String, Object?>>()
           .map(_carFromJson)
           .toList(),
+      defaultMaintenanceItems:
+          ((map['defaultMaintenanceItems'] as List?) ?? const [])
+              .cast<Map<String, Object?>>()
+              .map(_defaultItemFromJson)
+              .toList(),
+      maintenanceItems: ((map['maintenanceItems'] as List?) ?? const [])
+          .cast<Map<String, Object?>>()
+          .map(_itemFromJson)
+          .toList(),
       records: ((map['records'] as List?) ?? const [])
           .cast<Map<String, Object?>>()
           .map(_recordFromJson)
           .toList(),
+      preferences: ((map['preferences'] as Map?) ?? const {})
+          .cast<String, String?>(),
     );
   }
 
@@ -58,9 +82,85 @@ class BackupCodec {
     };
   }
 
+  Map<String, Object?> _defaultItemToJson(VehicleDefaultMaintenanceItem item) {
+    return {
+      'id': item.id,
+      'vehicleBrand': item.vehicleBrand,
+      'vehicleModel': item.vehicleModel,
+      'itemName': item.itemName,
+      'remindByMileage': item.remindByMileage,
+      'remindByTime': item.remindByTime,
+      'mileageIntervalKm': item.mileageIntervalKm,
+      'timeIntervalMonths': item.timeIntervalMonths,
+      'notOverdueUpperLimit': item.notOverdueUpperLimit,
+      'overdueUpperLimit': item.overdueUpperLimit,
+      'sortOrder': item.sortOrder,
+      'sync': item.sync.toJson(),
+    };
+  }
+
+  VehicleDefaultMaintenanceItem _defaultItemFromJson(
+    Map<String, Object?> json,
+  ) {
+    return VehicleDefaultMaintenanceItem(
+      id: json['id'] as int?,
+      vehicleBrand: json['vehicleBrand'] as String,
+      vehicleModel: json['vehicleModel'] as String,
+      itemName: json['itemName'] as String,
+      remindByMileage: json['remindByMileage'] as bool,
+      remindByTime: json['remindByTime'] as bool,
+      mileageIntervalKm: json['mileageIntervalKm'] as int?,
+      timeIntervalMonths: json['timeIntervalMonths'] as int?,
+      notOverdueUpperLimit: (json['notOverdueUpperLimit'] as num).toDouble(),
+      overdueUpperLimit: (json['overdueUpperLimit'] as num).toDouble(),
+      sortOrder: json['sortOrder'] as int,
+      sync: SyncMetadata.fromJson(
+        (json['sync'] as Map).cast<String, Object?>(),
+      ),
+    );
+  }
+
+  Map<String, Object?> _itemToJson(MaintenanceItem item) {
+    return {
+      'id': item.id,
+      'carsId': item.carsId,
+      'name': item.name,
+      'isDefault': item.isDefault,
+      'enabled': item.enabled,
+      'remindByMileage': item.remindByMileage,
+      'remindByTime': item.remindByTime,
+      'mileageIntervalKm': item.mileageIntervalKm,
+      'timeIntervalMonths': item.timeIntervalMonths,
+      'notOverdueUpperLimit': item.notOverdueUpperLimit,
+      'overdueUpperLimit': item.overdueUpperLimit,
+      'sortOrder': item.sortOrder,
+      'sync': item.sync.toJson(),
+    };
+  }
+
+  MaintenanceItem _itemFromJson(Map<String, Object?> json) {
+    return MaintenanceItem(
+      id: json['id'] as int?,
+      carsId: json['carsId'] as int,
+      name: json['name'] as String,
+      isDefault: json['isDefault'] as bool,
+      enabled: json['enabled'] as bool,
+      remindByMileage: json['remindByMileage'] as bool,
+      remindByTime: json['remindByTime'] as bool,
+      mileageIntervalKm: json['mileageIntervalKm'] as int?,
+      timeIntervalMonths: json['timeIntervalMonths'] as int?,
+      notOverdueUpperLimit: (json['notOverdueUpperLimit'] as num).toDouble(),
+      overdueUpperLimit: (json['overdueUpperLimit'] as num).toDouble(),
+      sortOrder: json['sortOrder'] as int,
+      sync: SyncMetadata.fromJson(
+        (json['sync'] as Map).cast<String, Object?>(),
+      ),
+    );
+  }
+
   Car _carFromJson(Map<String, Object?> json) {
     return Car(
-      id: json['id'] as String,
+      id: json['id'] as int?,
       brand: json['brand'] as String,
       model: json['model'] as String,
       currentMileageKm: json['currentMileageKm'] as int,
@@ -86,10 +186,10 @@ class BackupCodec {
 
   MaintenanceRecord _recordFromJson(Map<String, Object?> json) {
     return MaintenanceRecord(
-      id: json['id'] as String,
-      carId: json['carId'] as String,
+      id: json['id'] as int?,
+      carId: json['carId'] as int,
       date: LocalDate.parse(json['date'] as String),
-      itemIds: (json['itemIds'] as List).cast<String>(),
+      itemIds: (json['itemIds'] as List).cast<int>(),
       costCents: json['costCents'] as int,
       mileageKm: json['mileageKm'] as int,
       note: json['note'] as String?,

@@ -3,9 +3,9 @@ import '../entities/car.dart';
 class AppliedCarRules {
   const AppliedCarRules._();
 
-  static String? resolveAppliedCarId({
+  static int? resolveAppliedCarId({
     required List<Car> cars,
-    required String? storedCarId,
+    required int? storedCarId,
   }) {
     if (cars.isEmpty) {
       return null;

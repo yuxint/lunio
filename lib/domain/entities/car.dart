@@ -3,7 +3,7 @@ import 'sync_metadata.dart';
 
 class Car {
   const Car({
-    required this.id,
+    this.id,
     required this.brand,
     required this.model,
     required this.currentMileageKm,
@@ -11,14 +11,12 @@ class Car {
     required this.sync,
   });
 
-  final String id;
+  final int? id;
   final String brand;
   final String model;
   final int currentMileageKm;
   final LocalDate roadDate;
   final SyncMetadata sync;
-
-  String get brandModelKey => '$brand::$model';
 
   Car copyWith({int? currentMileageKm, SyncMetadata? sync}) {
     return Car(

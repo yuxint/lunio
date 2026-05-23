@@ -2,24 +2,23 @@ import 'sync_metadata.dart';
 
 class MaintenanceItem {
   const MaintenanceItem({
-    required this.id,
-    required this.ownerCarId,
+    this.id,
+    required this.carsId,
     required this.name,
     required this.isDefault,
     required this.enabled,
     required this.remindByMileage,
     required this.remindByTime,
-    required this.warningThresholdPercent,
-    required this.dangerThresholdPercent,
+    this.notOverdueUpperLimit = 100,
+    this.overdueUpperLimit = 125,
     required this.sortOrder,
     required this.sync,
-    this.catalogKey,
     this.mileageIntervalKm,
     this.timeIntervalMonths,
   });
 
-  final String id;
-  final String ownerCarId;
+  final int? id;
+  final int carsId;
   final String name;
   final bool isDefault;
   final bool enabled;
@@ -27,10 +26,9 @@ class MaintenanceItem {
   final bool remindByTime;
   final int? mileageIntervalKm;
   final int? timeIntervalMonths;
-  final int warningThresholdPercent;
-  final int dangerThresholdPercent;
+  final double notOverdueUpperLimit;
+  final double overdueUpperLimit;
   final int sortOrder;
-  final String? catalogKey;
   final SyncMetadata sync;
 
   void validate() {

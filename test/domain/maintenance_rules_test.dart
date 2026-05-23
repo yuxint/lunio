@@ -19,8 +19,8 @@ void main() {
     int? timeIntervalMonths = 12,
   }) {
     return MaintenanceItem(
-      id: 'item-1',
-      ownerCarId: 'car-1',
+      id: 1,
+      carsId: 1,
       name: '机油',
       isDefault: true,
       enabled: true,
@@ -28,8 +28,8 @@ void main() {
       remindByTime: byTime,
       mileageIntervalKm: mileageIntervalKm,
       timeIntervalMonths: timeIntervalMonths,
-      warningThresholdPercent: 100,
-      dangerThresholdPercent: 125,
+      notOverdueUpperLimit: 100,
+      overdueUpperLimit: 125,
       sortOrder: 1,
       sync: sync,
     );
@@ -37,10 +37,10 @@ void main() {
 
   MaintenanceRecord record({required LocalDate date, required int mileageKm}) {
     return MaintenanceRecord(
-      id: 'record-1',
-      carId: 'car-1',
+      id: 1,
+      carId: 1,
       date: date,
-      itemIds: const ['item-1'],
+      itemIds: const [1],
       costCents: 10000,
       mileageKm: mileageKm,
       sync: sync,

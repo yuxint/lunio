@@ -3,13 +3,10 @@ import '../entities/maintenance_record.dart';
 class RecordRules {
   const RecordRules._();
 
-  static List<String> uniqueItemIds(List<String> itemIds) {
-    final result = <String>[];
-    final seen = <String>{};
+  static List<int> uniqueItemIds(List<int> itemIds) {
+    final result = <int>[];
+    final seen = <int>{};
     for (final id in itemIds) {
-      if (id.trim().isEmpty) {
-        continue;
-      }
       if (seen.add(id)) {
         result.add(id);
       }
@@ -48,13 +45,5 @@ class RecordRules {
     return recordMileageKm > currentMileageKm
         ? recordMileageKm
         : currentMileageKm;
-  }
-
-  static String cycleItemKey({
-    required String carId,
-    required String date,
-    required String itemId,
-  }) {
-    return '$carId::$date::$itemId';
   }
 }

@@ -3,11 +3,7 @@ import 'package:lunio/domain/rules/record_rules.dart';
 
 void main() {
   test('record item ids are deduplicated and keep first-seen order', () {
-    expect(RecordRules.uniqueItemIds(['a', 'b', 'a', '', 'c']), [
-      'a',
-      'b',
-      'c',
-    ]);
+    expect(RecordRules.uniqueItemIds([1, 2, 1, 3]), [1, 2, 3]);
   });
 
   test('record mileage can only lift car mileage', () {
@@ -24,17 +20,6 @@ void main() {
         recordMileageKm: 120,
       ),
       120,
-    );
-  });
-
-  test('cycle item key uses car date and item id instead of item name', () {
-    expect(
-      RecordRules.cycleItemKey(
-        carId: 'car',
-        date: '2026-05-19',
-        itemId: 'item',
-      ),
-      'car::2026-05-19::item',
     );
   });
 }

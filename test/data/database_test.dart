@@ -22,10 +22,9 @@ void main() {
     await database.close();
   });
 
-  Future<void> seedCarAndItem() async {
-    await repository.createCar(
+  Future<(int, int)> seedCarAndItem() async {
+    final carId = await repository.createCar(
       Car(
-        id: 'car-1',
         brand: '本田',
         model: '22款思域',
         currentMileageKm: 10000,
@@ -33,10 +32,9 @@ void main() {
         sync: sync,
       ),
     );
-    await repository.saveMaintenanceItem(
+    final itemId = await repository.saveMaintenanceItem(
       MaintenanceItem(
-        id: 'item-1',
-        ownerCarId: 'car-1',
+        carsId: carId,
         name: '机油',
         isDefault: true,
         enabled: true,
@@ -44,12 +42,13 @@ void main() {
         remindByTime: true,
         mileageIntervalKm: 5000,
         timeIntervalMonths: 6,
-        warningThresholdPercent: 100,
-        dangerThresholdPercent: 125,
+        notOverdueUpperLimit: 100,
+        overdueUpperLimit: 125,
         sortOrder: 1,
         sync: sync,
       ),
     );
+    return (carId, itemId);
   }
 
   test('creates schema and persists car data', () async {
@@ -58,25 +57,25 @@ void main() {
     final cars = await repository.listCars();
 
     expect(cars, hasLength(1));
-    expect(cars.single.brandModelKey, '本田::22款思域');
+    expect(cars.single.id, isNotNull);
+    expect(cars.single.brand, '本田');
+    expect(cars.single.model, '22款思域');
   });
 
   test('same car and date is unique', () async {
-    await seedCarAndItem();
+    final (carId, itemId) = await seedCarAndItem();
     final first = MaintenanceRecord(
-      id: 'record-1',
-      carId: 'car-1',
+      carId: carId,
       date: const LocalDate(2026, 5, 19),
-      itemIds: const ['item-1'],
+      itemIds: [itemId],
       costCents: 10000,
       mileageKm: 12000,
       sync: sync,
     );
     final duplicateDay = MaintenanceRecord(
-      id: 'record-2',
-      carId: 'car-1',
+      carId: carId,
       date: const LocalDate(2026, 5, 19),
-      itemIds: const ['item-1'],
+      itemIds: [itemId],
       costCents: 10000,
       mileageKm: 13000,
       sync: sync,
@@ -91,13 +90,12 @@ void main() {
   });
 
   test('record can only increase car mileage', () async {
-    await seedCarAndItem();
+    final (carId, itemId) = await seedCarAndItem();
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
-        id: 'record-1',
-        carId: 'car-1',
+        carId: carId,
         date: const LocalDate(2026, 5, 19),
-        itemIds: const ['item-1'],
+        itemIds: [itemId],
         costCents: 10000,
         mileageKm: 9000,
         sync: sync,
@@ -107,10 +105,9 @@ void main() {
 
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
-        id: 'record-2',
-        carId: 'car-1',
+        carId: carId,
         date: const LocalDate(2026, 6, 19),
-        itemIds: const ['item-1'],
+        itemIds: [itemId],
         costCents: 10000,
         mileageKm: 13000,
         sync: sync,
@@ -120,20 +117,20 @@ void main() {
   });
 
   test('delete car removes related local records and items', () async {
-    await seedCarAndItem();
+    final (carId, itemId) = await seedCarAndItem();
+    await repository.setAppliedCarId(carId);
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
-        id: 'record-1',
-        carId: 'car-1',
+        carId: carId,
         date: const LocalDate(2026, 5, 19),
-        itemIds: const ['item-1'],
+        itemIds: [itemId],
         costCents: 10000,
         mileageKm: 12000,
         sync: sync,
       ),
     );
 
-    await repository.deleteCar('car-1');
+    await repository.deleteCar(carId);
 
     expect(await database.select(database.cars).get(), isEmpty);
     expect(await database.select(database.maintenanceItems).get(), isEmpty);
@@ -142,5 +139,6 @@ void main() {
       await database.select(database.maintenanceRecordItems).get(),
       isEmpty,
     );
+    expect(await database.select(database.appPreferences).get(), isEmpty);
   });
 }

@@ -40,9 +40,19 @@ class MaintenanceRules {
         : timeProgress;
     return ReminderProgress(
       percent: progress.percent,
-      status: statusForPercent(progress.percent),
+      status: _statusForItem(item, progress.percent),
       reason: progress.reason,
     );
+  }
+
+  static ReminderStatus _statusForItem(MaintenanceItem item, double percent) {
+    if (percent >= item.overdueUpperLimit) {
+      return ReminderStatus.danger;
+    }
+    if (percent >= item.notOverdueUpperLimit) {
+      return ReminderStatus.warning;
+    }
+    return ReminderStatus.normal;
   }
 
   static _Progress _mileageProgress({
