@@ -15,5 +15,12 @@ void main() {
   test('local date uses yyyy-MM-dd and rejects invalid format', () {
     expect(const LocalDate(2026, 5, 9).toString(), '2026-05-09');
     expect(() => LocalDate.parse('2026-5-9'), throwsFormatException);
+    expect(() => LocalDate.parse('2026-02-30'), throwsFormatException);
+    expect(() => LocalDate.parse('2026-13-01'), throwsFormatException);
+    expect(() => LocalDate.parse('2026-00-01'), throwsFormatException);
+  });
+
+  test('add months clamps to last valid day of target month', () {
+    expect(const LocalDate(2026, 1, 31).addMonths(1).toString(), '2026-02-28');
   });
 }

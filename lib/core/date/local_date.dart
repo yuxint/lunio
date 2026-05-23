@@ -6,18 +6,21 @@ class LocalDate implements Comparable<LocalDate> {
   }
 
   factory LocalDate.parse(String value) {
-    final parts = value.split('-');
-    if (parts.length != 3) {
+    final pattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+    if (!pattern.hasMatch(value)) {
       throw FormatException('Invalid date format', value);
     }
+    final parts = value.split('-');
     final year = int.parse(parts[0]);
     final month = int.parse(parts[1]);
     final day = int.parse(parts[2]);
-    final date = LocalDate(year, month, day);
-    if (date.toString() != value) {
+    final normalized = DateTime(year, month, day);
+    if (normalized.year != year ||
+        normalized.month != month ||
+        normalized.day != day) {
       throw FormatException('Invalid date format', value);
     }
-    return date;
+    return LocalDate(year, month, day);
   }
 
   final int year;
@@ -25,6 +28,14 @@ class LocalDate implements Comparable<LocalDate> {
   final int day;
 
   DateTime toDateTime() => DateTime(year, month, day);
+
+  LocalDate addMonths(int months) {
+    final targetMonthIndex = month - 1 + months;
+    final targetYear = year + targetMonthIndex ~/ 12;
+    final targetMonth = targetMonthIndex % 12 + 1;
+    final targetDay = day.clamp(1, _daysInMonth(targetYear, targetMonth));
+    return LocalDate(targetYear, targetMonth, targetDay);
+  }
 
   int monthsUntil(LocalDate other) {
     var months = (other.year - year) * 12 + other.month - month;
@@ -60,4 +71,8 @@ class LocalDate implements Comparable<LocalDate> {
 
   @override
   int get hashCode => Object.hash(year, month, day);
+}
+
+int _daysInMonth(int year, int month) {
+  return DateTime(year, month + 1, 0).day;
 }

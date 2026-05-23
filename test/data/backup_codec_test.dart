@@ -66,7 +66,9 @@ void main() {
           sync: sync,
         ),
       ],
-      preferences: const {'appliedCarId': '1'},
+      preferences: [
+        BackupPreference(id: 1, key: 'appliedCarId', value: '1', sync: sync),
+      ],
     );
 
     final decoded = codec.decode(codec.encode(payload));
@@ -76,6 +78,6 @@ void main() {
     expect(decoded.defaultMaintenanceItems.single.itemName, '机油');
     expect(decoded.maintenanceItems.single.carsId, 1);
     expect(decoded.records.single.carId, 1);
-    expect(decoded.preferences['appliedCarId'], '1');
+    expect(decoded.preferences.single.value, '1');
   });
 }

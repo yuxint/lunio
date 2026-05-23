@@ -20,7 +20,9 @@ class MaintenanceRules {
     required MaintenanceItem item,
     required MaintenanceRecord? latestRecord,
     required int currentMileageKm,
+    required LocalDate noHistoryBaselineDate,
     required LocalDate today,
+    int noHistoryBaselineMileageKm = 0,
   }) {
     item.validate();
 
@@ -28,10 +30,12 @@ class MaintenanceRules {
       item: item,
       latestRecord: latestRecord,
       currentMileageKm: currentMileageKm,
+      noHistoryBaselineMileageKm: noHistoryBaselineMileageKm,
     );
     final timeProgress = _timeProgress(
       item: item,
       latestRecord: latestRecord,
+      noHistoryBaselineDate: noHistoryBaselineDate,
       today: today,
     );
 
@@ -59,34 +63,41 @@ class MaintenanceRules {
     required MaintenanceItem item,
     required MaintenanceRecord? latestRecord,
     required int currentMileageKm,
+    required int noHistoryBaselineMileageKm,
   }) {
     if (!item.remindByMileage || item.mileageIntervalKm == null) {
       return const _Progress(0, 'mileage-disabled');
     }
-    if (latestRecord == null) {
-      return const _Progress(0, 'no-history');
-    }
-    final usedKm = currentMileageKm - latestRecord.mileageKm;
+    final baselineMileageKm =
+        latestRecord?.mileageKm ?? noHistoryBaselineMileageKm;
+    final usedKm = currentMileageKm - baselineMileageKm;
     final percent = usedKm <= 0 ? 0 : usedKm / item.mileageIntervalKm! * 100;
-    return _Progress(percent.toDouble(), 'mileage');
+    return _Progress(
+      percent.toDouble(),
+      latestRecord == null ? 'mileage-no-history' : 'mileage',
+    );
   }
 
   static _Progress _timeProgress({
     required MaintenanceItem item,
     required MaintenanceRecord? latestRecord,
+    required LocalDate noHistoryBaselineDate,
     required LocalDate today,
   }) {
     if (!item.remindByTime || item.timeIntervalMonths == null) {
       return const _Progress(0, 'time-disabled');
     }
-    if (latestRecord == null) {
-      return const _Progress(0, 'no-history');
-    }
-    final usedMonths = latestRecord.date.monthsUntil(today);
-    final percent = usedMonths <= 0
+    final baselineDate = latestRecord?.date ?? noHistoryBaselineDate;
+    final dueDate = baselineDate.addMonths(item.timeIntervalMonths!);
+    final totalDays = baselineDate.daysUntil(dueDate);
+    final usedDays = baselineDate.daysUntil(today);
+    final percent = totalDays <= 0 || usedDays <= 0
         ? 0
-        : usedMonths / item.timeIntervalMonths! * 100;
-    return _Progress(percent.toDouble(), 'time');
+        : usedDays / totalDays * 100;
+    return _Progress(
+      percent.toDouble(),
+      latestRecord == null ? 'time-no-history' : 'time',
+    );
   }
 }
 

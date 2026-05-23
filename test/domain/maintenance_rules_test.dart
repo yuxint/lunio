@@ -62,6 +62,7 @@ void main() {
         mileageKm: 10000,
       ),
       currentMileageKm: 15000,
+      noHistoryBaselineDate: const LocalDate(2023, 8, 12),
       today: const LocalDate(2026, 5, 19),
     );
 
@@ -75,10 +76,41 @@ void main() {
       item: item(byTime: false, timeIntervalMonths: null),
       latestRecord: record(date: const LocalDate(2026, 1, 1), mileageKm: 10000),
       currentMileageKm: 22500,
+      noHistoryBaselineDate: const LocalDate(2023, 8, 12),
       today: const LocalDate(2026, 5, 19),
     );
 
     expect(progress.percent, 125);
     expect(progress.status, ReminderStatus.danger);
+  });
+
+  test('no history uses vehicle road date and zero mileage as baseline', () {
+    final progress = MaintenanceRules.progressForItem(
+      item: item(byTime: false, timeIntervalMonths: null),
+      latestRecord: null,
+      currentMileageKm: 5000,
+      noHistoryBaselineDate: const LocalDate(2026, 1, 1),
+      today: const LocalDate(2026, 5, 19),
+    );
+
+    expect(progress.percent, 50);
+    expect(progress.reason, 'mileage-no-history');
+  });
+
+  test('time progress uses natural day ratio instead of whole months', () {
+    final progress = MaintenanceRules.progressForItem(
+      item: item(
+        byMileage: false,
+        mileageIntervalKm: null,
+        timeIntervalMonths: 1,
+      ),
+      latestRecord: record(date: const LocalDate(2026, 1, 1), mileageKm: 0),
+      currentMileageKm: 0,
+      noHistoryBaselineDate: const LocalDate(2026, 1, 1),
+      today: const LocalDate(2026, 1, 16),
+    );
+
+    expect(progress.reason, 'time');
+    expect(progress.percent, closeTo(48.38, 0.01));
   });
 }
