@@ -12,7 +12,7 @@
 - Batch 5：保养提醒，已完成。
 - Batch 6：个人中心与数据能力，已完成。
 - Batch 7：iOS 首版打磨，已完成工程验证；发布 Bundle ID 和签名资料待确认。
-- Batch 8：待执行。
+- Batch 8：Android 补齐，已完成 Android 工具链、APK 构建、模拟器运行和基础交互验证。
 
 ## 已落地：技术底座
 
@@ -576,7 +576,7 @@
   - 当前 Bundle ID 仍是 `com.example.lunio`，发布前需要你确认正式 Bundle ID、开发者团队和签名资料。
   - AppIcon 和 LaunchScreen 使用 Flutter 默认资源，正式视觉资产后续可替换。
 
-## 待落地功能清单
+## 平台补齐功能清单
 
 ### Batch 8：Android 补齐
 
@@ -590,16 +590,23 @@
   - 使用同一套 Drift/SQLite Repository。
 - 数据保存：
   - 使用同一套 SQLite v1 数据契约。
+- 已落地的离线适配：
+  - `android/app/src/main/kotlin/com/example/lunio/MainActivity.kt` 已接入 `lunio/native_files` MethodChannel。
+  - Android 备份分享调用系统分享面板，以 JSON 文本方式分享备份内容。
+  - Android 数据恢复调用系统文件选择器读取 JSON 文本。
 - 当前状态：
   - Android Flutter 工程已存在。
   - `android/app/build.gradle.kts` 当前 `applicationId` 仍是 `com.example.lunio`，发布前需与你确认正式包名。
-  - `android/app/src/main/AndroidManifest.xml` 已使用 `adjustResize`，键盘遮挡后续需真机或模拟器确认。
-  - 当前机器缺少 Android SDK，`flutter doctor -v` 显示 `Unable to locate Android SDK`。
-  - 因 Android toolchain 缺失，本批次不能执行 `flutter build apk`、Android 模拟器运行或文件导入导出适配验证。
-- 后续恢复命令：
-  - 安装 Android Studio 和 Android SDK 后执行 `flutter doctor -v`。
-  - 若 SDK 在自定义目录，执行 `flutter config --android-sdk <sdk-path>`。
-  - 工具链正常后执行 `flutter build apk` 或目标格式构建。
+  - `android/app/src/main/AndroidManifest.xml` 已使用 `adjustResize`。
+  - 当前机器已配置 Android SDK `/Users/tanxin/Library/Android/sdk`，`cmdline-tools/latest/bin/sdkmanager` 和 `avdmanager` 可用。
+  - `flutter doctor -v` 已确认 Android toolchain 通过，Android licenses 已接受。
+  - 已安装 Android 36 Google APIs arm64 system image，并创建 `lunio_api36` AVD。
+  - SQLite native asset 已改为 `source: source`，使用仓库内 `third_party/sqlite/sqlite3.c`。
+  - `third_party/sqlite/sqlite3.c` 和 `sqlite3.h` 来自 SQLite 官方 `sqlite-autoconf-3530000.tar.gz`，版本 3.53.0。
+  - Android release APK 构建通过，产物为 `build/app/outputs/flutter-apk/app-release.apk`，大小 58.3MB。
+  - Android 模拟器运行验证通过：启动后数据库正常加载，没有 `libsqlite3.so` not found。
+  - Android 基础交互验证通过：提醒页、记录页、我的页、车辆新增、记录新增、备份分享、恢复文件选择器。
+  - 当前仍未做真实 Android 物理机验证；发布前建议用至少一台目标 Android 真机复核文件选择器、系统分享面板、返回键、键盘遮挡和安全区。
 
 ## 验证记录
 
@@ -648,6 +655,22 @@
     - `/var/folders/v3/t9yx1x5x129c7_49qs9ynsjc0000gn/T/screenshot_optimized_564ba9c4-c53d-487d-bdc9-c568bf69860a.jpg`
     - `/var/folders/v3/t9yx1x5x129c7_49qs9ynsjc0000gn/T/screenshot_optimized_b0b97406-36c7-4086-a09f-d311d8ac33ac.jpg`
 - Batch 8：
-  - `flutter doctor -v` 未完全通过：Android SDK 缺失。
-  - 未执行 `flutter build apk`：当前 Android toolchain 不可用。
-  - 未执行 Android 模拟器/真机运行级验证：当前 Android toolchain 不可用。
+  - `flutter doctor -v` Android toolchain 通过：Android SDK `/Users/tanxin/Library/Android/sdk`，licenses 已接受。
+  - `flutter emulators` 可发现 `lunio_api36` Android AVD。
+  - 已下载 SQLite 官方 `sqlite-autoconf-3530000.tar.gz`，并把 `sqlite3.c`、`sqlite3.h` 放入 `third_party/sqlite/`。
+  - `pubspec.yaml` 已配置 `hooks.user_defines.sqlite3.source: source`，路径为 `third_party/sqlite/sqlite3.c`。
+  - `flutter analyze` 通过。
+  - `flutter test` 通过，共 46 项测试。
+  - `flutter build ios --simulator` 通过，确认 SQLite 本地源码配置未破坏 iOS 模拟器构建。
+  - `flutter build apk` 通过，产物为 `build/app/outputs/flutter-apk/app-release.apk`，大小 58.3MB。
+  - `adb install -r build/app/outputs/flutter-apk/app-release.apk` 通过。
+  - Android AVD `lunio_api36` 运行验证通过：App 启动后数据库正常加载。
+  - Android 页面交互验证通过：底部三入口切换、车辆新增、记录新增、提醒刷新、备份 JSON 生成、系统分享面板、恢复文件选择器。
+  - 截图留存：
+    - `/private/tmp/lunio_android_after_sqlite_source.png`
+    - `/private/tmp/lunio_android_after_save_car.png`
+    - `/private/tmp/lunio_android_records.png`
+    - `/private/tmp/lunio_android_after_save_record.png`
+    - `/private/tmp/lunio_android_system_share.png`
+    - `/private/tmp/lunio_android_file_picker_open.png`
+  - 未执行 Android 物理机验证：当前只覆盖 Android 模拟器。

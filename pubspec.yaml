@@ -59,7 +59,8 @@ dev_dependencies:
 hooks:
   user_defines:
     sqlite3:
-      source: system
+      source: source
+      path: third_party/sqlite/sqlite3.c
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
