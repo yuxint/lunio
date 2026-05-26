@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -401,7 +402,7 @@ class _ItemPills extends StatelessWidget {
             child: Text(
               label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: const Color(0xff354035),
+                color: tokens.ink,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -448,19 +449,13 @@ class _PrototypeSheetFrame extends StatelessWidget {
     required this.title,
     required this.child,
     this.subtitle,
-    this.heightFactor,
     this.bottomInset = 0,
-    this.trailing,
-    this.scrollable = true,
   });
 
   final String title;
   final String? subtitle;
   final Widget child;
-  final double? heightFactor;
   final double bottomInset;
-  final Widget? trailing;
-  final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
@@ -468,9 +463,7 @@ class _PrototypeSheetFrame extends StatelessWidget {
     final content = Padding(
       padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + bottomInset),
       child: Column(
-        mainAxisSize: heightFactor == null
-            ? MainAxisSize.min
-            : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
@@ -478,7 +471,7 @@ class _PrototypeSheetFrame extends StatelessWidget {
               width: 48,
               height: 5,
               decoration: BoxDecoration(
-                color: const Color(0xffd4ddd4),
+                color: tokens.line,
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -502,11 +495,10 @@ class _PrototypeSheetFrame extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) ...[const SizedBox(width: 12), trailing!],
             ],
           ),
           const SizedBox(height: 14),
-          if (heightFactor == null) child else Expanded(child: child),
+          child,
         ],
       ),
     );
@@ -522,14 +514,9 @@ class _PrototypeSheetFrame extends StatelessWidget {
           ),
         ],
       ),
-      child: scrollable && heightFactor == null
-          ? SingleChildScrollView(child: content)
-          : content,
+      child: SingleChildScrollView(child: content),
     );
-    if (heightFactor == null) {
-      return sheet;
-    }
-    return FractionallySizedBox(heightFactor: heightFactor, child: sheet);
+    return sheet;
   }
 }
 
@@ -959,6 +946,12 @@ class _ProfilePreviewPage extends ConsumerWidget {
     final cars = ref.watch(carsProvider);
     final manualDate = ref.watch(manualDatePreferenceProvider);
     final themeMode = ref.watch(themeModePreferenceProvider);
+    final today = ref
+        .watch(effectiveTodayProvider)
+        .maybeWhen(
+          data: (value) => value,
+          orElse: () => LocalDate.fromDateTime(DateTime.now()),
+        );
     final appliedCar = ref
         .watch(appliedCarProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
@@ -985,20 +978,14 @@ class _ProfilePreviewPage extends ConsumerWidget {
               data: (items) => _VehicleList(
                 cars: items,
                 appliedCarId: appliedCar?.id,
+                today: today,
                 onAdd: () => _showAddCarSheet(context, ref),
                 onEdit: (car) => _showEditCarSheet(context, ref, car),
+                onManageItems: (car) =>
+                    _showMaintenanceItemsSheet(context, ref, car: car),
                 onApply: (carId) => _applyCar(context, ref, carId),
                 onDelete: (car) => _deleteCar(context, ref, car),
               ),
-            ),
-            const SizedBox(height: 10),
-            _ProfileSettingRow(
-              title: '保养项目',
-              subtitle: appliedCar == null ? '先新增车辆' : '默认项目和自定义项目',
-              trailingLabel: '管理',
-              onTap: appliedCar == null
-                  ? () => _showToast(context, '请先新增车辆')
-                  : () => _showMaintenanceItemsSheet(context, ref),
             ),
           ],
         ),
@@ -1168,93 +1155,106 @@ class _VehicleList extends StatelessWidget {
   const _VehicleList({
     required this.cars,
     required this.appliedCarId,
+    required this.today,
     required this.onAdd,
     required this.onEdit,
+    required this.onManageItems,
     required this.onApply,
     required this.onDelete,
   });
 
   final List<Car> cars;
   final int? appliedCarId;
+  final LocalDate today;
   final VoidCallback onAdd;
   final ValueChanged<Car> onEdit;
+  final ValueChanged<Car> onManageItems;
   final ValueChanged<int> onApply;
   final ValueChanged<Car> onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
     if (cars.isEmpty) {
       return _EmptyVehicleCard(onAdd: onAdd);
     }
     return Column(
       children: [
         for (final car in cars) ...[
-          LunioCard(
-            backgroundColor: car.id == appliedCarId
-                ? const Color(0xfff5fbf4)
-                : null,
-            child: Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Builder(
+            builder: (context) {
+              final selected = car.id == appliedCarId;
+              return LunioCard(
+                backgroundColor: selected ? tokens.primarySoft : null,
+                child: Column(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Text(
-                                  '${car.brand} ${car.model}',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${car.brand} ${car.model}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  if (selected)
+                                    const LunioStatusBadge(
+                                      label: '当前',
+                                      tone: LunioStatusTone.normal,
+                                    ),
+                                ],
                               ),
-                              if (car.id == appliedCarId)
-                                const LunioStatusBadge(
-                                  label: '当前',
-                                  tone: LunioStatusTone.normal,
-                                ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${_formatMileageKm(car.currentMileageKm)} · 车龄 ${_formatCarAge(car.roadDate, today)} · ${car.roadDate}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${_formatNumber(car.currentMileageKm)} km · 上路 ${car.roadDate}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 12),
+                        _CarVisual(selected: selected),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    const _CarVisual(),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _SmallActionButton(
+                          label: selected ? '已应用' : '应用',
+                          onPressed: car.id == null
+                              ? () {}
+                              : () => onApply(car.id!),
+                        ),
+                        const SizedBox(width: 8),
+                        _SmallActionButton(
+                          label: '编辑',
+                          onPressed: () => onEdit(car),
+                        ),
+                        const SizedBox(width: 8),
+                        _SmallActionButton(
+                          label: '项目',
+                          onPressed: () => onManageItems(car),
+                        ),
+                        const SizedBox(width: 8),
+                        _SmallActionButton(
+                          label: '删除',
+                          danger: true,
+                          onPressed: () => onDelete(car),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _SmallActionButton(
-                      label: car.id == appliedCarId ? '已应用' : '应用',
-                      onPressed: car.id == null
-                          ? () {}
-                          : () => onApply(car.id!),
-                    ),
-                    const SizedBox(width: 8),
-                    _SmallActionButton(
-                      label: '编辑',
-                      onPressed: () => onEdit(car),
-                    ),
-                    const SizedBox(width: 8),
-                    _SmallActionButton(
-                      label: '删除',
-                      danger: true,
-                      onPressed: () => onDelete(car),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              );
+            },
           ),
           const SizedBox(height: 12),
         ],
@@ -1264,23 +1264,46 @@ class _VehicleList extends StatelessWidget {
 }
 
 class _CarVisual extends StatelessWidget {
-  const _CarVisual();
+  const _CarVisual({this.selected = false});
+
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(size: const Size(70, 38), painter: _CarVisualPainter());
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return CustomPaint(
+      size: const Size(70, 38),
+      painter: _CarVisualPainter(
+        bodyStart: tokens.primary,
+        bodyEnd: tokens.primaryStrong,
+        windowColor: selected ? tokens.surface : tokens.primarySoft,
+        wheelColor: tokens.ink,
+      ),
+    );
   }
 }
 
 class _CarVisualPainter extends CustomPainter {
+  const _CarVisualPainter({
+    required this.bodyStart,
+    required this.bodyEnd,
+    required this.windowColor,
+    required this.wheelColor,
+  });
+
+  final Color bodyStart;
+  final Color bodyEnd;
+  final Color windowColor;
+  final Color wheelColor;
+
   @override
   void paint(Canvas canvas, Size size) {
     final bodyPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xff1c7c57), Color(0xff2459a6)],
+      ..shader = LinearGradient(
+        colors: [bodyStart, bodyEnd],
       ).createShader(Offset.zero & size);
-    final windowPaint = Paint()..color = const Color(0xffdcebe4);
-    final wheelPaint = Paint()..color = const Color(0xff1b211c);
+    final windowPaint = Paint()..color = windowColor;
+    final wheelPaint = Paint()..color = wheelColor;
     final body = RRect.fromRectAndCorners(
       Rect.fromLTWH(5, 12, 60, 18),
       topLeft: const Radius.circular(18),
@@ -1303,7 +1326,12 @@ class _CarVisualPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(_CarVisualPainter oldDelegate) {
+    return bodyStart != oldDelegate.bodyStart ||
+        bodyEnd != oldDelegate.bodyEnd ||
+        windowColor != oldDelegate.windowColor ||
+        wheelColor != oldDelegate.wheelColor;
+  }
 }
 
 class _EmptyVehicleCard extends StatelessWidget {
@@ -1580,9 +1608,7 @@ Future<(String, String)?> _showVehicleModelPickerSheet(
     builder: (context) => _PrototypeSheetFrame(
       title: '选择车型',
       subtitle: '选择车辆品牌和车型，默认保养项目会随车型创建',
-      heightFactor: 0.72,
       bottomInset: MediaQuery.of(context).viewInsets.bottom,
-      scrollable: false,
       child: _VehicleModelPickerSheet(
         vehicleModels: vehicleModels,
         selectedBrand: selectedBrand,
@@ -1648,6 +1674,7 @@ class _VehicleModelPickerSheetState extends State<_VehicleModelPickerSheet> {
         .where((model) => model.brand == selectedBrand)
         .toList();
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         TextField(
           controller: searchController,
@@ -1658,62 +1685,67 @@ class _VehicleModelPickerSheetState extends State<_VehicleModelPickerSheet> {
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: tokens.surface2,
-            borderRadius: BorderRadius.circular(tokens.radiusLarge),
-            border: Border.all(color: tokens.line),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.48,
           ),
-          child: brands.isEmpty
-              ? Center(
-                  child: Text(
-                    '没有匹配车型',
-                    style: Theme.of(context).textTheme.bodyMedium,
+          child: Container(
+            decoration: BoxDecoration(
+              color: tokens.surface2,
+              borderRadius: BorderRadius.circular(tokens.radiusLarge),
+              border: Border.all(color: tokens.line),
+            ),
+            child: brands.isEmpty
+                ? Center(
+                    child: Text(
+                      '没有匹配车型',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  )
+                : Row(
+                    children: [
+                      SizedBox(
+                        width: 124,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(8),
+                          itemCount: brands.length,
+                          itemBuilder: (context, index) {
+                            final brand = brands[index];
+                            return _PickerOption(
+                              label: brand,
+                              selected: brand == selectedBrand,
+                              enabled: true,
+                              onTap: () => setState(() {
+                                selectedBrand = brand;
+                              }),
+                            );
+                          },
+                        ),
+                      ),
+                      Container(width: 1, color: tokens.line),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(8),
+                          itemCount: models.length,
+                          itemBuilder: (context, index) {
+                            final model = models[index];
+                            final selected =
+                                model.brand == widget.selectedBrand &&
+                                model.model == widget.selectedModel;
+                            return _PickerOption(
+                              label: model.model,
+                              selected: selected,
+                              enabled: true,
+                              onTap: () => Navigator.of(
+                                context,
+                              ).pop((model.brand, model.model)),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                )
-              : Row(
-                  children: [
-                    SizedBox(
-                      width: 124,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: brands.length,
-                        itemBuilder: (context, index) {
-                          final brand = brands[index];
-                          return _PickerOption(
-                            label: brand,
-                            selected: brand == selectedBrand,
-                            enabled: true,
-                            onTap: () => setState(() {
-                              selectedBrand = brand;
-                            }),
-                          );
-                        },
-                      ),
-                    ),
-                    Container(width: 1, color: tokens.line),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: models.length,
-                        itemBuilder: (context, index) {
-                          final model = models[index];
-                          final selected =
-                              model.brand == widget.selectedBrand &&
-                              model.model == widget.selectedModel;
-                          return _PickerOption(
-                            label: model.model,
-                            selected: selected,
-                            enabled: true,
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pop((model.brand, model.model)),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+          ),
         ),
       ],
     );
@@ -1915,7 +1947,7 @@ class _SwitchCarCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Material(
-      color: selected ? const Color(0xfff5fbf4) : tokens.surface,
+      color: selected ? tokens.primarySoft : tokens.surface,
       borderRadius: BorderRadius.circular(tokens.radiusLarge),
       child: InkWell(
         onTap: selected ? null : onTap,
@@ -2255,79 +2287,208 @@ Future<void> _deleteMaintenanceRecord(
   }
 }
 
-void _showMaintenanceItemsSheet(BuildContext context, WidgetRef ref) {
+void _showMaintenanceItemsSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  Car? car,
+}) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
-    builder: (context) {
-      return _PrototypeSheetFrame(
-        title: '保养项目',
-        subtitle: '项目名称可变，默认项目用稳定映射保留历史记录',
-        heightFactor: 0.82,
-        scrollable: false,
-        trailing: Consumer(
-          builder: (context, ref, child) {
-            final car = ref
-                .watch(appliedCarProvider)
-                .maybeWhen(data: (value) => value, orElse: () => null);
-            return LunioIconButton(
+    builder: (context) => _MaintenanceItemsSheetRoute(car: car),
+  );
+}
+
+class _MaintenanceItemsSheetRoute extends StatefulWidget {
+  const _MaintenanceItemsSheetRoute({required this.car});
+
+  final Car? car;
+
+  @override
+  State<_MaintenanceItemsSheetRoute> createState() =>
+      _MaintenanceItemsSheetRouteState();
+}
+
+class _MaintenanceItemsSheetRouteState
+    extends State<_MaintenanceItemsSheetRoute> {
+  final refreshListenable = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    refreshListenable.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _PrototypeSheetFrame(
+      title: '保养项目',
+      child: _MaintenanceItemsSheetContent(
+        initialCar: widget.car,
+        refreshListenable: refreshListenable,
+      ),
+    );
+  }
+}
+
+class _MaintenanceItemsSheetContent extends ConsumerStatefulWidget {
+  const _MaintenanceItemsSheetContent({
+    required this.initialCar,
+    required this.refreshListenable,
+  });
+
+  final Car? initialCar;
+  final ValueNotifier<int> refreshListenable;
+
+  @override
+  ConsumerState<_MaintenanceItemsSheetContent> createState() =>
+      _MaintenanceItemsSheetContentState();
+}
+
+class _MaintenanceItemsSheetContentState
+    extends ConsumerState<_MaintenanceItemsSheetContent> {
+  Future<List<MaintenanceItem>>? itemsFuture;
+  int? loadedCarId;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.refreshListenable.addListener(_handleExternalRefresh);
+  }
+
+  @override
+  void didUpdateWidget(_MaintenanceItemsSheetContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshListenable == widget.refreshListenable) {
+      return;
+    }
+    oldWidget.refreshListenable.removeListener(_handleExternalRefresh);
+    widget.refreshListenable.addListener(_handleExternalRefresh);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshListenable.removeListener(_handleExternalRefresh);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final targetCar =
+        widget.initialCar ??
+        ref
+            .watch(appliedCarProvider)
+            .maybeWhen(data: (value) => value, orElse: () => null);
+    if (targetCar?.id == null) {
+      return const LunioInlineMessage(message: '请先新增车辆');
+    }
+    _ensureItemsFuture(targetCar!.id!);
+    final maxListHeight = MediaQuery.sizeOf(context).height * 0.54;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _ItemPills(
+                labels: ['${targetCar.brand} ${targetCar.model}'],
+              ),
+            ),
+            const SizedBox(width: 12),
+            LunioIconButton(
               icon: Icons.add,
               tooltip: '新增项目',
-              onPressed: car == null
-                  ? null
-                  : () => _showMaintenanceItemFormSheet(
-                      context,
-                      ref,
-                      carId: car.id!,
-                    ),
-            );
-          },
+              onPressed: () async {
+                final saved = await _showMaintenanceItemFormSheet(
+                  context,
+                  ref,
+                  carId: targetCar.id!,
+                );
+                if (saved == true) {
+                  widget.refreshListenable.value += 1;
+                }
+              },
+            ),
+          ],
         ),
-        child: Consumer(
-          builder: (context, ref, child) {
-            final car = ref
-                .watch(appliedCarProvider)
-                .maybeWhen(data: (value) => value, orElse: () => null);
-            final items = ref.watch(appliedCarMaintenanceItemsProvider);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (car != null) ...[
-                  _ItemPills(
-                    labels: ['${car.brand} ${car.model}', '关闭后不出现在新增记录里'],
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                Expanded(
-                  child: items.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (error, stackTrace) =>
-                        Text('加载失败：${_friendlyError(error)}'),
-                    data: (value) => _MaintenanceItemList(
-                      items: value,
-                      onEdit: (item) => _showMaintenanceItemFormSheet(
+        const SizedBox(height: 12),
+        FutureBuilder<List<MaintenanceItem>>(
+          future: itemsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 28),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return Text('加载失败：${_friendlyError(snapshot.error!)}');
+            }
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxListHeight),
+              child: SingleChildScrollView(
+                child: _MaintenanceItemList(
+                  items: snapshot.data ?? const [],
+                  onEdit: (item) =>
+                      _showMaintenanceItemFormSheet(
                         context,
                         ref,
                         carId: item.carsId,
                         item: item,
-                      ),
-                      onToggle: (item) =>
-                          _toggleMaintenanceItem(context, ref, item),
-                      onDelete: (item) =>
-                          _deleteMaintenanceItem(context, ref, item),
-                    ),
-                  ),
+                      ).then((saved) {
+                        if (saved == true) {
+                          _reload(targetCar.id!);
+                        }
+                      }),
+                  onToggle: (item) async {
+                    await _toggleMaintenanceItem(context, ref, item);
+                    _reload(targetCar.id!);
+                  },
+                  onDelete: (item) async {
+                    await _deleteMaintenanceItem(context, ref, item);
+                    _reload(targetCar.id!);
+                  },
                 ),
-              ],
+              ),
             );
           },
         ),
-      );
-    },
-  );
+      ],
+    );
+  }
+
+  void _ensureItemsFuture(int carId) {
+    if (loadedCarId == carId && itemsFuture != null) {
+      return;
+    }
+    loadedCarId = carId;
+    itemsFuture = ref
+        .read(lunioRepositoryProvider)
+        .listMaintenanceItemsForCar(carId);
+  }
+
+  void _reload(int carId) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      loadedCarId = carId;
+      itemsFuture = ref
+          .read(lunioRepositoryProvider)
+          .listMaintenanceItemsForCar(carId);
+    });
+  }
+
+  void _handleExternalRefresh() {
+    final carId = loadedCarId;
+    if (carId == null) {
+      return;
+    }
+    _reload(carId);
+  }
 }
 
 class _MaintenanceItemList extends StatelessWidget {
@@ -2350,18 +2511,19 @@ class _MaintenanceItemList extends StatelessWidget {
         child: Text('暂无保养项目', style: Theme.of(context).textTheme.bodyMedium),
       );
     }
-    return ListView.separated(
-      itemCount: items.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return _MaintenanceItemCard(
-          item: item,
-          onEdit: () => onEdit(item),
-          onToggle: () => onToggle(item),
-          onDelete: item.isDefault ? null : () => onDelete(item),
-        );
-      },
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final item in items) ...[
+          _MaintenanceItemCard(
+            item: item,
+            onEdit: () => onEdit(item),
+            onToggle: () => onToggle(item),
+            onDelete: item.isDefault ? null : () => onDelete(item),
+          ),
+          if (item != items.last) const SizedBox(height: 10),
+        ],
+      ],
     );
   }
 }
@@ -2382,68 +2544,70 @@ class _MaintenanceItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-      decoration: BoxDecoration(
-        color: tokens.surface,
+    return Material(
+      color: tokens.surface,
+      borderRadius: BorderRadius.circular(tokens.radiusLarge),
+      child: InkWell(
+        onTap: onEdit,
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        border: Border.all(color: tokens.line),
-        boxShadow: [
-          BoxShadow(
-            color: tokens.ink.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(tokens.radiusLarge),
+            border: Border.all(color: tokens.line),
+            boxShadow: [
+              BoxShadow(
+                color: tokens.ink.withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        item.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.name,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        LunioStatusBadge(
+                          label: item.isDefault ? '默认' : '自定义',
+                          tone: LunioStatusTone.normal,
+                        ),
+                      ],
                     ),
-                    LunioStatusBadge(
-                      label: item.isDefault ? '默认' : '自定义',
-                      tone: LunioStatusTone.normal,
+                    const SizedBox(height: 5),
+                    Text(
+                      _itemRuleText(item),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  _itemRuleText(item),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(width: 8),
+              Switch(
+                value: item.enabled,
+                onChanged: (_) => onToggle(),
+                activeThumbColor: tokens.primary,
+              ),
+              if (onDelete != null)
+                IconButton(
+                  tooltip: '删除',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline),
                 ),
-              ],
-            ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Switch(
-            value: item.enabled,
-            onChanged: (_) => onToggle(),
-            activeThumbColor: tokens.primary,
-          ),
-          IconButton(
-            tooltip: '编辑',
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          if (onDelete != null)
-            IconButton(
-              tooltip: '删除',
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -2468,8 +2632,6 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
   late final TextEditingController nameController;
   late final TextEditingController mileageController;
   late final TextEditingController monthsController;
-  late final TextEditingController normalLimitController;
-  late final TextEditingController overdueLimitController;
   bool remindByMileage = true;
   bool remindByTime = true;
   bool enabled = true;
@@ -2489,12 +2651,6 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
     monthsController = TextEditingController(
       text: (item?.timeIntervalMonths ?? 6).toString(),
     );
-    normalLimitController = TextEditingController(
-      text: (item?.notOverdueUpperLimit ?? 100).toStringAsFixed(0),
-    );
-    overdueLimitController = TextEditingController(
-      text: (item?.overdueUpperLimit ?? 125).toStringAsFixed(0),
-    );
     remindByMileage = item?.remindByMileage ?? true;
     remindByTime = item?.remindByTime ?? true;
     enabled = item?.enabled ?? true;
@@ -2505,8 +2661,6 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
     nameController.dispose();
     mileageController.dispose();
     monthsController.dispose();
-    normalLimitController.dispose();
-    overdueLimitController.dispose();
     super.dispose();
   }
 
@@ -2529,7 +2683,8 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
               ? null
               : (value) => setState(() => remindByMileage = value),
         ),
-        if (remindByMileage)
+        if (remindByMileage) ...[
+          const SizedBox(height: 8),
           TextField(
             controller: mileageController,
             enabled: !saving,
@@ -2537,6 +2692,7 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(labelText: '里程间隔 km'),
           ),
+        ],
         const SizedBox(height: 10),
         _FormSwitchRow(
           title: '按时间提醒',
@@ -2545,7 +2701,8 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
               ? null
               : (value) => setState(() => remindByTime = value),
         ),
-        if (remindByTime)
+        if (remindByTime) ...[
+          const SizedBox(height: 8),
           TextField(
             controller: monthsController,
             enabled: !saving,
@@ -2553,30 +2710,7 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(labelText: '时间间隔 月'),
           ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: normalLimitController,
-                enabled: !saving,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(labelText: '正常上限'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: overdueLimitController,
-                enabled: !saving,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(labelText: '超期上限'),
-              ),
-            ),
-          ],
-        ),
+        ],
         const SizedBox(height: 10),
         _FormSwitchRow(
           title: '启用项目',
@@ -2613,8 +2747,6 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
     final name = nameController.text.trim();
     final mileageInterval = int.tryParse(mileageController.text);
     final timeInterval = int.tryParse(monthsController.text);
-    final normalLimit = double.tryParse(normalLimitController.text);
-    final overdueLimit = double.tryParse(overdueLimitController.text);
     if (name.isEmpty) {
       setState(() => errorText = '项目名称不能为空');
       return;
@@ -2629,12 +2761,6 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
     }
     if (remindByTime && (timeInterval == null || timeInterval <= 0)) {
       setState(() => errorText = '时间间隔必须大于 0');
-      return;
-    }
-    if (normalLimit == null ||
-        overdueLimit == null ||
-        normalLimit >= overdueLimit) {
-      setState(() => errorText = '超期值上限必须大于未超期值上限');
       return;
     }
     setState(() {
@@ -2654,8 +2780,8 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
           remindByTime: remindByTime,
           mileageIntervalKm: remindByMileage ? mileageInterval : null,
           timeIntervalMonths: remindByTime ? timeInterval : null,
-          notOverdueUpperLimit: normalLimit,
-          overdueUpperLimit: overdueLimit,
+          notOverdueUpperLimit: item?.notOverdueUpperLimit ?? 100,
+          overdueUpperLimit: item?.overdueUpperLimit ?? 125,
           sortOrder: item?.sortOrder ?? 999,
           sync: SyncMetadata(
             status: isEditing
@@ -2714,13 +2840,13 @@ class _FormSwitchRow extends StatelessWidget {
   }
 }
 
-void _showMaintenanceItemFormSheet(
+Future<bool?> _showMaintenanceItemFormSheet(
   BuildContext context,
   WidgetRef ref, {
   required int carId,
   MaintenanceItem? item,
 }) {
-  showModalBottomSheet<void>(
+  return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -2728,9 +2854,6 @@ void _showMaintenanceItemFormSheet(
     builder: (context) {
       return _PrototypeSheetFrame(
         title: item == null ? '新增保养项目' : '编辑保养项目',
-        subtitle: item?.isDefault == true
-            ? '默认项目名称保持稳定，可调整提醒规则和启用状态'
-            : '自定义项目没有历史记录时可删除',
         bottomInset: MediaQuery.of(context).viewInsets.bottom,
         child: _MaintenanceItemForm(
           carId: carId,
@@ -2744,7 +2867,7 @@ void _showMaintenanceItemFormSheet(
             }
             invalidateVehicleProviders(ref);
             if (context.mounted) {
-              Navigator.of(context).pop();
+              Navigator.of(context).pop(true);
               _showToast(context, '保养项目已保存');
             }
           },
@@ -2960,6 +3083,7 @@ class _RestoreBackupFormState extends State<_RestoreBackupForm> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2990,7 +3114,7 @@ class _RestoreBackupFormState extends State<_RestoreBackupForm> {
               errorText!,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.red),
+              ).textTheme.bodySmall?.copyWith(color: tokens.danger),
             ),
           ],
           const SizedBox(height: 18),
@@ -3252,12 +3376,19 @@ Future<LocalDate?> _showSimpleDatePicker(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) => Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-      child: _SimpleDatePicker(
-        initialDate: initialDate,
-        firstDate: firstDate,
-        lastDate: lastDate,
+    builder: (context) => ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+          child: _SimpleDatePicker(
+            initialDate: initialDate,
+            firstDate: firstDate,
+            lastDate: lastDate,
+          ),
+        ),
       ),
     ),
   );
@@ -3282,6 +3413,8 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
   late LocalDate selectedDate;
   late int visibleYear;
   late int visibleMonth;
+  late int yearPageStart;
+  bool selectingYearMonth = false;
 
   @override
   void initState() {
@@ -3289,6 +3422,7 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
     selectedDate = widget.initialDate;
     visibleYear = selectedDate.year;
     visibleMonth = selectedDate.month;
+    yearPageStart = _yearPageStartFor(visibleYear);
   }
 
   @override
@@ -3306,52 +3440,6 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
           Row(
             children: [
               Expanded(
-                child: _DateSelectBox<int>(
-                  value: visibleYear,
-                  items: [
-                    for (
-                      var year = widget.firstDate.year;
-                      year <= widget.lastDate.year;
-                      year++
-                    )
-                      DropdownMenuItem(value: year, child: Text('$year年')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() {
-                      visibleYear = value;
-                      final months = _validMonthsForYear(value);
-                      if (!months.contains(visibleMonth)) {
-                        visibleMonth = months.first;
-                      }
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _DateSelectBox<int>(
-                  value: visibleMonth,
-                  items: [
-                    for (final month in _validMonthsForYear(visibleYear))
-                      DropdownMenuItem(value: month, child: Text('$month月')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() => visibleMonth = value);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: IconButton(
@@ -3365,9 +3453,29 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
                   ),
                 ),
               ),
-              Text(
-                '$visibleYear年$visibleMonth月',
-                style: Theme.of(context).textTheme.titleMedium,
+              TextButton(
+                onPressed: () =>
+                    setState(() => selectingYearMonth = !selectingYearMonth),
+                style: TextButton.styleFrom(
+                  foregroundColor: tokens.ink,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$visibleYear年$visibleMonth月',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      selectingYearMonth
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      size: 18,
+                    ),
+                  ],
+                ),
               ),
               Expanded(
                 child: Align(
@@ -3386,37 +3494,66 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
             ],
           ),
           const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 7,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 6,
-            crossAxisSpacing: 6,
-            children: [
-              for (final label in const ['一', '二', '三', '四', '五', '六', '日'])
-                Center(
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ),
-              for (var index = 0; index < cells; index++)
-                if (index < leadingBlankCount)
-                  const SizedBox.shrink()
-                else
-                  _DateCell(
-                    date: LocalDate(
-                      visibleYear,
-                      visibleMonth,
-                      index - leadingBlankCount + 1,
+          if (selectingYearMonth)
+            _YearMonthSelector(
+              yearPageStart: yearPageStart,
+              firstYear: widget.firstDate.year,
+              lastYear: widget.lastDate.year,
+              visibleYear: visibleYear,
+              visibleMonth: visibleMonth,
+              validMonths: _validMonthsForYear(visibleYear),
+              onPreviousYears: _canGoPreviousYearPage()
+                  ? () => setState(() => yearPageStart -= 12)
+                  : null,
+              onNextYears: _canGoNextYearPage()
+                  ? () => setState(() => yearPageStart += 12)
+                  : null,
+              onYearSelected: (year) {
+                setState(() {
+                  visibleYear = year;
+                  final months = _validMonthsForYear(year);
+                  if (!months.contains(visibleMonth)) {
+                    visibleMonth = months.first;
+                  }
+                });
+              },
+              onMonthSelected: (month) => setState(() {
+                visibleMonth = month;
+                selectingYearMonth = false;
+              }),
+            )
+          else
+            GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              children: [
+                for (final label in const ['一', '二', '三', '四', '五', '六', '日'])
+                  Center(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelSmall,
                     ),
-                    selectedDate: selectedDate,
-                    firstDate: widget.firstDate,
-                    lastDate: widget.lastDate,
-                    onSelected: (date) => setState(() => selectedDate = date),
                   ),
-            ],
-          ),
+                for (var index = 0; index < cells; index++)
+                  if (index < leadingBlankCount)
+                    const SizedBox.shrink()
+                  else
+                    _DateCell(
+                      date: LocalDate(
+                        visibleYear,
+                        visibleMonth,
+                        index - leadingBlankCount + 1,
+                      ),
+                      selectedDate: selectedDate,
+                      firstDate: widget.firstDate,
+                      lastDate: widget.lastDate,
+                      onSelected: (date) => setState(() => selectedDate = date),
+                    ),
+              ],
+            ),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -3460,6 +3597,7 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
       } else {
         visibleMonth -= 1;
       }
+      yearPageStart = _yearPageStartFor(visibleYear);
     });
   }
 
@@ -3471,7 +3609,21 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
       } else {
         visibleMonth += 1;
       }
+      yearPageStart = _yearPageStartFor(visibleYear);
     });
+  }
+
+  bool _canGoPreviousYearPage() {
+    return yearPageStart > _yearPageStartFor(widget.firstDate.year);
+  }
+
+  bool _canGoNextYearPage() {
+    return yearPageStart + 11 < widget.lastDate.year;
+  }
+
+  int _yearPageStartFor(int year) {
+    final start = year - ((year - widget.firstDate.year) % 12);
+    return start.clamp(widget.firstDate.year, widget.lastDate.year);
   }
 
   List<int> _validMonthsForYear(int year) {
@@ -3483,36 +3635,140 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
   }
 }
 
-class _DateSelectBox<T> extends StatelessWidget {
-  const _DateSelectBox({
-    required this.value,
-    required this.items,
-    required this.onChanged,
+class _YearMonthSelector extends StatelessWidget {
+  const _YearMonthSelector({
+    required this.yearPageStart,
+    required this.firstYear,
+    required this.lastYear,
+    required this.visibleYear,
+    required this.visibleMonth,
+    required this.validMonths,
+    required this.onPreviousYears,
+    required this.onNextYears,
+    required this.onYearSelected,
+    required this.onMonthSelected,
   });
 
-  final T value;
-  final List<DropdownMenuItem<T>> items;
-  final ValueChanged<T?> onChanged;
+  final int yearPageStart;
+  final int firstYear;
+  final int lastYear;
+  final int visibleYear;
+  final int visibleMonth;
+  final List<int> validMonths;
+  final VoidCallback? onPreviousYears;
+  final VoidCallback? onNextYears;
+  final ValueChanged<int> onYearSelected;
+  final ValueChanged<int> onMonthSelected;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final years = [
+      for (var year = yearPageStart; year <= yearPageStart + 11; year++)
+        if (year >= firstYear && year <= lastYear) year,
+    ];
     return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: tokens.surface2,
-        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
         border: Border.all(color: tokens.line),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          isExpanded: true,
-          items: items,
-          onChanged: onChanged,
-          borderRadius: BorderRadius.circular(tokens.radiusMedium),
-          dropdownColor: tokens.surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: '上一组年份',
+                onPressed: onPreviousYears,
+                icon: const Icon(Icons.chevron_left),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    '${years.first}年-${years.last}年',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '下一组年份',
+                onPressed: onNextYears,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final year in years)
+                _CompactDateOption(
+                  label: '$year',
+                  selected: year == visibleYear,
+                  onTap: () => onYearSelected(year),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var month = 1; month <= 12; month++)
+                _CompactDateOption(
+                  label: '$month月',
+                  selected: month == visibleMonth,
+                  enabled: validMonths.contains(month),
+                  onTap: () => onMonthSelected(month),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactDateOption extends StatelessWidget {
+  const _CompactDateOption({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+      child: Container(
+        width: 64,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? tokens.primary : tokens.surface,
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
+          border: Border.all(color: selected ? tokens.primary : tokens.line),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: selected
+                ? Colors.white
+                : enabled
+                ? tokens.ink
+                : tokens.subtle.withValues(alpha: 0.45),
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -3721,16 +3977,12 @@ String _formatPercent(double percent) {
 String _itemRuleText(MaintenanceItem item) {
   final rules = <String>[];
   if (item.remindByMileage) {
-    rules.add('${_formatNumber(item.mileageIntervalKm ?? 0)} km');
+    rules.add(_formatCompactMileageText(item.mileageIntervalKm ?? 0));
   }
   if (item.remindByTime) {
-    rules.add('${item.timeIntervalMonths ?? 0} 个月');
+    rules.add(_formatCompactTimeText(item.timeIntervalMonths ?? 0));
   }
-  return [
-    rules.join(' / '),
-    '正常 < ${item.notOverdueUpperLimit.toStringAsFixed(0)}%',
-    '将到期 < ${item.overdueUpperLimit.toStringAsFixed(0)}%',
-  ].join(' · ');
+  return rules.isEmpty ? '提醒：未设置' : '提醒：${rules.join('/')}';
 }
 
 List<String> _recordItemNameList(
@@ -3755,6 +4007,49 @@ String _formatMoney(int costCents) {
   return '¥${(costCents / 100).toStringAsFixed(2)}';
 }
 
+String _formatMileageKm(int value) {
+  return '${_formatNumber(value)}km';
+}
+
+String _formatCarAge(LocalDate roadDate, LocalDate today) {
+  final months = roadDate.monthsUntil(today).clamp(0, 1200);
+  if (months == 0) {
+    return '不足1个月';
+  }
+  if (months < 12) {
+    return '$months个月';
+  }
+  final years = months ~/ 12;
+  final remainMonths = months % 12;
+  if (remainMonths == 0) {
+    return '$years年';
+  }
+  return '$years年$remainMonths个月';
+}
+
+String _formatCompactMileageText(int value) {
+  if (value >= 10000) {
+    final wan = value / 10000;
+    final text = wan == wan.roundToDouble()
+        ? wan.toStringAsFixed(0)
+        : wan.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+    return '$text万公里';
+  }
+  return '${_formatNumber(value)}公里';
+}
+
+String _formatCompactTimeText(int months) {
+  if (months < 12) {
+    return '$months个月';
+  }
+  if (months % 12 == 0) {
+    return '${months ~/ 12}年';
+  }
+  final years = months / 12;
+  final text = years.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+  return '$text年';
+}
+
 Future<void> _applyCar(BuildContext context, WidgetRef ref, int carId) async {
   await ref.read(lunioRepositoryProvider).setAppliedCarId(carId);
   invalidateVehicleProviders(ref);
@@ -3777,6 +4072,7 @@ Future<void> _setThemeMode(
       .read(lunioRepositoryProvider)
       .setPreferenceValue('themeMode', value);
   invalidatePreferenceProviders(ref);
+  await Future<void>.delayed(const Duration(milliseconds: 16));
   if (context.mounted) {
     _showToast(context, '主题已切换');
   }
@@ -3804,61 +4100,68 @@ Future<bool?> _showConfirmDialog({
   required String title,
   required String message,
   required String confirmLabel,
+  bool destructive = true,
 }) {
   return showDialog<bool>(
     context: context,
     barrierDismissible: true,
     builder: (context) {
       final tokens = Theme.of(context).extension<LunioTokens>()!;
-      return Align(
-        alignment: Alignment.topCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 86, left: 18, right: 18),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: tokens.surface,
-                borderRadius: BorderRadius.circular(tokens.radiusLarge),
-                border: Border.all(color: tokens.line),
-                boxShadow: [
-                  BoxShadow(
-                    color: tokens.ink.withValues(alpha: 0.12),
-                    blurRadius: 36,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
+      final confirmColor = destructive ? tokens.danger : tokens.primary;
+      return Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.circular(tokens.radiusLarge),
+            border: Border.all(color: tokens.line),
+            boxShadow: [
+              BoxShadow(
+                color: tokens.ink.withValues(alpha: 0.16),
+                blurRadius: 36,
+                offset: const Offset(0, 16),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text(message, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 16),
+              Row(
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Text(message, style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: LunioSecondaryButton(
-                          label: '取消',
-                          onPressed: () => Navigator.of(context).pop(false),
+                  Expanded(
+                    child: LunioSecondaryButton(
+                      label: '取消',
+                      onPressed: () => Navigator.of(context).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        backgroundColor: confirmColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            tokens.radiusMedium,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: LunioPrimaryButton(
-                          label: confirmLabel,
-                          onPressed: () => Navigator.of(context).pop(true),
-                        ),
-                      ),
-                    ],
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text(confirmLabel),
+                    ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
         ),
       );
@@ -3868,34 +4171,112 @@ Future<bool?> _showConfirmDialog({
 
 void _dismissTransientUi(BuildContext context) {
   FocusManager.instance.primaryFocus?.unfocus();
+  _hideToast();
   ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
-  final navigator = Navigator.of(context);
-  if (navigator.canPop()) {
-    navigator.pop();
-  }
+}
+
+OverlayEntry? _toastOverlayEntry;
+
+void _hideToast() {
+  _toastOverlayEntry?.remove();
+  _toastOverlayEntry = null;
 }
 
 void _showToast(BuildContext context, String message) {
   final tokens = Theme.of(context).extension<LunioTokens>()!;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          Icon(Icons.check_circle_outline, color: tokens.primary, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ],
-      ),
-      backgroundColor: tokens.surface,
-      behavior: SnackBarBehavior.floating,
-      elevation: 0,
-      margin: const EdgeInsets.fromLTRB(22, 0, 22, 98),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(tokens.radiusMedium),
-        side: BorderSide(color: tokens.line),
-      ),
-    ),
+  final overlay = Overlay.maybeOf(context);
+  if (overlay == null) {
+    return;
+  }
+  _hideToast();
+  final topOffset = MediaQuery.paddingOf(context).top + 72;
+  final entry = OverlayEntry(
+    builder: (context) {
+      return Positioned(
+        top: topOffset,
+        left: 22,
+        right: 22,
+        child: _ToastOverlay(
+          message: message,
+          tokens: tokens,
+          onDismiss: _hideToast,
+        ),
+      );
+    },
   );
+  _toastOverlayEntry = entry;
+  overlay.insert(entry);
+}
+
+class _ToastOverlay extends StatefulWidget {
+  const _ToastOverlay({
+    required this.message,
+    required this.tokens,
+    required this.onDismiss,
+  });
+
+  final String message;
+  final LunioTokens tokens;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_ToastOverlay> createState() => _ToastOverlayState();
+}
+
+class _ToastOverlayState extends State<_ToastOverlay> {
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer(const Duration(milliseconds: 1400), widget.onDismiss);
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = widget.tokens;
+    return Material(
+      color: Colors.transparent,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(tokens.radiusMedium),
+          border: Border.all(color: tokens.line),
+          boxShadow: [
+            BoxShadow(
+              color: tokens.ink.withValues(alpha: 0.16),
+              blurRadius: 28,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.check_circle_outline, color: tokens.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.message,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: tokens.ink,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 String _friendlyError(Object error) {

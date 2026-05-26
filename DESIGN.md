@@ -3,39 +3,45 @@ version: "alpha"
 name: "Lunio Vehicle Care"
 description: "A calm, utilitarian mobile design system for a local vehicle maintenance app across iOS and Android."
 colors:
-  background: "#f6f7f4"
-  background-gradient-start: "#eef2ed"
+  background: "#f6f7f9"
+  background-gradient-start: "#eef2ff"
   background-gradient-mid: "#f9faf7"
-  background-gradient-end: "#eef4f4"
+  background-gradient-end: "#f1f5f9"
   surface: "#ffffff"
-  surface-2: "#f0f4ef"
-  surface-3: "#e8eee8"
-  surface-overlay: "#e8eee8"
-  on-surface: "#18201b"
-  on-surface-soft: "#293029"
-  on-surface-muted: "#667165"
-  on-surface-subtle: "#8c9689"
-  outline: "#dce3dc"
-  outline-strong: "#c9d3c8"
-  primary: "#166c4c"
-  primary-strong: "#0f563b"
-  primary-container: "#ddefd9"
+  surface-2: "#f1f5f9"
+  surface-3: "#e2e8f0"
+  surface-overlay: "#e2e8f0"
+  on-surface: "#111827"
+  on-surface-soft: "#1f2937"
+  on-surface-muted: "#64748b"
+  on-surface-subtle: "#94a3b8"
+  outline: "#e2e8f0"
+  outline-strong: "#cbd5e1"
+  primary: "#2563eb"
+  primary-strong: "#1d4ed8"
+  primary-container: "#dbeafe"
   on-primary: "#ffffff"
-  on-primary-container: "#166c4c"
-  secondary: "#2459a6"
-  secondary-container: "#e0eaf8"
+  on-primary-container: "#2563eb"
+  primary-dark: "#8b5cf6"
+  primary-dark-strong: "#7c3aed"
+  primary-dark-container: "#2e214f"
+  secondary: "#475569"
+  secondary-container: "#e2e8f0"
   on-secondary: "#ffffff"
-  warning: "#c6821b"
-  warning-container: "#fff1d8"
-  on-warning-container: "#c6821b"
-  danger: "#b73b35"
-  danger-container: "#ffe4df"
-  on-danger-container: "#b73b35"
+  success: "#22c55e"
+  success-container: "#dcfce7"
+  on-success-container: "#22c55e"
+  warning: "#f59e0b"
+  warning-container: "#fef3c7"
+  on-warning-container: "#f59e0b"
+  danger: "#ef4444"
+  danger-container: "#fee2e2"
+  on-danger-container: "#ef4444"
   device-frame: "#101611"
-  hero-gradient-start: "#1d7654"
-  hero-gradient-mid: "#155238"
-  hero-gradient-end: "#0f392c"
-  toast-background: "#17231b"
+  hero-gradient-start: "#2563eb"
+  hero-gradient-mid: "#1d4ed8"
+  hero-gradient-end: "#1e3a8a"
+  toast-background: "#111827"
   toast-text: "#ffffff"
 typography:
   display-lg:
@@ -155,7 +161,7 @@ shadows:
   floating: "0 16px 46px rgba(24, 32, 27, 0.16)"
   device: "0 34px 80px rgba(14, 19, 15, 0.24)"
   sheet: "0 -20px 54px rgba(24, 32, 27, 0.18)"
-  primary-action: "0 18px 34px rgba(22, 108, 76, 0.28)"
+  primary-action: "0 18px 34px rgba(37, 99, 235, 0.28)"
 elevation:
   level-0:
     shadow: "{shadows.none}"
@@ -265,8 +271,8 @@ components:
     height: 24px
     padding: 0 8px
   status-normal:
-    backgroundColor: "{colors.primary-container}"
-    textColor: "{colors.on-primary-container}"
+    backgroundColor: "{colors.success-container}"
+    textColor: "{colors.on-success-container}"
     typography: "{typography.label-sm}"
     rounded: "{rounded.sm}"
     height: 24px
@@ -297,21 +303,22 @@ Lunio Vehicle Care is a calm, utilitarian mobile app design system for personal 
 
 The product is not decorative or editorial. The interface is built around three recurring tasks: check maintenance urgency, record service work, and manage vehicles or backups. Every screen should make the current vehicle obvious, keep actions close to the relevant data, and avoid marketing-style hero sections or ornamental card stacks.
 
-The emotional target is steady confidence. The system uses soft green surfaces, diffused shadows, compact information cards, and rounded-but-not-playful geometry. It should feel equally natural on iOS and Android, with no dependency on platform-specific glass, tab, or sheet styling.
+The emotional target is steady confidence. The system uses cool neutral surfaces, diffused shadows, compact information cards, and rounded-but-not-playful geometry. It should feel equally natural on iOS and Android, with no dependency on platform-specific glass, tab, or sheet styling.
 
 ## Colors
 
-The palette is a restrained service-tool palette rooted in deep maintenance green and light neutral green-gray surfaces.
+The palette is a restrained service-tool palette that separates brand color from maintenance status color. Brand color owns navigation, primary actions, and selected UI. Status color owns vehicle health and maintenance urgency.
 
-- **Primary Green (#166c4c):** The action and selection color. Use it for the active tab, primary buttons, floating action button, current vehicle highlights, and positive operational states.
-- **Deep Green (#0f563b):** Used for the darker side of hero surfaces and pressed or high-emphasis green states.
-- **Neutral Canvas (#f6f7f4):** The app background. It should read as a cool off-white with a very slight green cast, not beige or cream.
+- **Primary Blue (#2563eb):** The light-mode brand and interaction color. Use it for the active tab, primary buttons, floating action button, current vehicle highlights, and high-emphasis selected states.
+- **Primary Purple (#8b5cf6):** The dark-mode brand and interaction color. Use it in the same places as primary blue when the app is in dark mode.
+- **Status Green (#22c55e):** Used only for normal vehicle health, positive maintenance status, and normal progress ranges.
+- **Neutral Canvas (#f6f7f9):** The app background. It should read as a cool off-white, not pure white, beige, or cream.
 - **White Surface (#ffffff):** The main card and sheet surface. Use it for readable information containers and controls.
-- **Blue Accent (#2459a6):** A secondary accent used sparingly for system variety and visual balance, not for primary actions.
-- **Warning Amber (#c6821b):** Used only for due-soon maintenance states and cautionary progress ranges.
-- **Danger Red (#b73b35):** Used only for overdue states, destructive actions, and critical warning badges.
+- **Secondary Slate (#475569):** A secondary accent used sparingly for system variety and visual balance, not for primary actions.
+- **Warning Amber (#f59e0b):** Used only for due-soon maintenance states and cautionary progress ranges.
+- **Danger Red (#ef4444):** Used only for overdue states, destructive actions, and critical warning badges.
 
-Color usage should remain functional. Do not create multicolor decorative backgrounds. The background may have a very soft green radial tint, but the primary UI must stay quiet and legible.
+Color usage should remain functional. Do not create multicolor decorative backgrounds. Green must not be used as a generic brand accent; reserve it for normal status so users can distinguish action from health.
 
 ## Typography
 
@@ -331,7 +338,7 @@ Navigation is fixed to three tabs: reminders, records, and profile/garage tools.
 
 ## Elevation & Depth
 
-Depth is created through tonal layers and soft ambient shadows rather than heavy material elevation. Backgrounds are cool neutral green-gray, cards are white, and primary containers are green gradients.
+Depth is created through tonal layers and soft ambient shadows rather than heavy material elevation. Backgrounds are cool neutral gray, cards are white, and primary containers use the current brand color.
 
 Standard cards use very soft shadows with low opacity. Elevated hero cards and sheets may use wider blur values, but no component should look glossy or heavily skeuomorphic. Bottom navigation is the most glass-like element: it may use a white translucent surface and blur, but it should still read as part of a practical tool, not as decorative glassmorphism.
 
@@ -347,7 +354,7 @@ Use full pills only for circular progress rings, switch tracks, and small meter-
 
 ### Hero Vehicle Card
 
-The current vehicle card is the anchor of the reminder screen. It uses a deep green gradient, white text, and two compact metrics: current mileage and most urgent item. It must clearly identify the active vehicle and expose a switch action.
+The current vehicle card is the anchor of the reminder screen. It uses the current brand gradient, white text, and two compact metrics: current mileage and most urgent item. It must clearly identify the active vehicle and expose a switch action.
 
 ### Reminder Rows
 
@@ -355,11 +362,11 @@ Reminder rows combine a circular progress indicator, item title, status badge, a
 
 ### Records
 
-Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in primary green.
+Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color.
 
 ### Bottom Navigation
 
-Bottom navigation is a floating rounded container with three equal destinations. The active destination uses a filled primary green segment with white icon and label. Inactive destinations remain muted, not outlined.
+Bottom navigation is a floating rounded container with three equal destinations. The active destination uses a filled primary segment with white icon and label. Inactive destinations remain muted, not outlined.
 
 ### Bottom Sheets
 
@@ -367,23 +374,23 @@ Forms, filters, vehicle switching, project management, and restore confirmation 
 
 ### Forms
 
-Inputs use light green-gray surfaces, 14px radii, and readable 13px labels. Date fields always express business dates in `yyyy-MM-dd` semantics, even if the visual control renders with local separators. Numeric fields should be plain and practical.
+Inputs use light neutral surfaces, 14px radii, and readable 13px labels. Date fields always express business dates in `yyyy-MM-dd` semantics, even if the visual control renders with local separators. Numeric fields should be plain and practical.
 
 ### Toasts
 
-Toasts are dark green-black with white text and rounded corners. They communicate lightweight success states such as saved record, vehicle switched, backup exported, or restore complete. Do not use alert dialogs for routine successful operations.
+Toasts are dark neutral surfaces with white or high-contrast text and rounded corners. They communicate lightweight success states such as saved record, vehicle switched, backup exported, or restore complete. Do not use alert dialogs for routine successful operations.
 
 ## Do's and Don'ts
 
 - Do make the current vehicle visible before showing reminders or records.
-- Do use primary green for the most important action or selected state on each screen.
+- Do use the current brand color for the most important action or selected state on each screen.
 - Do keep cards compact, with enough whitespace for scanning but no oversized marketing composition.
 - Do use warning amber only for due states and danger red only for overdue or destructive states.
 - Do preserve cross-platform neutrality; avoid controls that only make sense on one mobile OS.
 - Do keep typography neutral with zero letter spacing and system-friendly fallbacks.
 - Do maintain bottom sheets, chips, cards, and buttons as a unified component family.
 - Don't use decorative gradient orbs, bokeh, large landing-page heroes, or visual filler.
-- Don't make the UI monochrome green; blue, amber, and red should appear as semantic support colors.
+- Don't make the UI monochrome; blue or purple is brand, while green, amber, and red are semantic status colors.
 - Don't use project names or displayed maintenance item names as stable identifiers in product flows.
 - Don't overcrowd the bottom navigation or add more than the three primary tabs without revisiting the information architecture.
 - Don't use heavy dark shadows, glossy glass surfaces, or platform-specific visual tricks that would make iOS and Android diverge.

@@ -18,7 +18,7 @@ class LunioApp extends ConsumerWidget {
       theme: buildLunioTheme(),
       darkTheme: buildLunioTheme(brightness: Brightness.dark),
       themeMode: themeMode,
-      routerConfig: buildAppRouter(),
+      routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
     );
   }

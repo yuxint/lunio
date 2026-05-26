@@ -2,6 +2,8 @@ import 'package:go_router/go_router.dart';
 
 import '../features/shell/app_shell.dart';
 
+final appRouter = buildAppRouter();
+
 GoRouter buildAppRouter() {
   return GoRouter(
     initialLocation: '/reminders',
