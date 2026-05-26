@@ -71,8 +71,8 @@ void main() {
 
       final carId = await repository.createCarWithDefaultItems(
         Car(
-          brand: '本田',
-          model: '22款思域',
+          brand: '东风本田',
+          model: '思域',
           currentMileageKm: 10000,
           roadDate: const LocalDate(2023, 8, 12),
           sync: sync,
@@ -84,6 +84,18 @@ void main() {
       expect(await repository.getAppliedCarId(), '$carId');
     },
   );
+
+  test('bootstraps selectable vehicle models', () async {
+    await repository.ensureVehicleModels();
+
+    final models = await repository.listVehicleModels();
+
+    expect(models.map((model) => '${model.brand} ${model.model}'), [
+      '东风本田 思域',
+      '东风日产 轩逸',
+      '一汽丰田 卡罗拉',
+    ]);
+  });
 
   test('applied car falls back to first available car', () async {
     final firstCarId = await repository.createCar(
@@ -188,7 +200,7 @@ void main() {
 
     expect(
       () => repository.saveMaintenanceRecord(duplicateDay),
-      throwsA(isA<Exception>()),
+      throwsA(isA<StateError>()),
     );
   });
 

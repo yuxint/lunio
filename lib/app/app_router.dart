@@ -8,15 +8,18 @@ GoRouter buildAppRouter() {
     routes: [
       GoRoute(
         path: '/reminders',
-        builder: (context, state) => const AppShell(selectedIndex: 0),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: AppShell(selectedIndex: 0)),
       ),
       GoRoute(
         path: '/records',
-        builder: (context, state) => const AppShell(selectedIndex: 1),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: AppShell(selectedIndex: 1)),
       ),
       GoRoute(
         path: '/me',
-        builder: (context, state) => const AppShell(selectedIndex: 2),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: AppShell(selectedIndex: 2)),
       ),
     ],
   );

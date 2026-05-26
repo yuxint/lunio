@@ -1365,6 +1365,451 @@ class VehicleDefaultMaintenanceItemsCompanion
   }
 }
 
+class $VehicleModelsTable extends VehicleModels
+    with TableInfo<$VehicleModelsTable, VehicleModelRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VehicleModelsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _brandMeta = const VerificationMeta('brand');
+  @override
+  late final GeneratedColumn<String> brand = GeneratedColumn<String>(
+    'brand',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modelMeta = const VerificationMeta('model');
+  @override
+  late final GeneratedColumn<String> model = GeneratedColumn<String>(
+    'model',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<String> updatedAt = GeneratedColumn<String>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    brand,
+    model,
+    sortOrder,
+    syncStatus,
+    updatedAt,
+    version,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'vehicle_models';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VehicleModelRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('brand')) {
+      context.handle(
+        _brandMeta,
+        brand.isAcceptableOrUnknown(data['brand']!, _brandMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_brandMeta);
+    }
+    if (data.containsKey('model')) {
+      context.handle(
+        _modelMeta,
+        model.isAcceptableOrUnknown(data['model']!, _modelMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modelMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sortOrderMeta);
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {brand, model},
+  ];
+  @override
+  VehicleModelRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VehicleModelRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      brand: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}brand'],
+      )!,
+      model: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}model'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+    );
+  }
+
+  @override
+  $VehicleModelsTable createAlias(String alias) {
+    return $VehicleModelsTable(attachedDatabase, alias);
+  }
+}
+
+class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
+  final int id;
+  final String brand;
+  final String model;
+  final int sortOrder;
+  final String syncStatus;
+  final String updatedAt;
+  final int version;
+  const VehicleModelRow({
+    required this.id,
+    required this.brand,
+    required this.model,
+    required this.sortOrder,
+    required this.syncStatus,
+    required this.updatedAt,
+    required this.version,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['brand'] = Variable<String>(brand);
+    map['model'] = Variable<String>(model);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['sync_status'] = Variable<String>(syncStatus);
+    map['updated_at'] = Variable<String>(updatedAt);
+    map['version'] = Variable<int>(version);
+    return map;
+  }
+
+  VehicleModelsCompanion toCompanion(bool nullToAbsent) {
+    return VehicleModelsCompanion(
+      id: Value(id),
+      brand: Value(brand),
+      model: Value(model),
+      sortOrder: Value(sortOrder),
+      syncStatus: Value(syncStatus),
+      updatedAt: Value(updatedAt),
+      version: Value(version),
+    );
+  }
+
+  factory VehicleModelRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VehicleModelRow(
+      id: serializer.fromJson<int>(json['id']),
+      brand: serializer.fromJson<String>(json['brand']),
+      model: serializer.fromJson<String>(json['model']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      updatedAt: serializer.fromJson<String>(json['updatedAt']),
+      version: serializer.fromJson<int>(json['version']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'brand': serializer.toJson<String>(brand),
+      'model': serializer.toJson<String>(model),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+      'updatedAt': serializer.toJson<String>(updatedAt),
+      'version': serializer.toJson<int>(version),
+    };
+  }
+
+  VehicleModelRow copyWith({
+    int? id,
+    String? brand,
+    String? model,
+    int? sortOrder,
+    String? syncStatus,
+    String? updatedAt,
+    int? version,
+  }) => VehicleModelRow(
+    id: id ?? this.id,
+    brand: brand ?? this.brand,
+    model: model ?? this.model,
+    sortOrder: sortOrder ?? this.sortOrder,
+    syncStatus: syncStatus ?? this.syncStatus,
+    updatedAt: updatedAt ?? this.updatedAt,
+    version: version ?? this.version,
+  );
+  VehicleModelRow copyWithCompanion(VehicleModelsCompanion data) {
+    return VehicleModelRow(
+      id: data.id.present ? data.id.value : this.id,
+      brand: data.brand.present ? data.brand.value : this.brand,
+      model: data.model.present ? data.model.value : this.model,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      version: data.version.present ? data.version.value : this.version,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VehicleModelRow(')
+          ..write('id: $id, ')
+          ..write('brand: $brand, ')
+          ..write('model: $model, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, brand, model, sortOrder, syncStatus, updatedAt, version);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VehicleModelRow &&
+          other.id == this.id &&
+          other.brand == this.brand &&
+          other.model == this.model &&
+          other.sortOrder == this.sortOrder &&
+          other.syncStatus == this.syncStatus &&
+          other.updatedAt == this.updatedAt &&
+          other.version == this.version);
+}
+
+class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
+  final Value<int> id;
+  final Value<String> brand;
+  final Value<String> model;
+  final Value<int> sortOrder;
+  final Value<String> syncStatus;
+  final Value<String> updatedAt;
+  final Value<int> version;
+  const VehicleModelsCompanion({
+    this.id = const Value.absent(),
+    this.brand = const Value.absent(),
+    this.model = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.version = const Value.absent(),
+  });
+  VehicleModelsCompanion.insert({
+    this.id = const Value.absent(),
+    required String brand,
+    required String model,
+    required int sortOrder,
+    this.syncStatus = const Value.absent(),
+    required String updatedAt,
+    this.version = const Value.absent(),
+  }) : brand = Value(brand),
+       model = Value(model),
+       sortOrder = Value(sortOrder),
+       updatedAt = Value(updatedAt);
+  static Insertable<VehicleModelRow> custom({
+    Expression<int>? id,
+    Expression<String>? brand,
+    Expression<String>? model,
+    Expression<int>? sortOrder,
+    Expression<String>? syncStatus,
+    Expression<String>? updatedAt,
+    Expression<int>? version,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (brand != null) 'brand': brand,
+      if (model != null) 'model': model,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (version != null) 'version': version,
+    });
+  }
+
+  VehicleModelsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? brand,
+    Value<String>? model,
+    Value<int>? sortOrder,
+    Value<String>? syncStatus,
+    Value<String>? updatedAt,
+    Value<int>? version,
+  }) {
+    return VehicleModelsCompanion(
+      id: id ?? this.id,
+      brand: brand ?? this.brand,
+      model: model ?? this.model,
+      sortOrder: sortOrder ?? this.sortOrder,
+      syncStatus: syncStatus ?? this.syncStatus,
+      updatedAt: updatedAt ?? this.updatedAt,
+      version: version ?? this.version,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (brand.present) {
+      map['brand'] = Variable<String>(brand.value);
+    }
+    if (model.present) {
+      map['model'] = Variable<String>(model.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(updatedAt.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VehicleModelsCompanion(')
+          ..write('id: $id, ')
+          ..write('brand: $brand, ')
+          ..write('model: $model, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MaintenanceItemsTable extends MaintenanceItems
     with TableInfo<$MaintenanceItemsTable, MaintenanceItemRow> {
   @override
@@ -3567,6 +4012,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CarsTable cars = $CarsTable(this);
   late final $VehicleDefaultMaintenanceItemsTable
   vehicleDefaultMaintenanceItems = $VehicleDefaultMaintenanceItemsTable(this);
+  late final $VehicleModelsTable vehicleModels = $VehicleModelsTable(this);
   late final $MaintenanceItemsTable maintenanceItems = $MaintenanceItemsTable(
     this,
   );
@@ -3582,6 +4028,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     cars,
     vehicleDefaultMaintenanceItems,
+    vehicleModels,
     maintenanceItems,
     maintenanceRecords,
     maintenanceRecordItems,
@@ -4236,6 +4683,240 @@ typedef $$VehicleDefaultMaintenanceItemsTableProcessedTableManager =
         >,
       ),
       VehicleDefaultMaintenanceItemRow,
+      PrefetchHooks Function()
+    >;
+typedef $$VehicleModelsTableCreateCompanionBuilder =
+    VehicleModelsCompanion Function({
+      Value<int> id,
+      required String brand,
+      required String model,
+      required int sortOrder,
+      Value<String> syncStatus,
+      required String updatedAt,
+      Value<int> version,
+    });
+typedef $$VehicleModelsTableUpdateCompanionBuilder =
+    VehicleModelsCompanion Function({
+      Value<int> id,
+      Value<String> brand,
+      Value<String> model,
+      Value<int> sortOrder,
+      Value<String> syncStatus,
+      Value<String> updatedAt,
+      Value<int> version,
+    });
+
+class $$VehicleModelsTableFilterComposer
+    extends Composer<_$AppDatabase, $VehicleModelsTable> {
+  $$VehicleModelsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get brand => $composableBuilder(
+    column: $table.brand,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get model => $composableBuilder(
+    column: $table.model,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$VehicleModelsTableOrderingComposer
+    extends Composer<_$AppDatabase, $VehicleModelsTable> {
+  $$VehicleModelsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get brand => $composableBuilder(
+    column: $table.brand,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get model => $composableBuilder(
+    column: $table.model,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$VehicleModelsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $VehicleModelsTable> {
+  $$VehicleModelsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get brand =>
+      $composableBuilder(column: $table.brand, builder: (column) => column);
+
+  GeneratedColumn<String> get model =>
+      $composableBuilder(column: $table.model, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+}
+
+class $$VehicleModelsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $VehicleModelsTable,
+          VehicleModelRow,
+          $$VehicleModelsTableFilterComposer,
+          $$VehicleModelsTableOrderingComposer,
+          $$VehicleModelsTableAnnotationComposer,
+          $$VehicleModelsTableCreateCompanionBuilder,
+          $$VehicleModelsTableUpdateCompanionBuilder,
+          (
+            VehicleModelRow,
+            BaseReferences<_$AppDatabase, $VehicleModelsTable, VehicleModelRow>,
+          ),
+          VehicleModelRow,
+          PrefetchHooks Function()
+        > {
+  $$VehicleModelsTableTableManager(_$AppDatabase db, $VehicleModelsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VehicleModelsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VehicleModelsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VehicleModelsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> brand = const Value.absent(),
+                Value<String> model = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<String> updatedAt = const Value.absent(),
+                Value<int> version = const Value.absent(),
+              }) => VehicleModelsCompanion(
+                id: id,
+                brand: brand,
+                model: model,
+                sortOrder: sortOrder,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String brand,
+                required String model,
+                required int sortOrder,
+                Value<String> syncStatus = const Value.absent(),
+                required String updatedAt,
+                Value<int> version = const Value.absent(),
+              }) => VehicleModelsCompanion.insert(
+                id: id,
+                brand: brand,
+                model: model,
+                sortOrder: sortOrder,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$VehicleModelsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $VehicleModelsTable,
+      VehicleModelRow,
+      $$VehicleModelsTableFilterComposer,
+      $$VehicleModelsTableOrderingComposer,
+      $$VehicleModelsTableAnnotationComposer,
+      $$VehicleModelsTableCreateCompanionBuilder,
+      $$VehicleModelsTableUpdateCompanionBuilder,
+      (
+        VehicleModelRow,
+        BaseReferences<_$AppDatabase, $VehicleModelsTable, VehicleModelRow>,
+      ),
+      VehicleModelRow,
       PrefetchHooks Function()
     >;
 typedef $$MaintenanceItemsTableCreateCompanionBuilder =
@@ -5378,6 +6059,8 @@ class $AppDatabaseManager {
         _db,
         _db.vehicleDefaultMaintenanceItems,
       );
+  $$VehicleModelsTableTableManager get vehicleModels =>
+      $$VehicleModelsTableTableManager(_db, _db.vehicleModels);
   $$MaintenanceItemsTableTableManager get maintenanceItems =>
       $$MaintenanceItemsTableTableManager(_db, _db.maintenanceItems);
   $$MaintenanceRecordsTableTableManager get maintenanceRecords =>

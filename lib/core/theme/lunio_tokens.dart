@@ -14,6 +14,8 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     required this.primary,
     required this.primaryStrong,
     required this.primarySoft,
+    required this.success,
+    required this.successSoft,
     required this.secondary,
     required this.secondarySoft,
     required this.warning,
@@ -37,6 +39,8 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
   final Color primary;
   final Color primaryStrong;
   final Color primarySoft;
+  final Color success;
+  final Color successSoft;
   final Color secondary;
   final Color secondarySoft;
   final Color warning;
@@ -60,12 +64,40 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     primary: Color(0xff166c4c),
     primaryStrong: Color(0xff0f563b),
     primarySoft: Color(0xffddefd9),
+    success: Color(0xff166c4c),
+    successSoft: Color(0xffddefd9),
     secondary: Color(0xff2459a6),
     secondarySoft: Color(0xffe0eaf8),
     warning: Color(0xffc6821b),
     warningSoft: Color(0xfffff1d8),
     danger: Color(0xffb73b35),
     dangerSoft: Color(0xffffe4df),
+    radiusSmall: 10,
+    radiusMedium: 14,
+    radiusLarge: 20,
+    radiusXl: 28,
+  );
+
+  static const dark = LunioTokens(
+    background: Color(0xff111417),
+    surface: Color(0xff1a1f25),
+    surface2: Color(0xff232a32),
+    surface3: Color(0xff2d3540),
+    ink: Color(0xfff3f4f6),
+    muted: Color(0xffa8b0bb),
+    subtle: Color(0xff798391),
+    line: Color(0xff303845),
+    primary: Color(0xff46b887),
+    primaryStrong: Color(0xff20815c),
+    primarySoft: Color(0xff173829),
+    success: Color(0xff22c55e),
+    successSoft: Color(0xff12331f),
+    secondary: Color(0xff94a3b8),
+    secondarySoft: Color(0xff253041),
+    warning: Color(0xfff59e0b),
+    warningSoft: Color(0xff3d2b12),
+    danger: Color(0xffef4444),
+    dangerSoft: Color(0xff3f1d22),
     radiusSmall: 10,
     radiusMedium: 14,
     radiusLarge: 20,
@@ -85,6 +117,8 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     Color? primary,
     Color? primaryStrong,
     Color? primarySoft,
+    Color? success,
+    Color? successSoft,
     Color? secondary,
     Color? secondarySoft,
     Color? warning,
@@ -108,6 +142,8 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
       primary: primary ?? this.primary,
       primaryStrong: primaryStrong ?? this.primaryStrong,
       primarySoft: primarySoft ?? this.primarySoft,
+      success: success ?? this.success,
+      successSoft: successSoft ?? this.successSoft,
       secondary: secondary ?? this.secondary,
       secondarySoft: secondarySoft ?? this.secondarySoft,
       warning: warning ?? this.warning,
@@ -138,6 +174,8 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
       primary: Color.lerp(primary, other.primary, t)!,
       primaryStrong: Color.lerp(primaryStrong, other.primaryStrong, t)!,
       primarySoft: Color.lerp(primarySoft, other.primarySoft, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      successSoft: Color.lerp(successSoft, other.successSoft, t)!,
       secondary: Color.lerp(secondary, other.secondary, t)!,
       secondarySoft: Color.lerp(secondarySoft, other.secondarySoft, t)!,
       warning: Color.lerp(warning, other.warning, t)!,

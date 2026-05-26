@@ -2,16 +2,27 @@ import 'package:flutter/material.dart';
 
 import 'lunio_tokens.dart';
 
-ThemeData buildLunioTheme() {
-  const tokens = LunioTokens.light;
-  final colorScheme = ColorScheme.light(
-    primary: tokens.primary,
-    onPrimary: Colors.white,
-    secondary: tokens.secondary,
-    surface: tokens.surface,
-    error: tokens.danger,
-    onSurface: tokens.ink,
-  );
+ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
+  final tokens = brightness == Brightness.dark
+      ? LunioTokens.dark
+      : LunioTokens.light;
+  final colorScheme = brightness == Brightness.dark
+      ? ColorScheme.dark(
+          primary: tokens.primary,
+          onPrimary: Colors.white,
+          secondary: tokens.secondary,
+          surface: tokens.surface,
+          error: tokens.danger,
+          onSurface: tokens.ink,
+        )
+      : ColorScheme.light(
+          primary: tokens.primary,
+          onPrimary: Colors.white,
+          secondary: tokens.secondary,
+          surface: tokens.surface,
+          error: tokens.danger,
+          onSurface: tokens.ink,
+        );
 
   return ThemeData(
     useMaterial3: true,
@@ -24,11 +35,11 @@ ThemeData buildLunioTheme() {
       'Microsoft YaHei',
       'sans-serif',
     ],
-    extensions: const [tokens],
+    extensions: [tokens],
     textTheme: TextTheme(
       headlineLarge: TextStyle(
         color: tokens.ink,
-        fontSize: 28,
+        fontSize: 27,
         fontWeight: FontWeight.w800,
         height: 1.12,
       ),
@@ -46,9 +57,9 @@ ThemeData buildLunioTheme() {
       ),
       bodyMedium: TextStyle(
         color: tokens.muted,
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: FontWeight.w400,
-        height: 1.7,
+        height: 1.55,
       ),
       bodySmall: TextStyle(
         color: tokens.muted,
@@ -77,6 +88,41 @@ ThemeData buildLunioTheme() {
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
       ),
     ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: tokens.surface2,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderSide: BorderSide(color: tokens.primary, width: 1.4),
+      ),
+      labelStyle: TextStyle(color: tokens.muted),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      constraints: const BoxConstraints(minHeight: 48),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: tokens.background,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(tokens.radiusXl),
+        ),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: tokens.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+      ),
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(50),
@@ -88,13 +134,39 @@ ThemeData buildLunioTheme() {
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: tokens.surface,
+      backgroundColor: Colors.transparent,
       indicatorColor: tokens.primary,
       indicatorShape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
       ),
       labelTextStyle: WidgetStateProperty.all(
-        const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        TextStyle(
+          color: tokens.muted,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        return IconThemeData(
+          color: states.contains(WidgetState.selected)
+              ? Colors.white
+              : tokens.muted,
+          size: 21,
+        );
+      }),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: tokens.surface,
+      contentTextStyle: TextStyle(
+        color: tokens.ink,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+      behavior: SnackBarBehavior.floating,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        side: BorderSide(color: tokens.line),
       ),
     ),
   );

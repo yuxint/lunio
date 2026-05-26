@@ -6,6 +6,7 @@ import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart' as domain;
+import '../../domain/entities/vehicle_model.dart' as domain;
 import '../../domain/rules/applied_car_rules.dart';
 import '../../domain/rules/record_rules.dart';
 import '../backup/backup_codec.dart';
@@ -20,16 +21,45 @@ class LunioRepository {
     final existing = await database
         .select(database.vehicleDefaultMaintenanceItems)
         .get();
-    if (existing.isNotEmpty) {
-      return;
-    }
+    final existingKeys = existing
+        .map(
+          (row) =>
+              '${row.vehicleBrand}\u0000${row.vehicleModel}\u0000${row.itemName}',
+        )
+        .toSet();
     final sync = SyncMetadata(
       status: SyncStatus.synced,
       updatedAt: DateTime.now(),
     );
     for (final item in _builtInDefaultItems(sync)) {
-      await saveVehicleDefaultMaintenanceItem(item);
+      final key =
+          '${item.vehicleBrand}\u0000${item.vehicleModel}\u0000${item.itemName}';
+      if (!existingKeys.contains(key)) {
+        await saveVehicleDefaultMaintenanceItem(item);
+      }
     }
+  }
+
+  Future<void> ensureVehicleModels() async {
+    final existing = await database.select(database.vehicleModels).get();
+    final existingKeys = existing
+        .map((row) => '${row.brand}\u0000${row.model}')
+        .toSet();
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime.now(),
+    );
+    for (final model in _builtInVehicleModels(sync)) {
+      final key = '${model.brand}\u0000${model.model}';
+      if (!existingKeys.contains(key)) {
+        await saveVehicleModel(model);
+      }
+    }
+  }
+
+  Future<void> ensureBootstrapData() async {
+    await ensureVehicleModels();
+    await ensureDefaultMaintenanceItems();
   }
 
   Future<int> createCar(domain.Car car) {
@@ -196,6 +226,28 @@ class LunioRepository {
         );
   }
 
+  Future<int> saveVehicleModel(domain.VehicleModel model) {
+    return database
+        .into(database.vehicleModels)
+        .insert(
+          VehicleModelsCompanion.insert(
+            brand: model.brand,
+            model: model.model,
+            sortOrder: model.sortOrder,
+            syncStatus: Value(model.sync.status.name),
+            updatedAt: model.sync.updatedAt.toIso8601String(),
+            version: Value(model.sync.version),
+          ),
+        );
+  }
+
+  Future<List<domain.VehicleModel>> listVehicleModels() async {
+    final rows = await (database.select(
+      database.vehicleModels,
+    )..orderBy([(row) => OrderingTerm.asc(row.sortOrder)])).get();
+    return rows.map(_vehicleModelFromRow).toList();
+  }
+
   Future<List<domain.VehicleDefaultMaintenanceItem>> listDefaultItemsForModel({
     required String brand,
     required String model,
@@ -335,6 +387,11 @@ class LunioRepository {
 
     return database.transaction(() async {
       await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
+      await _ensureRecordIsUnique(
+        carId: record.carId,
+        date: record.date,
+        itemIds: uniqueItemIds,
+      );
 
       final recordId = await database
           .into(database.maintenanceRecords)
@@ -390,6 +447,12 @@ class LunioRepository {
 
     return database.transaction(() async {
       await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
+      await _ensureRecordIsUnique(
+        carId: record.carId,
+        date: record.date,
+        itemIds: uniqueItemIds,
+        excludingRecordId: recordId,
+      );
 
       await (database.update(
         database.maintenanceRecords,
@@ -688,6 +751,7 @@ class LunioRepository {
       await database.delete(database.maintenanceItems).go();
       await database.delete(database.cars).go();
       await database.delete(database.vehicleDefaultMaintenanceItems).go();
+      await database.delete(database.vehicleModels).go();
     });
   }
 
@@ -742,8 +806,8 @@ class LunioRepository {
   ) {
     return [
       domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '本田',
-        vehicleModel: '22款思域',
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
         itemName: '机油',
         remindByMileage: true,
         remindByTime: true,
@@ -753,8 +817,8 @@ class LunioRepository {
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '本田',
-        vehicleModel: '22款思域',
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
         itemName: '机滤',
         remindByMileage: true,
         remindByTime: true,
@@ -764,8 +828,8 @@ class LunioRepository {
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '本田',
-        vehicleModel: '22款思域',
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
         itemName: '空调滤芯',
         remindByMileage: true,
         remindByTime: true,
@@ -775,8 +839,8 @@ class LunioRepository {
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '日产',
-        vehicleModel: '22款轩逸',
+        vehicleBrand: '东风日产',
+        vehicleModel: '轩逸',
         itemName: '机油',
         remindByMileage: true,
         remindByTime: true,
@@ -786,14 +850,49 @@ class LunioRepository {
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '日产',
-        vehicleModel: '22款轩逸',
+        vehicleBrand: '东风日产',
+        vehicleModel: '轩逸',
         itemName: '空气滤芯',
         remindByMileage: true,
         remindByTime: true,
         mileageIntervalKm: 20000,
         timeIntervalMonths: 12,
         sortOrder: 2,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '一汽丰田',
+        vehicleModel: '卡罗拉',
+        itemName: '机油',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 10000,
+        timeIntervalMonths: 6,
+        sortOrder: 1,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '一汽丰田',
+        vehicleModel: '卡罗拉',
+        itemName: '机滤',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 10000,
+        timeIntervalMonths: 6,
+        sortOrder: 2,
+        sync: sync,
+      ),
+    ];
+  }
+
+  List<domain.VehicleModel> _builtInVehicleModels(SyncMetadata sync) {
+    return [
+      domain.VehicleModel(brand: '东风本田', model: '思域', sortOrder: 1, sync: sync),
+      domain.VehicleModel(brand: '东风日产', model: '轩逸', sortOrder: 2, sync: sync),
+      domain.VehicleModel(
+        brand: '一汽丰田',
+        model: '卡罗拉',
+        sortOrder: 3,
         sync: sync,
       ),
     ];
@@ -835,6 +934,53 @@ class LunioRepository {
         version: row.version,
       ),
     );
+  }
+
+  domain.VehicleModel _vehicleModelFromRow(VehicleModelRow row) {
+    return domain.VehicleModel(
+      id: row.id,
+      brand: row.brand,
+      model: row.model,
+      sortOrder: row.sortOrder,
+      sync: SyncMetadata(
+        status: SyncStatus.values.byName(row.syncStatus),
+        updatedAt: DateTime.parse(row.updatedAt),
+        version: row.version,
+      ),
+    );
+  }
+
+  Future<void> _ensureRecordIsUnique({
+    required int carId,
+    required LocalDate date,
+    required List<int> itemIds,
+    int? excludingRecordId,
+  }) async {
+    final existingRecords =
+        await (database.select(database.maintenanceRecords)..where(
+              (row) =>
+                  row.carId.equals(carId) &
+                  row.date.equals(date.toString()) &
+                  (excludingRecordId == null
+                      ? const Constant(true)
+                      : row.id.equals(excludingRecordId).not()),
+            ))
+            .get();
+    if (existingRecords.isEmpty) {
+      return;
+    }
+    final existingRecordIds = existingRecords.map((row) => row.id).toList();
+    final duplicateItems =
+        await (database.select(database.maintenanceRecordItems)..where(
+              (row) =>
+                  row.maintenanceRecordId.isIn(existingRecordIds) &
+                  row.itemId.isIn(itemIds),
+            ))
+            .get();
+    if (duplicateItems.isNotEmpty) {
+      throw StateError('这辆车当天已经保存过相同保养项目');
+    }
+    throw StateError('这辆车当天已有保养记录，请编辑原记录');
   }
 
   Future<void> _validateRecordItems({

@@ -19,10 +19,10 @@ class LunioPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 6, 18, 112),
+      padding: const EdgeInsets.fromLTRB(18, 2, 18, 102),
       children: [
         LunioTopBar(title: title, subtitle: subtitle, trailing: trailing),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         ...children,
       ],
     );
@@ -69,7 +69,7 @@ class LunioCard extends StatelessWidget {
   const LunioCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(14),
+    this.padding = const EdgeInsets.all(12),
     this.backgroundColor,
   });
 
@@ -86,6 +86,7 @@ class LunioCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor ?? tokens.surface,
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        border: Border.all(color: tokens.line.withValues(alpha: 0.86)),
         boxShadow: [
           BoxShadow(
             color: tokens.ink.withValues(alpha: 0.08),
@@ -95,6 +96,173 @@ class LunioCard extends StatelessWidget {
         ],
       ),
       child: child,
+    );
+  }
+}
+
+class LunioSheetScaffold extends StatelessWidget {
+  const LunioSheetScaffold({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.titleLarge),
+          if (subtitle != null) ...[
+            const SizedBox(height: 6),
+            Text(subtitle!, style: theme.textTheme.bodySmall),
+          ],
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class LunioSection extends StatelessWidget {
+  const LunioSection({
+    super.key,
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
+
+  final String title;
+  final Widget? trailing;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            ?trailing,
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+}
+
+class LunioInlineMessage extends StatelessWidget {
+  const LunioInlineMessage({
+    super.key,
+    required this.message,
+    this.tone = LunioStatusTone.warning,
+  });
+
+  final String message;
+  final LunioStatusTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final (background, foreground, icon) = switch (tone) {
+      LunioStatusTone.normal => (
+        tokens.successSoft,
+        tokens.success,
+        Icons.check_circle_outline,
+      ),
+      LunioStatusTone.warning => (
+        tokens.warningSoft,
+        tokens.warning,
+        Icons.info_outline,
+      ),
+      LunioStatusTone.danger => (
+        tokens.dangerSoft,
+        tokens.danger,
+        Icons.error_outline,
+      ),
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: foreground),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LunioPickerTile extends StatelessWidget {
+  const LunioPickerTile({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(tokens.radiusMedium),
+      child: InputDecorator(
+        decoration: InputDecoration(labelText: label, enabled: enabled),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: enabled ? tokens.ink : tokens.subtle,
+                  height: 1.2,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: tokens.subtle),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -120,7 +288,7 @@ class LunioHeroCard extends StatelessWidget {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -128,7 +296,7 @@ class LunioHeroCard extends StatelessWidget {
           colors: [
             tokens.primary,
             tokens.primaryStrong,
-            const Color(0xff0f392c),
+            Color.lerp(tokens.primaryStrong, tokens.ink, 0.32)!,
           ],
         ),
         borderRadius: BorderRadius.circular(tokens.radiusXl),
@@ -140,54 +308,80 @@ class LunioHeroCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.76),
-                      ),
-                    ),
-                  ],
+          Positioned(
+            right: -72,
+            top: -18,
+            child: Transform.rotate(
+              angle: -0.31,
+              child: Container(
+                width: 210,
+                height: 110,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
                 ),
               ),
-              if (actionLabel != null)
-                TextButton(
-                  onPressed: onAction,
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor: Colors.white.withValues(alpha: 0.14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.76),
+                              ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Text(actionLabel!),
-                ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              for (final metric in metrics) ...[
-                Expanded(child: _HeroMetric(metric: metric)),
-                if (metric != metrics.last) const SizedBox(width: 12),
-              ],
+                  if (actionLabel != null)
+                    TextButton(
+                      onPressed: onAction,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white.withValues(alpha: 0.14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            tokens.radiusSmall,
+                          ),
+                        ),
+                      ),
+                      child: Text(actionLabel!),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  for (final metric in metrics) ...[
+                    Expanded(child: _HeroMetric(metric: metric)),
+                    if (metric != metrics.last) const SizedBox(width: 12),
+                  ],
+                ],
+              ),
             ],
           ),
         ],
@@ -213,7 +407,8 @@ class _HeroMetric extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -226,11 +421,12 @@ class _HeroMetric extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.72),
               ),
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 6),
             Text(
               metric.value,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: Colors.white,
+                fontSize: 23,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -251,7 +447,7 @@ class LunioStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final (background, foreground) = switch (tone) {
-      LunioStatusTone.normal => (tokens.primarySoft, tokens.primary),
+      LunioStatusTone.normal => (tokens.successSoft, tokens.success),
       LunioStatusTone.warning => (tokens.warningSoft, tokens.warning),
       LunioStatusTone.danger => (tokens.dangerSoft, tokens.danger),
     };
@@ -294,7 +490,7 @@ class LunioSegmentedControl extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.surface2,
-        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Padding(
         padding: const EdgeInsets.all(4),
@@ -339,7 +535,7 @@ class _SegmentButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(tokens.radiusSmall),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          height: 36,
+          height: 38,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: selected ? tokens.surface : Colors.transparent,

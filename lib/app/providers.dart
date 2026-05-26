@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/date/app_date_context.dart';
@@ -7,6 +8,7 @@ import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
 import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
+import '../domain/entities/vehicle_model.dart';
 
 final appDateContextProvider = Provider<AppDateContext>(
   (ref) => AppDateContext.system(),
@@ -23,6 +25,16 @@ final manualDatePreferenceProvider = FutureProvider<LocalDate?>((ref) async {
     return null;
   }
   return LocalDate.tryParse(value);
+});
+
+final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) async {
+  final repository = ref.watch(lunioRepositoryProvider);
+  final value = await repository.getPreferenceValue('themeMode');
+  return switch (value) {
+    'light' => ThemeMode.light,
+    'dark' => ThemeMode.dark,
+    _ => ThemeMode.system,
+  };
 });
 
 final effectiveTodayProvider = FutureProvider<LocalDate>((ref) async {
@@ -42,7 +54,12 @@ final lunioRepositoryProvider = Provider<LunioRepository>((ref) {
 });
 
 final defaultMaintenanceBootstrapProvider = FutureProvider<void>((ref) {
-  return ref.watch(lunioRepositoryProvider).ensureDefaultMaintenanceItems();
+  return ref.watch(lunioRepositoryProvider).ensureBootstrapData();
+});
+
+final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) {
+  ref.watch(defaultMaintenanceBootstrapProvider);
+  return ref.watch(lunioRepositoryProvider).listVehicleModels();
 });
 
 final carsProvider = FutureProvider<List<Car>>((ref) {
@@ -80,6 +97,7 @@ final appliedCarRecordsProvider = FutureProvider<List<MaintenanceRecord>>((
 
 void invalidateVehicleProviders(WidgetRef ref) {
   ref.invalidate(carsProvider);
+  ref.invalidate(vehicleModelsProvider);
   ref.invalidate(appliedCarProvider);
   ref.invalidate(appliedCarMaintenanceItemsProvider);
   ref.invalidate(appliedCarRecordsProvider);
@@ -88,6 +106,7 @@ void invalidateVehicleProviders(WidgetRef ref) {
 void invalidatePreferenceProviders(WidgetRef ref) {
   ref.invalidate(manualDatePreferenceProvider);
   ref.invalidate(effectiveTodayProvider);
+  ref.invalidate(themeModePreferenceProvider);
 }
 
 void invalidateAllAppDataProviders(WidgetRef ref) {

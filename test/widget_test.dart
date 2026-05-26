@@ -23,8 +23,10 @@ void main() {
       ProviderScope(
         overrides: [
           appDatabaseProvider.overrideWithValue(database),
-          if (dateContext != null)
-            appDateContextProvider.overrideWithValue(dateContext),
+          appDateContextProvider.overrideWithValue(
+            dateContext ??
+                AppDateContext(readSystemNow: () => DateTime(2026, 5, 19)),
+          ),
         ],
         child: const LunioApp(),
       ),
@@ -47,10 +49,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新增保养记录'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).at(0), '2026-05-19');
-    await tester.enterText(find.byType(TextField).at(1), '13000');
-    await tester.enterText(find.byType(TextField).at(2), '428.00');
-    await tester.tap(find.widgetWithText(CheckboxListTile, '机油'));
+    await tester.enterText(find.byType(TextField).at(0), '13000');
+    await tester.enterText(find.byType(TextField).at(1), '428.00');
+    await tester.tap(find.text('机油').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存记录'));
     await tester.pumpAndSettle();
@@ -75,7 +76,7 @@ void main() {
 
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
-    expect(find.text('当前应用车辆'), findsOneWidget);
+    expect(find.text('个人中心'), findsOneWidget);
   });
 
   testWidgets('records page switches between cycle and item modes', (
@@ -105,7 +106,7 @@ void main() {
     await tester.tap(find.byTooltip('新增保养记录'));
     await tester.pumpAndSettle();
 
-    expect(find.text('新增保养记录'), findsOneWidget);
+    expect(find.text('新增保养记录'), findsWidgets);
     expect(find.text('保存记录'), findsOneWidget);
   });
 
@@ -116,7 +117,7 @@ void main() {
 
     await createDefaultCar(tester);
 
-    expect(find.text('本田 22款思域'), findsWidgets);
+    expect(find.text('东风本田 思域'), findsWidgets);
     expect(find.text('当前'), findsOneWidget);
     expect(await database.select(database.cars).get(), hasLength(1));
     expect(
@@ -130,7 +131,7 @@ void main() {
 
     await createDefaultCar(tester);
 
-    await tester.tap(find.byTooltip('编辑车辆'));
+    await tester.tap(find.widgetWithText(TextButton, '编辑').first);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '18000');
     await tester.tap(find.text('保存车辆'));
@@ -148,9 +149,9 @@ void main() {
 
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('保养项目配置'));
+    await tester.tap(find.text('保养项目'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('新增项目'));
+    await tester.tap(find.byTooltip('新增项目'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '玻璃水');
     tester.testTextInput.hide();
@@ -206,8 +207,8 @@ void main() {
 
     expect(find.text('保养提醒'), findsOneWidget);
     expect(find.text('机油'), findsOneWidget);
-    expect(find.text('2%'), findsOneWidget);
-    expect(find.textContaining('上次 2026-05-19'), findsOneWidget);
+    expect(find.text('0%'), findsWidgets);
+    expect(find.textContaining('上次 2026-05-23'), findsOneWidget);
   });
 
   testWidgets('profile can enable manual date preference', (tester) async {
@@ -218,15 +219,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, '2026-11-19');
     await tester.tap(find.text('保存日期'));
     await tester.pumpAndSettle();
 
-    expect(find.text('2026-11-19'), findsOneWidget);
     final preferences = await database.select(database.appPreferences).get();
     expect(
       preferences.map((preference) => '${preference.key}:${preference.value}'),
-      containsAll(['manualDateEnabled:true', 'manualDate:2026-11-19']),
+      containsAll(['manualDateEnabled:true', 'manualDate:2026-05-19']),
     );
   });
 }

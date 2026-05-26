@@ -48,6 +48,22 @@ class VehicleDefaultMaintenanceItems extends Table {
   ];
 }
 
+@DataClassName('VehicleModelRow')
+class VehicleModels extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get brand => text()();
+  TextColumn get model => text()();
+  IntColumn get sortOrder => integer()();
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+  TextColumn get updatedAt => text()();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+
+  @override
+  List<Set<Column<Object>>> get uniqueKeys => [
+    {brand, model},
+  ];
+}
+
 @DataClassName('MaintenanceItemRow')
 class MaintenanceItems extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -124,6 +140,7 @@ class AppPreferences extends Table {
   tables: [
     Cars,
     VehicleDefaultMaintenanceItems,
+    VehicleModels,
     MaintenanceItems,
     MaintenanceRecords,
     MaintenanceRecordItems,
