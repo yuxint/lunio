@@ -5,8 +5,14 @@ class NativeFiles {
 
   static const _channel = MethodChannel('lunio/native_files');
 
-  static Future<void> shareFile(String path) {
-    return _channel.invokeMethod<void>('shareFile', {'path': path});
+  static Future<void> exportJsonFile({
+    required String filename,
+    required String content,
+  }) {
+    return _channel.invokeMethod<void>('exportJsonFile', {
+      'filename': filename,
+      'content': content,
+    });
   }
 
   static Future<String?> pickJsonFile() {

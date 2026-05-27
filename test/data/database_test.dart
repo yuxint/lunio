@@ -85,6 +85,162 @@ void main() {
     },
   );
 
+  test('writes snowflake ids for all local tables', () async {
+    await repository.ensureBootstrapData();
+    final carId = await repository.createCarWithDefaultItems(
+      Car(
+        brand: '东风本田',
+        model: '思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        sync: sync,
+      ),
+    );
+    final item = (await repository.listMaintenanceItemsForCar(carId)).first;
+    await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [item.id!],
+        costCents: 10000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+    await repository.setPreferenceValue('manualDate', '2026-05-19');
+
+    final ids = <int>[
+      ...(await database.select(database.cars).get()).map((row) => row.id),
+      ...(await database.select(database.vehicleDefaultMaintenanceItems).get())
+          .map((row) => row.id),
+      ...(await database.select(database.vehicleModels).get()).map(
+        (row) => row.id,
+      ),
+      ...(await database.select(database.maintenanceItems).get()).map(
+        (row) => row.id,
+      ),
+      ...(await database.select(database.maintenanceRecords).get()).map(
+        (row) => row.id,
+      ),
+      ...(await database.select(database.maintenanceRecordItems).get()).map(
+        (row) => row.id,
+      ),
+      ...(await database.select(database.appPreferences).get()).map(
+        (row) => row.id,
+      ),
+    ];
+
+    expect(ids, isNotEmpty);
+    expect(ids.toSet(), hasLength(ids.length));
+    expect(ids.every((id) => id > 1000000000000), isTrue);
+  });
+
+  test(
+    'creates car with configured maintenance items in one transaction',
+    () async {
+      final carId = await repository.createCarWithMaintenanceItems(
+        Car(
+          brand: '东风本田',
+          model: '思域',
+          currentMileageKm: 0,
+          roadDate: const LocalDate(2026, 5, 19),
+          sync: sync,
+        ),
+        [
+          MaintenanceItem(
+            carsId: 0,
+            name: '机油',
+            isDefault: true,
+            enabled: true,
+            remindByMileage: true,
+            remindByTime: true,
+            mileageIntervalKm: 5000,
+            timeIntervalMonths: 6,
+            sortOrder: 1,
+            sync: sync,
+          ),
+          MaintenanceItem(
+            carsId: 0,
+            name: '玻璃水',
+            isDefault: false,
+            enabled: false,
+            remindByMileage: true,
+            remindByTime: false,
+            mileageIntervalKm: 3000,
+            sortOrder: 2,
+            sync: sync,
+          ),
+        ],
+      );
+
+      final cars = await repository.listCars();
+      final items = await repository.listMaintenanceItemsForCar(carId);
+
+      expect(cars.single.currentMileageKm, 0);
+      expect(
+        items.map((item) => '${item.name}:${item.carsId}:${item.enabled}'),
+        ['机油:$carId:true', '玻璃水:$carId:false'],
+      );
+      expect(await repository.getAppliedCarId(), '$carId');
+
+      final secondCarId = await repository.createCarWithMaintenanceItems(
+        Car(
+          brand: '日产',
+          model: '22款轩逸',
+          currentMileageKm: 0,
+          roadDate: const LocalDate(2026, 5, 19),
+          sync: sync,
+        ),
+        [
+          MaintenanceItem(
+            carsId: 0,
+            name: '机油',
+            isDefault: true,
+            enabled: true,
+            remindByMileage: true,
+            remindByTime: true,
+            mileageIntervalKm: 5000,
+            timeIntervalMonths: 6,
+            sortOrder: 1,
+            sync: sync,
+          ),
+        ],
+      );
+
+      expect(secondCarId, isNot(carId));
+      expect(await repository.getAppliedCarId(), '$carId');
+    },
+  );
+
+  test('cannot create car without enabled maintenance items', () async {
+    expect(
+      () => repository.createCarWithMaintenanceItems(
+        Car(
+          brand: '东风本田',
+          model: '思域',
+          currentMileageKm: 0,
+          roadDate: const LocalDate(2026, 5, 19),
+          sync: sync,
+        ),
+        [
+          MaintenanceItem(
+            carsId: 0,
+            name: '机油',
+            isDefault: true,
+            enabled: false,
+            remindByMileage: true,
+            remindByTime: true,
+            mileageIntervalKm: 5000,
+            timeIntervalMonths: 6,
+            sortOrder: 1,
+            sync: sync,
+          ),
+        ],
+      ),
+      throwsArgumentError,
+    );
+  });
+
   test('bootstraps selectable vehicle models', () async {
     await repository.ensureVehicleModels();
 
@@ -457,6 +613,8 @@ void main() {
   test('backup export and restore round-trips database content', () async {
     final (carId, itemId) = await seedCarAndItem();
     await repository.setAppliedCarId(carId);
+    await repository.setPreferenceValue('manualDateEnabled', 'true');
+    await repository.setPreferenceValue('manualDate', '2026-05-23');
     await repository.saveVehicleDefaultMaintenanceItem(
       VehicleDefaultMaintenanceItem(
         vehicleBrand: '本田',
@@ -482,6 +640,7 @@ void main() {
     );
 
     final backup = await repository.exportBackupPayload();
+    expect(const BackupCodec().encode(backup), isNot(contains('preferences')));
     await database.close();
     database = AppDatabase.inMemory();
     repository = LunioRepository(database);
@@ -505,7 +664,71 @@ void main() {
       await database.select(database.maintenanceRecordItems).get(),
       hasLength(1),
     );
-    expect(await repository.getAppliedCarId(), '$carId');
+    final restoredCar = (await database.select(database.cars).get()).single;
+    expect(restoredCar.id, isNot(carId));
+    expect(await repository.getAppliedCarId(), '${restoredCar.id}');
+    expect(await repository.getPreferenceValue('manualDate'), isNull);
+  });
+
+  test('backup restore merges data and keeps existing applied car', () async {
+    final (existingCarId, _) = await seedCarAndItem();
+    await repository.setAppliedCarId(existingCarId);
+    final backup = BackupPayload(
+      schemaVersion: 1,
+      cars: [
+        Car(
+          id: 99,
+          brand: '日产',
+          model: '22款轩逸',
+          currentMileageKm: 20000,
+          roadDate: const LocalDate(2024, 1, 1),
+          sync: sync,
+        ),
+      ],
+      maintenanceItems: [
+        MaintenanceItem(
+          id: 199,
+          carsId: 99,
+          name: '空调滤芯',
+          isDefault: true,
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: true,
+          mileageIntervalKm: 20000,
+          timeIntervalMonths: 12,
+          sortOrder: 1,
+          sync: sync,
+        ),
+      ],
+      records: [
+        MaintenanceRecord(
+          id: 299,
+          carId: 99,
+          date: const LocalDate(2026, 5, 20),
+          itemIds: const [199],
+          costCents: 12000,
+          mileageKm: 20000,
+          sync: sync,
+        ),
+      ],
+    );
+
+    await repository.restoreBackupPayload(backup);
+
+    expect(await database.select(database.cars).get(), hasLength(2));
+    expect(
+      await database.select(database.maintenanceItems).get(),
+      hasLength(2),
+    );
+    expect(
+      await database.select(database.maintenanceRecords).get(),
+      hasLength(1),
+    );
+    expect(
+      await database.select(database.maintenanceRecordItems).get(),
+      hasLength(1),
+    );
+    expect(await repository.getAppliedCarId(), '$existingCarId');
   });
 
   test(
@@ -584,56 +807,6 @@ void main() {
     expect(() => repository.restoreBackupPayload(invalid), throwsArgumentError);
   });
 
-  test('backup restore rejects invalid applied car preference', () async {
-    await seedCarAndItem();
-    final backup = await repository.exportBackupPayload();
-    final invalid = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      preferences: [
-        BackupPreference(id: 1, key: 'appliedCarId', value: '999', sync: sync),
-      ],
-    );
-
-    expect(() => repository.restoreBackupPayload(invalid), throwsArgumentError);
-  });
-
-  test('preference values are saved and exported', () async {
-    await repository.setPreferenceValue('manualDateEnabled', 'true');
-    await repository.setPreferenceValue('manualDate', '2026-05-23');
-
-    expect(await repository.getPreferenceValue('manualDateEnabled'), 'true');
-    expect(await repository.getPreferenceValue('manualDate'), '2026-05-23');
-
-    final backup = await repository.exportBackupPayload();
-
-    expect(
-      backup.preferences.map((preference) => preference.key),
-      containsAll(['manualDateEnabled', 'manualDate']),
-    );
-  });
-
-  test('backup restore rejects invalid manual date preference', () async {
-    await seedCarAndItem();
-    final backup = await repository.exportBackupPayload();
-    final invalid = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      preferences: [
-        BackupPreference(
-          id: 1,
-          key: 'manualDate',
-          value: '2026-02-30',
-          sync: sync,
-        ),
-      ],
-    );
-
-    expect(() => repository.restoreBackupPayload(invalid), throwsArgumentError);
-  });
-
   test('clear all data removes local rows', () async {
     final (carId, itemId) = await seedCarAndItem();
     await repository.setAppliedCarId(carId);
@@ -661,26 +834,25 @@ void main() {
     expect(await database.select(database.appPreferences).get(), isEmpty);
   });
 
-  test('backup restore rolls back when inserts fail', () async {
-    await seedCarAndItem();
-    final backup = await repository.exportBackupPayload();
-    final car = backup.cars.single;
+  test('backup restore rolls back when unique constraints fail', () async {
+    final (carId, _) = await seedCarAndItem();
+    await repository.setAppliedCarId(carId);
     final invalid = BackupPayload(
       schemaVersion: 1,
       cars: [
-        car,
         Car(
-          id: car.id! + 1,
-          brand: car.brand,
-          model: car.model,
-          currentMileageKm: car.currentMileageKm,
-          roadDate: car.roadDate,
-          sync: car.sync,
+          id: 99,
+          brand: '本田',
+          model: '22款思域',
+          currentMileageKm: 12000,
+          roadDate: const LocalDate(2023, 8, 12),
+          sync: sync,
         ),
       ],
     );
 
     expect(() => repository.restoreBackupPayload(invalid), throwsA(anything));
     expect(await database.select(database.cars).get(), hasLength(1));
+    expect(await repository.getAppliedCarId(), '$carId');
   });
 }

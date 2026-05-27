@@ -9,7 +9,7 @@ part 'app_database.g.dart';
 
 @DataClassName('CarRow')
 class Cars extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   TextColumn get brand => text()();
   TextColumn get model => text()();
   IntColumn get currentMileageKm => integer()();
@@ -19,6 +19,9 @@ class Cars extends Table {
   IntColumn get version => integer().withDefault(const Constant(1))();
 
   @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  @override
   List<Set<Column<Object>>> get uniqueKeys => [
     {brand, model},
   ];
@@ -26,7 +29,7 @@ class Cars extends Table {
 
 @DataClassName('VehicleDefaultMaintenanceItemRow')
 class VehicleDefaultMaintenanceItems extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   TextColumn get vehicleBrand => text()();
   TextColumn get vehicleModel => text()();
   TextColumn get itemName => text()();
@@ -43,6 +46,9 @@ class VehicleDefaultMaintenanceItems extends Table {
   IntColumn get version => integer().withDefault(const Constant(1))();
 
   @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  @override
   List<Set<Column<Object>>> get uniqueKeys => [
     {vehicleBrand, vehicleModel, itemName},
   ];
@@ -50,13 +56,16 @@ class VehicleDefaultMaintenanceItems extends Table {
 
 @DataClassName('VehicleModelRow')
 class VehicleModels extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   TextColumn get brand => text()();
   TextColumn get model => text()();
   IntColumn get sortOrder => integer()();
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
   IntColumn get version => integer().withDefault(const Constant(1))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
@@ -66,7 +75,7 @@ class VehicleModels extends Table {
 
 @DataClassName('MaintenanceItemRow')
 class MaintenanceItems extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   IntColumn get carsId => integer()();
   TextColumn get name => text()();
   BoolColumn get isDefault => boolean()();
@@ -84,6 +93,9 @@ class MaintenanceItems extends Table {
   IntColumn get version => integer().withDefault(const Constant(1))();
 
   @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  @override
   List<Set<Column<Object>>> get uniqueKeys => [
     {carsId, name},
   ];
@@ -91,7 +103,7 @@ class MaintenanceItems extends Table {
 
 @DataClassName('MaintenanceRecordRow')
 class MaintenanceRecords extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   IntColumn get carId => integer()();
   TextColumn get date => text()();
   IntColumn get mileageKm => integer()();
@@ -102,6 +114,9 @@ class MaintenanceRecords extends Table {
   IntColumn get version => integer().withDefault(const Constant(1))();
 
   @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  @override
   List<Set<Column<Object>>> get uniqueKeys => [
     {carId, date},
   ];
@@ -109,11 +124,14 @@ class MaintenanceRecords extends Table {
 
 @DataClassName('MaintenanceRecordItemRow')
 class MaintenanceRecordItems extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   IntColumn get maintenanceRecordId => integer()();
   IntColumn get carId => integer()();
   IntColumn get itemId => integer()();
   TextColumn get date => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
@@ -123,12 +141,15 @@ class MaintenanceRecordItems extends Table {
 
 @DataClassName('AppPreferenceRow')
 class AppPreferences extends Table {
-  IntColumn get id => integer().autoIncrement()();
+  IntColumn get id => integer()();
   TextColumn get key => text()();
   TextColumn get value => text().nullable()();
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
   IntColumn get version => integer().withDefault(const Constant(1))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
@@ -153,7 +174,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onUpgrade: (migrator, from, to) async {
+        if (from < 2) {
+          for (final table in allTables) {
+            await migrator.deleteTable(table.actualTableName);
+          }
+          await migrator.createAll();
+        }
+      },
+    );
+  }
 }
 
 LazyDatabase _openConnection() {

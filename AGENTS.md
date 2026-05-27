@@ -85,9 +85,9 @@ dart run build_runner build
 - 领域规则改动：跑相关 `test/domain/*_test.dart`。
 - 数据库、Repository、备份改动：跑相关 `test/data/*_test.dart`。
 - UI 交互改动：跑相关 widget test；必要时补充手动启动验证。
-- Drift 表结构改动：运行 `dart run build_runner build` 并检查 `app_database.g.dart`。
+- Drift 表结构改动：先运行 `dart run build_runner build` 并检查 `app_database.g.dart`，再顺序跑分析和测试。
 
-这个仓库里测试或生成任务可能受 Flutter startup lock / native asset generation 影响，避免同时并行跑多个 Flutter 命令。
+这个仓库里测试或生成任务可能受 Flutter startup lock / native asset generation / codesign 临时文件影响，避免同时并行跑多个 Flutter/Dart 生成或测试命令。推荐顺序是 `dart run build_runner build`（仅表结构改动需要）→ `flutter analyze` → 定向 `flutter test ...` → 全量 `flutter test`。
 
 ## 汇报格式
 

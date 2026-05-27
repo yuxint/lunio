@@ -66,18 +66,16 @@ void main() {
           sync: sync,
         ),
       ],
-      preferences: [
-        BackupPreference(id: 1, key: 'appliedCarId', value: '1', sync: sync),
-      ],
     );
 
-    final decoded = codec.decode(codec.encode(payload));
+    final encoded = codec.encode(payload);
+    final decoded = codec.decode(encoded);
 
+    expect(encoded, isNot(contains('preferences')));
     expect(decoded.schemaVersion, 1);
     expect(decoded.cars.single.brand, '本田');
     expect(decoded.defaultMaintenanceItems.single.itemName, '机油');
     expect(decoded.maintenanceItems.single.carsId, 1);
     expect(decoded.records.single.carId, 1);
-    expect(decoded.preferences.single.value, '1');
   });
 }

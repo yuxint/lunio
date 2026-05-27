@@ -101,11 +101,63 @@ ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(tokens.radiusMedium),
-        borderSide: BorderSide(color: tokens.primary, width: 1.4),
+        borderSide: BorderSide.none,
       ),
-      labelStyle: TextStyle(color: tokens.muted),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-      constraints: const BoxConstraints(minHeight: 48),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderSide: BorderSide.none,
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderSide: BorderSide(color: tokens.danger, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        borderSide: BorderSide(color: tokens.danger, width: 1.2),
+      ),
+      labelStyle: TextStyle(
+        color: tokens.muted,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      floatingLabelStyle: TextStyle(
+        color: tokens.primary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      hintStyle: TextStyle(
+        color: tokens.subtle,
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      constraints: const BoxConstraints(minHeight: 52),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return tokens.subtle;
+        }
+        if (states.contains(WidgetState.selected)) {
+          return tokens.primary;
+        }
+        return tokens.surface;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return tokens.surface3.withValues(alpha: 0.5);
+        }
+        if (states.contains(WidgetState.selected)) {
+          return tokens.primarySoft;
+        }
+        return tokens.surface3;
+      }),
+      trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return tokens.primary.withValues(alpha: 0.38);
+        }
+        return tokens.line;
+      }),
     ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: tokens.background,

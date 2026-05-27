@@ -4,6 +4,12 @@ import UniformTypeIdentifiers
 
 class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var documentPickerResult: FlutterResult?
+  private var documentPickerMode: DocumentPickerMode?
+
+  private enum DocumentPickerMode {
+    case exportJson
+    case pickJson
+  }
 
   override func scene(
     _ scene: UIScene,
@@ -24,8 +30,8 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     )
     channel.setMethodCallHandler { [weak self, weak controller] call, result in
       switch call.method {
-      case "shareFile":
-        self?.shareFile(call: call, controller: controller, result: result)
+      case "exportJsonFile":
+        self?.exportJsonFile(call: call, controller: controller, result: result)
       case "pickJsonFile":
         self?.pickJsonFile(controller: controller, result: result)
       default:
@@ -34,10 +40,10 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     }
   }
 
-  private func shareFile(
+  private func exportJsonFile(
     call: FlutterMethodCall,
     controller: UIViewController?,
-    result: FlutterResult
+    result: @escaping FlutterResult
   ) {
     guard let controller else {
       result(FlutterError(code: "no_controller", message: "No root view controller", details: nil))
@@ -45,29 +51,39 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     }
     guard
       let arguments = call.arguments as? [String: Any],
-      let path = arguments["path"] as? String
+      let filename = arguments["filename"] as? String,
+      let content = arguments["content"] as? String
     else {
-      result(FlutterError(code: "invalid_arguments", message: "Missing file path", details: nil))
+      result(FlutterError(code: "invalid_arguments", message: "Missing backup filename or content", details: nil))
       return
     }
-    let url = URL(fileURLWithPath: path)
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      result(FlutterError(code: "file_not_found", message: "Backup file not found", details: nil))
+    if documentPickerResult != nil {
+      result(FlutterError(code: "picker_active", message: "A document picker is already active", details: nil))
       return
     }
-    let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-    if let popover = activity.popoverPresentationController {
-      popover.sourceView = controller.view
-      popover.sourceRect = CGRect(
-        x: controller.view.bounds.midX,
-        y: controller.view.bounds.midY,
-        width: 1,
-        height: 1
-      )
-      popover.permittedArrowDirections = []
+    do {
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+      try content.write(to: url, atomically: true, encoding: .utf8)
+      documentPickerResult = result
+      documentPickerMode = .exportJson
+      let picker: UIDocumentPickerViewController
+      if #available(iOS 14.0, *) {
+        picker = UIDocumentPickerViewController(
+          forExporting: [url],
+          asCopy: true
+        )
+      } else {
+        picker = UIDocumentPickerViewController(
+          url: url,
+          in: .exportToService
+        )
+      }
+      picker.delegate = self
+      picker.allowsMultipleSelection = false
+      controller.present(picker, animated: true)
+    } catch {
+      result(FlutterError(code: "write_failed", message: error.localizedDescription, details: nil))
     }
-    controller.present(activity, animated: true)
-    result(nil)
   }
 
   private func pickJsonFile(controller: UIViewController?, result: @escaping FlutterResult) {
@@ -75,7 +91,12 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
       result(FlutterError(code: "no_controller", message: "No root view controller", details: nil))
       return
     }
+    if documentPickerResult != nil {
+      result(FlutterError(code: "picker_active", message: "A document picker is already active", details: nil))
+      return
+    }
     documentPickerResult = result
+    documentPickerMode = .pickJson
     let picker: UIDocumentPickerViewController
     if #available(iOS 14.0, *) {
       picker = UIDocumentPickerViewController(
@@ -101,6 +122,12 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
       return
     }
     documentPickerResult = nil
+    let mode = documentPickerMode
+    documentPickerMode = nil
+    if mode == .exportJson {
+      result(nil)
+      return
+    }
     guard let url = urls.first else {
       result(nil)
       return
@@ -116,5 +143,6 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
     documentPickerResult?(nil)
     documentPickerResult = nil
+    documentPickerMode = nil
   }
 }

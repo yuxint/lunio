@@ -1,11 +1,8 @@
 import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../app/providers.dart';
 import '../../core/date/local_date.dart';
@@ -420,7 +417,7 @@ class _SmallActionButton extends StatelessWidget {
   });
 
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool danger;
 
   @override
@@ -432,7 +429,11 @@ class _SmallActionButton extends StatelessWidget {
         onPressed: onPressed,
         style: TextButton.styleFrom(
           backgroundColor: danger ? tokens.dangerSoft : tokens.surface2,
-          foregroundColor: danger ? tokens.danger : tokens.ink,
+          foregroundColor: onPressed == null
+              ? tokens.subtle
+              : danger
+              ? tokens.danger
+              : tokens.ink,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(11),
@@ -759,7 +760,8 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
       trailing: LunioIconButton(
         icon: Icons.tune,
         tooltip: '筛选记录',
-        onPressed: () => _showToast(context, '筛选入口已预留'),
+        onPressed: () =>
+            _showStatusOverlay(context, '筛选入口已预留', _StatusOverlayTone.info),
       ),
       children: [
         LunioSegmentedControl(
@@ -994,16 +996,16 @@ class _ProfilePreviewPage extends ConsumerWidget {
           title: '数据与工具',
           children: [
             _ProfileSettingRow(
-              title: 'JSON 备份',
+              title: '备份',
               subtitle: '导出全部车辆、项目配置和保养记录',
               trailingLabel: '导出',
               onTap: () => _exportBackup(context, ref),
             ),
             _ProfileSettingRow(
               title: '恢复',
-              subtitle: '先清空当前数据，再导入备份文件',
+              subtitle: '选择备份文件并恢复本地数据',
               trailingLabel: '恢复',
-              onTap: () => _showRestoreBackupSheet(context, ref),
+              onTap: () => _restoreBackupFromFile(context, ref),
             ),
             _ProfileSettingRow(
               title: '清空数据',
@@ -1138,11 +1140,15 @@ class _ThemeModeSettingRow extends StatelessWidget {
               ThemeMode.system => 0,
             },
             onSelected: (index) {
-              onChanged(switch (index) {
+              final nextMode = switch (index) {
                 1 => ThemeMode.light,
                 2 => ThemeMode.dark,
                 _ => ThemeMode.system,
-              });
+              };
+              if (nextMode == mode) {
+                return;
+              }
+              onChanged(nextMode);
             },
           ),
         ],
@@ -1214,7 +1220,7 @@ class _VehicleList extends StatelessWidget {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                '${_formatMileageKm(car.currentMileageKm)} · 车龄 ${_formatCarAge(car.roadDate, today)} · ${car.roadDate}',
+                                '${_formatMileageKm(car.currentMileageKm)} · ${car.roadDate} · ${_formatCarAge(car.roadDate, today)}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -1230,7 +1236,9 @@ class _VehicleList extends StatelessWidget {
                         _SmallActionButton(
                           label: selected ? '已应用' : '应用',
                           onPressed: car.id == null
-                              ? () {}
+                              ? null
+                              : selected
+                              ? null
                               : () => onApply(car.id!),
                         ),
                         const SizedBox(width: 8),
@@ -1391,11 +1399,13 @@ class _AddCarForm extends StatefulWidget {
     required this.vehicleModels,
     this.initialCar,
     required this.onSubmit,
+    this.submitLabel,
   });
 
   final List<VehicleModel> vehicleModels;
   final Car? initialCar;
   final Future<void> Function(Car car) onSubmit;
+  final String? submitLabel;
 
   @override
   State<_AddCarForm> createState() => _AddCarFormState();
@@ -1419,7 +1429,7 @@ class _AddCarFormState extends State<_AddCarForm> {
     selectedBrand = initialCar?.brand ?? options.first.brand;
     selectedModel = initialCar?.model ?? _modelsForBrand(selectedBrand).first;
     mileageController = TextEditingController(
-      text: initialCar?.currentMileageKm.toString() ?? '10000',
+      text: initialCar?.currentMileageKm.toString() ?? '0',
     );
     roadDate = initialCar?.roadDate ?? LocalDate.fromDateTime(DateTime.now());
   }
@@ -1487,7 +1497,9 @@ class _AddCarFormState extends State<_AddCarForm> {
             const SizedBox(width: 10),
             Expanded(
               child: LunioPrimaryButton(
-                label: saving ? '保存中' : '保存车辆',
+                label: saving
+                    ? '保存中'
+                    : widget.submitLabel ?? (isEditing ? '保存车辆' : '保存车辆'),
                 onPressed: saving ? null : _submit,
               ),
             ),
@@ -1546,6 +1558,9 @@ class _AddCarFormState extends State<_AddCarForm> {
           ),
         ),
       );
+      if (mounted) {
+        setState(() => saving = false);
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -1555,6 +1570,260 @@ class _AddCarFormState extends State<_AddCarForm> {
         errorText = _friendlyError(error);
       });
     }
+  }
+}
+
+class _AddCarWizard extends StatefulWidget {
+  const _AddCarWizard({
+    required this.vehicleModels,
+    required this.loadDefaultItems,
+    required this.onSubmit,
+  });
+
+  final List<VehicleModel> vehicleModels;
+  final Future<List<MaintenanceItem>> Function(Car car) loadDefaultItems;
+  final Future<void> Function(Car car, List<MaintenanceItem> items) onSubmit;
+
+  @override
+  State<_AddCarWizard> createState() => _AddCarWizardState();
+}
+
+class _AddCarWizardState extends State<_AddCarWizard> {
+  Car? carDraft;
+  List<MaintenanceItem>? itemDrafts;
+  String? itemModelKey;
+  bool loadingItems = false;
+  bool saving = false;
+  String? errorText;
+
+  @override
+  Widget build(BuildContext context) {
+    final car = carDraft;
+    final items = itemDrafts;
+    if (car == null) {
+      return _AddCarForm(
+        vehicleModels: widget.vehicleModels,
+        submitLabel: '下一步',
+        onSubmit: _handleCarDraft,
+      );
+    }
+    if (items == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 28),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return _AddCarMaintenanceItemsStep(
+      car: car,
+      items: items,
+      saving: saving || loadingItems,
+      errorText: errorText,
+      onBack: saving ? null : () => setState(() => carDraft = null),
+      onChanged: (nextItems) => setState(() => itemDrafts = nextItems),
+      onAdd: saving ? null : _addItem,
+      onSubmit: saving ? null : _submit,
+    );
+  }
+
+  Future<void> _handleCarDraft(Car car) async {
+    final nextKey = '${car.brand}\u0000${car.model}';
+    setState(() {
+      carDraft = car;
+      loadingItems = itemModelKey != nextKey || itemDrafts == null;
+      errorText = null;
+    });
+    if (!loadingItems) {
+      return;
+    }
+    try {
+      final items = await widget.loadDefaultItems(car);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        itemModelKey = nextKey;
+        itemDrafts = items;
+        loadingItems = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        carDraft = null;
+        loadingItems = false;
+        errorText = _friendlyError(error);
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    final car = carDraft;
+    final items = itemDrafts;
+    if (car == null || items == null) {
+      return;
+    }
+    if (!items.any((item) => item.enabled)) {
+      setState(() => errorText = '至少保留一个可用保养项目');
+      return;
+    }
+    setState(() {
+      saving = true;
+      errorText = null;
+    });
+    try {
+      await widget.onSubmit(car, items);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        saving = false;
+        errorText = _friendlyError(error);
+      });
+    }
+  }
+
+  void _addItem() {
+    final sync = SyncMetadata(
+      status: SyncStatus.pendingCreate,
+      updatedAt: DateTime.now(),
+    );
+    final item = MaintenanceItem(
+      carsId: 0,
+      name: '',
+      isDefault: false,
+      enabled: true,
+      remindByMileage: true,
+      remindByTime: true,
+      mileageIntervalKm: 5000,
+      timeIntervalMonths: 6,
+      sortOrder: (itemDrafts?.length ?? 0) + 999,
+      sync: sync,
+    );
+    _showDraftMaintenanceItemFormSheet(
+      context,
+      item: item,
+      onSubmit: (nextItem) {
+        setState(() {
+          itemDrafts = [...?itemDrafts, nextItem];
+        });
+      },
+    );
+  }
+}
+
+class _AddCarMaintenanceItemsStep extends StatelessWidget {
+  const _AddCarMaintenanceItemsStep({
+    required this.car,
+    required this.items,
+    required this.saving,
+    required this.errorText,
+    required this.onBack,
+    required this.onChanged,
+    required this.onAdd,
+    required this.onSubmit,
+  });
+
+  final Car car;
+  final List<MaintenanceItem> items;
+  final bool saving;
+  final String? errorText;
+  final VoidCallback? onBack;
+  final ValueChanged<List<MaintenanceItem>> onChanged;
+  final VoidCallback? onAdd;
+  final VoidCallback? onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxListHeight = MediaQuery.sizeOf(context).height * 0.42;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _ItemPills(labels: ['${car.brand} ${car.model}'])),
+            const SizedBox(width: 12),
+            LunioIconButton(icon: Icons.add, tooltip: '新增项目', onPressed: onAdd),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxListHeight),
+          child: SingleChildScrollView(
+            child: _MaintenanceItemList(
+              items: items,
+              onEdit: saving ? (_) {} : (item) => _editItem(context, item),
+              onToggle: saving ? (_) {} : _toggleItem,
+              onDelete: saving ? (_) {} : _deleteItem,
+            ),
+          ),
+        ),
+        if (errorText != null) ...[
+          const SizedBox(height: 10),
+          LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
+        ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: LunioSecondaryButton(label: '上一步', onPressed: onBack),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: LunioPrimaryButton(
+                label: saving ? '保存中' : '保存车辆',
+                onPressed: onSubmit,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _editItem(BuildContext context, MaintenanceItem item) {
+    _showDraftMaintenanceItemFormSheet(
+      context,
+      item: item,
+      onSubmit: (nextItem) {
+        onChanged([
+          for (final current in items)
+            if (identical(current, item)) nextItem else current,
+        ]);
+      },
+    );
+  }
+
+  void _toggleItem(MaintenanceItem item) {
+    final nextEnabled = !item.enabled;
+    if (!nextEnabled &&
+        items
+            .where((current) => current.enabled && !identical(current, item))
+            .isEmpty) {
+      return;
+    }
+    onChanged([
+      for (final current in items)
+        if (identical(current, item))
+          current.copyWith(enabled: nextEnabled)
+        else
+          current,
+    ]);
+  }
+
+  void _deleteItem(MaintenanceItem item) {
+    if (item.isDefault) {
+      return;
+    }
+    final nextItems = items
+        .where((current) => !identical(current, item))
+        .toList();
+    if (!nextItems.any((current) => current.enabled)) {
+      return;
+    }
+    onChanged(nextItems);
   }
 }
 
@@ -1802,7 +2071,6 @@ void _showAddCarSheet(BuildContext context, WidgetRef ref) {
     builder: (context) {
       return _PrototypeSheetFrame(
         title: '添加车辆',
-        subtitle: '同一品牌车型当前只允许添加一辆',
         bottomInset: MediaQuery.of(context).viewInsets.bottom,
         child: Consumer(
           builder: (context, ref, child) {
@@ -1815,16 +2083,41 @@ void _showAddCarSheet(BuildContext context, WidgetRef ref) {
                 if (models.isEmpty) {
                   return const LunioInlineMessage(message: '暂无可选车型');
                 }
-                return _AddCarForm(
+                return _AddCarWizard(
                   vehicleModels: models,
-                  onSubmit: (car) async {
+                  loadDefaultItems: (car) async {
                     final repository = ref.read(lunioRepositoryProvider);
                     await repository.ensureBootstrapData();
-                    await repository.createCarWithDefaultItems(car);
+                    final defaultItems = await repository
+                        .listDefaultItemsForModel(
+                          brand: car.brand,
+                          model: car.model,
+                        );
+                    return defaultItems
+                        .map(
+                          (item) => MaintenanceItem(
+                            carsId: 0,
+                            name: item.itemName,
+                            isDefault: true,
+                            enabled: true,
+                            remindByMileage: item.remindByMileage,
+                            remindByTime: item.remindByTime,
+                            mileageIntervalKm: item.mileageIntervalKm,
+                            timeIntervalMonths: item.timeIntervalMonths,
+                            notOverdueUpperLimit: item.notOverdueUpperLimit,
+                            overdueUpperLimit: item.overdueUpperLimit,
+                            sortOrder: item.sortOrder,
+                            sync: car.sync,
+                          ),
+                        )
+                        .toList();
+                  },
+                  onSubmit: (car, items) async {
+                    final repository = ref.read(lunioRepositoryProvider);
+                    await repository.createCarWithMaintenanceItems(car, items);
                     invalidateVehicleProviders(ref);
                     if (context.mounted) {
                       Navigator.of(context).pop();
-                      _showToast(context, '车辆已保存');
                     }
                   },
                 );
@@ -1875,7 +2168,6 @@ void _showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
                   invalidateVehicleProviders(ref);
                   if (context.mounted) {
                     Navigator.of(context).pop();
-                    _showToast(context, '车辆已更新');
                   }
                 },
               ),
@@ -1895,7 +2187,11 @@ void _showVehicleSwitcher(BuildContext context, WidgetRef ref) {
       .read(appliedCarProvider)
       .maybeWhen(data: (value) => value?.id, orElse: () => null);
   if (cars.length <= 1) {
-    _showToast(context, cars.isEmpty ? '请先新增车辆' : '当前只有一辆车');
+    _showStatusOverlay(
+      context,
+      cars.isEmpty ? '请先新增车辆' : '当前只有一辆车',
+      _StatusOverlayTone.info,
+    );
     return;
   }
   showModalBottomSheet<void>(
@@ -2221,7 +2517,7 @@ Future<void> _showMaintenanceRecordFormSheet(
     return;
   }
   if (car?.id == null) {
-    _showToast(context, '请先新增车辆');
+    _showStatusOverlay(context, '请先新增车辆', _StatusOverlayTone.info);
     return;
   }
   if (items
@@ -2229,7 +2525,7 @@ Future<void> _showMaintenanceRecordFormSheet(
         (item) => item.enabled || record?.itemIds.contains(item.id) == true,
       )
       .isEmpty) {
-    _showToast(context, '请先配置可用保养项目');
+    _showStatusOverlay(context, '请先配置可用保养项目', _StatusOverlayTone.info);
     return;
   }
   showModalBottomSheet<void>(
@@ -2257,7 +2553,6 @@ Future<void> _showMaintenanceRecordFormSheet(
             invalidateVehicleProviders(ref);
             if (context.mounted) {
               Navigator.of(context).pop();
-              _showToast(context, '保养记录已保存');
             }
           },
         ),
@@ -2282,9 +2577,6 @@ Future<void> _deleteMaintenanceRecord(
   }
   await ref.read(lunioRepositoryProvider).deleteMaintenanceRecord(record.id!);
   invalidateVehicleProviders(ref);
-  if (context.mounted) {
-    _showToast(context, '保养记录已删除');
-  }
 }
 
 void _showMaintenanceItemsSheet(
@@ -2594,11 +2886,9 @@ class _MaintenanceItemCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Switch(
-                value: item.enabled,
-                onChanged: (_) => onToggle(),
-                activeThumbColor: tokens.primary,
-              ),
+              Icon(Icons.chevron_right, color: tokens.subtle, size: 20),
+              const SizedBox(width: 4),
+              Switch(value: item.enabled, onChanged: (_) => onToggle()),
               if (onDelete != null)
                 IconButton(
                   tooltip: '删除',
@@ -2676,46 +2966,24 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
           decoration: const InputDecoration(labelText: '项目名称'),
         ),
         const SizedBox(height: 10),
-        _FormSwitchRow(
+        _ReminderRuleInputRow(
           title: '按里程提醒',
           value: remindByMileage,
+          controller: mileageController,
+          inputLabel: '间隔 km',
           onChanged: saving
               ? null
               : (value) => setState(() => remindByMileage = value),
         ),
-        if (remindByMileage) ...[
-          const SizedBox(height: 8),
-          TextField(
-            controller: mileageController,
-            enabled: !saving,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(labelText: '里程间隔 km'),
-          ),
-        ],
         const SizedBox(height: 10),
-        _FormSwitchRow(
+        _ReminderRuleInputRow(
           title: '按时间提醒',
           value: remindByTime,
+          controller: monthsController,
+          inputLabel: '间隔 月',
           onChanged: saving
               ? null
               : (value) => setState(() => remindByTime = value),
-        ),
-        if (remindByTime) ...[
-          const SizedBox(height: 8),
-          TextField(
-            controller: monthsController,
-            enabled: !saving,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(labelText: '时间间隔 月'),
-          ),
-        ],
-        const SizedBox(height: 10),
-        _FormSwitchRow(
-          title: '启用项目',
-          value: enabled,
-          onChanged: saving ? null : (value) => setState(() => enabled = value),
         ),
         if (errorText != null) ...[
           const SizedBox(height: 10),
@@ -2803,37 +3071,66 @@ class _MaintenanceItemFormState extends State<_MaintenanceItemForm> {
   }
 }
 
-class _FormSwitchRow extends StatelessWidget {
-  const _FormSwitchRow({
+class _ReminderRuleInputRow extends StatelessWidget {
+  const _ReminderRuleInputRow({
     required this.title,
     required this.value,
+    required this.controller,
+    required this.inputLabel,
     required this.onChanged,
   });
 
   final String title;
   final bool value;
+  final TextEditingController controller;
+  final String inputLabel;
   final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
         color: tokens.surface2,
         borderRadius: BorderRadius.circular(tokens.radiusMedium),
-        border: Border.all(color: tokens.line),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Text(title, style: Theme.of(context).textTheme.labelLarge),
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: onChanged == null ? tokens.subtle : tokens.ink,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: tokens.primary,
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 116,
+            child: TextField(
+              controller: controller,
+              enabled: value && onChanged != null,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                labelText: inputLabel,
+                fillColor: value
+                    ? tokens.surface
+                    : tokens.surface3.withValues(alpha: 0.55),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
+                constraints: const BoxConstraints(minHeight: 46),
+              ),
+            ),
           ),
+          const SizedBox(width: 8),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -2868,7 +3165,35 @@ Future<bool?> _showMaintenanceItemFormSheet(
             invalidateVehicleProviders(ref);
             if (context.mounted) {
               Navigator.of(context).pop(true);
-              _showToast(context, '保养项目已保存');
+            }
+          },
+        ),
+      );
+    },
+  );
+}
+
+Future<bool?> _showDraftMaintenanceItemFormSheet(
+  BuildContext context, {
+  required MaintenanceItem item,
+  required ValueChanged<MaintenanceItem> onSubmit,
+}) {
+  return showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: false,
+    backgroundColor: Colors.transparent,
+    builder: (context) {
+      return _PrototypeSheetFrame(
+        title: item.name.isEmpty ? '新增保养项目' : '编辑保养项目',
+        bottomInset: MediaQuery.of(context).viewInsets.bottom,
+        child: _MaintenanceItemForm(
+          carId: 0,
+          item: item,
+          onSubmit: (value) async {
+            onSubmit(value);
+            if (context.mounted) {
+              Navigator.of(context).pop(true);
             }
           },
         ),
@@ -2895,12 +3220,13 @@ Future<void> _toggleMaintenanceItem(
           ),
         );
     invalidateVehicleProviders(ref);
-    if (context.mounted) {
-      _showToast(context, nextEnabled ? '项目已启用' : '项目已禁用');
-    }
   } catch (error) {
     if (context.mounted) {
-      _showToast(context, _friendlyError(error));
+      _showStatusOverlay(
+        context,
+        _friendlyError(error),
+        _StatusOverlayTone.error,
+      );
     }
   }
 }
@@ -2922,12 +3248,13 @@ Future<void> _deleteMaintenanceItem(
   try {
     await ref.read(lunioRepositoryProvider).deleteMaintenanceItem(item.id!);
     invalidateVehicleProviders(ref);
-    if (context.mounted) {
-      _showToast(context, '保养项目已删除');
-    }
   } catch (error) {
     if (context.mounted) {
-      _showToast(context, _friendlyError(error));
+      _showStatusOverlay(
+        context,
+        _friendlyError(error),
+        _StatusOverlayTone.error,
+      );
     }
   }
 }
@@ -2939,245 +3266,58 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
         .exportBackupPayload();
     const codec = BackupCodec();
     final json = codec.encode(payload);
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File(
-      '${directory.path}/lunio-backup-${LocalDate.fromDateTime(DateTime.now())}.json',
+    await NativeFiles.exportJsonFile(
+      filename: _backupFilename(DateTime.now()),
+      content: json,
     );
-    await file.writeAsString(json);
     if (context.mounted) {
-      _showBackupResultSheet(context, file.path, json);
+      _showStatusOverlay(context, '备份完成', _StatusOverlayTone.success);
     }
   } catch (error) {
     if (context.mounted) {
-      _showToast(context, '备份失败：$error');
+      _showStatusOverlay(context, '备份失败：$error', _StatusOverlayTone.error);
     }
   }
 }
 
-void _showBackupResultSheet(BuildContext context, String path, String json) {
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (context) {
-      return FractionallySizedBox(
-        heightFactor: 0.78,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('数据备份', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text(
-                '已生成 schemaVersion 1 备份文件',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-              LunioCard(
-                child: SelectableText(
-                  path,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: TextField(
-                  controller: TextEditingController(text: json),
-                  readOnly: true,
-                  maxLines: null,
-                  expands: true,
-                  decoration: const InputDecoration(labelText: '备份 JSON'),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: LunioSecondaryButton(
-                      label: '复制 JSON',
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: json));
-                        if (context.mounted) {
-                          _showToast(context, '备份 JSON 已复制');
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: LunioPrimaryButton(
-                      label: '分享文件',
-                      onPressed: () async {
-                        try {
-                          await NativeFiles.shareFile(path);
-                        } catch (error) {
-                          if (context.mounted) {
-                            _showToast(context, '分享失败：$error');
-                          }
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-
-void _showRestoreBackupSheet(BuildContext context, WidgetRef ref) {
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (context) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-          18,
-          0,
-          18,
-          MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
-        child: _RestoreBackupForm(
-          onSubmit: (json) async {
-            const codec = BackupCodec();
-            final payload = codec.decode(json);
-            await ref
-                .read(lunioRepositoryProvider)
-                .restoreBackupPayload(payload);
-            invalidateAllAppDataProviders(ref);
-            if (context.mounted) {
-              Navigator.of(context).pop();
-              _showToast(context, '数据已恢复');
-            }
-          },
-        ),
-      );
-    },
-  );
-}
-
-class _RestoreBackupForm extends StatefulWidget {
-  const _RestoreBackupForm({required this.onSubmit});
-
-  final Future<void> Function(String json) onSubmit;
-
-  @override
-  State<_RestoreBackupForm> createState() => _RestoreBackupFormState();
-}
-
-class _RestoreBackupFormState extends State<_RestoreBackupForm> {
-  final controller = TextEditingController();
-  bool restoring = false;
-  String? errorText;
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('数据恢复', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text(
-            '粘贴 schemaVersion 1 备份 JSON。恢复会替换当前本地数据，失败时保持原数据。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 14),
-          LunioSecondaryButton(
-            label: '选择 JSON 文件',
-            onPressed: restoring ? null : _pickFile,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            enabled: !restoring,
-            minLines: 6,
-            maxLines: 10,
-            decoration: const InputDecoration(labelText: '备份 JSON'),
-          ),
-          if (errorText != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              errorText!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: tokens.danger),
-            ),
-          ],
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: LunioSecondaryButton(
-                  label: '取消',
-                  onPressed: restoring
-                      ? null
-                      : () => Navigator.of(context).pop(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: LunioPrimaryButton(
-                  label: restoring ? '恢复中' : '恢复数据',
-                  onPressed: restoring ? null : _submit,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _submit() async {
-    if (controller.text.trim().isEmpty) {
-      setState(() => errorText = '备份 JSON 不能为空');
+Future<void> _restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
+  try {
+    final json = await NativeFiles.pickJsonFile();
+    if (json == null) {
       return;
     }
-    setState(() {
-      restoring = true;
-      errorText = null;
-    });
-    try {
-      await widget.onSubmit(controller.text.trim());
-    } catch (error) {
-      if (!mounted) {
-        return;
+    const codec = BackupCodec();
+    final payload = codec.decode(json);
+    await ref.read(lunioRepositoryProvider).restoreBackupPayload(payload);
+    invalidateAllAppDataProviders(ref);
+    if (context.mounted) {
+      _showStatusOverlay(context, '恢复完成', _StatusOverlayTone.success);
+    }
+  } catch (error) {
+    if (context.mounted) {
+      if (_isUniqueConstraintError(error)) {
+        await _showMessageDialog(
+          context: context,
+          title: '恢复失败',
+          message: '恢复文件中的部分数据与本地数据重复，本次恢复未写入任何数据。',
+          tone: _StatusOverlayTone.error,
+        );
+      } else {
+        _showStatusOverlay(context, '恢复失败：$error', _StatusOverlayTone.error);
       }
-      setState(() {
-        restoring = false;
-        errorText = '恢复失败：$error';
-      });
     }
   }
+}
 
-  Future<void> _pickFile() async {
-    try {
-      final json = await NativeFiles.pickJsonFile();
-      if (!mounted || json == null) {
-        return;
-      }
-      controller.text = json;
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => errorText = '选择文件失败：$error');
-    }
-  }
+String _backupFilename(DateTime dateTime) {
+  String twoDigits(int value) => value.toString().padLeft(2, '0');
+  return 'lunio-backup-'
+      '${dateTime.year}'
+      '${twoDigits(dateTime.month)}'
+      '${twoDigits(dateTime.day)}-'
+      '${twoDigits(dateTime.hour)}'
+      '${twoDigits(dateTime.minute)}'
+      '${twoDigits(dateTime.second)}.json';
 }
 
 Future<void> _clearAllData(BuildContext context, WidgetRef ref) async {
@@ -3192,9 +3332,6 @@ Future<void> _clearAllData(BuildContext context, WidgetRef ref) async {
   }
   await ref.read(lunioRepositoryProvider).clearAllData();
   invalidateAllAppDataProviders(ref);
-  if (context.mounted) {
-    _showToast(context, '本地数据已清空');
-  }
 }
 
 void _showManualDateSheet(BuildContext context, WidgetRef ref) {
@@ -3237,7 +3374,6 @@ void _showManualDateSheet(BuildContext context, WidgetRef ref) {
             invalidatePreferenceProviders(ref);
             if (context.mounted) {
               Navigator.of(context).pop();
-              _showToast(context, date == null ? '手动日期已关闭' : '手动日期已保存');
             }
           },
         ),
@@ -3413,7 +3549,6 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
   late LocalDate selectedDate;
   late int visibleYear;
   late int visibleMonth;
-  late int yearPageStart;
   bool selectingYearMonth = false;
 
   @override
@@ -3422,7 +3557,6 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
     selectedDate = widget.initialDate;
     visibleYear = selectedDate.year;
     visibleMonth = selectedDate.month;
-    yearPageStart = _yearPageStartFor(visibleYear);
   }
 
   @override
@@ -3495,32 +3629,18 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
           ),
           const SizedBox(height: 8),
           if (selectingYearMonth)
-            _YearMonthSelector(
-              yearPageStart: yearPageStart,
-              firstYear: widget.firstDate.year,
-              lastYear: widget.lastDate.year,
+            _YearMonthWheelSelector(
+              firstDate: widget.firstDate,
+              lastDate: widget.lastDate,
               visibleYear: visibleYear,
               visibleMonth: visibleMonth,
-              validMonths: _validMonthsForYear(visibleYear),
-              onPreviousYears: _canGoPreviousYearPage()
-                  ? () => setState(() => yearPageStart -= 12)
-                  : null,
-              onNextYears: _canGoNextYearPage()
-                  ? () => setState(() => yearPageStart += 12)
-                  : null,
-              onYearSelected: (year) {
+              onSelected: (year, month) {
                 setState(() {
                   visibleYear = year;
-                  final months = _validMonthsForYear(year);
-                  if (!months.contains(visibleMonth)) {
-                    visibleMonth = months.first;
-                  }
+                  visibleMonth = month;
+                  selectingYearMonth = false;
                 });
               },
-              onMonthSelected: (month) => setState(() {
-                visibleMonth = month;
-                selectingYearMonth = false;
-              }),
             )
           else
             GridView.count(
@@ -3597,7 +3717,6 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
       } else {
         visibleMonth -= 1;
       }
-      yearPageStart = _yearPageStartFor(visibleYear);
     });
   }
 
@@ -3609,66 +3728,83 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
       } else {
         visibleMonth += 1;
       }
-      yearPageStart = _yearPageStartFor(visibleYear);
     });
-  }
-
-  bool _canGoPreviousYearPage() {
-    return yearPageStart > _yearPageStartFor(widget.firstDate.year);
-  }
-
-  bool _canGoNextYearPage() {
-    return yearPageStart + 11 < widget.lastDate.year;
-  }
-
-  int _yearPageStartFor(int year) {
-    final start = year - ((year - widget.firstDate.year) % 12);
-    return start.clamp(widget.firstDate.year, widget.lastDate.year);
-  }
-
-  List<int> _validMonthsForYear(int year) {
-    final firstMonth = year == widget.firstDate.year
-        ? widget.firstDate.month
-        : 1;
-    final lastMonth = year == widget.lastDate.year ? widget.lastDate.month : 12;
-    return [for (var month = firstMonth; month <= lastMonth; month++) month];
   }
 }
 
-class _YearMonthSelector extends StatelessWidget {
-  const _YearMonthSelector({
-    required this.yearPageStart,
-    required this.firstYear,
-    required this.lastYear,
+class _YearMonthWheelSelector extends StatefulWidget {
+  const _YearMonthWheelSelector({
+    required this.firstDate,
+    required this.lastDate,
     required this.visibleYear,
     required this.visibleMonth,
-    required this.validMonths,
-    required this.onPreviousYears,
-    required this.onNextYears,
-    required this.onYearSelected,
-    required this.onMonthSelected,
+    required this.onSelected,
   });
 
-  final int yearPageStart;
-  final int firstYear;
-  final int lastYear;
+  final LocalDate firstDate;
+  final LocalDate lastDate;
   final int visibleYear;
   final int visibleMonth;
-  final List<int> validMonths;
-  final VoidCallback? onPreviousYears;
-  final VoidCallback? onNextYears;
-  final ValueChanged<int> onYearSelected;
-  final ValueChanged<int> onMonthSelected;
+  final void Function(int year, int month) onSelected;
+
+  @override
+  State<_YearMonthWheelSelector> createState() =>
+      _YearMonthWheelSelectorState();
+}
+
+class _YearMonthWheelSelectorState extends State<_YearMonthWheelSelector> {
+  late int selectedYear;
+  late int selectedMonth;
+  late FixedExtentScrollController yearController;
+  late FixedExtentScrollController monthController;
+
+  List<int> get years => [
+    for (var year = widget.firstDate.year; year <= widget.lastDate.year; year++)
+      year,
+  ];
+
+  List<int> get months {
+    final firstMonth = selectedYear == widget.firstDate.year
+        ? widget.firstDate.month
+        : 1;
+    final lastMonth = selectedYear == widget.lastDate.year
+        ? widget.lastDate.month
+        : 12;
+    return [for (var month = firstMonth; month <= lastMonth; month++) month];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    selectedYear = widget.visibleYear;
+    selectedMonth = widget.visibleMonth;
+    final monthValues = months;
+    if (!monthValues.contains(selectedMonth)) {
+      selectedMonth = monthValues.first;
+    }
+    yearController = FixedExtentScrollController(
+      initialItem: years.indexOf(selectedYear).clamp(0, years.length - 1),
+    );
+    monthController = FixedExtentScrollController(
+      initialItem: monthValues
+          .indexOf(selectedMonth)
+          .clamp(0, monthValues.length - 1),
+    );
+  }
+
+  @override
+  void dispose() {
+    yearController.dispose();
+    monthController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final years = [
-      for (var year = yearPageStart; year <= yearPageStart + 11; year++)
-        if (year >= firstYear && year <= lastYear) year,
-    ];
+    final monthValues = months;
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
       decoration: BoxDecoration(
         color: tokens.surface2,
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
@@ -3679,51 +3815,42 @@ class _YearMonthSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              IconButton(
-                tooltip: '上一组年份',
-                onPressed: onPreviousYears,
-                icon: const Icon(Icons.chevron_left),
-              ),
               Expanded(
-                child: Center(
-                  child: Text(
-                    '${years.first}年-${years.last}年',
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
+                child: _WheelColumn(
+                  controller: yearController,
+                  values: years.map((year) => '$year年').toList(),
+                  onSelectedItemChanged: (index) {
+                    final year = years[index];
+                    setState(() {
+                      selectedYear = year;
+                      final nextMonths = months;
+                      if (!nextMonths.contains(selectedMonth)) {
+                        selectedMonth = nextMonths.first;
+                      }
+                      monthController.dispose();
+                      monthController = FixedExtentScrollController(
+                        initialItem: nextMonths.indexOf(selectedMonth),
+                      );
+                    });
+                  },
                 ),
               ),
-              IconButton(
-                tooltip: '下一组年份',
-                onPressed: onNextYears,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final year in years)
-                _CompactDateOption(
-                  label: '$year',
-                  selected: year == visibleYear,
-                  onTap: () => onYearSelected(year),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _WheelColumn(
+                  controller: monthController,
+                  values: monthValues.map((month) => '$month月').toList(),
+                  onSelectedItemChanged: (index) {
+                    selectedMonth = monthValues[index];
+                  },
                 ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (var month = 1; month <= 12; month++)
-                _CompactDateOption(
-                  label: '$month月',
-                  selected: month == visibleMonth,
-                  enabled: validMonths.contains(month),
-                  onTap: () => onMonthSelected(month),
-                ),
-            ],
+          LunioPrimaryButton(
+            label: '应用年月',
+            onPressed: () => widget.onSelected(selectedYear, selectedMonth),
           ),
         ],
       ),
@@ -3731,43 +3858,44 @@ class _YearMonthSelector extends StatelessWidget {
   }
 }
 
-class _CompactDateOption extends StatelessWidget {
-  const _CompactDateOption({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.enabled = true,
+class _WheelColumn extends StatelessWidget {
+  const _WheelColumn({
+    required this.controller,
+    required this.values,
+    required this.onSelectedItemChanged,
   });
 
-  final String label;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
+  final FixedExtentScrollController controller;
+  final List<String> values;
+  final ValueChanged<int> onSelectedItemChanged;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(tokens.radiusSmall),
-      child: Container(
-        width: 64,
-        height: 34,
-        alignment: Alignment.center,
+    return SizedBox(
+      height: 132,
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: selected ? tokens.primary : tokens.surface,
-          borderRadius: BorderRadius.circular(tokens.radiusSmall),
-          border: Border.all(color: selected ? tokens.primary : tokens.line),
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(tokens.radiusMedium),
+          border: Border.all(color: tokens.line),
         ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: selected
-                ? Colors.white
-                : enabled
-                ? tokens.ink
-                : tokens.subtle.withValues(alpha: 0.45),
-            fontWeight: FontWeight.w800,
+        child: ListWheelScrollView.useDelegate(
+          controller: controller,
+          itemExtent: 40,
+          diameterRatio: 1.4,
+          physics: const FixedExtentScrollPhysics(),
+          onSelectedItemChanged: onSelectedItemChanged,
+          childDelegate: ListWheelChildBuilderDelegate(
+            childCount: values.length,
+            builder: (context, index) {
+              return Center(
+                child: Text(
+                  values[index],
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -4013,18 +4141,9 @@ String _formatMileageKm(int value) {
 
 String _formatCarAge(LocalDate roadDate, LocalDate today) {
   final months = roadDate.monthsUntil(today).clamp(0, 1200);
-  if (months == 0) {
-    return '不足1个月';
-  }
-  if (months < 12) {
-    return '$months个月';
-  }
-  final years = months ~/ 12;
-  final remainMonths = months % 12;
-  if (remainMonths == 0) {
-    return '$years年';
-  }
-  return '$years年$remainMonths个月';
+  final years = months / 12;
+  final text = years.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+  return '$text年';
 }
 
 String _formatCompactMileageText(int value) {
@@ -4053,9 +4172,6 @@ String _formatCompactTimeText(int months) {
 Future<void> _applyCar(BuildContext context, WidgetRef ref, int carId) async {
   await ref.read(lunioRepositoryProvider).setAppliedCarId(carId);
   invalidateVehicleProviders(ref);
-  if (context.mounted) {
-    _showToast(context, '当前车辆已切换');
-  }
 }
 
 Future<void> _setThemeMode(
@@ -4072,10 +4188,6 @@ Future<void> _setThemeMode(
       .read(lunioRepositoryProvider)
       .setPreferenceValue('themeMode', value);
   invalidatePreferenceProviders(ref);
-  await Future<void>.delayed(const Duration(milliseconds: 16));
-  if (context.mounted) {
-    _showToast(context, '主题已切换');
-  }
 }
 
 Future<void> _deleteCar(BuildContext context, WidgetRef ref, Car car) async {
@@ -4090,9 +4202,6 @@ Future<void> _deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   }
   await ref.read(lunioRepositoryProvider).deleteCar(car.id!);
   invalidateVehicleProviders(ref);
-  if (context.mounted) {
-    _showToast(context, '车辆已删除');
-  }
 }
 
 Future<bool?> _showConfirmDialog({
@@ -4169,67 +4278,147 @@ Future<bool?> _showConfirmDialog({
   );
 }
 
+Future<void> _showMessageDialog({
+  required BuildContext context,
+  required String title,
+  required String message,
+  required _StatusOverlayTone tone,
+}) {
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (context) {
+      final tokens = Theme.of(context).extension<LunioTokens>()!;
+      final toneColor = _statusToneColor(tokens, tone);
+      return Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.circular(tokens.radiusLarge),
+            border: Border.all(color: tokens.line),
+            boxShadow: [
+              BoxShadow(
+                color: tokens.ink.withValues(alpha: 0.16),
+                blurRadius: 36,
+                offset: const Offset(0, 16),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(_statusToneIcon(tone), color: toneColor, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(message, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                    backgroundColor: toneColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(tokens.radiusMedium),
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('确认'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 void _dismissTransientUi(BuildContext context) {
   FocusManager.instance.primaryFocus?.unfocus();
-  _hideToast();
+  _hideStatusOverlay();
   ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
 }
 
-OverlayEntry? _toastOverlayEntry;
+enum _StatusOverlayTone { success, error, info }
 
-void _hideToast() {
-  _toastOverlayEntry?.remove();
-  _toastOverlayEntry = null;
+OverlayEntry? _statusOverlayEntry;
+
+void _hideStatusOverlay() {
+  _statusOverlayEntry?.remove();
+  _statusOverlayEntry = null;
 }
 
-void _showToast(BuildContext context, String message) {
+void _showStatusOverlay(
+  BuildContext context,
+  String message,
+  _StatusOverlayTone tone,
+) {
   final tokens = Theme.of(context).extension<LunioTokens>()!;
   final overlay = Overlay.maybeOf(context);
   if (overlay == null) {
     return;
   }
-  _hideToast();
-  final topOffset = MediaQuery.paddingOf(context).top + 72;
+  _hideStatusOverlay();
   final entry = OverlayEntry(
     builder: (context) {
-      return Positioned(
-        top: topOffset,
-        left: 22,
-        right: 22,
-        child: _ToastOverlay(
-          message: message,
-          tokens: tokens,
-          onDismiss: _hideToast,
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: _StatusOverlay(
+            message: message,
+            tokens: tokens,
+            tone: tone,
+            onDismiss: _hideStatusOverlay,
+          ),
         ),
       );
     },
   );
-  _toastOverlayEntry = entry;
+  _statusOverlayEntry = entry;
   overlay.insert(entry);
 }
 
-class _ToastOverlay extends StatefulWidget {
-  const _ToastOverlay({
+class _StatusOverlay extends StatefulWidget {
+  const _StatusOverlay({
     required this.message,
     required this.tokens,
+    required this.tone,
     required this.onDismiss,
   });
 
   final String message;
   final LunioTokens tokens;
+  final _StatusOverlayTone tone;
   final VoidCallback onDismiss;
 
   @override
-  State<_ToastOverlay> createState() => _ToastOverlayState();
+  State<_StatusOverlay> createState() => _StatusOverlayState();
 }
 
-class _ToastOverlayState extends State<_ToastOverlay> {
+class _StatusOverlayState extends State<_StatusOverlay> {
   Timer? timer;
 
   @override
   void initState() {
     super.initState();
-    timer = Timer(const Duration(milliseconds: 1400), widget.onDismiss);
+    timer = Timer(const Duration(milliseconds: 1600), widget.onDismiss);
   }
 
   @override
@@ -4241,6 +4430,7 @@ class _ToastOverlayState extends State<_ToastOverlay> {
   @override
   Widget build(BuildContext context) {
     final tokens = widget.tokens;
+    final toneColor = _statusToneColor(tokens, widget.tone);
     return Material(
       color: Colors.transparent,
       child: DecoratedBox(
@@ -4259,10 +4449,11 @@ class _ToastOverlayState extends State<_ToastOverlay> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.check_circle_outline, color: tokens.primary, size: 18),
+              Icon(_statusToneIcon(widget.tone), color: toneColor, size: 20),
               const SizedBox(width: 8),
-              Expanded(
+              Flexible(
                 child: Text(
                   widget.message,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -4277,6 +4468,28 @@ class _ToastOverlayState extends State<_ToastOverlay> {
       ),
     );
   }
+}
+
+Color _statusToneColor(LunioTokens tokens, _StatusOverlayTone tone) {
+  return switch (tone) {
+    _StatusOverlayTone.success => tokens.success,
+    _StatusOverlayTone.error => tokens.danger,
+    _StatusOverlayTone.info => tokens.primary,
+  };
+}
+
+IconData _statusToneIcon(_StatusOverlayTone tone) {
+  return switch (tone) {
+    _StatusOverlayTone.success => Icons.check_circle_outline,
+    _StatusOverlayTone.error => Icons.error_outline,
+    _StatusOverlayTone.info => Icons.info_outline,
+  };
+}
+
+bool _isUniqueConstraintError(Object error) {
+  final message = error.toString();
+  return message.contains('UNIQUE constraint') ||
+      message.contains('SqliteException(2067)');
 }
 
 String _friendlyError(Object error) {

@@ -14,7 +14,6 @@ class BackupPayload {
     this.defaultMaintenanceItems = const [],
     this.maintenanceItems = const [],
     this.records = const [],
-    this.preferences = const [],
   });
 
   final int schemaVersion;
@@ -22,21 +21,6 @@ class BackupPayload {
   final List<VehicleDefaultMaintenanceItem> defaultMaintenanceItems;
   final List<MaintenanceItem> maintenanceItems;
   final List<MaintenanceRecord> records;
-  final List<BackupPreference> preferences;
-}
-
-class BackupPreference {
-  const BackupPreference({
-    this.id,
-    required this.key,
-    required this.value,
-    required this.sync,
-  });
-
-  final int? id;
-  final String key;
-  final String? value;
-  final SyncMetadata sync;
 }
 
 class BackupCodec {
@@ -51,7 +35,6 @@ class BackupCodec {
           .toList(),
       'maintenanceItems': payload.maintenanceItems.map(_itemToJson).toList(),
       'records': payload.records.map(_recordToJson).toList(),
-      'preferences': payload.preferences.map(_preferenceToJson).toList(),
     });
   }
 
@@ -79,10 +62,6 @@ class BackupCodec {
       records: ((map['records'] as List?) ?? const [])
           .cast<Map<String, Object?>>()
           .map(_recordFromJson)
-          .toList(),
-      preferences: ((map['preferences'] as List?) ?? const [])
-          .cast<Map<String, Object?>>()
-          .map(_preferenceFromJson)
           .toList(),
     );
   }
@@ -209,26 +188,6 @@ class BackupCodec {
       costCents: json['costCents'] as int,
       mileageKm: json['mileageKm'] as int,
       note: json['note'] as String?,
-      sync: SyncMetadata.fromJson(
-        (json['sync'] as Map).cast<String, Object?>(),
-      ),
-    );
-  }
-
-  Map<String, Object?> _preferenceToJson(BackupPreference preference) {
-    return {
-      'id': preference.id,
-      'key': preference.key,
-      'value': preference.value,
-      'sync': preference.sync.toJson(),
-    };
-  }
-
-  BackupPreference _preferenceFromJson(Map<String, Object?> json) {
-    return BackupPreference(
-      id: json['id'] as int?,
-      key: json['key'] as String,
-      value: json['value'] as String?,
       sync: SyncMetadata.fromJson(
         (json['sync'] as Map).cast<String, Object?>(),
       ),

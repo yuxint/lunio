@@ -14,12 +14,8 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _brandMeta = const VerificationMeta('brand');
   @override
@@ -524,12 +520,8 @@ class $VehicleDefaultMaintenanceItemsTable
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _vehicleBrandMeta = const VerificationMeta(
     'vehicleBrand',
@@ -1377,12 +1369,8 @@ class $VehicleModelsTable extends VehicleModels
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _brandMeta = const VerificationMeta('brand');
   @override
@@ -1822,12 +1810,8 @@ class $MaintenanceItemsTable extends MaintenanceItems
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _carsIdMeta = const VerificationMeta('carsId');
   @override
@@ -2707,12 +2691,8 @@ class $MaintenanceRecordsTable extends MaintenanceRecords
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _carIdMeta = const VerificationMeta('carId');
   @override
@@ -3254,12 +3234,8 @@ class $MaintenanceRecordItemsTable extends MaintenanceRecordItems
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _maintenanceRecordIdMeta =
       const VerificationMeta('maintenanceRecordId');
@@ -3618,12 +3594,8 @@ class $AppPreferencesTable extends AppPreferences
     'id',
     aliasedName,
     false,
-    hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
   );
   static const VerificationMeta _keyMeta = const VerificationMeta('key');
   @override

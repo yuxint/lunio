@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../../core/date/local_date.dart';
+import '../../core/id/snowflake_id_generator.dart';
 import '../../domain/entities/car.dart' as domain;
 import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
@@ -14,6 +15,8 @@ import '../database/app_database.dart';
 
 class LunioRepository {
   const LunioRepository(this.database);
+
+  static final SnowflakeIdGenerator _idGenerator = SnowflakeIdGenerator();
 
   final AppDatabase database;
 
@@ -62,11 +65,13 @@ class LunioRepository {
     await ensureDefaultMaintenanceItems();
   }
 
-  Future<int> createCar(domain.Car car) {
-    return database
+  Future<int> createCar(domain.Car car) async {
+    final carId = _nextId();
+    await database
         .into(database.cars)
         .insert(
           CarsCompanion.insert(
+            id: Value(carId),
             brand: car.brand,
             model: car.model,
             currentMileageKm: car.currentMileageKm,
@@ -76,14 +81,54 @@ class LunioRepository {
             version: Value(car.sync.version),
           ),
         );
+    return carId;
   }
 
-  Future<int> createCarWithDefaultItems(domain.Car car) {
+  Future<int> createCarWithDefaultItems(domain.Car car) async {
+    final defaultItems = await listDefaultItemsForModel(
+      brand: car.brand,
+      model: car.model,
+    );
+    return createCarWithMaintenanceItems(
+      car,
+      defaultItems
+          .map(
+            (item) => domain.MaintenanceItem(
+              carsId: 0,
+              name: item.itemName,
+              isDefault: true,
+              enabled: true,
+              remindByMileage: item.remindByMileage,
+              remindByTime: item.remindByTime,
+              mileageIntervalKm: item.mileageIntervalKm,
+              timeIntervalMonths: item.timeIntervalMonths,
+              notOverdueUpperLimit: item.notOverdueUpperLimit,
+              overdueUpperLimit: item.overdueUpperLimit,
+              sortOrder: item.sortOrder,
+              sync: car.sync,
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Future<int> createCarWithMaintenanceItems(
+    domain.Car car,
+    List<domain.MaintenanceItem> items,
+  ) {
+    if (!items.any((item) => item.enabled)) {
+      throw ArgumentError('At least one maintenance item must stay enabled');
+    }
+    for (final item in items) {
+      item.validate();
+    }
     return database.transaction(() async {
-      final carId = await database
+      final carId = _nextId();
+      await database
           .into(database.cars)
           .insert(
             CarsCompanion.insert(
+              id: Value(carId),
               brand: car.brand,
               model: car.model,
               currentMileageKm: car.currentMileageKm,
@@ -94,24 +139,17 @@ class LunioRepository {
             ),
           );
 
-      final defaultRows =
-          await (database.select(database.vehicleDefaultMaintenanceItems)
-                ..where(
-                  (row) =>
-                      row.vehicleBrand.equals(car.brand) &
-                      row.vehicleModel.equals(car.model),
-                )
-                ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
-              .get();
-      for (final item in defaultRows) {
+      for (final item in items) {
+        final itemId = _nextId();
         await database
             .into(database.maintenanceItems)
             .insert(
               MaintenanceItemsCompanion.insert(
+                id: Value(itemId),
                 carsId: carId,
-                name: item.itemName,
-                isDefault: true,
-                enabled: const Value(true),
+                name: item.name,
+                isDefault: item.isDefault,
+                enabled: Value(item.enabled),
                 remindByMileage: item.remindByMileage,
                 remindByTime: item.remindByTime,
                 mileageIntervalKm: Value(item.mileageIntervalKm),
@@ -119,9 +157,9 @@ class LunioRepository {
                 notOverdueUpperLimit: Value(item.notOverdueUpperLimit),
                 overdueUpperLimit: Value(item.overdueUpperLimit),
                 sortOrder: item.sortOrder,
-                syncStatus: Value(car.sync.status.name),
-                updatedAt: car.sync.updatedAt.toIso8601String(),
-                version: Value(car.sync.version),
+                syncStatus: Value(item.sync.status.name),
+                updatedAt: item.sync.updatedAt.toIso8601String(),
+                version: Value(item.sync.version),
               ),
             );
       }
@@ -204,11 +242,13 @@ class LunioRepository {
 
   Future<int> saveVehicleDefaultMaintenanceItem(
     domain.VehicleDefaultMaintenanceItem item,
-  ) {
-    return database
+  ) async {
+    final itemId = _nextId();
+    await database
         .into(database.vehicleDefaultMaintenanceItems)
         .insert(
           VehicleDefaultMaintenanceItemsCompanion.insert(
+            id: Value(itemId),
             vehicleBrand: item.vehicleBrand,
             vehicleModel: item.vehicleModel,
             itemName: item.itemName,
@@ -224,13 +264,16 @@ class LunioRepository {
             version: Value(item.sync.version),
           ),
         );
+    return itemId;
   }
 
-  Future<int> saveVehicleModel(domain.VehicleModel model) {
-    return database
+  Future<int> saveVehicleModel(domain.VehicleModel model) async {
+    final modelId = _nextId();
+    await database
         .into(database.vehicleModels)
         .insert(
           VehicleModelsCompanion.insert(
+            id: Value(modelId),
             brand: model.brand,
             model: model.model,
             sortOrder: model.sortOrder,
@@ -239,6 +282,7 @@ class LunioRepository {
             version: Value(model.sync.version),
           ),
         );
+    return modelId;
   }
 
   Future<List<domain.VehicleModel>> listVehicleModels() async {
@@ -264,12 +308,14 @@ class LunioRepository {
     return rows.map(_defaultItemFromRow).toList();
   }
 
-  Future<int> saveMaintenanceItem(domain.MaintenanceItem item) {
+  Future<int> saveMaintenanceItem(domain.MaintenanceItem item) async {
     item.validate();
-    return database
+    final itemId = _nextId();
+    await database
         .into(database.maintenanceItems)
         .insert(
           MaintenanceItemsCompanion.insert(
+            id: Value(itemId),
             carsId: item.carsId,
             name: item.name,
             isDefault: item.isDefault,
@@ -286,6 +332,7 @@ class LunioRepository {
             version: Value(item.sync.version),
           ),
         );
+    return itemId;
   }
 
   Future<List<domain.MaintenanceItem>> listMaintenanceItemsForCar(
@@ -393,10 +440,12 @@ class LunioRepository {
         itemIds: uniqueItemIds,
       );
 
-      final recordId = await database
+      final recordId = _nextId();
+      await database
           .into(database.maintenanceRecords)
           .insert(
             MaintenanceRecordsCompanion.insert(
+              id: Value(recordId),
               carId: record.carId,
               date: record.date.toString(),
               mileageKm: record.mileageKm,
@@ -409,10 +458,12 @@ class LunioRepository {
           );
 
       for (final itemId in uniqueItemIds) {
+        final recordItemId = _nextId();
         await database
             .into(database.maintenanceRecordItems)
             .insert(
               MaintenanceRecordItemsCompanion.insert(
+                id: Value(recordItemId),
                 maintenanceRecordId: recordId,
                 carId: record.carId,
                 itemId: itemId,
@@ -471,10 +522,12 @@ class LunioRepository {
         database.maintenanceRecordItems,
       )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
       for (final itemId in uniqueItemIds) {
+        final recordItemId = _nextId();
         await database
             .into(database.maintenanceRecordItems)
             .insert(
               MaintenanceRecordItemsCompanion.insert(
+                id: Value(recordItemId),
                 maintenanceRecordId: recordId,
                 carId: record.carId,
                 itemId: itemId,
@@ -560,17 +613,12 @@ class LunioRepository {
     final records = recordRows.map((row) {
       return _recordFromRow(row, itemIdsByRecordId[row.id] ?? const []);
     }).toList();
-    final preferences = (await database.select(database.appPreferences).get())
-        .map(_preferenceFromRow)
-        .toList();
-
     return BackupPayload(
       schemaVersion: 1,
       cars: cars,
       defaultMaintenanceItems: defaultItems,
       maintenanceItems: items,
       records: records,
-      preferences: preferences,
     );
   }
 
@@ -583,23 +631,25 @@ class LunioRepository {
     _validateBackupReferences(payload);
 
     return database.transaction(() async {
-      await database.delete(database.appPreferences).go();
-      await database.delete(database.maintenanceRecordItems).go();
-      await database.delete(database.maintenanceRecords).go();
-      await database.delete(database.maintenanceItems).go();
-      await database.delete(database.vehicleDefaultMaintenanceItems).go();
-      await database.delete(database.cars).go();
+      final hadCars = await database
+          .select(database.cars)
+          .get()
+          .then((rows) => rows.isNotEmpty);
+      final carIdMap = <int, int>{};
+      final itemIdMap = <int, int>{};
+      int? firstRestoredCarId;
 
       for (final car in payload.cars) {
-        final id = car.id;
-        if (id == null) {
+        final sourceId = car.id;
+        if (sourceId == null) {
           throw ArgumentError('Backup car id is required');
         }
+        final carId = _nextId();
         await database
             .into(database.cars)
             .insert(
               CarsCompanion.insert(
-                id: Value(id),
+                id: Value(carId),
                 brand: car.brand,
                 model: car.model,
                 currentMileageKm: car.currentMileageKm,
@@ -609,18 +659,17 @@ class LunioRepository {
                 version: Value(car.sync.version),
               ),
             );
+        carIdMap[sourceId] = carId;
+        firstRestoredCarId ??= carId;
       }
 
       for (final item in payload.defaultMaintenanceItems) {
-        final id = item.id;
-        if (id == null) {
-          throw ArgumentError('Backup default maintenance item id is required');
-        }
+        final itemId = _nextId();
         await database
             .into(database.vehicleDefaultMaintenanceItems)
             .insert(
               VehicleDefaultMaintenanceItemsCompanion.insert(
-                id: Value(id),
+                id: Value(itemId),
                 vehicleBrand: item.vehicleBrand,
                 vehicleModel: item.vehicleModel,
                 itemName: item.itemName,
@@ -639,16 +688,21 @@ class LunioRepository {
       }
 
       for (final item in payload.maintenanceItems) {
-        final id = item.id;
-        if (id == null) {
+        final sourceId = item.id;
+        if (sourceId == null) {
           throw ArgumentError('Backup maintenance item id is required');
         }
+        final carId = carIdMap[item.carsId];
+        if (carId == null) {
+          throw ArgumentError('Backup maintenance item references missing car');
+        }
+        final itemId = _nextId();
         await database
             .into(database.maintenanceItems)
             .insert(
               MaintenanceItemsCompanion.insert(
-                id: Value(id),
-                carsId: item.carsId,
+                id: Value(itemId),
+                carsId: carId,
                 name: item.name,
                 isDefault: item.isDefault,
                 enabled: Value(item.enabled),
@@ -664,19 +718,23 @@ class LunioRepository {
                 version: Value(item.sync.version),
               ),
             );
+        itemIdMap[sourceId] = itemId;
       }
 
       for (final record in payload.records) {
-        final id = record.id;
-        if (id == null) {
-          throw ArgumentError('Backup maintenance record id is required');
+        final carId = carIdMap[record.carId];
+        if (carId == null) {
+          throw ArgumentError(
+            'Backup maintenance record references missing car',
+          );
         }
+        final recordId = _nextId();
         await database
             .into(database.maintenanceRecords)
             .insert(
               MaintenanceRecordsCompanion.insert(
-                id: Value(id),
-                carId: record.carId,
+                id: Value(recordId),
+                carId: carId,
                 date: record.date.toString(),
                 mileageKm: record.mileageKm,
                 costCents: record.costCents,
@@ -687,37 +745,31 @@ class LunioRepository {
               ),
             );
         for (final itemId in RecordRules.uniqueItemIds(record.itemIds)) {
+          final mappedItemId = itemIdMap[itemId];
+          if (mappedItemId == null) {
+            throw ArgumentError(
+              'Backup maintenance record references missing item',
+            );
+          }
+          final recordItemId = _nextId();
           await database
               .into(database.maintenanceRecordItems)
               .insert(
                 MaintenanceRecordItemsCompanion.insert(
-                  maintenanceRecordId: id,
-                  carId: record.carId,
-                  itemId: itemId,
+                  id: Value(recordItemId),
+                  maintenanceRecordId: recordId,
+                  carId: carId,
+                  itemId: mappedItemId,
                   date: record.date.toString(),
                 ),
               );
         }
       }
 
-      for (final preference in payload.preferences) {
-        final id = preference.id;
-        if (id == null) {
-          throw ArgumentError('Backup preference id is required');
-        }
-        await database
-            .into(database.appPreferences)
-            .insert(
-              AppPreferencesCompanion.insert(
-                id: Value(id),
-                key: preference.key,
-                value: Value(preference.value),
-                syncStatus: Value(preference.sync.status.name),
-                updatedAt: preference.sync.updatedAt.toIso8601String(),
-                version: Value(preference.sync.version),
-              ),
-            );
+      if (!hadCars && firstRestoredCarId != null) {
+        await _writeAppliedCarId(firstRestoredCarId);
       }
+      await _ensureAppliedCarInTransaction();
     });
   }
 
@@ -766,6 +818,21 @@ class LunioRepository {
     return _writePreferenceValue('appliedCarId', carId?.toString());
   }
 
+  Future<void> _ensureAppliedCarInTransaction() async {
+    final cars = await database.select(database.cars).get();
+    if (cars.isEmpty) {
+      await _writeAppliedCarId(null);
+      return;
+    }
+    final appliedCarId = int.tryParse(
+      await _getAppliedCarIdInTransaction() ?? '',
+    );
+    if (appliedCarId != null && cars.any((car) => car.id == appliedCarId)) {
+      return;
+    }
+    await _writeAppliedCarId(cars.first.id);
+  }
+
   Future<void> _writePreferenceValue(String key, String? value) async {
     if (value == null) {
       await (database.delete(
@@ -778,10 +845,12 @@ class LunioRepository {
     )..where((pref) => pref.key.equals(key))).getSingleOrNull();
     final now = DateTime.now().toIso8601String();
     if (existing == null) {
+      final preferenceId = _nextId();
       await database
           .into(database.appPreferences)
           .insert(
             AppPreferencesCompanion.insert(
+              id: Value(preferenceId),
               key: key,
               value: Value(value),
               syncStatus: const Value('pendingUpdate'),
@@ -800,6 +869,8 @@ class LunioRepository {
       ),
     );
   }
+
+  static int _nextId() => _idGenerator.next();
 
   List<domain.VehicleDefaultMaintenanceItem> _builtInDefaultItems(
     SyncMetadata sync,
@@ -1048,9 +1119,6 @@ class LunioRepository {
       }
     }
     for (final record in payload.records) {
-      if (record.id == null) {
-        throw ArgumentError('Backup maintenance record id is required');
-      }
       if (!carIds.contains(record.carId)) {
         throw ArgumentError('Backup maintenance record references missing car');
       }
@@ -1064,22 +1132,6 @@ class LunioRepository {
           throw ArgumentError(
             'Backup maintenance record references item from another car',
           );
-        }
-      }
-    }
-    for (final preference in payload.preferences) {
-      if (preference.id == null) {
-        throw ArgumentError('Backup preference id is required');
-      }
-      if (preference.key == 'appliedCarId' && preference.value != null) {
-        final appliedCarId = int.tryParse(preference.value!);
-        if (appliedCarId == null || !carIds.contains(appliedCarId)) {
-          throw ArgumentError('Backup appliedCarId references missing car');
-        }
-      }
-      if (preference.key == 'manualDate' && preference.value != null) {
-        if (LocalDate.tryParse(preference.value!) == null) {
-          throw ArgumentError('Backup manualDate is invalid');
         }
       }
     }
@@ -1119,19 +1171,6 @@ class LunioRepository {
       costCents: row.costCents,
       mileageKm: row.mileageKm,
       note: row.note,
-      sync: SyncMetadata(
-        status: SyncStatus.values.byName(row.syncStatus),
-        updatedAt: DateTime.parse(row.updatedAt),
-        version: row.version,
-      ),
-    );
-  }
-
-  BackupPreference _preferenceFromRow(AppPreferenceRow row) {
-    return BackupPreference(
-      id: row.id,
-      key: row.key,
-      value: row.value,
       sync: SyncMetadata(
         status: SyncStatus.values.byName(row.syncStatus),
         updatedAt: DateTime.parse(row.updatedAt),
