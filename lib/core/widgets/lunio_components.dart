@@ -404,7 +404,8 @@ class _HeroMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return Container(
+      constraints: const BoxConstraints(minHeight: 82),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(18),
@@ -422,12 +423,20 @@ class _HeroMetric extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              metric.value,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.white,
-                fontSize: 23,
-                fontWeight: FontWeight.w800,
+            SizedBox(
+              height: 28,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  metric.value,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
           ],
@@ -501,7 +510,9 @@ class LunioSegmentedControl extends StatelessWidget {
                 child: _SegmentButton(
                   label: values[index],
                   selected: index == selectedIndex,
-                  onTap: () => onSelected(index),
+                  onTap: index == selectedIndex
+                      ? null
+                      : () => onSelected(index),
                 ),
               ),
           ],
@@ -520,7 +531,7 @@ class _SegmentButton extends StatelessWidget {
 
   final String label;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -530,11 +541,11 @@ class _SegmentButton extends StatelessWidget {
       selected: selected,
       label: label,
       excludeSemantics: true,
-      child: InkWell(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(tokens.radiusSmall),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+          duration: Duration.zero,
           height: 38,
           alignment: Alignment.center,
           decoration: BoxDecoration(

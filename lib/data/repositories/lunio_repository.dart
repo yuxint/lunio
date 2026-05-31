@@ -21,6 +21,43 @@ class LunioRepository {
   final AppDatabase database;
 
   Future<void> ensureDefaultMaintenanceItems() async {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime.now(),
+    );
+    final builtInItems = _builtInDefaultItems(sync);
+    for (final entry in _authoritativeDefaultModels.entries) {
+      final items = builtInItems
+          .where(
+            (item) =>
+                item.vehicleBrand == entry.key.$1 &&
+                item.vehicleModel == entry.key.$2,
+          )
+          .toList();
+      if (items.isEmpty) {
+        continue;
+      }
+      final rows =
+          await (database.select(database.vehicleDefaultMaintenanceItems)
+                ..where(
+                  (row) =>
+                      row.vehicleBrand.equals(entry.key.$1) &
+                      row.vehicleModel.equals(entry.key.$2),
+                ))
+              .get();
+      if (!_defaultItemsMatch(rows, items)) {
+        await (database.delete(database.vehicleDefaultMaintenanceItems)..where(
+              (row) =>
+                  row.vehicleBrand.equals(entry.key.$1) &
+                  row.vehicleModel.equals(entry.key.$2),
+            ))
+            .go();
+        for (final item in items) {
+          await saveVehicleDefaultMaintenanceItem(item);
+        }
+      }
+    }
+
     final existing = await database
         .select(database.vehicleDefaultMaintenanceItems)
         .get();
@@ -30,11 +67,7 @@ class LunioRepository {
               '${row.vehicleBrand}\u0000${row.vehicleModel}\u0000${row.itemName}',
         )
         .toSet();
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime.now(),
-    );
-    for (final item in _builtInDefaultItems(sync)) {
+    for (final item in builtInItems) {
       final key =
           '${item.vehicleBrand}\u0000${item.vehicleModel}\u0000${item.itemName}';
       if (!existingKeys.contains(key)) {
@@ -865,10 +898,49 @@ class LunioRepository {
 
   static int _nextId() => _idGenerator.next();
 
+  static const _authoritativeDefaultModels = {
+    ('东风本田', '思域'): true,
+    ('东风日产', '轩逸'): true,
+  };
+
+  bool _defaultItemsMatch(
+    List<VehicleDefaultMaintenanceItemRow> rows,
+    List<domain.VehicleDefaultMaintenanceItem> items,
+  ) {
+    if (rows.length != items.length) {
+      return false;
+    }
+    final rowsByName = {for (final row in rows) row.itemName: row};
+    for (final item in items) {
+      final row = rowsByName[item.itemName];
+      if (row == null ||
+          row.remindByMileage != item.remindByMileage ||
+          row.remindByTime != item.remindByTime ||
+          row.mileageIntervalKm != item.mileageIntervalKm ||
+          row.timeIntervalMonths != item.timeIntervalMonths ||
+          row.notOverdueUpperLimit != item.notOverdueUpperLimit ||
+          row.overdueUpperLimit != item.overdueUpperLimit ||
+          row.sortOrder != item.sortOrder) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   List<domain.VehicleDefaultMaintenanceItem> _builtInDefaultItems(
     SyncMetadata sync,
   ) {
     return [
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '汽油发动机清洁剂（燃油宝）',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 5000,
+        sortOrder: 1,
+        sync: sync,
+      ),
       domain.VehicleDefaultMaintenanceItem(
         vehicleBrand: '东风本田',
         vehicleModel: '思域',
@@ -877,7 +949,7 @@ class LunioRepository {
         remindByTime: true,
         mileageIntervalKm: 5000,
         timeIntervalMonths: 6,
-        sortOrder: 1,
+        sortOrder: 2,
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
@@ -888,7 +960,7 @@ class LunioRepository {
         remindByTime: true,
         mileageIntervalKm: 5000,
         timeIntervalMonths: 6,
-        sortOrder: 2,
+        sortOrder: 3,
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
@@ -899,7 +971,110 @@ class LunioRepository {
         remindByTime: true,
         mileageIntervalKm: 20000,
         timeIntervalMonths: 12,
-        sortOrder: 3,
+        sortOrder: 4,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '空气滤芯',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 20000,
+        sortOrder: 5,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '变速箱油',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 40000,
+        timeIntervalMonths: 24,
+        sortOrder: 6,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '制动液（刹车油）',
+        remindByMileage: false,
+        remindByTime: true,
+        timeIntervalMonths: 36,
+        sortOrder: 7,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '火花塞',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 100000,
+        sortOrder: 8,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '检查传动皮带',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 40000,
+        timeIntervalMonths: 24,
+        sortOrder: 9,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '检查气门间隙',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 120000,
+        sortOrder: 10,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '检查制动器（刹车）',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 120000,
+        sortOrder: 11,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '冷却液（防冻液）',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 200000,
+        timeIntervalMonths: 120,
+        sortOrder: 12,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '汽油滤芯',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 140000,
+        sortOrder: 13,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风本田',
+        vehicleModel: '思域',
+        itemName: '轮胎换位',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 10000,
+        sortOrder: 14,
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(
@@ -908,7 +1083,7 @@ class LunioRepository {
         itemName: '机油',
         remindByMileage: true,
         remindByTime: true,
-        mileageIntervalKm: 5000,
+        mileageIntervalKm: 10000,
         timeIntervalMonths: 6,
         sortOrder: 1,
         sync: sync,
@@ -916,12 +1091,42 @@ class LunioRepository {
       domain.VehicleDefaultMaintenanceItem(
         vehicleBrand: '东风日产',
         vehicleModel: '轩逸',
-        itemName: '空气滤芯',
+        itemName: '空调滤芯',
         remindByMileage: true,
         remindByTime: true,
         mileageIntervalKm: 20000,
         timeIntervalMonths: 12,
         sortOrder: 2,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风日产',
+        vehicleModel: '轩逸',
+        itemName: '空气滤芯',
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 20000,
+        sortOrder: 3,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风日产',
+        vehicleModel: '轩逸',
+        itemName: '变速箱油',
+        remindByMileage: false,
+        remindByTime: true,
+        timeIntervalMonths: 24,
+        sortOrder: 4,
+        sync: sync,
+      ),
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风日产',
+        vehicleModel: '轩逸',
+        itemName: '刹车油',
+        remindByMileage: false,
+        remindByTime: true,
+        timeIntervalMonths: 36,
+        sortOrder: 5,
         sync: sync,
       ),
       domain.VehicleDefaultMaintenanceItem(

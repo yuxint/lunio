@@ -79,7 +79,21 @@ void main() {
       );
 
       final items = await repository.listMaintenanceItemsForCar(carId);
-      expect(items.map((item) => item.name), containsAll(['机油', '机滤', '空调滤芯']));
+      expect(
+        items.map((item) => item.name),
+        containsAll(['汽油发动机清洁剂（燃油宝）', '机油', '机滤', '空调滤芯']),
+      );
+      expect(items, hasLength(14));
+      final oilItems = items.where(
+        (item) => item.name == '机油' || item.name == '机滤',
+      );
+      expect(oilItems, hasLength(2));
+      for (final item in oilItems) {
+        expect(item.remindByMileage, isTrue);
+        expect(item.remindByTime, isTrue);
+        expect(item.mileageIntervalKm, 5000);
+        expect(item.timeIntervalMonths, 6);
+      }
       expect(await repository.getAppliedCarId(), '$carId');
     },
   );

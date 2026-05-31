@@ -46,6 +46,8 @@ class MaintenanceRules {
       percent: progress.percent,
       status: _statusForItem(item, progress.percent),
       reason: progress.reason,
+      mileageRemainingKm: mileageProgress.remaining,
+      daysRemaining: timeProgress.remaining,
     );
   }
 
@@ -72,9 +74,11 @@ class MaintenanceRules {
         latestRecord?.mileageKm ?? noHistoryBaselineMileageKm;
     final usedKm = currentMileageKm - baselineMileageKm;
     final percent = usedKm <= 0 ? 0 : usedKm / item.mileageIntervalKm! * 100;
+    final remaining = item.mileageIntervalKm! - (usedKm <= 0 ? 0 : usedKm);
     return _Progress(
       percent.toDouble(),
       latestRecord == null ? 'mileage-no-history' : 'mileage',
+      remaining,
     );
   }
 
@@ -91,19 +95,22 @@ class MaintenanceRules {
     final dueDate = baselineDate.addMonths(item.timeIntervalMonths!);
     final totalDays = baselineDate.daysUntil(dueDate);
     final usedDays = baselineDate.daysUntil(today);
+    final remainingDays = today.daysUntil(dueDate);
     final percent = totalDays <= 0 || usedDays <= 0
         ? 0
         : usedDays / totalDays * 100;
     return _Progress(
       percent.toDouble(),
       latestRecord == null ? 'time-no-history' : 'time',
+      remainingDays,
     );
   }
 }
 
 class _Progress {
-  const _Progress(this.percent, this.reason);
+  const _Progress(this.percent, this.reason, [this.remaining]);
 
   final double percent;
   final String reason;
+  final int? remaining;
 }

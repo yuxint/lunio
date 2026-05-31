@@ -132,6 +132,12 @@ void main() {
     await tester.tap(find.text('记录'));
     await tester.pumpAndSettle();
     expect(find.text('2026-05-19'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNWidgets(2));
+
+    await tester.tap(find.text('机油').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2026-05-19'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNWidgets(2));
 
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
@@ -153,6 +159,72 @@ void main() {
     expect(find.text('保存记录'), findsOneWidget);
   });
 
+  testWidgets('reminders without records show empty urgent metric', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('最急项目'), findsOneWidget);
+    expect(find.text('暂无'), findsOneWidget);
+    expect(find.text('暂无保养记录，记录首保后再生成保养提醒。'), findsOneWidget);
+  });
+
+  testWidgets('record form shows car and can add maintenance item', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('新增保养记录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('东风本田 思域'), findsWidgets);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
+      '0',
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).controller?.text,
+      '0',
+    );
+
+    await tester.tap(find.byType(TextField).at(0));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
+      '',
+    );
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '新增').hitTestable().last);
+    await tester.pumpAndSettle();
+    expect(find.text('新增保养项目'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(3), '玻璃水');
+    await tester.enterText(find.byType(TextField).at(4), '3000');
+    await tester.enterText(find.byType(TextField).at(5), '6');
+    tester.testTextInput.hide();
+    await tester.drag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -420),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存项目'));
+    await tester.pumpAndSettle();
+
+    expect(
+      await database.select(database.maintenanceItems).get(),
+      hasLength(15),
+    );
+    expect(find.text('玻璃水', skipOffstage: false), findsOneWidget);
+  });
+
   testWidgets('profile can create a car and set it as applied car', (
     tester,
   ) async {
@@ -169,7 +241,7 @@ void main() {
     expect(await database.select(database.cars).get(), hasLength(1));
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(3),
+      hasLength(14),
     );
   });
 
@@ -311,6 +383,7 @@ void main() {
 
     await createDefaultCar(tester);
 
+    await tester.ensureVisible(find.widgetWithText(TextButton, '编辑').last);
     await tester.tap(find.widgetWithText(TextButton, '编辑').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '60000');
@@ -348,7 +421,7 @@ void main() {
     expect(find.text('玻璃水'), findsOneWidget);
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(4),
+      hasLength(15),
     );
   });
 
@@ -420,7 +493,8 @@ void main() {
 
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.tap(find.text('汽油发动机清洁剂（燃油宝）'));
     await tester.pumpAndSettle();
 
     expect(find.text('编辑保养项目'), findsOneWidget);
@@ -451,7 +525,7 @@ void main() {
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('删除'), findsNWidgets(3));
+    expect(find.byTooltip('删除'), findsNWidgets(14));
     await tester.tap(find.byTooltip('删除').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存车辆'));
@@ -459,7 +533,7 @@ void main() {
 
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(2),
+      hasLength(13),
     );
   });
 
@@ -502,22 +576,22 @@ void main() {
 
     await tester.tap(find.byTooltip('删除').first);
     await tester.pumpAndSettle();
-    expect(find.text('机油'), findsNothing);
+    expect(find.text('汽油发动机清洁剂（燃油宝）'), findsNothing);
 
     await tester.tap(find.widgetWithText(TextButton, '恢复'));
     await tester.pumpAndSettle();
     expect(find.text('恢复默认项目'), findsOneWidget);
-    expect(find.text('已存在'), findsNWidgets(2));
+    expect(find.text('已存在'), findsNWidgets(13));
     await tester.tap(find.widgetWithText(FilledButton, '恢复'));
     await tester.pumpAndSettle();
-    expect(find.text('机油'), findsOneWidget);
+    expect(find.text('汽油发动机清洁剂（燃油宝）'), findsOneWidget);
 
     await tester.tap(find.text('保存车辆'));
     await tester.pumpAndSettle();
 
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(3),
+      hasLength(14),
     );
   });
 
@@ -641,7 +715,7 @@ void main() {
     expect(find.text('保养提醒'), findsOneWidget);
     expect(find.text('机油'), findsOneWidget);
     expect(find.text('0%'), findsWidgets);
-    expect(find.textContaining('上次 2026-05-23'), findsOneWidget);
+    expect(find.text('按里程提醒：距离下次约 5,000 公里'), findsOneWidget);
   });
 
   testWidgets('profile can enable manual date preference', (tester) async {

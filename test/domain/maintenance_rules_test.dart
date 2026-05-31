@@ -68,6 +68,8 @@ void main() {
     expect(progress.percent, 100);
     expect(progress.reason, 'time');
     expect(progress.status, ReminderStatus.warning);
+    expect(progress.mileageRemainingKm, 5000);
+    expect(progress.daysRemaining, 0);
   });
 
   test('mileage-only reminder can become danger', () {
@@ -94,6 +96,7 @@ void main() {
 
     expect(progress.percent, 50);
     expect(progress.reason, 'mileage-no-history');
+    expect(progress.mileageRemainingKm, 5000);
   });
 
   test('time progress uses natural day ratio instead of whole months', () {

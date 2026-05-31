@@ -225,28 +225,6 @@ class _ReminderPreviewPage extends ConsumerWidget {
                 ),
               ],
             ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.add,
-                  title: '新增保养记录',
-                  subtitle: '保存后同步更新车辆里程',
-                  onTap: () => _showMaintenanceRecordFormSheet(context, ref),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.format_list_bulleted,
-                  title: '查看历史',
-                  subtitle: '按周期或按项目管理记录',
-                  onTap: () => context.go('/records'),
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 14),
           if (car != null)
             LunioSection(
@@ -276,70 +254,16 @@ class _ReminderPreviewPage extends ConsumerWidget {
   }
 }
 
-class _QuickActionCard extends StatelessWidget {
-  const _QuickActionCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.labels,
+    required this.selectedIndexes,
+    required this.onSelected,
   });
 
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Material(
-      color: tokens.surface,
-      borderRadius: BorderRadius.circular(tokens.radiusLarge),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 82),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(color: tokens.line),
-            borderRadius: BorderRadius.circular(tokens.radiusLarge),
-            boxShadow: [
-              BoxShadow(
-                color: tokens.ink.withValues(alpha: 0.08),
-                blurRadius: 26,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: tokens.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: tokens.primary, size: 18),
-              ),
-              const SizedBox(height: 8),
-              Text(title, style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 4),
-              Text(subtitle, style: Theme.of(context).textTheme.labelSmall),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.labels});
-
   final List<String> labels;
+  final Set<int> selectedIndexes;
+  final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -349,25 +273,65 @@ class _FilterBar extends StatelessWidget {
       child: Row(
         children: [
           for (var index = 0; index < labels.length; index++) ...[
-            Container(
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: index == 0 ? tokens.primarySoft : tokens.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: index == 0
-                      ? tokens.primary.withValues(alpha: 0.34)
-                      : tokens.line,
-                ),
-              ),
-              child: Text(
-                labels[index],
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: index == 0 ? tokens.primary : tokens.ink,
-                ),
-              ),
+            Builder(
+              builder: (context) {
+                final selected = selectedIndexes.contains(index);
+                return InkWell(
+                  onTap: () => onSelected(index),
+                  borderRadius: BorderRadius.circular(12),
+                  overlayColor: WidgetStateProperty.all(Colors.transparent),
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selected ? tokens.primarySoft : tokens.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected
+                                ? tokens.primary.withValues(alpha: 0.34)
+                                : tokens.line,
+                          ),
+                        ),
+                        child: Text(
+                          labels[index],
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: selected ? tokens.primary : tokens.ink,
+                              ),
+                        ),
+                      ),
+                      if (selected)
+                        Positioned(
+                          right: 2,
+                          bottom: 2,
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: tokens.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: tokens.surface,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              size: 9,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
             if (index != labels.length - 1) const SizedBox(width: 8),
           ],
@@ -617,6 +581,14 @@ class _ReminderList extends StatelessWidget {
         child: Text('保养记录加载失败：${_friendlyError(records.error!)}'),
       );
     }
+    if ((records.value ?? const <MaintenanceRecord>[]).isEmpty) {
+      return LunioCard(
+        child: Text(
+          '暂无保养记录，记录首保后再生成保养提醒。',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+    }
     final rows = _buildReminderRows(
       car: car,
       items: items.value ?? const [],
@@ -706,7 +678,10 @@ class _ReminderRow extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(row.detail, style: Theme.of(context).textTheme.bodySmall),
+                for (final detail in row.detailTexts) ...[
+                  Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                  if (detail != row.detailTexts.last) const SizedBox(height: 2),
+                ],
               ],
             ),
           ),
@@ -769,6 +744,8 @@ class _RecordsPreviewPage extends ConsumerStatefulWidget {
 
 class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
   int selectedMode = 0;
+  final selectedYears = <int>{};
+  final selectedItemIds = <int>{};
 
   @override
   Widget build(BuildContext context) {
@@ -785,12 +762,6 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
     return LunioPage(
       title: '保养记录',
       subtitle: '同车同日仅保留一条记录',
-      trailing: LunioIconButton(
-        icon: Icons.tune,
-        tooltip: '筛选记录',
-        onPressed: () =>
-            _showStatusOverlay(context, '筛选入口已预留', _StatusOverlayTone.info),
-      ),
       children: [
         LunioSegmentedControl(
           values: const ['按周期', '按项目'],
@@ -798,13 +769,57 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
           onSelected: (index) => setState(() => selectedMode = index),
         ),
         const SizedBox(height: 14),
-        _FilterBar(
-          labels: [
-            '全部年份',
-            '2026年',
-            if (items.isNotEmpty) items.first.name,
-            if (items.length > 1) items[1].name,
-          ],
+        records.maybeWhen(
+          data: (value) {
+            final years = _recordYears(value);
+            selectedYears.removeWhere((year) => !years.contains(year));
+            final itemIds = items
+                .map((item) => item.id)
+                .whereType<int>()
+                .toSet();
+            selectedItemIds.removeWhere((itemId) => !itemIds.contains(itemId));
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _FilterBar(
+                  labels: ['全部年份', for (final year in years) '$year年'],
+                  selectedIndexes: _selectedFilterIndexes(
+                    values: years,
+                    selectedValues: selectedYears,
+                  ),
+                  onSelected: (index) => setState(() {
+                    if (index == 0) {
+                      selectedYears.clear();
+                      return;
+                    }
+                    _toggleSelection(selectedYears, years[index - 1]);
+                  }),
+                ),
+                const SizedBox(height: 8),
+                _FilterBar(
+                  labels: ['全部项目', for (final item in items) item.name],
+                  selectedIndexes: _selectedFilterIndexes(
+                    values: items
+                        .map((item) => item.id)
+                        .whereType<int>()
+                        .toList(),
+                    selectedValues: selectedItemIds,
+                  ),
+                  onSelected: (index) => setState(() {
+                    if (index == 0) {
+                      selectedItemIds.clear();
+                      return;
+                    }
+                    final itemId = items[index - 1].id;
+                    if (itemId != null) {
+                      _toggleSelection(selectedItemIds, itemId);
+                    }
+                  }),
+                ),
+              ],
+            );
+          },
+          orElse: () => const SizedBox.shrink(),
         ),
         const SizedBox(height: 14),
         records.when(
@@ -823,9 +838,22 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
                 ),
               );
             }
+            final filteredRecords = _filterRecords(
+              records: value,
+              years: selectedYears,
+              itemIds: selectedItemIds,
+            );
+            if (filteredRecords.isEmpty) {
+              return LunioCard(
+                child: Text(
+                  '没有符合筛选条件的记录',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              );
+            }
             if (selectedMode == 0) {
               return _RecordCycleList(
-                records: value,
+                records: filteredRecords,
                 items: items,
                 onEdit: (record) => _showMaintenanceRecordFormSheet(
                   context,
@@ -836,7 +864,11 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
                     _deleteMaintenanceRecord(context, ref, record),
               );
             }
-            return _RecordItemList(records: value, items: items);
+            return _RecordItemList(
+              records: filteredRecords,
+              items: items,
+              selectedItemIds: selectedItemIds,
+            );
           },
         ),
       ],
@@ -886,7 +918,7 @@ class _RecordCycleList extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${_formatNumber(record.mileageKm)} km · ${record.note ?? '未填写备注'}',
+                  _recordSummaryText(record),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
@@ -917,18 +949,34 @@ class _RecordCycleList extends StatelessWidget {
 }
 
 class _RecordItemList extends StatelessWidget {
-  const _RecordItemList({required this.records, required this.items});
+  const _RecordItemList({
+    required this.records,
+    required this.items,
+    required this.selectedItemIds,
+  });
 
   final List<MaintenanceRecord> records;
   final List<MaintenanceItem> items;
+  final Set<int> selectedItemIds;
 
   @override
   Widget build(BuildContext context) {
     final rows = <({MaintenanceRecord record, MaintenanceItem? item})>[];
     for (final record in records) {
       for (final itemId in record.itemIds) {
+        if (selectedItemIds.isNotEmpty && !selectedItemIds.contains(itemId)) {
+          continue;
+        }
         rows.add((record: record, item: _itemById(items, itemId)));
       }
+    }
+    if (rows.isEmpty) {
+      return LunioCard(
+        child: Text(
+          '没有符合筛选条件的记录',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
     }
     return Column(
       children: [
@@ -966,6 +1014,59 @@ class _RecordItemList extends StatelessWidget {
       ],
     );
   }
+}
+
+List<int> _recordYears(List<MaintenanceRecord> records) {
+  final years = records.map((record) => record.date.year).toSet().toList()
+    ..sort((left, right) => right.compareTo(left));
+  return years;
+}
+
+List<MaintenanceRecord> _filterRecords({
+  required List<MaintenanceRecord> records,
+  required Set<int> years,
+  required Set<int> itemIds,
+}) {
+  return records.where((record) {
+    if (years.isNotEmpty && !years.contains(record.date.year)) {
+      return false;
+    }
+    if (itemIds.isNotEmpty &&
+        !record.itemIds.any((itemId) => itemIds.contains(itemId))) {
+      return false;
+    }
+    return true;
+  }).toList();
+}
+
+Set<int> _selectedFilterIndexes({
+  required List<int> values,
+  required Set<int> selectedValues,
+}) {
+  if (selectedValues.isEmpty) {
+    return {0};
+  }
+  final indexes = <int>{};
+  for (var index = 0; index < values.length; index++) {
+    if (selectedValues.contains(values[index])) {
+      indexes.add(index + 1);
+    }
+  }
+  return indexes.isEmpty ? {0} : indexes;
+}
+
+void _toggleSelection(Set<int> values, int value) {
+  if (!values.add(value)) {
+    values.remove(value);
+  }
+}
+
+String _recordSummaryText(MaintenanceRecord record) {
+  final note = record.note?.trim();
+  if (note == null || note.isEmpty) {
+    return '${_formatNumber(record.mileageKm)} km';
+  }
+  return '${_formatNumber(record.mileageKm)} km · $note';
 }
 
 class _ProfilePreviewPage extends ConsumerWidget {
@@ -2530,12 +2631,13 @@ class _SwitchCarCard extends StatelessWidget {
   }
 }
 
-class _MaintenanceRecordForm extends StatefulWidget {
+class _MaintenanceRecordForm extends ConsumerStatefulWidget {
   const _MaintenanceRecordForm({
     required this.car,
     required this.items,
     required this.initialDate,
     this.record,
+    required this.reloadItems,
     required this.onSubmit,
   });
 
@@ -2543,18 +2645,22 @@ class _MaintenanceRecordForm extends StatefulWidget {
   final List<MaintenanceItem> items;
   final LocalDate initialDate;
   final MaintenanceRecord? record;
+  final Future<List<MaintenanceItem>> Function() reloadItems;
   final Future<void> Function(MaintenanceRecord record) onSubmit;
 
   @override
-  State<_MaintenanceRecordForm> createState() => _MaintenanceRecordFormState();
+  ConsumerState<_MaintenanceRecordForm> createState() =>
+      _MaintenanceRecordFormState();
 }
 
-class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
+class _MaintenanceRecordFormState
+    extends ConsumerState<_MaintenanceRecordForm> {
   late LocalDate recordDate;
   late final TextEditingController mileageController;
   late final TextEditingController costController;
   late final TextEditingController noteController;
   late final Set<int> selectedItemIds;
+  late List<MaintenanceItem> formItems;
   bool saving = false;
   String? errorText;
 
@@ -2566,15 +2672,14 @@ class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
     final record = widget.record;
     recordDate = record?.date ?? widget.initialDate;
     mileageController = TextEditingController(
-      text: (record?.mileageKm ?? widget.car.currentMileageKm).toString(),
+      text: (record?.mileageKm ?? 0).toString(),
     );
     costController = TextEditingController(
-      text: record == null
-          ? '0.00'
-          : (record.costCents / 100).toStringAsFixed(2),
+      text: record == null ? '0' : (record.costCents / 100).toStringAsFixed(2),
     );
     noteController = TextEditingController(text: record?.note ?? '');
     selectedItemIds = {...?record?.itemIds};
+    formItems = widget.items;
   }
 
   @override
@@ -2588,8 +2693,8 @@ class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
   @override
   Widget build(BuildContext context) {
     final availableItems = widget.record == null
-        ? widget.items.where((item) => item.enabled).toList()
-        : widget.items
+        ? formItems.where((item) => item.enabled).toList()
+        : formItems
               .where(
                 (item) => item.enabled || selectedItemIds.contains(item.id),
               )
@@ -2613,6 +2718,7 @@ class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
                 enabled: !saving,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onTap: isEditing ? null : () => _clearZero(mileageController),
                 decoration: const InputDecoration(labelText: '保养里程'),
               ),
             ),
@@ -2624,6 +2730,7 @@ class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
+                onTap: isEditing ? null : () => _clearZero(costController),
                 decoration: const InputDecoration(labelText: '费用'),
               ),
             ),
@@ -2638,7 +2745,21 @@ class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
           decoration: const InputDecoration(labelText: '备注'),
         ),
         const SizedBox(height: 12),
-        Text('保养项目', style: Theme.of(context).textTheme.labelLarge),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '保养项目',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            _SmallActionButton(
+              label: '新增',
+              primary: true,
+              onPressed: saving ? null : _addMaintenanceItem,
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -2737,6 +2858,41 @@ class _MaintenanceRecordFormState extends State<_MaintenanceRecordForm> {
     }
   }
 
+  Future<void> _addMaintenanceItem() async {
+    final beforeIds = formItems.map((item) => item.id).whereType<int>().toSet();
+    final saved = await _showMaintenanceItemFormSheet(
+      context,
+      ref,
+      carId: widget.car.id!,
+    );
+    if (saved != true || !mounted) {
+      return;
+    }
+    final refreshedItems = await widget.reloadItems();
+    if (!mounted) {
+      return;
+    }
+    MaintenanceItem? newItem;
+    for (final item in refreshedItems) {
+      if (item.id != null && !beforeIds.contains(item.id)) {
+        newItem = item;
+        break;
+      }
+    }
+    setState(() {
+      formItems = refreshedItems;
+      if (newItem?.id != null) {
+        selectedItemIds.add(newItem!.id!);
+      }
+    });
+  }
+
+  void _clearZero(TextEditingController controller) {
+    if (controller.text == '0' || controller.text == '0.00') {
+      controller.clear();
+    }
+  }
+
   Future<void> _pickRecordDate() async {
     final picked = await _showSimpleDatePicker(
       context,
@@ -2784,13 +2940,16 @@ Future<void> _showMaintenanceRecordFormSheet(
     builder: (context) {
       return _PrototypeSheetFrame(
         title: record == null ? '新增保养记录' : '编辑保养记录',
-        subtitle: '保存前确认项目和里程，保存后会同步更新提醒进度',
+        subtitle: '${car!.brand} ${car.model}',
         bottomInset: MediaQuery.of(context).viewInsets.bottom,
         child: _MaintenanceRecordForm(
-          car: car!,
+          car: car,
           items: items,
           initialDate: today,
           record: record,
+          reloadItems: () => ref
+              .read(lunioRepositoryProvider)
+              .listMaintenanceItemsForCar(car.id!),
           onSubmit: (value) async {
             final repository = ref.read(lunioRepositoryProvider);
             if (value.id == null) {
@@ -3109,33 +3268,37 @@ class _MaintenanceItemCard extends StatelessWidget {
     return Material(
       color: tokens.surface,
       borderRadius: BorderRadius.circular(tokens.radiusLarge),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          border: Border.all(color: tokens.line),
-          boxShadow: [
-            BoxShadow(
-              color: tokens.ink.withValues(alpha: 0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(item.name, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 5),
-            Text(
-              _itemRuleText(item),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            Align(alignment: Alignment.centerRight, child: actions),
-          ],
+      child: InkWell(
+        onTap: onEdit,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(tokens.radiusLarge),
+            border: Border.all(color: tokens.line),
+            boxShadow: [
+              BoxShadow(
+                color: tokens.ink.withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(item.name, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 5),
+              Text(
+                _itemRuleText(item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 10),
+              Align(alignment: Alignment.centerRight, child: actions),
+            ],
+          ),
         ),
       ),
     );
@@ -4284,19 +4447,10 @@ class _DateCell extends StatelessWidget {
 }
 
 class _ReminderViewData {
-  const _ReminderViewData({
-    required this.item,
-    required this.progress,
-    required this.latestRecord,
-    required this.currentMileageKm,
-    required this.roadDate,
-  });
+  const _ReminderViewData({required this.item, required this.progress});
 
   final MaintenanceItem item;
   final ReminderProgress progress;
-  final MaintenanceRecord? latestRecord;
-  final int currentMileageKm;
-  final LocalDate roadDate;
 
   String get title => item.name;
 
@@ -4323,19 +4477,18 @@ class _ReminderViewData {
     };
   }
 
-  String get detail {
-    final record = latestRecord;
-    return switch (progress.reason) {
-      'mileage-no-history' =>
-        '按里程计算，当前里程 ${_formatNumber(currentMileageKm)} / ${_formatNumber(item.mileageIntervalKm ?? 0)} km',
-      'mileage' =>
-        '按里程计算，上次 ${record?.date ?? '-'} · ${_formatNumber(record?.mileageKm ?? 0)} km',
-      'time-no-history' =>
-        '按时间计算，上路 $roadDate · ${item.timeIntervalMonths ?? 0} 个月',
-      'time' =>
-        '按时间计算，上次 ${record?.date ?? '-'} · ${item.timeIntervalMonths ?? 0} 个月',
-      _ => '未达到提醒周期',
-    };
+  List<String> get detailTexts {
+    final details = <String>[];
+    if (item.remindByMileage && progress.mileageRemainingKm != null) {
+      details.add(_mileageReminderText(progress.mileageRemainingKm!));
+    }
+    if (item.remindByTime && progress.daysRemaining != null) {
+      details.add(_timeReminderText(progress.daysRemaining!));
+    }
+    if (details.isEmpty) {
+      details.add('未设置提醒规则');
+    }
+    return details;
   }
 }
 
@@ -4355,15 +4508,7 @@ List<_ReminderViewData> _buildReminderRows({
       noHistoryBaselineDate: car.roadDate,
       today: today,
     );
-    rows.add(
-      _ReminderViewData(
-        item: item,
-        progress: progress,
-        latestRecord: latestRecord,
-        currentMileageKm: car.currentMileageKm,
-        roadDate: car.roadDate,
-      ),
-    );
+    rows.add(_ReminderViewData(item: item, progress: progress));
   }
   rows.sort((left, right) {
     final statusCompare = _statusRank(
@@ -4420,6 +4565,9 @@ String _mostUrgentText(
   }
   if (items.hasError || records.hasError) {
     return '加载失败';
+  }
+  if ((records.value ?? const <MaintenanceRecord>[]).isEmpty) {
+    return '暂无';
   }
   final rows = _buildReminderRows(
     car: car,
@@ -4534,6 +4682,42 @@ String _formatCompactTimeText(int months) {
   final years = months / 12;
   final text = years.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
   return '$text年';
+}
+
+String _mileageReminderText(int remainingKm) {
+  if (remainingKm > 0) {
+    return '按里程提醒：距离下次约 ${_formatNumber(remainingKm)} 公里';
+  }
+  if (remainingKm == 0) {
+    return '按里程提醒：今日到期';
+  }
+  return '按里程提醒：已超 ${_formatNumber(remainingKm.abs())} 公里';
+}
+
+String _timeReminderText(int remainingDays) {
+  if (remainingDays > 0) {
+    return '按时间提醒：距离下次约 ${_formatReminderDuration(remainingDays)}';
+  }
+  if (remainingDays == 0) {
+    return '按时间提醒：今日到期';
+  }
+  return '按时间提醒：已超 ${_formatReminderDuration(remainingDays.abs())}';
+}
+
+String _formatReminderDuration(int days) {
+  if (days < 30) {
+    return '$days天';
+  }
+  if (days < 365) {
+    return '${days ~/ 30}个月';
+  }
+  final months = days ~/ 30;
+  final years = months ~/ 12;
+  final restMonths = months % 12;
+  if (restMonths == 0) {
+    return '$years年';
+  }
+  return '$years年$restMonths个月';
 }
 
 Future<void> _applyCar(BuildContext context, WidgetRef ref, int carId) async {
