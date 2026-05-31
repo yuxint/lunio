@@ -1831,20 +1831,6 @@ class $MaintenanceItemsTable extends MaintenanceItems
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _isDefaultMeta = const VerificationMeta(
-    'isDefault',
-  );
-  @override
-  late final GeneratedColumn<bool> isDefault = GeneratedColumn<bool>(
-    'is_default',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_default" IN (0, 1))',
-    ),
-  );
   static const VerificationMeta _enabledMeta = const VerificationMeta(
     'enabled',
   );
@@ -1985,7 +1971,6 @@ class $MaintenanceItemsTable extends MaintenanceItems
     id,
     carsId,
     name,
-    isDefault,
     enabled,
     remindByMileage,
     remindByTime,
@@ -2028,14 +2013,6 @@ class $MaintenanceItemsTable extends MaintenanceItems
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
-    }
-    if (data.containsKey('is_default')) {
-      context.handle(
-        _isDefaultMeta,
-        isDefault.isAcceptableOrUnknown(data['is_default']!, _isDefaultMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_isDefaultMeta);
     }
     if (data.containsKey('enabled')) {
       context.handle(
@@ -2154,10 +2131,6 @@ class $MaintenanceItemsTable extends MaintenanceItems
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
-      isDefault: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}is_default'],
-      )!,
       enabled: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}enabled'],
@@ -2216,7 +2189,6 @@ class MaintenanceItemRow extends DataClass
   final int id;
   final int carsId;
   final String name;
-  final bool isDefault;
   final bool enabled;
   final bool remindByMileage;
   final bool remindByTime;
@@ -2232,7 +2204,6 @@ class MaintenanceItemRow extends DataClass
     required this.id,
     required this.carsId,
     required this.name,
-    required this.isDefault,
     required this.enabled,
     required this.remindByMileage,
     required this.remindByTime,
@@ -2251,7 +2222,6 @@ class MaintenanceItemRow extends DataClass
     map['id'] = Variable<int>(id);
     map['cars_id'] = Variable<int>(carsId);
     map['name'] = Variable<String>(name);
-    map['is_default'] = Variable<bool>(isDefault);
     map['enabled'] = Variable<bool>(enabled);
     map['remind_by_mileage'] = Variable<bool>(remindByMileage);
     map['remind_by_time'] = Variable<bool>(remindByTime);
@@ -2275,7 +2245,6 @@ class MaintenanceItemRow extends DataClass
       id: Value(id),
       carsId: Value(carsId),
       name: Value(name),
-      isDefault: Value(isDefault),
       enabled: Value(enabled),
       remindByMileage: Value(remindByMileage),
       remindByTime: Value(remindByTime),
@@ -2303,7 +2272,6 @@ class MaintenanceItemRow extends DataClass
       id: serializer.fromJson<int>(json['id']),
       carsId: serializer.fromJson<int>(json['carsId']),
       name: serializer.fromJson<String>(json['name']),
-      isDefault: serializer.fromJson<bool>(json['isDefault']),
       enabled: serializer.fromJson<bool>(json['enabled']),
       remindByMileage: serializer.fromJson<bool>(json['remindByMileage']),
       remindByTime: serializer.fromJson<bool>(json['remindByTime']),
@@ -2326,7 +2294,6 @@ class MaintenanceItemRow extends DataClass
       'id': serializer.toJson<int>(id),
       'carsId': serializer.toJson<int>(carsId),
       'name': serializer.toJson<String>(name),
-      'isDefault': serializer.toJson<bool>(isDefault),
       'enabled': serializer.toJson<bool>(enabled),
       'remindByMileage': serializer.toJson<bool>(remindByMileage),
       'remindByTime': serializer.toJson<bool>(remindByTime),
@@ -2345,7 +2312,6 @@ class MaintenanceItemRow extends DataClass
     int? id,
     int? carsId,
     String? name,
-    bool? isDefault,
     bool? enabled,
     bool? remindByMileage,
     bool? remindByTime,
@@ -2361,7 +2327,6 @@ class MaintenanceItemRow extends DataClass
     id: id ?? this.id,
     carsId: carsId ?? this.carsId,
     name: name ?? this.name,
-    isDefault: isDefault ?? this.isDefault,
     enabled: enabled ?? this.enabled,
     remindByMileage: remindByMileage ?? this.remindByMileage,
     remindByTime: remindByTime ?? this.remindByTime,
@@ -2383,7 +2348,6 @@ class MaintenanceItemRow extends DataClass
       id: data.id.present ? data.id.value : this.id,
       carsId: data.carsId.present ? data.carsId.value : this.carsId,
       name: data.name.present ? data.name.value : this.name,
-      isDefault: data.isDefault.present ? data.isDefault.value : this.isDefault,
       enabled: data.enabled.present ? data.enabled.value : this.enabled,
       remindByMileage: data.remindByMileage.present
           ? data.remindByMileage.value
@@ -2418,7 +2382,6 @@ class MaintenanceItemRow extends DataClass
           ..write('id: $id, ')
           ..write('carsId: $carsId, ')
           ..write('name: $name, ')
-          ..write('isDefault: $isDefault, ')
           ..write('enabled: $enabled, ')
           ..write('remindByMileage: $remindByMileage, ')
           ..write('remindByTime: $remindByTime, ')
@@ -2439,7 +2402,6 @@ class MaintenanceItemRow extends DataClass
     id,
     carsId,
     name,
-    isDefault,
     enabled,
     remindByMileage,
     remindByTime,
@@ -2459,7 +2421,6 @@ class MaintenanceItemRow extends DataClass
           other.id == this.id &&
           other.carsId == this.carsId &&
           other.name == this.name &&
-          other.isDefault == this.isDefault &&
           other.enabled == this.enabled &&
           other.remindByMileage == this.remindByMileage &&
           other.remindByTime == this.remindByTime &&
@@ -2477,7 +2438,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
   final Value<int> id;
   final Value<int> carsId;
   final Value<String> name;
-  final Value<bool> isDefault;
   final Value<bool> enabled;
   final Value<bool> remindByMileage;
   final Value<bool> remindByTime;
@@ -2493,7 +2453,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
     this.id = const Value.absent(),
     this.carsId = const Value.absent(),
     this.name = const Value.absent(),
-    this.isDefault = const Value.absent(),
     this.enabled = const Value.absent(),
     this.remindByMileage = const Value.absent(),
     this.remindByTime = const Value.absent(),
@@ -2510,7 +2469,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
     this.id = const Value.absent(),
     required int carsId,
     required String name,
-    required bool isDefault,
     this.enabled = const Value.absent(),
     required bool remindByMileage,
     required bool remindByTime,
@@ -2524,7 +2482,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
     this.version = const Value.absent(),
   }) : carsId = Value(carsId),
        name = Value(name),
-       isDefault = Value(isDefault),
        remindByMileage = Value(remindByMileage),
        remindByTime = Value(remindByTime),
        sortOrder = Value(sortOrder),
@@ -2533,7 +2490,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
     Expression<int>? id,
     Expression<int>? carsId,
     Expression<String>? name,
-    Expression<bool>? isDefault,
     Expression<bool>? enabled,
     Expression<bool>? remindByMileage,
     Expression<bool>? remindByTime,
@@ -2550,7 +2506,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
       if (id != null) 'id': id,
       if (carsId != null) 'cars_id': carsId,
       if (name != null) 'name': name,
-      if (isDefault != null) 'is_default': isDefault,
       if (enabled != null) 'enabled': enabled,
       if (remindByMileage != null) 'remind_by_mileage': remindByMileage,
       if (remindByTime != null) 'remind_by_time': remindByTime,
@@ -2571,7 +2526,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
     Value<int>? id,
     Value<int>? carsId,
     Value<String>? name,
-    Value<bool>? isDefault,
     Value<bool>? enabled,
     Value<bool>? remindByMileage,
     Value<bool>? remindByTime,
@@ -2588,7 +2542,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
       id: id ?? this.id,
       carsId: carsId ?? this.carsId,
       name: name ?? this.name,
-      isDefault: isDefault ?? this.isDefault,
       enabled: enabled ?? this.enabled,
       remindByMileage: remindByMileage ?? this.remindByMileage,
       remindByTime: remindByTime ?? this.remindByTime,
@@ -2614,9 +2567,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
-    }
-    if (isDefault.present) {
-      map['is_default'] = Variable<bool>(isDefault.value);
     }
     if (enabled.present) {
       map['enabled'] = Variable<bool>(enabled.value);
@@ -2662,7 +2612,6 @@ class MaintenanceItemsCompanion extends UpdateCompanion<MaintenanceItemRow> {
           ..write('id: $id, ')
           ..write('carsId: $carsId, ')
           ..write('name: $name, ')
-          ..write('isDefault: $isDefault, ')
           ..write('enabled: $enabled, ')
           ..write('remindByMileage: $remindByMileage, ')
           ..write('remindByTime: $remindByTime, ')
@@ -4896,7 +4845,6 @@ typedef $$MaintenanceItemsTableCreateCompanionBuilder =
       Value<int> id,
       required int carsId,
       required String name,
-      required bool isDefault,
       Value<bool> enabled,
       required bool remindByMileage,
       required bool remindByTime,
@@ -4914,7 +4862,6 @@ typedef $$MaintenanceItemsTableUpdateCompanionBuilder =
       Value<int> id,
       Value<int> carsId,
       Value<String> name,
-      Value<bool> isDefault,
       Value<bool> enabled,
       Value<bool> remindByMileage,
       Value<bool> remindByTime,
@@ -4949,11 +4896,6 @@ class $$MaintenanceItemsTableFilterComposer
 
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get isDefault => $composableBuilder(
-    column: $table.isDefault,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5037,11 +4979,6 @@ class $$MaintenanceItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<bool> get isDefault => $composableBuilder(
-    column: $table.isDefault,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<bool> get enabled => $composableBuilder(
     column: $table.enabled,
     builder: (column) => ColumnOrderings(column),
@@ -5115,9 +5052,6 @@ class $$MaintenanceItemsTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
-
-  GeneratedColumn<bool> get isDefault =>
-      $composableBuilder(column: $table.isDefault, builder: (column) => column);
 
   GeneratedColumn<bool> get enabled =>
       $composableBuilder(column: $table.enabled, builder: (column) => column);
@@ -5207,7 +5141,6 @@ class $$MaintenanceItemsTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<int> carsId = const Value.absent(),
                 Value<String> name = const Value.absent(),
-                Value<bool> isDefault = const Value.absent(),
                 Value<bool> enabled = const Value.absent(),
                 Value<bool> remindByMileage = const Value.absent(),
                 Value<bool> remindByTime = const Value.absent(),
@@ -5223,7 +5156,6 @@ class $$MaintenanceItemsTableTableManager
                 id: id,
                 carsId: carsId,
                 name: name,
-                isDefault: isDefault,
                 enabled: enabled,
                 remindByMileage: remindByMileage,
                 remindByTime: remindByTime,
@@ -5241,7 +5173,6 @@ class $$MaintenanceItemsTableTableManager
                 Value<int> id = const Value.absent(),
                 required int carsId,
                 required String name,
-                required bool isDefault,
                 Value<bool> enabled = const Value.absent(),
                 required bool remindByMileage,
                 required bool remindByTime,
@@ -5257,7 +5188,6 @@ class $$MaintenanceItemsTableTableManager
                 id: id,
                 carsId: carsId,
                 name: name,
-                isDefault: isDefault,
                 enabled: enabled,
                 remindByMileage: remindByMileage,
                 remindByTime: remindByTime,

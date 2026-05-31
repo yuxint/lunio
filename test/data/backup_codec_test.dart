@@ -8,14 +8,14 @@ import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/domain/entities/vehicle_default_maintenance_item.dart';
 
 void main() {
-  test('schemaVersion 1 backup round-trips new data contract', () {
+  test('schemaVersion 2 backup round-trips new data contract', () {
     final sync = SyncMetadata(
       status: SyncStatus.synced,
       updatedAt: DateTime(2026),
     );
     const codec = BackupCodec();
     final payload = BackupPayload(
-      schemaVersion: 1,
+      schemaVersion: 2,
       cars: [
         Car(
           id: 1,
@@ -45,7 +45,6 @@ void main() {
           id: 1,
           carsId: 1,
           name: '机油',
-          isDefault: true,
           enabled: true,
           remindByMileage: true,
           remindByTime: true,
@@ -72,7 +71,8 @@ void main() {
     final decoded = codec.decode(encoded);
 
     expect(encoded, isNot(contains('preferences')));
-    expect(decoded.schemaVersion, 1);
+    expect(encoded, isNot(contains('isDefault')));
+    expect(decoded.schemaVersion, 2);
     expect(decoded.cars.single.brand, '本田');
     expect(decoded.defaultMaintenanceItems.single.itemName, '机油');
     expect(decoded.maintenanceItems.single.carsId, 1);

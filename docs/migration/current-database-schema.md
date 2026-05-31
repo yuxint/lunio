@@ -130,9 +130,6 @@ CREATE TABLE maintenance_items (
   -- 展示名称；不作为跨版本稳定主键。
   name TEXT NOT NULL,
 
-  -- 是否默认项目；0=false，1=true。
-  is_default INTEGER NOT NULL,
-
   -- 是否启用；禁用项目允许被历史记录继续引用，只是在新增记录时不展示。
   enabled INTEGER NOT NULL DEFAULT 1,
 

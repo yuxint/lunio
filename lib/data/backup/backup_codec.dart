@@ -41,7 +41,7 @@ class BackupCodec {
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;
-    if (version != 1) {
+    if (version != 2) {
       throw UnsupportedError('Unsupported backup schemaVersion: $version');
     }
     return BackupPayload(
@@ -120,7 +120,6 @@ class BackupCodec {
       'id': item.id,
       'carsId': item.carsId,
       'name': item.name,
-      'isDefault': item.isDefault,
       'enabled': item.enabled,
       'remindByMileage': item.remindByMileage,
       'remindByTime': item.remindByTime,
@@ -138,7 +137,6 @@ class BackupCodec {
       id: json['id'] as int?,
       carsId: json['carsId'] as int,
       name: json['name'] as String,
-      isDefault: json['isDefault'] as bool,
       enabled: json['enabled'] as bool,
       remindByMileage: json['remindByMileage'] as bool,
       remindByTime: json['remindByTime'] as bool,

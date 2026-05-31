@@ -78,7 +78,6 @@ class MaintenanceItems extends Table {
   IntColumn get id => integer()();
   IntColumn get carsId => integer()();
   TextColumn get name => text()();
-  BoolColumn get isDefault => boolean()();
   BoolColumn get enabled => boolean().withDefault(const Constant(true))();
   BoolColumn get remindByMileage => boolean()();
   BoolColumn get remindByTime => boolean()();
@@ -174,7 +173,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -185,6 +184,8 @@ class AppDatabase extends _$AppDatabase {
             await migrator.deleteTable(table.actualTableName);
           }
           await migrator.createAll();
+        } else if (from < 3) {
+          await migrator.alterTable(TableMigration(maintenanceItems));
         }
       },
     );

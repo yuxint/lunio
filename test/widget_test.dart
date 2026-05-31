@@ -207,7 +207,7 @@ void main() {
     mockNativeFiles((call) async {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
-          const BackupPayload(schemaVersion: 1),
+          const BackupPayload(schemaVersion: 2),
         );
       }
       return null;
@@ -246,7 +246,7 @@ void main() {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
           BackupPayload(
-            schemaVersion: 1,
+            schemaVersion: 2,
             cars: [
               Car(
                 id: 99,
@@ -311,7 +311,7 @@ void main() {
 
     await createDefaultCar(tester);
 
-    await tester.tap(find.widgetWithText(TextButton, '编辑').first);
+    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '60000');
     await tester.tap(find.text('保存车辆'));
@@ -331,9 +331,11 @@ void main() {
 
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('新增项目'));
+    await tester.tap(find.widgetWithText(TextButton, '新增').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '玻璃水');
+    await tester.enterText(find.byType(TextField).at(1), '3000');
+    await tester.enterText(find.byType(TextField).at(2), '6');
     tester.testTextInput.hide();
     await tester.drag(
       find.byType(SingleChildScrollView).last,
@@ -365,23 +367,161 @@ void main() {
     expect(find.textContaining('关闭后不出现在'), findsNothing);
     expect(find.text('提醒：5,000公里/6个月'), findsWidgets);
     expect(find.text('提醒：2万公里/1年'), findsOneWidget);
-    expect(find.byTooltip('编辑'), findsNothing);
+    expect(find.text('默认'), findsNothing);
+    expect(find.text('自定义'), findsNothing);
+    expect(find.text('点按编辑'), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    expect(find.byType(Switch), findsNothing);
+    expect(find.widgetWithText(TextButton, '编辑'), findsWidgets);
+    expect(find.widgetWithText(TextButton, '启用'), findsWidgets);
+    expect(find.widgetWithText(TextButton, '删除'), findsWidgets);
   });
 
-  testWidgets('maintenance item row opens edit sheet', (tester) async {
-    await pumpApp(tester);
+  testWidgets(
+    'maintenance item form uses unit suffixes and validates empty intervals',
+    (tester) async {
+      await pumpApp(tester);
+      await createDefaultCar(tester);
+
+      await tester.tap(find.widgetWithText(TextButton, '项目').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '新增').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('新增保养项目'), findsOneWidget);
+      expect(find.text('项目名称'), findsOneWidget);
+      expect(find.text('km'), findsOneWidget);
+      expect(find.text('月'), findsOneWidget);
+      expect(find.text('间隔 km'), findsNothing);
+      expect(find.text('间隔 月'), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).at(1)).controller?.text,
+        '',
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField).at(2)).controller?.text,
+        '',
+      );
+
+      await tester.enterText(find.byType(TextField).first, '玻璃水');
+      tester.testTextInput.hide();
+      await tester.tap(find.text('保存项目'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('里程间隔必须填写正整数'), findsOneWidget);
+    },
+  );
+
+  testWidgets('maintenance item row opens edit sheet and edits item name', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
     await createDefaultCar(tester);
 
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('机油').first);
+    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
     await tester.pumpAndSettle();
 
     expect(find.text('编辑保养项目'), findsOneWidget);
     expect(find.textContaining('默认项目名称保持稳定'), findsNothing);
+    await tester.enterText(find.byType(TextField).first, '全合成机油');
+    tester.testTextInput.hide();
+    await tester.tap(find.text('保存项目'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('全合成机油'), findsOneWidget);
+    expect(
+      (await database.select(database.maintenanceItems).get()).map(
+        (item) => item.name,
+      ),
+      contains('全合成机油'),
+    );
   });
 
-  testWidgets('date picker swaps calendar and year month wheels', (
+  testWidgets('add car item step can remove a loaded default item', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('删除'), findsNWidgets(3));
+    await tester.tap(find.byTooltip('删除').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存车辆'));
+    await tester.pumpAndSettle();
+
+    expect(
+      await database.select(database.maintenanceItems).get(),
+      hasLength(2),
+    );
+  });
+
+  testWidgets('add car item step custom item form starts without intervals', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '新增'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('新增保养项目'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).controller?.text,
+      '',
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(2)).controller?.text,
+      '',
+    );
+  });
+
+  testWidgets('add car item step can restore removed default item draft', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('删除').first);
+    await tester.pumpAndSettle();
+    expect(find.text('机油'), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, '恢复'));
+    await tester.pumpAndSettle();
+    expect(find.text('恢复默认项目'), findsOneWidget);
+    expect(find.text('已存在'), findsNWidgets(2));
+    await tester.tap(find.widgetWithText(FilledButton, '恢复'));
+    await tester.pumpAndSettle();
+    expect(find.text('机油'), findsOneWidget);
+
+    await tester.tap(find.text('保存车辆'));
+    await tester.pumpAndSettle();
+
+    expect(
+      await database.select(database.maintenanceItems).get(),
+      hasLength(3),
+    );
+  });
+
+  testWidgets('date picker switches between day month and year grids', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -395,15 +535,56 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('一'), findsOneWidget);
-    await tester.tap(find.text('2026年5月'));
+    await tester.tap(find.widgetWithText(TextButton, '5月'));
     await tester.pumpAndSettle();
-    expect(find.text('2026年'), findsWidgets);
-    expect(find.text('5月'), findsOneWidget);
+    expect(find.text('12月'), findsOneWidget);
     expect(find.text('一'), findsNothing);
 
-    await tester.tap(find.text('应用年月'));
+    await tester.tap(find.text('8月'));
     await tester.pumpAndSettle();
     expect(find.text('一'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, '2026年'));
+    await tester.pumpAndSettle();
+    expect(find.text('2016-2027年'), findsOneWidget);
+    expect(find.text('2024年'), findsOneWidget);
+    expect(find.text('一'), findsNothing);
+
+    await tester.tap(find.text('2024年'));
+    await tester.pumpAndSettle();
+    expect(find.text('12月'), findsOneWidget);
+
+    await tester.tap(find.text('2月'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextButton, '2024年'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, '2月'), findsOneWidget);
+    expect(find.text('一'), findsOneWidget);
+  });
+
+  testWidgets('date picker clamps day when switching to shorter month', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      dateContext: AppDateContext(readSystemNow: () => DateTime(2026, 1, 31)),
+    );
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('手动日期'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2026年1月31日'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '1月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026年2月28日'), findsOneWidget);
   });
 
   testWidgets('destructive confirm dialog uses red confirm action', (

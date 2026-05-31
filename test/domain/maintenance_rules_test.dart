@@ -22,7 +22,6 @@ void main() {
       id: 1,
       carsId: 1,
       name: '机油',
-      isDefault: true,
       enabled: true,
       remindByMileage: byMileage,
       remindByTime: byTime,

@@ -5,7 +5,6 @@ class MaintenanceItem {
     this.id,
     required this.carsId,
     required this.name,
-    required this.isDefault,
     required this.enabled,
     required this.remindByMileage,
     required this.remindByTime,
@@ -20,7 +19,6 @@ class MaintenanceItem {
   final int? id;
   final int carsId;
   final String name;
-  final bool isDefault;
   final bool enabled;
   final bool remindByMileage;
   final bool remindByTime;
@@ -35,7 +33,6 @@ class MaintenanceItem {
     int? id,
     int? carsId,
     String? name,
-    bool? isDefault,
     bool? enabled,
     bool? remindByMileage,
     bool? remindByTime,
@@ -50,7 +47,6 @@ class MaintenanceItem {
       id: id ?? this.id,
       carsId: carsId ?? this.carsId,
       name: name ?? this.name,
-      isDefault: isDefault ?? this.isDefault,
       enabled: enabled ?? this.enabled,
       remindByMileage: remindByMileage ?? this.remindByMileage,
       remindByTime: remindByTime ?? this.remindByTime,

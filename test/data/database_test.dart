@@ -38,7 +38,6 @@ void main() {
       MaintenanceItem(
         carsId: carId,
         name: '机油',
-        isDefault: true,
         enabled: true,
         remindByMileage: true,
         remindByTime: true,
@@ -150,7 +149,6 @@ void main() {
           MaintenanceItem(
             carsId: 0,
             name: '机油',
-            isDefault: true,
             enabled: true,
             remindByMileage: true,
             remindByTime: true,
@@ -162,7 +160,6 @@ void main() {
           MaintenanceItem(
             carsId: 0,
             name: '玻璃水',
-            isDefault: false,
             enabled: false,
             remindByMileage: true,
             remindByTime: false,
@@ -195,7 +192,6 @@ void main() {
           MaintenanceItem(
             carsId: 0,
             name: '机油',
-            isDefault: true,
             enabled: true,
             remindByMileage: true,
             remindByTime: true,
@@ -226,7 +222,6 @@ void main() {
           MaintenanceItem(
             carsId: 0,
             name: '机油',
-            isDefault: true,
             enabled: false,
             remindByMileage: true,
             remindByTime: true,
@@ -489,7 +484,6 @@ void main() {
       MaintenanceItem(
         carsId: otherCarId,
         name: '空调滤芯',
-        isDefault: true,
         enabled: true,
         remindByMileage: true,
         remindByTime: true,
@@ -523,7 +517,6 @@ void main() {
         id: itemId,
         carsId: carId,
         name: '机油',
-        isDefault: true,
         enabled: true,
         remindByMileage: true,
         remindByTime: false,
@@ -557,7 +550,6 @@ void main() {
       MaintenanceItem(
         carsId: carId,
         name: '玻璃水',
-        isDefault: false,
         enabled: true,
         remindByMileage: true,
         remindByTime: false,
@@ -577,13 +569,37 @@ void main() {
     );
   });
 
-  test('does not delete default item or item with history', () async {
+  test('deletes item without history', () async {
+    final (carId, itemId) = await seedCarAndItem();
+    await repository.saveMaintenanceItem(
+      MaintenanceItem(
+        carsId: carId,
+        name: '机滤',
+        enabled: true,
+        remindByMileage: true,
+        remindByTime: false,
+        mileageIntervalKm: 5000,
+        sortOrder: 2,
+        sync: sync,
+      ),
+    );
+
+    await repository.deleteMaintenanceItem(itemId);
+
+    expect(
+      (await repository.listMaintenanceItemsForCar(
+        carId,
+      )).map((item) => item.name),
+      isNot(contains('机油')),
+    );
+  });
+
+  test('does not delete item with history', () async {
     final (carId, itemId) = await seedCarAndItem();
     final customItemId = await repository.saveMaintenanceItem(
       MaintenanceItem(
         carsId: carId,
         name: '玻璃水',
-        isDefault: false,
         enabled: true,
         remindByMileage: true,
         remindByTime: false,
@@ -596,7 +612,7 @@ void main() {
       MaintenanceRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
-        itemIds: [customItemId],
+        itemIds: [itemId],
         costCents: 1000,
         mileageKm: 12000,
         sync: sync,
@@ -604,10 +620,7 @@ void main() {
     );
 
     expect(() => repository.deleteMaintenanceItem(itemId), throwsArgumentError);
-    expect(
-      () => repository.deleteMaintenanceItem(customItemId),
-      throwsArgumentError,
-    );
+    await repository.deleteMaintenanceItem(customItemId);
   });
 
   test('backup export and restore round-trips database content', () async {
@@ -641,6 +654,7 @@ void main() {
 
     final backup = await repository.exportBackupPayload();
     expect(const BackupCodec().encode(backup), isNot(contains('preferences')));
+    expect(const BackupCodec().encode(backup), isNot(contains('isDefault')));
     await database.close();
     database = AppDatabase.inMemory();
     repository = LunioRepository(database);
@@ -674,7 +688,7 @@ void main() {
     final (existingCarId, _) = await seedCarAndItem();
     await repository.setAppliedCarId(existingCarId);
     final backup = BackupPayload(
-      schemaVersion: 1,
+      schemaVersion: 2,
       cars: [
         Car(
           id: 99,
@@ -690,7 +704,6 @@ void main() {
           id: 199,
           carsId: 99,
           name: '空调滤芯',
-          isDefault: true,
           enabled: true,
           remindByMileage: true,
           remindByTime: true,
@@ -737,7 +750,7 @@ void main() {
       await seedCarAndItem();
       final backup = await repository.exportBackupPayload();
       final invalid = BackupPayload(
-        schemaVersion: 1,
+        schemaVersion: 2,
         cars: backup.cars,
         maintenanceItems: backup.maintenanceItems,
         records: [
@@ -776,7 +789,6 @@ void main() {
       MaintenanceItem(
         carsId: otherCarId,
         name: '空调滤芯',
-        isDefault: true,
         enabled: true,
         remindByMileage: true,
         remindByTime: true,
@@ -788,7 +800,7 @@ void main() {
     );
     final backup = await repository.exportBackupPayload();
     final invalid = BackupPayload(
-      schemaVersion: 1,
+      schemaVersion: 2,
       cars: backup.cars,
       maintenanceItems: backup.maintenanceItems,
       records: [
@@ -838,7 +850,7 @@ void main() {
     final (carId, _) = await seedCarAndItem();
     await repository.setAppliedCarId(carId);
     final invalid = BackupPayload(
-      schemaVersion: 1,
+      schemaVersion: 2,
       cars: [
         Car(
           id: 99,

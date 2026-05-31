@@ -96,7 +96,6 @@ class LunioRepository {
             (item) => domain.MaintenanceItem(
               carsId: 0,
               name: item.itemName,
-              isDefault: true,
               enabled: true,
               remindByMileage: item.remindByMileage,
               remindByTime: item.remindByTime,
@@ -148,7 +147,6 @@ class LunioRepository {
                 id: Value(itemId),
                 carsId: carId,
                 name: item.name,
-                isDefault: item.isDefault,
                 enabled: Value(item.enabled),
                 remindByMileage: item.remindByMileage,
                 remindByTime: item.remindByTime,
@@ -318,7 +316,6 @@ class LunioRepository {
             id: Value(itemId),
             carsId: item.carsId,
             name: item.name,
-            isDefault: item.isDefault,
             enabled: Value(item.enabled),
             remindByMileage: item.remindByMileage,
             remindByTime: item.remindByTime,
@@ -411,9 +408,6 @@ class LunioRepository {
 
   Future<void> deleteMaintenanceItem(int itemId) async {
     final item = await _getMaintenanceItemById(itemId);
-    if (item.isDefault) {
-      throw ArgumentError('Default maintenance items cannot be deleted');
-    }
     if (await maintenanceItemHasHistory(itemId)) {
       throw ArgumentError('Maintenance item has history records');
     }
@@ -614,7 +608,7 @@ class LunioRepository {
       return _recordFromRow(row, itemIdsByRecordId[row.id] ?? const []);
     }).toList();
     return BackupPayload(
-      schemaVersion: 1,
+      schemaVersion: 2,
       cars: cars,
       defaultMaintenanceItems: defaultItems,
       maintenanceItems: items,
@@ -623,7 +617,7 @@ class LunioRepository {
   }
 
   Future<void> restoreBackupPayload(BackupPayload payload) {
-    if (payload.schemaVersion != 1) {
+    if (payload.schemaVersion != 2) {
       throw UnsupportedError(
         'Unsupported backup schemaVersion: ${payload.schemaVersion}',
       );
@@ -704,7 +698,6 @@ class LunioRepository {
                 id: Value(itemId),
                 carsId: carId,
                 name: item.name,
-                isDefault: item.isDefault,
                 enabled: Value(item.enabled),
                 remindByMileage: item.remindByMileage,
                 remindByTime: item.remindByTime,
@@ -1142,7 +1135,6 @@ class LunioRepository {
       id: row.id,
       carsId: row.carsId,
       name: row.name,
-      isDefault: row.isDefault,
       enabled: row.enabled,
       remindByMileage: row.remindByMileage,
       remindByTime: row.remindByTime,

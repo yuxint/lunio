@@ -374,7 +374,7 @@ Forms, filters, vehicle switching, project management, and restore confirmation 
 
 ### Forms
 
-Inputs use light neutral surfaces, 14px radii, and readable 13px labels. Date fields always express business dates in `yyyy-MM-dd` semantics, even if the visual control renders with local separators. Numeric fields should be plain and practical.
+Inputs use light neutral surfaces, 14px radii, and readable 13px labels. Date fields always express business dates in `yyyy-MM-dd` semantics, even if the visual control renders with local separators. Date picking uses a compact sheet with day, month, and year layers so users can select nearby days directly, jump to a month in the current year, or move across years without long scrolling. Numeric fields should be plain and practical.
 
 ### Toasts
 
