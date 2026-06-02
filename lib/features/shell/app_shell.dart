@@ -204,10 +204,6 @@ class _ReminderPreviewPage extends ConsumerWidget {
             LunioHeroCard(
               title: '${car.brand} ${car.model}',
               subtitle: '上路 ${car.roadDate} · 当前应用车辆',
-              actionLabel: canSwitchCar ? '切换' : null,
-              onAction: canSwitchCar
-                  ? () => _showVehicleSwitcher(context, ref)
-                  : null,
               metrics: [
                 LunioMetric(
                   label: '当前里程',
