@@ -532,49 +532,10 @@ class LunioRepository {
         excludingRecordId: recordId,
       );
 
-      await (database.update(
-        database.maintenanceRecords,
-      )..where((row) => row.id.equals(recordId))).write(
-        MaintenanceRecordsCompanion(
-          date: Value(record.date.toString()),
-          mileageKm: Value(record.mileageKm),
-          costCents: Value(record.costCents),
-          note: Value(record.note),
-          syncStatus: Value(record.sync.status.name),
-          updatedAt: Value(record.sync.updatedAt.toIso8601String()),
-          version: Value(record.sync.version),
-        ),
+      await _updateMaintenanceRecordInTransaction(
+        record: record,
+        uniqueItemIds: uniqueItemIds,
       );
-      await (database.delete(
-        database.maintenanceRecordItems,
-      )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
-      for (final itemId in uniqueItemIds) {
-        final recordItemId = _nextId();
-        await database
-            .into(database.maintenanceRecordItems)
-            .insert(
-              MaintenanceRecordItemsCompanion.insert(
-                id: Value(recordItemId),
-                maintenanceRecordId: recordId,
-                carId: record.carId,
-                itemId: itemId,
-                date: record.date.toString(),
-              ),
-            );
-      }
-
-      final car = await (database.select(
-        database.cars,
-      )..where((row) => row.id.equals(record.carId))).getSingle();
-      final nextMileage = RecordRules.mileageAfterRecord(
-        currentMileageKm: car.currentMileageKm,
-        recordMileageKm: record.mileageKm,
-      );
-      if (nextMileage != car.currentMileageKm) {
-        await (database.update(database.cars)
-              ..where((row) => row.id.equals(record.carId)))
-            .write(CarsCompanion(currentMileageKm: Value(nextMileage)));
-      }
     });
   }
 
@@ -613,6 +574,54 @@ class LunioRepository {
       await (database.delete(
         database.maintenanceRecords,
       )..where((row) => row.id.equals(recordId))).go();
+    });
+  }
+
+  Future<bool> removeMaintenanceRecordItem({
+    required int recordId,
+    required int itemId,
+  }) {
+    return database.transaction(() async {
+      final recordRow = await (database.select(
+        database.maintenanceRecords,
+      )..where((row) => row.id.equals(recordId))).getSingleOrNull();
+      if (recordRow == null) {
+        throw ArgumentError('Maintenance record not found');
+      }
+      final itemRows = await (database.select(
+        database.maintenanceRecordItems,
+      )..where((row) => row.maintenanceRecordId.equals(recordId))).get();
+      final existingItemIds = RecordRules.uniqueItemIds(
+        itemRows.map((row) => row.itemId).toList(),
+      );
+      if (!existingItemIds.contains(itemId)) {
+        throw ArgumentError('Maintenance record does not contain item');
+      }
+      if (existingItemIds.length <= 1) {
+        await (database.delete(
+          database.maintenanceRecordItems,
+        )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
+        await (database.delete(
+          database.maintenanceRecords,
+        )..where((row) => row.id.equals(recordId))).go();
+        return true;
+      }
+
+      await (database.delete(database.maintenanceRecordItems)..where(
+            (row) =>
+                row.maintenanceRecordId.equals(recordId) &
+                row.itemId.equals(itemId),
+          ))
+          .go();
+      await (database.update(
+        database.maintenanceRecords,
+      )..where((row) => row.id.equals(recordId))).write(
+        MaintenanceRecordsCompanion(
+          syncStatus: Value(SyncStatus.pendingUpdate.name),
+          updatedAt: Value(DateTime.now().toIso8601String()),
+        ),
+      );
+      return false;
     });
   }
 
@@ -1250,6 +1259,67 @@ class LunioRepository {
       throw StateError('这辆车当天已经保存过相同保养项目');
     }
     throw StateError('这辆车当天已有保养记录，请编辑原记录');
+  }
+
+  Future<void> _updateMaintenanceRecordInTransaction({
+    required domain.MaintenanceRecord record,
+    required List<int> uniqueItemIds,
+  }) async {
+    final recordId = record.id;
+    if (recordId == null) {
+      throw ArgumentError('Maintenance record id is required');
+    }
+    await (database.update(
+      database.maintenanceRecords,
+    )..where((row) => row.id.equals(recordId))).write(
+      MaintenanceRecordsCompanion(
+        date: Value(record.date.toString()),
+        mileageKm: Value(record.mileageKm),
+        costCents: Value(record.costCents),
+        note: Value(record.note),
+        syncStatus: Value(record.sync.status.name),
+        updatedAt: Value(record.sync.updatedAt.toIso8601String()),
+        version: Value(record.sync.version),
+      ),
+    );
+    await (database.delete(
+      database.maintenanceRecordItems,
+    )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
+    for (final itemId in uniqueItemIds) {
+      await database
+          .into(database.maintenanceRecordItems)
+          .insert(
+            MaintenanceRecordItemsCompanion.insert(
+              id: Value(_nextId()),
+              maintenanceRecordId: recordId,
+              carId: record.carId,
+              itemId: itemId,
+              date: record.date.toString(),
+            ),
+          );
+    }
+    await _syncCarMileageInTransaction(
+      carId: record.carId,
+      recordMileageKm: record.mileageKm,
+    );
+  }
+
+  Future<void> _syncCarMileageInTransaction({
+    required int carId,
+    required int recordMileageKm,
+  }) async {
+    final car = await (database.select(
+      database.cars,
+    )..where((row) => row.id.equals(carId))).getSingle();
+    final nextMileage = RecordRules.mileageAfterRecord(
+      currentMileageKm: car.currentMileageKm,
+      recordMileageKm: recordMileageKm,
+    );
+    if (nextMileage != car.currentMileageKm) {
+      await (database.update(database.cars)
+            ..where((row) => row.id.equals(carId)))
+          .write(CarsCompanion(currentMileageKm: Value(nextMileage)));
+    }
   }
 
   Future<void> _validateRecordItems({

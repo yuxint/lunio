@@ -180,7 +180,7 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-    {brand, model},
+    {brand, model, roadDate},
   ];
   @override
   CarRow map(Map<String, dynamic> data, {String? tablePrefix}) {

@@ -190,7 +190,6 @@ class _ReminderPreviewPage extends ConsumerWidget {
       error: (error, stackTrace) => _ErrorPage(title: '保养提醒', error: error),
       data: (car) => LunioPage(
         title: '保养提醒',
-        subtitle: '按当前应用车辆计算里程与时间进度',
         trailing: canSwitchCar
             ? LunioIconButton(
                 icon: Icons.directions_car_outlined,
@@ -215,12 +214,12 @@ class _ReminderPreviewPage extends ConsumerWidget {
                   value: _formatNumber(car.currentMileageKm),
                 ),
                 LunioMetric(
-                  label: '最急项目',
+                  label: '到期概览',
                   value: today.when(
                     loading: () => '计算中',
                     error: (error, stackTrace) => '日期失败',
                     data: (value) =>
-                        _mostUrgentText(items, records, car, value),
+                        _dueOverviewText(items, records, car, value),
                   ),
                 ),
               ],
@@ -229,10 +228,6 @@ class _ReminderPreviewPage extends ConsumerWidget {
           if (car != null)
             LunioSection(
               title: '待关注项目',
-              trailing: TextButton(
-                onPressed: () => _showMaintenanceItemsSheet(context, ref),
-                child: const Text('管理项目'),
-              ),
               children: [
                 today.when(
                   loading: () =>
@@ -638,7 +633,7 @@ class _ReminderRow extends StatelessWidget {
                 CustomPaint(
                   size: const Size.square(58),
                   painter: _ReminderProgressRingPainter(
-                    progress: row.progressValue,
+                    percent: row.progress.percent,
                     color: color,
                     backgroundColor: tokens.surface3,
                   ),
@@ -693,12 +688,12 @@ class _ReminderRow extends StatelessWidget {
 
 class _ReminderProgressRingPainter extends CustomPainter {
   const _ReminderProgressRingPainter({
-    required this.progress,
+    required this.percent,
     required this.color,
     required this.backgroundColor,
   });
 
-  final double progress;
+  final double percent;
   final Color color;
   final Color backgroundColor;
 
@@ -716,11 +711,12 @@ class _ReminderProgressRingPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeWidth = 6;
+    final rect = Rect.fromCircle(center: center, radius: radius);
     canvas.drawCircle(center, radius, backgroundPaint);
     canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
+      rect,
       -1.5708,
-      6.2832 * progress.clamp(0, 1),
+      6.2832 * (percent / 100).clamp(0, 1),
       false,
       foregroundPaint,
     );
@@ -728,7 +724,7 @@ class _ReminderProgressRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ReminderProgressRingPainter oldDelegate) {
-    return progress != oldDelegate.progress ||
+    return percent != oldDelegate.percent ||
         color != oldDelegate.color ||
         backgroundColor != oldDelegate.backgroundColor;
   }
@@ -761,7 +757,6 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
         );
     return LunioPage(
       title: '保养记录',
-      subtitle: '同车同日仅保留一条记录',
       children: [
         LunioSegmentedControl(
           values: const ['按周期', '按项目'],
@@ -868,6 +863,10 @@ class _RecordsPreviewPageState extends ConsumerState<_RecordsPreviewPage> {
               records: filteredRecords,
               items: items,
               selectedItemIds: selectedItemIds,
+              onEdit: (record, itemId) =>
+                  _showMaintenanceRecordFormSheet(context, ref, record: record),
+              onDelete: (record, itemId) =>
+                  _deleteMaintenanceRecordItem(context, ref, record, itemId),
             );
           },
         ),
@@ -953,21 +952,30 @@ class _RecordItemList extends StatelessWidget {
     required this.records,
     required this.items,
     required this.selectedItemIds,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final List<MaintenanceRecord> records;
   final List<MaintenanceItem> items;
   final Set<int> selectedItemIds;
+  final void Function(MaintenanceRecord record, int itemId) onEdit;
+  final void Function(MaintenanceRecord record, int itemId) onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final rows = <({MaintenanceRecord record, MaintenanceItem? item})>[];
+    final rows =
+        <({MaintenanceRecord record, int itemId, MaintenanceItem? item})>[];
     for (final record in records) {
       for (final itemId in record.itemIds) {
         if (selectedItemIds.isNotEmpty && !selectedItemIds.contains(itemId)) {
           continue;
         }
-        rows.add((record: record, item: _itemById(items, itemId)));
+        rows.add((
+          record: record,
+          itemId: itemId,
+          item: _itemById(items, itemId),
+        ));
       }
     }
     if (rows.isEmpty) {
@@ -997,12 +1005,15 @@ class _RecordItemList extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    _SmallActionButton(label: '编辑项目记录', onPressed: () {}),
+                    _SmallActionButton(
+                      label: '编辑',
+                      onPressed: () => onEdit(row.record, row.itemId),
+                    ),
                     const SizedBox(width: 8),
                     _SmallActionButton(
-                      label: '移除项目',
+                      label: '删除',
                       danger: true,
-                      onPressed: () {},
+                      onPressed: () => onDelete(row.record, row.itemId),
                     ),
                   ],
                 ),
@@ -2615,7 +2626,7 @@ class _SwitchCarCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '${_formatNumber(car.currentMileageKm)} km · ${selected ? "当前应用" : "点击切换"}',
+                      '${_formatNumber(car.currentMileageKm)} km · ${car.roadDate} · ${selected ? "当前应用" : "点击切换"}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -2672,7 +2683,7 @@ class _MaintenanceRecordFormState
     final record = widget.record;
     recordDate = record?.date ?? widget.initialDate;
     mileageController = TextEditingController(
-      text: (record?.mileageKm ?? 0).toString(),
+      text: (record?.mileageKm ?? widget.car.currentMileageKm).toString(),
     );
     costController = TextEditingController(
       text: record == null ? '0' : (record.costCents / 100).toStringAsFixed(2),
@@ -2730,7 +2741,7 @@ class _MaintenanceRecordFormState
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                onTap: isEditing ? null : () => _clearZero(costController),
+                onTap: () => _clearZero(costController),
                 decoration: const InputDecoration(labelText: '费用'),
               ),
             ),
@@ -2983,6 +2994,33 @@ Future<void> _deleteMaintenanceRecord(
     return;
   }
   await ref.read(lunioRepositoryProvider).deleteMaintenanceRecord(record.id!);
+  invalidateVehicleProviders(ref);
+}
+
+Future<void> _deleteMaintenanceRecordItem(
+  BuildContext context,
+  WidgetRef ref,
+  MaintenanceRecord record,
+  int itemId,
+) async {
+  final itemName = ref
+      .read(appliedCarMaintenanceItemsProvider)
+      .maybeWhen(
+        data: (items) => _itemById(items, itemId)?.name,
+        orElse: () => null,
+      );
+  final confirmed = await _showConfirmDialog(
+    context: context,
+    title: '删除保养项目',
+    message: '确定从 ${record.date} 的保养记录中删除 ${itemName ?? '该项目'}？',
+    confirmLabel: '删除',
+  );
+  if (confirmed != true || record.id == null) {
+    return;
+  }
+  await ref
+      .read(lunioRepositoryProvider)
+      .removeMaintenanceRecordItem(recordId: record.id!, itemId: itemId);
   invalidateVehicleProviders(ref);
 }
 
@@ -4456,11 +4494,6 @@ class _ReminderViewData {
 
   String get percentText => _formatPercent(progress.percent);
 
-  double get progressValue {
-    final cap = item.overdueUpperLimit <= 0 ? 125 : item.overdueUpperLimit;
-    return (progress.percent / cap).clamp(0, 1).toDouble();
-  }
-
   LunioStatusTone get tone {
     return switch (progress.status) {
       ReminderStatus.normal => LunioStatusTone.normal,
@@ -4472,7 +4505,7 @@ class _ReminderViewData {
   String get badge {
     return switch (progress.status) {
       ReminderStatus.normal => '正常',
-      ReminderStatus.warning => '将到期',
+      ReminderStatus.warning => '已到期',
       ReminderStatus.danger => '已超期',
     };
   }
@@ -4554,7 +4587,7 @@ int _statusRank(ReminderStatus status) {
   };
 }
 
-String _mostUrgentText(
+String _dueOverviewText(
   AsyncValue<List<MaintenanceItem>> items,
   AsyncValue<List<MaintenanceRecord>> records,
   Car car,
@@ -4578,7 +4611,22 @@ String _mostUrgentText(
   if (rows.isEmpty) {
     return '无项目';
   }
-  return '${rows.first.badge} ${rows.first.percentText}';
+  final overdueCount = rows
+      .where((row) => row.progress.status == ReminderStatus.danger)
+      .length;
+  final dueCount = rows
+      .where((row) => row.progress.status == ReminderStatus.warning)
+      .length;
+  if (overdueCount > 0 && dueCount > 0) {
+    return '已超期 $overdueCount / 已到期 $dueCount';
+  }
+  if (overdueCount > 0) {
+    return '已超期 $overdueCount';
+  }
+  if (dueCount > 0) {
+    return '已到期 $dueCount';
+  }
+  return '全部正常';
 }
 
 String _formatPercent(double percent) {

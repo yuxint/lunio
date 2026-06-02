@@ -159,7 +159,7 @@ void main() {
     expect(find.text('保存记录'), findsOneWidget);
   });
 
-  testWidgets('reminders without records show empty urgent metric', (
+  testWidgets('reminders without records show empty due overview', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -168,9 +168,11 @@ void main() {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
 
-    expect(find.text('最急项目'), findsOneWidget);
+    expect(find.text('到期概览'), findsOneWidget);
     expect(find.text('暂无'), findsOneWidget);
     expect(find.text('暂无保养记录，记录首保后再生成保养提醒。'), findsOneWidget);
+    expect(find.text('管理项目'), findsNothing);
+    expect(find.text('按当前应用车辆计算里程与时间进度'), findsNothing);
   });
 
   testWidgets('record form shows car and can add maintenance item', (
@@ -325,7 +327,7 @@ void main() {
                 brand: '东风本田',
                 model: '思域',
                 currentMileageKm: 12000,
-                roadDate: LocalDate(2023, 8, 12),
+                roadDate: LocalDate(2026, 6, 2),
                 sync: sync,
               ),
             ],
@@ -693,6 +695,68 @@ void main() {
     expect(
       (await database.select(database.cars).get()).single.currentMileageKm,
       13000,
+    );
+  });
+
+  testWidgets('editing zero cost clears formatted zero on tap', (tester) async {
+    await pumpApp(tester);
+    await createDefaultCar(tester);
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增保养记录'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '12000');
+    await tester.tap(find.text('机油').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存记录'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).controller?.text,
+      '0.00',
+    );
+    await tester.tap(find.byType(TextField).at(1));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).controller?.text,
+      '',
+    );
+  });
+
+  testWidgets('item mode edit opens record sheet and delete removes item row', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+    await createDefaultRecord(tester);
+
+    await tester.tap(find.text('记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('同车同日仅保留一条记录'), findsNothing);
+    await tester.tap(find.text('按项目'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
+    await tester.pumpAndSettle();
+    expect(find.text('编辑保养记录'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '删除').last);
+    await tester.pumpAndSettle();
+    expect(find.text('删除保养项目'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(await database.select(database.maintenanceRecords).get(), isEmpty);
+    expect(
+      await database.select(database.maintenanceRecordItems).get(),
+      isEmpty,
     );
   });
 

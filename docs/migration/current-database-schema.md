@@ -49,10 +49,10 @@ CREATE TABLE cars (
   version INTEGER NOT NULL DEFAULT 1
 );
 
--- 同一品牌 + 车型唯一。
--- brand_model_key 不作为表字段，只作为表达唯一性的索引口径。
-CREATE UNIQUE INDEX idx_cars_brand_model
-ON cars (brand, model);
+-- 同一品牌 + 车型 + 上路日期唯一。
+-- brand_model_key 不作为表字段，只作为表达车型目录的口径，不用于车辆唯一性。
+CREATE UNIQUE INDEX idx_cars_brand_model_road_date
+ON cars (brand, model, road_date);
 
 
 -- 车辆默认保养项目基础数据表。
@@ -272,7 +272,7 @@ ON app_preferences (key);
 ### `cars`
 
 - `id`：所有业务引用车辆时使用的稳定 ID。
-- `brand + model`：通过唯一索引限制同一品牌+车型只能存在一辆车。
+- `brand + model + road_date`：通过唯一索引限制同一品牌+车型+上路日期只能存在一辆车，同车型不同上路日期可分别建车。
 - `brandModelKey`：不再作为字段存在。
 - 删除车辆：物理删除，关联数据由业务层同事务清理。
 - 删除车辆时，`app_preferences` 中 `key='appliedCarId'` 且 `value` 等于该车辆 ID 的数据也要删除。

@@ -52,6 +52,24 @@ void main() {
     return (carId, itemId);
   }
 
+  Future<int> saveItem(int carId, String name, int sortOrder) {
+    return repository.saveMaintenanceItem(
+      MaintenanceItem(
+        carsId: carId,
+        name: name,
+        enabled: true,
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: 6,
+        notOverdueUpperLimit: 100,
+        overdueUpperLimit: 125,
+        sortOrder: sortOrder,
+        sync: sync,
+      ),
+    );
+  }
+
   test('creates schema and persists car data', () async {
     await seedCarAndItem();
 
@@ -61,6 +79,49 @@ void main() {
     expect(cars.single.id, isNotNull);
     expect(cars.single.brand, '本田');
     expect(cars.single.model, '22款思域');
+  });
+
+  test('allows same brand and model with different road dates', () async {
+    await repository.createCar(
+      Car(
+        brand: '东风本田',
+        model: '思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2021, 10, 31),
+        sync: sync,
+      ),
+    );
+    await repository.createCar(
+      Car(
+        brand: '东风本田',
+        model: '思域',
+        currentMileageKm: 0,
+        roadDate: const LocalDate(2026, 6, 2),
+        sync: sync,
+      ),
+    );
+
+    final cars = await repository.listCars();
+
+    expect(cars, hasLength(2));
+    expect(
+      cars.map((car) => car.roadDate),
+      containsAll([const LocalDate(2021, 10, 31), const LocalDate(2026, 6, 2)]),
+    );
+  });
+
+  test('rejects same brand model and road date', () async {
+    final car = Car(
+      brand: '东风本田',
+      model: '思域',
+      currentMileageKm: 10000,
+      roadDate: const LocalDate(2021, 10, 31),
+      sync: sync,
+    );
+
+    await repository.createCar(car);
+
+    expect(repository.createCar(car), throwsA(isA<Object>()));
   });
 
   test(
@@ -405,6 +466,62 @@ void main() {
 
     await repository.deleteMaintenanceRecord(recordId);
 
+    expect(await repository.listMaintenanceRecordsForCar(carId), isEmpty);
+    expect(
+      await database.select(database.maintenanceRecordItems).get(),
+      isEmpty,
+    );
+  });
+
+  test('removes one item from multi-item maintenance record', () async {
+    final (carId, oilId) = await seedCarAndItem();
+    final filterId = await saveItem(carId, '机滤', 2);
+    final recordId = await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [oilId, filterId],
+        costCents: 10000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+
+    final deletedWholeRecord = await repository.removeMaintenanceRecordItem(
+      recordId: recordId,
+      itemId: oilId,
+    );
+
+    expect(deletedWholeRecord, isFalse);
+    final record = (await repository.listMaintenanceRecordsForCar(
+      carId,
+    )).single;
+    expect(record.itemIds, [filterId]);
+    expect(
+      await database.select(database.maintenanceRecordItems).get(),
+      hasLength(1),
+    );
+  });
+
+  test('removing the last item deletes the whole maintenance record', () async {
+    final (carId, itemId) = await seedCarAndItem();
+    final recordId = await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [itemId],
+        costCents: 10000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+
+    final deletedWholeRecord = await repository.removeMaintenanceRecordItem(
+      recordId: recordId,
+      itemId: itemId,
+    );
+
+    expect(deletedWholeRecord, isTrue);
     expect(await repository.listMaintenanceRecordsForCar(carId), isEmpty);
     expect(
       await database.select(database.maintenanceRecordItems).get(),

@@ -23,7 +23,7 @@ class Cars extends Table {
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
-    {brand, model},
+    {brand, model, roadDate},
   ];
 }
 
@@ -173,7 +173,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration {
@@ -184,8 +184,13 @@ class AppDatabase extends _$AppDatabase {
             await migrator.deleteTable(table.actualTableName);
           }
           await migrator.createAll();
-        } else if (from < 3) {
-          await migrator.alterTable(TableMigration(maintenanceItems));
+        } else {
+          if (from < 3) {
+            await migrator.alterTable(TableMigration(maintenanceItems));
+          }
+          if (from < 4) {
+            await migrator.alterTable(TableMigration(cars));
+          }
         }
       },
     );
