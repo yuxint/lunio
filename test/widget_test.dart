@@ -157,6 +157,18 @@ void main() {
 
     expect(find.text('新增保养记录'), findsWidgets);
     expect(find.text('保存记录'), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsOneWidget);
+    final sheetFrame = find.byWidgetPredicate(
+      (widget) => widget is FractionallySizedBox && widget.widthFactor == 1,
+    );
+    expect(
+      tester.getRect(sheetFrame.last).bottom,
+      tester.view.physicalSize.height / tester.view.devicePixelRatio,
+    );
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    expect(find.text('保存记录'), findsNothing);
   });
 
   testWidgets('reminders without records show empty due overview', (
@@ -316,6 +328,9 @@ void main() {
       status: SyncStatus.synced,
       updatedAt: DateTime(2026),
     );
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+    final existingCar = (await database.select(database.cars).get()).single;
     mockNativeFiles((call) async {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
@@ -327,7 +342,7 @@ void main() {
                 brand: '东风本田',
                 model: '思域',
                 currentMileageKm: 12000,
-                roadDate: LocalDate(2026, 6, 2),
+                roadDate: LocalDate.parse(existingCar.roadDate),
                 sync: sync,
               ),
             ],
@@ -336,8 +351,6 @@ void main() {
       }
       return null;
     });
-    final database = await pumpApp(tester);
-    await createDefaultCar(tester);
 
     await tester.tap(find.text('恢复').first);
     await tester.pumpAndSettle();
@@ -672,11 +685,16 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, '删除').first);
     await tester.pumpAndSettle();
 
+    expect(find.byType(BackdropFilter), findsOneWidget);
     final deleteButton = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, '删除'),
     );
     final background = deleteButton.style?.backgroundColor?.resolve({});
     expect(background, const Color(0xffef4444));
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除车辆'), findsNothing);
   });
 
   testWidgets('records page can create a maintenance record', (tester) async {

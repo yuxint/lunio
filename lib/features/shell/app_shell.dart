@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -613,11 +615,7 @@ class _ReminderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final color = switch (row.tone) {
-      LunioStatusTone.normal => tokens.success,
-      LunioStatusTone.warning => tokens.warning,
-      LunioStatusTone.danger => tokens.danger,
-    };
+    final color = row.tone.statusForeground(tokens);
     return LunioCard(
       child: Row(
         children: [
@@ -1997,7 +1995,7 @@ Future<List<VehicleDefaultMaintenanceItem>?> _showRestoreDefaultItemsSheet(
   required List<VehicleDefaultMaintenanceItem> defaultItems,
   required List<MaintenanceItem> itemDrafts,
 }) {
-  return showModalBottomSheet<List<VehicleDefaultMaintenanceItem>>(
+  return _showLunioModalSheet<List<VehicleDefaultMaintenanceItem>>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -2244,7 +2242,7 @@ Future<(String, String)?> _showVehicleModelPickerSheet(
   required String selectedBrand,
   required String selectedModel,
 }) {
-  return showModalBottomSheet<(String, String)>(
+  return _showLunioModalSheet<(String, String)>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -2438,7 +2436,7 @@ class _PickerOption extends StatelessWidget {
 }
 
 void _showAddCarSheet(BuildContext context, WidgetRef ref) {
-  showModalBottomSheet<void>(
+  _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -2487,7 +2485,7 @@ void _showAddCarSheet(BuildContext context, WidgetRef ref) {
 }
 
 void _showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
-  showModalBottomSheet<void>(
+  _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -2550,7 +2548,7 @@ void _showVehicleSwitcher(BuildContext context, WidgetRef ref) {
     );
     return;
   }
-  showModalBottomSheet<void>(
+  _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -2939,7 +2937,7 @@ Future<void> _showMaintenanceRecordFormSheet(
     _showStatusOverlay(context, '请先配置可用保养项目', _StatusOverlayTone.info);
     return;
   }
-  showModalBottomSheet<void>(
+  _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -3025,7 +3023,7 @@ void _showMaintenanceItemsSheet(
   WidgetRef ref, {
   Car? car,
 }) {
-  showModalBottomSheet<void>(
+  _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -3578,7 +3576,7 @@ Future<bool?> _showMaintenanceItemFormSheet(
   required int carId,
   MaintenanceItem? item,
 }) {
-  return showModalBottomSheet<bool>(
+  return _showLunioModalSheet<bool>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -3613,7 +3611,7 @@ Future<bool?> _showDraftMaintenanceItemFormSheet(
   required MaintenanceItem item,
   required ValueChanged<MaintenanceItem> onSubmit,
 }) {
-  return showModalBottomSheet<bool>(
+  return _showLunioModalSheet<bool>(
     context: context,
     isScrollControlled: true,
     showDragHandle: false,
@@ -3779,7 +3777,7 @@ void _showManualDateSheet(BuildContext context, WidgetRef ref) {
         data: (value) => value,
         orElse: () => LocalDate.fromDateTime(DateTime.now()),
       );
-  showModalBottomSheet<void>(
+  _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -3943,7 +3941,7 @@ Future<LocalDate?> _showSimpleDatePicker(
   required LocalDate firstDate,
   required LocalDate lastDate,
 }) {
-  return showModalBottomSheet<LocalDate>(
+  return _showLunioModalSheet<LocalDate>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -4785,6 +4783,187 @@ Future<void> _setThemeMode(
   invalidatePreferenceProviders(ref);
 }
 
+Future<T?> _showLunioModalSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool isScrollControlled = false,
+  bool showDragHandle = false,
+  Color? backgroundColor,
+  bool barrierDismissible = true,
+}) {
+  return showGeneralDialog<T>(
+    context: context,
+    barrierColor: Colors.transparent,
+    barrierDismissible: false,
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      final child = Material(
+        type: MaterialType.transparency,
+        child: builder(context),
+      );
+      return _LunioModalBackdrop(
+        alignment: Alignment.bottomCenter,
+        barrierDismissible: barrierDismissible,
+        useSafeArea: false,
+        child: FractionallySizedBox(
+          widthFactor: 1,
+          child: backgroundColor == Colors.transparent
+              ? child
+              : _LunioDefaultSheetSurface(
+                  showDragHandle: showDragHandle,
+                  child: child,
+                ),
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(opacity: animation, child: child);
+    },
+  );
+}
+
+Future<T?> _showLunioDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+}) {
+  return showGeneralDialog<T>(
+    context: context,
+    barrierColor: Colors.transparent,
+    barrierDismissible: false,
+    transitionDuration: const Duration(milliseconds: 160),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return _LunioModalBackdrop(
+        alignment: Alignment.center,
+        barrierDismissible: barrierDismissible,
+        useSafeArea: true,
+        child: builder(context),
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final scale = Tween<double>(
+        begin: 0.98,
+        end: 1,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+      return FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(scale: scale, child: child),
+      );
+    },
+  );
+}
+
+class _LunioModalBackdrop extends StatelessWidget {
+  const _LunioModalBackdrop({
+    required this.alignment,
+    required this.barrierDismissible,
+    required this.useSafeArea,
+    required this.child,
+  });
+
+  final AlignmentGeometry alignment;
+  final bool barrierDismissible;
+  final bool useSafeArea;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scrimOpacity = isDark ? 0.30 : 0.18;
+    return SizedBox.expand(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: ColoredBox(
+                color: Colors.black.withValues(alpha: scrimOpacity),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: barrierDismissible
+                  ? () => Navigator.of(context).maybePop()
+                  : null,
+            ),
+          ),
+          if (useSafeArea)
+            SafeArea(
+              child: _LunioModalContent(alignment: alignment, child: child),
+            )
+          else
+            _LunioModalContent(alignment: alignment, child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _LunioModalContent extends StatelessWidget {
+  const _LunioModalContent({required this.alignment, required this.child});
+
+  final AlignmentGeometry alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: GestureDetector(onTap: () {}, child: child),
+    );
+  }
+}
+
+class _LunioDefaultSheetSurface extends StatelessWidget {
+  const _LunioDefaultSheetSurface({
+    required this.showDragHandle,
+    required this.child,
+  });
+
+  final bool showDragHandle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(tokens.radiusXl),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: tokens.ink.withValues(alpha: 0.18),
+            blurRadius: 54,
+            offset: const Offset(0, -20),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showDragHandle) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: tokens.line,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 Future<void> _deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   final confirmed = await _showConfirmDialog(
     context: context,
@@ -4806,7 +4985,7 @@ Future<bool?> _showConfirmDialog({
   required String confirmLabel,
   bool destructive = true,
 }) {
-  return showDialog<bool>(
+  return _showLunioDialog<bool>(
     context: context,
     barrierDismissible: true,
     builder: (context) {
@@ -4879,7 +5058,7 @@ Future<void> _showMessageDialog({
   required String message,
   required _StatusOverlayTone tone,
 }) {
-  return showDialog<void>(
+  return _showLunioDialog<void>(
     context: context,
     barrierDismissible: true,
     builder: (context) {

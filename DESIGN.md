@@ -22,9 +22,9 @@ colors:
   primary-container: "#dbeafe"
   on-primary: "#ffffff"
   on-primary-container: "#2563eb"
-  primary-dark: "#8b5cf6"
-  primary-dark-strong: "#7c3aed"
-  primary-dark-container: "#2e214f"
+  primary-dark: "#0e7490"
+  primary-dark-strong: "#155e75"
+  primary-dark-container: "#0b2c38"
   secondary: "#475569"
   secondary-container: "#e2e8f0"
   on-secondary: "#ffffff"
@@ -310,7 +310,7 @@ The emotional target is steady confidence. The system uses cool neutral surfaces
 The palette is a restrained service-tool palette that separates brand color from maintenance status color. Brand color owns navigation, primary actions, and selected UI. Status color owns vehicle health and maintenance urgency.
 
 - **Primary Blue (#2563eb):** The light-mode brand and interaction color. Use it for the active tab, primary buttons, floating action button, current vehicle highlights, and high-emphasis selected states.
-- **Primary Purple (#8b5cf6):** The dark-mode brand and interaction color. Use it in the same places as primary blue when the app is in dark mode.
+- **Primary Deep Cyan (#0e7490):** The dark-mode brand and interaction color. It keeps the tool-like mechanical feel of the vehicle-care workflow while staying separate from green status semantics. Use it in the same places as primary blue when the app is in dark mode.
 - **Status Green (#22c55e):** Used only for normal vehicle health, positive maintenance status, and normal progress ranges.
 - **Neutral Canvas (#f6f7f9):** The app background. It should read as a cool off-white, not pure white, beige, or cream.
 - **White Surface (#ffffff):** The main card and sheet surface. Use it for readable information containers and controls.
@@ -342,7 +342,7 @@ Depth is created through tonal layers and soft ambient shadows rather than heavy
 
 Standard cards use very soft shadows with low opacity. Elevated hero cards and sheets may use wider blur values, but no component should look glossy or heavily skeuomorphic. Bottom navigation is the most glass-like element: it may use a white translucent surface and blur, but it should still read as part of a practical tool, not as decorative glassmorphism.
 
-Sheets rise from the bottom and dim the content beneath them. The dimming overlay should be functional and subtle, enough to focus attention without making the screen feel modal-heavy.
+Blocking sheets and dialogs use a light background blur with a subtle dimming overlay so the underlying page reads as the previous layer. The modal surface itself stays solid and readable; do not turn forms, lists, or confirmation dialogs into glass panels.
 
 ## Shapes
 
@@ -370,7 +370,7 @@ Bottom navigation is a floating rounded container with three equal destinations.
 
 ### Bottom Sheets
 
-Forms, filters, vehicle switching, project management, and restore confirmation use bottom sheets. Sheets should include a small drag handle, strong title, concise supporting text, and two action buttons where appropriate. Closed sheets must not remain reachable to assistive technologies.
+Forms, filters, vehicle switching, project management, and restore confirmation use bottom sheets. Sheets should include a small drag handle, strong title, concise supporting text, and two action buttons where appropriate. Open sheets blur and dim the page behind them; closed sheets must not remain reachable to assistive technologies.
 
 ### Forms
 
@@ -390,7 +390,7 @@ Toasts are dark neutral surfaces with white or high-contrast text and rounded co
 - Do keep typography neutral with zero letter spacing and system-friendly fallbacks.
 - Do maintain bottom sheets, chips, cards, and buttons as a unified component family.
 - Don't use decorative gradient orbs, bokeh, large landing-page heroes, or visual filler.
-- Don't make the UI monochrome; blue or purple is brand, while green, amber, and red are semantic status colors.
+- Don't make the UI monochrome; blue or deep cyan is brand, while green, amber, and red are semantic status colors.
 - Don't use project names or displayed maintenance item names as stable identifiers in product flows.
 - Don't overcrowd the bottom navigation or add more than the three primary tabs without revisiting the information architecture.
 - Don't use heavy dark shadows, glossy glass surfaces, or platform-specific visual tricks that would make iOS and Android diverge.

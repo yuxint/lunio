@@ -183,23 +183,7 @@ class LunioInlineMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final (background, foreground, icon) = switch (tone) {
-      LunioStatusTone.normal => (
-        tokens.successSoft,
-        tokens.success,
-        Icons.check_circle_outline,
-      ),
-      LunioStatusTone.warning => (
-        tokens.warningSoft,
-        tokens.warning,
-        Icons.info_outline,
-      ),
-      LunioStatusTone.danger => (
-        tokens.dangerSoft,
-        tokens.danger,
-        Icons.error_outline,
-      ),
-    };
+    final (background, foreground) = tone.statusColors(tokens);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -209,7 +193,7 @@ class LunioInlineMessage extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: foreground),
+          Icon(tone.statusIcon, size: 18, color: foreground),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -455,11 +439,7 @@ class LunioStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final (background, foreground) = switch (tone) {
-      LunioStatusTone.normal => (tokens.successSoft, tokens.success),
-      LunioStatusTone.warning => (tokens.warningSoft, tokens.warning),
-      LunioStatusTone.danger => (tokens.dangerSoft, tokens.danger),
-    };
+    final (background, foreground) = tone.statusColors(tokens);
     return Container(
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -480,6 +460,26 @@ class LunioStatusBadge extends StatelessWidget {
 }
 
 enum LunioStatusTone { normal, warning, danger }
+
+extension LunioStatusTonePalette on LunioStatusTone {
+  (Color background, Color foreground) statusColors(LunioTokens tokens) {
+    return switch (this) {
+      LunioStatusTone.normal => (tokens.successSoft, tokens.success),
+      LunioStatusTone.warning => (tokens.warningSoft, tokens.warning),
+      LunioStatusTone.danger => (tokens.dangerSoft, tokens.danger),
+    };
+  }
+
+  Color statusForeground(LunioTokens tokens) => statusColors(tokens).$2;
+
+  IconData get statusIcon {
+    return switch (this) {
+      LunioStatusTone.normal => Icons.check_circle_outline,
+      LunioStatusTone.warning => Icons.info_outline,
+      LunioStatusTone.danger => Icons.error_outline,
+    };
+  }
+}
 
 class LunioSegmentedControl extends StatelessWidget {
   const LunioSegmentedControl({
