@@ -5,14 +5,16 @@ class NativeFiles {
 
   static const _channel = MethodChannel('lunio/native_files');
 
-  static Future<void> exportJsonFile({
+  static Future<bool> exportJsonFile({
     required String filename,
     required String content,
   }) {
-    return _channel.invokeMethod<void>('exportJsonFile', {
-      'filename': filename,
-      'content': content,
-    });
+    return _channel
+        .invokeMethod<bool>('exportJsonFile', {
+          'filename': filename,
+          'content': content,
+        })
+        .then((value) => value ?? false);
   }
 
   static Future<String?> pickJsonFile() {

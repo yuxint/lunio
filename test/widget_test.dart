@@ -70,6 +70,8 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), '428.00');
     await tester.tap(find.text('机油').last);
     await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存记录'));
     await tester.pumpAndSettle();
   }
@@ -141,7 +143,8 @@ void main() {
 
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('¥428.00'), findsOneWidget);
+    expect(find.textContaining('2026-05-19 · 13,000 km'), findsOneWidget);
+    expect(find.textContaining('¥428.00'), findsNothing);
   });
 
   testWidgets('floating add action opens placeholder bottom sheet', (
@@ -156,7 +159,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('新增保养记录'), findsWidgets);
-    expect(find.text('保存记录'), findsOneWidget);
+    expect(find.text('下一步'), findsOneWidget);
+    expect(find.text('保存记录'), findsNothing);
     expect(find.byType(BackdropFilter), findsOneWidget);
     final sheetFrame = find.byWidgetPredicate(
       (widget) => widget is FractionallySizedBox && widget.widthFactor == 1,
@@ -168,7 +172,7 @@ void main() {
 
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
-    expect(find.text('保存记录'), findsNothing);
+    expect(find.text('下一步'), findsNothing);
   });
 
   testWidgets('reminders without records show empty due overview', (
@@ -265,7 +269,7 @@ void main() {
     final calls = <MethodCall>[];
     mockNativeFiles((call) async {
       calls.add(call);
-      return null;
+      return true;
     });
     await pumpApp(tester);
 
@@ -289,7 +293,26 @@ void main() {
     expect(find.text('备份 JSON'), findsNothing);
   });
 
-  testWidgets('profile restore picks a file directly', (tester) async {
+  testWidgets('profile backup cancel does not show success feedback', (
+    tester,
+  ) async {
+    mockNativeFiles((call) async {
+      if (call.method == 'exportJsonFile') {
+        return false;
+      }
+      return null;
+    });
+    await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导出').first);
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('备份完成'), findsNothing);
+  });
+
+  testWidgets('profile restore confirms before picking a file', (tester) async {
     mockNativeFiles((call) async {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
@@ -302,26 +325,61 @@ void main() {
     await createDefaultCar(tester);
 
     await tester.tap(find.text('恢复').first);
+    await tester.pumpAndSettle();
+    expect(find.text('恢复数据'), findsOneWidget);
+
+    await tester.tap(find.text('恢复').last);
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(await database.select(database.cars).get(), hasLength(1));
+    expect(await database.select(database.cars).get(), isEmpty);
     expect(find.text('恢复完成'), findsOneWidget);
     expect(find.text('数据恢复'), findsNothing);
     expect(find.text('备份 JSON'), findsNothing);
   });
 
-  testWidgets('profile restore cancel keeps current data', (tester) async {
-    mockNativeFiles((call) async => null);
+  testWidgets('profile restore confirm cancel keeps current data', (
+    tester,
+  ) async {
+    var pickCallCount = 0;
+    mockNativeFiles((call) async {
+      if (call.method == 'pickJsonFile') {
+        pickCallCount++;
+      }
+      return null;
+    });
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
 
     await tester.tap(find.text('恢复').first);
     await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
 
+    expect(pickCallCount, 0);
     expect(await database.select(database.cars).get(), hasLength(1));
   });
 
-  testWidgets('profile restore unique conflict shows one-button dialog', (
+  testWidgets('profile restore file cancel keeps current data', (tester) async {
+    var pickCallCount = 0;
+    mockNativeFiles((call) async {
+      if (call.method == 'pickJsonFile') {
+        pickCallCount++;
+      }
+      return null;
+    });
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('恢复').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('恢复').last);
+    await tester.pumpAndSettle();
+
+    expect(pickCallCount, 1);
+    expect(await database.select(database.cars).get(), hasLength(1));
+  });
+
+  testWidgets('profile restore backup conflict shows one-button dialog', (
     tester,
   ) async {
     final sync = SyncMetadata(
@@ -345,6 +403,14 @@ void main() {
                 roadDate: LocalDate.parse(existingCar.roadDate),
                 sync: sync,
               ),
+              Car(
+                id: 100,
+                brand: '东风本田',
+                model: '思域',
+                currentMileageKm: 13000,
+                roadDate: LocalDate.parse(existingCar.roadDate),
+                sync: sync,
+              ),
             ],
           ),
         );
@@ -353,6 +419,8 @@ void main() {
     });
 
     await tester.tap(find.text('恢复').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('恢复').last);
     await tester.pumpAndSettle();
 
     expect(await database.select(database.cars).get(), hasLength(1));
@@ -725,6 +793,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), '12000');
     await tester.tap(find.text('机油').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存记录'));
     await tester.pumpAndSettle();

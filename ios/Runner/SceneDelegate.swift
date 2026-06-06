@@ -125,7 +125,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     let mode = documentPickerMode
     documentPickerMode = nil
     if mode == .exportJson {
-      result(nil)
+      result(true)
       return
     }
     guard let url = urls.first else {
@@ -141,7 +141,8 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   }
 
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-    documentPickerResult?(nil)
+    let mode = documentPickerMode
+    documentPickerResult?(mode == .exportJson ? false : nil)
     documentPickerResult = nil
     documentPickerMode = nil
   }

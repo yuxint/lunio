@@ -473,6 +473,52 @@ void main() {
     );
   });
 
+  test(
+    'saves maintenance record and item intervals in one transaction',
+    () async {
+      final (carId, itemId) = await seedCarAndItem();
+
+      await repository.saveMaintenanceRecordWithItemUpdates(
+        record: MaintenanceRecord(
+          carId: carId,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: [itemId],
+          costCents: 10000,
+          mileageKm: 12000,
+          sync: sync,
+        ),
+        itemUpdates: [
+          MaintenanceItem(
+            id: itemId,
+            carsId: carId,
+            name: '机油',
+            enabled: true,
+            remindByMileage: true,
+            remindByTime: true,
+            mileageIntervalKm: 8000,
+            timeIntervalMonths: 9,
+            notOverdueUpperLimit: 100,
+            overdueUpperLimit: 125,
+            sortOrder: 1,
+            sync: SyncMetadata(
+              status: SyncStatus.pendingUpdate,
+              updatedAt: DateTime(2026, 5, 19),
+            ),
+          ),
+        ],
+      );
+
+      final item = (await repository.listMaintenanceItemsForCar(carId)).single;
+      expect(item.mileageIntervalKm, 8000);
+      expect(item.timeIntervalMonths, 9);
+      expect(item.sync.status, SyncStatus.pendingUpdate);
+      expect(
+        await repository.listMaintenanceRecordsForCar(carId),
+        hasLength(1),
+      );
+    },
+  );
+
   test('removes one item from multi-item maintenance record', () async {
     final (carId, oilId) = await seedCarAndItem();
     final filterId = await saveItem(carId, '机滤', 2);
@@ -815,7 +861,32 @@ void main() {
     expect(await repository.getPreferenceValue('manualDate'), isNull);
   });
 
-  test('backup restore merges data and keeps existing applied car', () async {
+  test(
+    'backup restore tolerates bootstrapped default items after clearing data',
+    () async {
+      final (carId, _) = await seedCarAndItem();
+      await repository.setAppliedCarId(carId);
+      await repository.ensureDefaultMaintenanceItems();
+      final backup = await repository.exportBackupPayload();
+
+      await repository.clearAllData();
+      await repository.ensureDefaultMaintenanceItems();
+
+      await repository.restoreBackupPayload(backup);
+
+      expect(await database.select(database.cars).get(), hasLength(1));
+      expect(
+        await database.select(database.vehicleDefaultMaintenanceItems).get(),
+        hasLength(backup.defaultMaintenanceItems.length),
+      );
+      expect(
+        await database.select(database.maintenanceItems).get(),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('backup restore replaces data and applies restored first car', () async {
     final (existingCarId, _) = await seedCarAndItem();
     await repository.setAppliedCarId(existingCarId);
     final backup = BackupPayload(
@@ -859,10 +930,13 @@ void main() {
 
     await repository.restoreBackupPayload(backup);
 
-    expect(await database.select(database.cars).get(), hasLength(2));
+    final cars = await database.select(database.cars).get();
+    expect(cars, hasLength(1));
+    expect(cars.single.brand, '日产');
+    expect(cars.single.model, '22款轩逸');
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(2),
+      hasLength(1),
     );
     expect(
       await database.select(database.maintenanceRecords).get(),
@@ -872,7 +946,7 @@ void main() {
       await database.select(database.maintenanceRecordItems).get(),
       hasLength(1),
     );
-    expect(await repository.getAppliedCarId(), '$existingCarId');
+    expect(await repository.getAppliedCarId(), '${cars.single.id}');
   });
 
   test(
@@ -988,6 +1062,14 @@ void main() {
           brand: '本田',
           model: '22款思域',
           currentMileageKm: 12000,
+          roadDate: const LocalDate(2023, 8, 12),
+          sync: sync,
+        ),
+        Car(
+          id: 100,
+          brand: '本田',
+          model: '22款思域',
+          currentMileageKm: 13000,
           roadDate: const LocalDate(2023, 8, 12),
           sync: sync,
         ),

@@ -627,7 +627,7 @@ class _ReminderRow extends StatelessWidget {
                 CustomPaint(
                   size: const Size.square(58),
                   painter: _ReminderProgressRingPainter(
-                    percent: row.progress.percent,
+                    percent: row.displayPercent.toDouble(),
                     color: color,
                     backgroundColor: tokens.surface3,
                   ),
@@ -993,7 +993,7 @@ class _RecordItemList extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${row.record.date} · ${_formatNumber(row.record.mileageKm)} km · ${_formatMoney(row.record.costCents)}',
+                  '${row.record.date} · ${_formatNumber(row.record.mileageKm)} km',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
@@ -1604,9 +1604,16 @@ class _AddCarFormState extends State<_AddCarForm> {
         TextField(
           controller: mileageController,
           enabled: !saving,
-          keyboardType: TextInputType.number,
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.done,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: const InputDecoration(labelText: '当前里程'),
+          onTap: () {
+            if (!isEditing) {
+              _clearZero(mileageController);
+            }
+          },
+          onSubmitted: (_) => FocusScope.of(context).unfocus(),
+          decoration: _numberInputDecoration(labelText: '当前里程'),
         ),
         const SizedBox(height: 10),
         LunioPickerTile(
@@ -1648,6 +1655,12 @@ class _AddCarFormState extends State<_AddCarForm> {
         .where((model) => model.brand == brand)
         .map((model) => model.model)
         .toList();
+  }
+
+  void _clearZero(TextEditingController controller) {
+    if (controller.text == '0') {
+      controller.clear();
+    }
   }
 
   Future<void> _pickRoadDate() async {
@@ -2651,7 +2664,11 @@ class _MaintenanceRecordForm extends ConsumerStatefulWidget {
   final LocalDate initialDate;
   final MaintenanceRecord? record;
   final Future<List<MaintenanceItem>> Function() reloadItems;
-  final Future<void> Function(MaintenanceRecord record) onSubmit;
+  final Future<void> Function(
+    MaintenanceRecord record,
+    List<MaintenanceItem> itemUpdates,
+  )
+  onSubmit;
 
   @override
   ConsumerState<_MaintenanceRecordForm> createState() =>
@@ -2666,6 +2683,8 @@ class _MaintenanceRecordFormState
   late final TextEditingController noteController;
   late final Set<int> selectedItemIds;
   late List<MaintenanceItem> formItems;
+  MaintenanceRecord? recordDraft;
+  final intervalDrafts = <_RecordIntervalDraft>[];
   bool saving = false;
   String? errorText;
 
@@ -2689,6 +2708,7 @@ class _MaintenanceRecordFormState
 
   @override
   void dispose() {
+    _disposeIntervalDrafts();
     mileageController.dispose();
     costController.dispose();
     noteController.dispose();
@@ -2697,6 +2717,9 @@ class _MaintenanceRecordFormState
 
   @override
   Widget build(BuildContext context) {
+    if (recordDraft != null) {
+      return _buildIntervalStep(context);
+    }
     final availableItems = widget.record == null
         ? formItems.where((item) => item.enabled).toList()
         : formItems
@@ -2721,10 +2744,16 @@ class _MaintenanceRecordFormState
               child: TextField(
                 controller: mileageController,
                 enabled: !saving,
-                keyboardType: TextInputType.number,
+                keyboardType: TextInputType.text,
+                textInputAction: TextInputAction.done,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                onTap: isEditing ? null : () => _clearZero(mileageController),
-                decoration: const InputDecoration(labelText: '保养里程'),
+                onTap: () {
+                  if (!isEditing) {
+                    _clearZero(mileageController);
+                  }
+                },
+                onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                decoration: _numberInputDecoration(labelText: '保养里程'),
               ),
             ),
             const SizedBox(width: 10),
@@ -2732,11 +2761,16 @@ class _MaintenanceRecordFormState
               child: TextField(
                 controller: costController,
                 enabled: !saving,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                onTap: () => _clearZero(costController),
-                decoration: const InputDecoration(labelText: '费用'),
+                keyboardType: TextInputType.text,
+                textInputAction: TextInputAction.done,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                ],
+                onTap: () {
+                  _clearZero(costController);
+                },
+                onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                decoration: _numberInputDecoration(labelText: '费用'),
               ),
             ),
           ],
@@ -2803,6 +2837,129 @@ class _MaintenanceRecordFormState
             const SizedBox(width: 10),
             Expanded(
               child: LunioPrimaryButton(
+                label: '下一步',
+                onPressed: saving ? null : _goToIntervalStep,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  MaintenanceRecord? _buildRecordDraft() {
+    final mileage = int.tryParse(mileageController.text);
+    final cost = double.tryParse(costController.text);
+    if (mileage == null || mileage < 0) {
+      setState(() => errorText = '保养里程必须是非负整数');
+      return null;
+    }
+    if (cost == null || cost < 0) {
+      setState(() => errorText = '费用必须是非负数字');
+      return null;
+    }
+    if (selectedItemIds.isEmpty) {
+      setState(() => errorText = '至少选择一个保养项目');
+      return null;
+    }
+
+    return MaintenanceRecord(
+      id: widget.record?.id,
+      carId: widget.car.id!,
+      date: recordDate,
+      itemIds: selectedItemIds.toList(),
+      costCents: (cost * 100).round(),
+      mileageKm: mileage,
+      note: noteController.text.trim().isEmpty
+          ? null
+          : noteController.text.trim(),
+      sync: SyncMetadata(
+        status: isEditing ? SyncStatus.pendingUpdate : SyncStatus.pendingCreate,
+        updatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  void _goToIntervalStep() {
+    final draft = _buildRecordDraft();
+    if (draft == null) {
+      return;
+    }
+    final selectedItems = formItems
+        .where((item) => item.id != null && selectedItemIds.contains(item.id))
+        .toList();
+    if (selectedItems.isEmpty) {
+      setState(() => errorText = '至少选择一个保养项目');
+      return;
+    }
+    _disposeIntervalDrafts();
+    intervalDrafts.addAll(
+      selectedItems.map((item) => _RecordIntervalDraft(item: item)),
+    );
+    setState(() {
+      recordDraft = draft;
+      errorText = null;
+    });
+  }
+
+  Widget _buildIntervalStep(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('确认下次提醒间隔', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        Text(
+          '保存后会同时更新本次保养项目的默认提醒间隔。',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        for (final draft in intervalDrafts) ...[
+          Text(draft.item.name, style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 8),
+          if (draft.item.remindByMileage) ...[
+            _RecordIntervalInputRow(
+              title: '按里程提醒',
+              controller: draft.mileageController,
+              unit: 'km',
+              enabled: !saving,
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (draft.item.remindByTime) ...[
+            _RecordIntervalInputRow(
+              title: '按时间提醒',
+              controller: draft.monthsController,
+              unit: '月',
+              enabled: !saving,
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+        if (errorText != null) ...[
+          const SizedBox(height: 2),
+          LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
+        ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: LunioSecondaryButton(
+                label: '上一步',
+                onPressed: saving
+                    ? null
+                    : () {
+                        _disposeIntervalDrafts();
+                        setState(() {
+                          recordDraft = null;
+                          errorText = null;
+                        });
+                      },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: LunioPrimaryButton(
                 label: saving ? '保存中' : '保存记录',
                 onPressed: saving ? null : _submit,
               ),
@@ -2814,18 +2971,13 @@ class _MaintenanceRecordFormState
   }
 
   Future<void> _submit() async {
-    final mileage = int.tryParse(mileageController.text);
-    final cost = double.tryParse(costController.text);
-    if (mileage == null || mileage < 0) {
-      setState(() => errorText = '保养里程必须是非负整数');
+    final draft = recordDraft;
+    if (draft == null) {
+      _goToIntervalStep();
       return;
     }
-    if (cost == null || cost < 0) {
-      setState(() => errorText = '费用必须是非负数字');
-      return;
-    }
-    if (selectedItemIds.isEmpty) {
-      setState(() => errorText = '至少选择一个保养项目');
+    final itemUpdates = _buildItemUpdates();
+    if (itemUpdates == null) {
       return;
     }
     setState(() {
@@ -2833,25 +2985,7 @@ class _MaintenanceRecordFormState
       errorText = null;
     });
     try {
-      await widget.onSubmit(
-        MaintenanceRecord(
-          id: widget.record?.id,
-          carId: widget.car.id!,
-          date: recordDate,
-          itemIds: selectedItemIds.toList(),
-          costCents: (cost * 100).round(),
-          mileageKm: mileage,
-          note: noteController.text.trim().isEmpty
-              ? null
-              : noteController.text.trim(),
-          sync: SyncMetadata(
-            status: isEditing
-                ? SyncStatus.pendingUpdate
-                : SyncStatus.pendingCreate,
-            updatedAt: DateTime.now(),
-          ),
-        ),
-      );
+      await widget.onSubmit(draft, itemUpdates);
     } catch (error) {
       if (!mounted) {
         return;
@@ -2861,6 +2995,53 @@ class _MaintenanceRecordFormState
         errorText = _friendlyError(error);
       });
     }
+  }
+
+  List<MaintenanceItem>? _buildItemUpdates() {
+    final updates = <MaintenanceItem>[];
+    for (final draft in intervalDrafts) {
+      final item = draft.item;
+      final mileageInterval = item.remindByMileage
+          ? int.tryParse(draft.mileageController.text)
+          : item.mileageIntervalKm;
+      final timeInterval = item.remindByTime
+          ? int.tryParse(draft.monthsController.text)
+          : item.timeIntervalMonths;
+
+      if (item.remindByMileage &&
+          (mileageInterval == null || mileageInterval <= 0)) {
+        setState(() => errorText = '${item.name} 的里程间隔必须填写正整数');
+        return null;
+      }
+      if (item.remindByTime && (timeInterval == null || timeInterval <= 0)) {
+        setState(() => errorText = '${item.name} 的时间间隔必须填写正整数');
+        return null;
+      }
+      if (mileageInterval == item.mileageIntervalKm &&
+          timeInterval == item.timeIntervalMonths) {
+        continue;
+      }
+      updates.add(
+        MaintenanceItem(
+          id: item.id,
+          carsId: item.carsId,
+          name: item.name,
+          enabled: item.enabled,
+          remindByMileage: item.remindByMileage,
+          remindByTime: item.remindByTime,
+          mileageIntervalKm: item.remindByMileage ? mileageInterval : null,
+          timeIntervalMonths: item.remindByTime ? timeInterval : null,
+          notOverdueUpperLimit: item.notOverdueUpperLimit,
+          overdueUpperLimit: item.overdueUpperLimit,
+          sortOrder: item.sortOrder,
+          sync: SyncMetadata(
+            status: SyncStatus.pendingUpdate,
+            updatedAt: DateTime.now(),
+          ),
+        ),
+      );
+    }
+    return updates;
   }
 
   Future<void> _addMaintenanceItem() async {
@@ -2898,6 +3079,13 @@ class _MaintenanceRecordFormState
     }
   }
 
+  void _disposeIntervalDrafts() {
+    for (final draft in intervalDrafts) {
+      draft.dispose();
+    }
+    intervalDrafts.clear();
+  }
+
   Future<void> _pickRecordDate() async {
     final picked = await _showSimpleDatePicker(
       context,
@@ -2911,6 +3099,92 @@ class _MaintenanceRecordFormState
       return;
     }
     setState(() => recordDate = picked);
+  }
+}
+
+class _RecordIntervalDraft {
+  _RecordIntervalDraft({required this.item})
+    : mileageController = TextEditingController(
+        text: item.remindByMileage
+            ? (item.mileageIntervalKm ?? 5000).toString()
+            : '',
+      ),
+      monthsController = TextEditingController(
+        text: item.remindByTime
+            ? (item.timeIntervalMonths ?? 1).toString()
+            : '',
+      );
+
+  final MaintenanceItem item;
+  final TextEditingController mileageController;
+  final TextEditingController monthsController;
+
+  void dispose() {
+    mileageController.dispose();
+    monthsController.dispose();
+  }
+}
+
+class _RecordIntervalInputRow extends StatelessWidget {
+  const _RecordIntervalInputRow({
+    required this.title,
+    required this.controller,
+    required this.unit,
+    required this.enabled,
+  });
+
+  final String title;
+  final TextEditingController controller;
+  final String unit;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: tokens.surface2,
+        borderRadius: BorderRadius.circular(tokens.radiusMedium),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: enabled ? tokens.ink : tokens.subtle,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 116,
+            child: TextField(
+              controller: controller,
+              enabled: enabled,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.done,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onSubmitted: (_) => FocusScope.of(context).unfocus(),
+              textAlign: TextAlign.center,
+              decoration: _numberInputDecoration(suffixText: unit).copyWith(
+                fillColor: enabled
+                    ? tokens.surface
+                    : tokens.surface3.withValues(alpha: 0.55),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                constraints: const BoxConstraints(minHeight: 46),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -2955,12 +3229,18 @@ Future<void> _showMaintenanceRecordFormSheet(
           reloadItems: () => ref
               .read(lunioRepositoryProvider)
               .listMaintenanceItemsForCar(car.id!),
-          onSubmit: (value) async {
+          onSubmit: (value, itemUpdates) async {
             final repository = ref.read(lunioRepositoryProvider);
             if (value.id == null) {
-              await repository.saveMaintenanceRecord(value);
+              await repository.saveMaintenanceRecordWithItemUpdates(
+                record: value,
+                itemUpdates: itemUpdates,
+              );
             } else {
-              await repository.updateMaintenanceRecord(value);
+              await repository.updateMaintenanceRecordWithItemUpdates(
+                record: value,
+                itemUpdates: itemUpdates,
+              );
             }
             invalidateVehicleProviders(ref);
             if (context.mounted) {
@@ -3546,11 +3826,12 @@ class _ReminderRuleInputRow extends StatelessWidget {
             child: TextField(
               controller: controller,
               enabled: value && onChanged != null,
-              keyboardType: TextInputType.number,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.done,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onSubmitted: (_) => FocusScope.of(context).unfocus(),
               textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                suffixText: unit,
+              decoration: _numberInputDecoration(suffixText: unit).copyWith(
                 fillColor: value
                     ? tokens.surface
                     : tokens.surface3.withValues(alpha: 0.55),
@@ -3699,11 +3980,11 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
         .exportBackupPayload();
     const codec = BackupCodec();
     final json = codec.encode(payload);
-    await NativeFiles.exportJsonFile(
+    final saved = await NativeFiles.exportJsonFile(
       filename: _backupFilename(DateTime.now()),
       content: json,
     );
-    if (context.mounted) {
+    if (saved && context.mounted) {
       _showStatusOverlay(context, '备份完成', _StatusOverlayTone.success);
     }
   } catch (error) {
@@ -3714,6 +3995,15 @@ Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> _restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
+  final confirmed = await _showConfirmDialog(
+    context: context,
+    title: '恢复数据',
+    message: '恢复会先清空本地车辆、保养项目、保养记录和偏好，再写入备份文件中的数据。该操作不可撤销。',
+    confirmLabel: '恢复',
+  );
+  if (confirmed != true) {
+    return;
+  }
   try {
     final json = await NativeFiles.pickJsonFile();
     if (json == null) {
@@ -3732,7 +4022,7 @@ Future<void> _restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
         await _showMessageDialog(
           context: context,
           title: '恢复失败',
-          message: '恢复文件中的部分数据与本地数据重复，本次恢复未写入任何数据。',
+          message: '恢复文件中的部分数据重复或冲突，本次恢复未写入任何数据。',
           tone: _StatusOverlayTone.error,
         );
       } else {
@@ -3949,14 +4239,12 @@ Future<LocalDate?> _showSimpleDatePicker(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.72,
       ),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-          child: _SimpleDatePicker(
-            initialDate: initialDate,
-            firstDate: firstDate,
-            lastDate: lastDate,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+        child: _SimpleDatePicker(
+          initialDate: initialDate,
+          firstDate: firstDate,
+          lastDate: lastDate,
         ),
       ),
     ),
@@ -4018,18 +4306,23 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
             onMonthTap: () => setState(() => mode = _DatePickerMode.month),
           ),
           if (_todayInRange()) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: _selectToday,
                 icon: const Icon(Icons.today_outlined, size: 18),
                 label: const Text('今天'),
-                style: TextButton.styleFrom(foregroundColor: tokens.primary),
+                style: TextButton.styleFrom(
+                  foregroundColor: tokens.primary,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: 2),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 160),
             child: switch (mode) {
@@ -4038,7 +4331,7 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
               _DatePickerMode.year => _buildYearGrid(context),
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -4066,46 +4359,74 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
     final daysInMonth = DateTime(visibleYear, visibleMonth + 1, 0).day;
     final leadingBlankCount = firstWeekday - 1;
     final cells = leadingBlankCount + daysInMonth;
-    return GridView.count(
+    final totalCells = ((cells + 6) ~/ 7) * 7;
+    return Column(
       key: const ValueKey(_DatePickerMode.day),
-      crossAxisCount: 7,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 6,
-      crossAxisSpacing: 6,
       children: [
-        for (final label in const ['一', '二', '三', '四', '五', '六', '日'])
-          Center(
-            child: Text(label, style: Theme.of(context).textTheme.labelSmall),
-          ),
-        for (var index = 0; index < cells; index++)
-          if (index < leadingBlankCount)
-            const SizedBox.shrink()
-          else
-            _DateCell(
-              date: LocalDate(
-                visibleYear,
-                visibleMonth,
-                index - leadingBlankCount + 1,
-              ),
-              selectedDate: selectedDate,
-              firstDate: widget.firstDate,
-              lastDate: widget.lastDate,
-              onSelected: (date) => setState(() => selectedDate = date),
+        Table(
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            TableRow(
+              children: [
+                for (final label in const ['一', '二', '三', '四', '五', '六', '日'])
+                  SizedBox(
+                    height: 20,
+                    child: Center(
+                      child: Text(
+                        label,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ),
+                  ),
+              ],
             ),
+            for (var row = 0; row < totalCells ~/ 7; row++)
+              TableRow(
+                children: [
+                  for (var column = 0; column < 7; column++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: row == 0 ? 0 : 6,
+                        left: column == 0 ? 0 : 3,
+                        right: column == 6 ? 0 : 3,
+                      ),
+                      child: _dateCellForIndex(
+                        row * 7 + column,
+                        leadingBlankCount,
+                        daysInMonth,
+                      ),
+                    ),
+                ],
+              ),
+          ],
+        ),
       ],
     );
   }
 
+  Widget _dateCellForIndex(int index, int leadingBlankCount, int daysInMonth) {
+    if (index < leadingBlankCount || index >= leadingBlankCount + daysInMonth) {
+      return const SizedBox(height: 42);
+    }
+    return SizedBox(
+      height: 42,
+      child: _DateCell(
+        date: LocalDate(
+          visibleYear,
+          visibleMonth,
+          index - leadingBlankCount + 1,
+        ),
+        selectedDate: selectedDate,
+        firstDate: widget.firstDate,
+        lastDate: widget.lastDate,
+        onSelected: (date) => setState(() => selectedDate = date),
+      ),
+    );
+  }
+
   Widget _buildMonthGrid(BuildContext context) {
-    return GridView.count(
+    return _DateOptionTable(
       key: const ValueKey(_DatePickerMode.month),
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 2.2,
       children: [
         for (var month = 1; month <= 12; month++)
           _DateOptionCell(
@@ -4120,14 +4441,8 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
   }
 
   Widget _buildYearGrid(BuildContext context) {
-    return GridView.count(
+    return _DateOptionTable(
       key: const ValueKey(_DatePickerMode.year),
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 2.2,
       children: [
         for (var offset = 0; offset < 12; offset++)
           _DateOptionCell(
@@ -4284,6 +4599,41 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
 }
 
 enum _DatePickerMode { day, month, year }
+
+class _DateOptionTable extends StatelessWidget {
+  const _DateOptionTable({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalCells = ((children.length + 2) ~/ 3) * 3;
+    return Table(
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        for (var row = 0; row < totalCells ~/ 3; row++)
+          TableRow(
+            children: [
+              for (var column = 0; column < 3; column++)
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: row == 0 ? 0 : 10,
+                    left: column == 0 ? 0 : 5,
+                    right: column == 2 ? 0 : 5,
+                  ),
+                  child: SizedBox(
+                    height: 58,
+                    child: row * 3 + column < children.length
+                        ? children[row * 3 + column]
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+}
 
 class _DatePickerHeader extends StatelessWidget {
   const _DatePickerHeader({
@@ -4486,7 +4836,13 @@ class _ReminderViewData {
 
   String get title => item.name;
 
-  String get percentText => _formatPercent(progress.percent);
+  int get displayPercent => _displayPercentForThresholds(
+    percent: progress.percent,
+    notOverdueUpperLimit: item.notOverdueUpperLimit,
+    overdueUpperLimit: item.overdueUpperLimit,
+  );
+
+  String get percentText => _formatPercent(displayPercent);
 
   LunioStatusTone get tone {
     return switch (progress.status) {
@@ -4623,8 +4979,31 @@ String _dueOverviewText(
   return '全部正常';
 }
 
-String _formatPercent(double percent) {
-  return percent.round() > 999 ? '999%+' : '${percent.round()}%';
+InputDecoration _numberInputDecoration({
+  String? labelText,
+  String? suffixText,
+}) {
+  return InputDecoration(labelText: labelText, suffixText: suffixText);
+}
+
+int _displayPercentForThresholds({
+  required double percent,
+  required double notOverdueUpperLimit,
+  required double overdueUpperLimit,
+}) {
+  var display = percent.round();
+  if (percent < notOverdueUpperLimit &&
+      display >= notOverdueUpperLimit.ceil()) {
+    display = notOverdueUpperLimit.ceil() - 1;
+  }
+  if (percent < overdueUpperLimit && display >= overdueUpperLimit.ceil()) {
+    display = overdueUpperLimit.ceil() - 1;
+  }
+  return display;
+}
+
+String _formatPercent(int percent) {
+  return percent > 999 ? '999%+' : '$percent%';
 }
 
 String _itemRuleText(MaintenanceItem item) {
@@ -4731,7 +5110,7 @@ String _mileageReminderText(int remainingKm) {
     return '按里程提醒：距离下次约 ${_formatNumber(remainingKm)} 公里';
   }
   if (remainingKm == 0) {
-    return '按里程提醒：今日到期';
+    return '按里程提醒：已到期';
   }
   return '按里程提醒：已超 ${_formatNumber(remainingKm.abs())} 公里';
 }
