@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
+import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/reminder.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/domain/rules/maintenance_rules.dart';
@@ -114,5 +115,77 @@ void main() {
 
     expect(progress.reason, 'time');
     expect(progress.percent, closeTo(48.38, 0.01));
+  });
+
+  test('mileage update frequency defaults monthly with sparse records', () {
+    expect(
+      MaintenanceRules.mileageUpdateFrequencyForRecords(const []),
+      ReminderRepeatFrequency.monthly,
+    );
+    expect(
+      MaintenanceRules.mileageUpdateFrequencyForRecords([
+        record(date: const LocalDate(2026, 5, 1), mileageKm: 10000),
+      ]),
+      ReminderRepeatFrequency.monthly,
+    );
+  });
+
+  test('mileage update frequency follows recent maintenance cadence', () {
+    expect(
+      MaintenanceRules.mileageUpdateFrequencyForRecords([
+        record(date: const LocalDate(2026, 5, 29), mileageKm: 40000),
+        record(date: const LocalDate(2026, 5, 22), mileageKm: 35000),
+        record(date: const LocalDate(2026, 5, 15), mileageKm: 30000),
+      ]),
+      ReminderRepeatFrequency.weekly,
+    );
+    expect(
+      MaintenanceRules.mileageUpdateFrequencyForRecords([
+        record(date: const LocalDate(2026, 5, 29), mileageKm: 40000),
+        record(date: const LocalDate(2026, 5, 15), mileageKm: 30000),
+      ]),
+      ReminderRepeatFrequency.everyTwoWeeks,
+    );
+    expect(
+      MaintenanceRules.mileageUpdateFrequencyForRecords([
+        record(date: const LocalDate(2026, 5, 29), mileageKm: 40000),
+        record(date: const LocalDate(2026, 5, 8), mileageKm: 30000),
+      ]),
+      ReminderRepeatFrequency.everyThreeWeeks,
+    );
+    expect(
+      MaintenanceRules.mileageUpdateFrequencyForRecords([
+        record(date: const LocalDate(2026, 5, 29), mileageKm: 40000),
+        record(date: const LocalDate(2026, 4, 1), mileageKm: 30000),
+      ]),
+      ReminderRepeatFrequency.monthly,
+    );
+  });
+
+  test('mileage update reminder is due from last mileage updated date', () {
+    expect(
+      MaintenanceRules.mileageUpdateDue(
+        lastMileageUpdatedDate: const LocalDate(2026, 5, 1),
+        frequency: ReminderRepeatFrequency.weekly,
+        today: const LocalDate(2026, 5, 7),
+      ),
+      isFalse,
+    );
+    expect(
+      MaintenanceRules.mileageUpdateDue(
+        lastMileageUpdatedDate: const LocalDate(2026, 5, 1),
+        frequency: ReminderRepeatFrequency.weekly,
+        today: const LocalDate(2026, 5, 8),
+      ),
+      isTrue,
+    );
+    expect(
+      MaintenanceRules.mileageUpdateDue(
+        lastMileageUpdatedDate: const LocalDate(2026, 1, 31),
+        frequency: ReminderRepeatFrequency.monthly,
+        today: const LocalDate(2026, 2, 28),
+      ),
+      isTrue,
+    );
   });
 }

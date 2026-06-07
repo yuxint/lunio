@@ -8,14 +8,25 @@ import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
 import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
+import '../domain/entities/notification_settings.dart';
 import '../domain/entities/vehicle_model.dart';
 
 final appDateContextProvider = Provider<AppDateContext>(
   (ref) => AppDateContext.system(),
 );
 
+final developerModeProvider = FutureProvider<bool>((ref) async {
+  final repository = ref.watch(lunioRepositoryProvider);
+  final value = await repository.getPreferenceValue('developerModeEnabled');
+  return value == 'true';
+});
+
 final manualDatePreferenceProvider = FutureProvider<LocalDate?>((ref) async {
   final repository = ref.watch(lunioRepositoryProvider);
+  final developerModeEnabled = await ref.watch(developerModeProvider.future);
+  if (!developerModeEnabled) {
+    return null;
+  }
   final enabled = await repository.getPreferenceValue('manualDateEnabled');
   if (enabled != 'true') {
     return null;
@@ -35,6 +46,25 @@ final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) async {
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
   };
+});
+
+final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
+  ref,
+) async {
+  final repository = ref.watch(lunioRepositoryProvider);
+  return LunioNotificationSettings(
+    systemNotificationsEnabled:
+        await repository.getPreferenceValue('systemNotificationsEnabled') !=
+        'false',
+    inAppNotificationsEnabled:
+        await repository.getPreferenceValue('inAppNotificationsEnabled') !=
+        'false',
+    maintenanceDueEnabled:
+        await repository.getPreferenceValue('maintenanceDueEnabled') != 'false',
+    dueRepeatFrequency: ReminderRepeatFrequencyCodec.parse(
+      await repository.getPreferenceValue('maintenanceDueRepeat'),
+    ),
+  );
 });
 
 final effectiveTodayProvider = FutureProvider<LocalDate>((ref) async {
@@ -104,9 +134,11 @@ void invalidateVehicleProviders(WidgetRef ref) {
 }
 
 void invalidatePreferenceProviders(WidgetRef ref) {
+  ref.invalidate(developerModeProvider);
   ref.invalidate(manualDatePreferenceProvider);
   ref.invalidate(effectiveTodayProvider);
   ref.invalidate(themeModePreferenceProvider);
+  ref.invalidate(notificationSettingsProvider);
 }
 
 void invalidateAllAppDataProviders(WidgetRef ref) {

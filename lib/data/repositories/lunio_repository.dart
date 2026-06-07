@@ -836,7 +836,6 @@ class LunioRepository {
     await database.delete(database.maintenanceRecords).go();
     await database.delete(database.maintenanceItems).go();
     await database.delete(database.cars).go();
-    await database.delete(database.vehicleDefaultMaintenanceItems).go();
     await database.delete(database.vehicleModels).go();
   }
 
@@ -941,7 +940,7 @@ class LunioRepository {
       domain.VehicleDefaultMaintenanceItem(
         vehicleBrand: '东风本田',
         vehicleModel: '思域',
-        itemName: '汽油发动机清洁剂（燃油宝）',
+        itemName: '燃油宝',
         remindByMileage: true,
         remindByTime: false,
         mileageIntervalKm: 5000,
@@ -1005,7 +1004,7 @@ class LunioRepository {
       domain.VehicleDefaultMaintenanceItem(
         vehicleBrand: '东风本田',
         vehicleModel: '思域',
-        itemName: '制动液（刹车油）',
+        itemName: '刹车油',
         remindByMileage: false,
         remindByTime: true,
         timeIntervalMonths: 36,
@@ -1046,7 +1045,7 @@ class LunioRepository {
       domain.VehicleDefaultMaintenanceItem(
         vehicleBrand: '东风本田',
         vehicleModel: '思域',
-        itemName: '检查制动器（刹车）',
+        itemName: '检查刹车',
         remindByMileage: true,
         remindByTime: false,
         mileageIntervalKm: 120000,
@@ -1056,7 +1055,7 @@ class LunioRepository {
       domain.VehicleDefaultMaintenanceItem(
         vehicleBrand: '东风本田',
         vehicleModel: '思域',
-        itemName: '冷却液（防冻液）',
+        itemName: '防冻液',
         remindByMileage: true,
         remindByTime: true,
         mileageIntervalKm: 200000,
@@ -1440,9 +1439,16 @@ class LunioRepository {
       recordMileageKm: recordMileageKm,
     );
     if (nextMileage != car.currentMileageKm) {
-      await (database.update(database.cars)
-            ..where((row) => row.id.equals(carId)))
-          .write(CarsCompanion(currentMileageKm: Value(nextMileage)));
+      final now = DateTime.now().toIso8601String();
+      await (database.update(
+        database.cars,
+      )..where((row) => row.id.equals(carId))).write(
+        CarsCompanion(
+          currentMileageKm: Value(nextMileage),
+          syncStatus: Value(SyncStatus.pendingUpdate.name),
+          updatedAt: Value(now),
+        ),
+      );
     }
   }
 

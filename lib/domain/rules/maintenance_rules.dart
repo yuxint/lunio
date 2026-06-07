@@ -1,6 +1,7 @@
 import '../../core/date/local_date.dart';
 import '../entities/maintenance_item.dart';
 import '../entities/maintenance_record.dart';
+import '../entities/notification_settings.dart';
 import '../entities/reminder.dart';
 
 class MaintenanceRules {
@@ -14,6 +15,70 @@ class MaintenanceRules {
       return ReminderStatus.warning;
     }
     return ReminderStatus.normal;
+  }
+
+  static ReminderRepeatFrequency mileageUpdateFrequencyForRecords(
+    List<MaintenanceRecord> records,
+  ) {
+    final dates = records.map((record) => record.date).toSet().toList()
+      ..sort((left, right) => right.compareTo(left));
+    if (dates.length < 2) {
+      return ReminderRepeatFrequency.monthly;
+    }
+    final recentDates = dates.take(5).toList();
+    final intervals = <int>[];
+    for (var index = 0; index < recentDates.length - 1; index++) {
+      final interval = recentDates[index + 1].daysUntil(recentDates[index]);
+      if (interval > 0) {
+        intervals.add(interval);
+      }
+    }
+    if (intervals.isEmpty) {
+      return ReminderRepeatFrequency.monthly;
+    }
+    final averageDays =
+        intervals.reduce((left, right) => left + right) / intervals.length;
+    if (averageDays <= 10) {
+      return ReminderRepeatFrequency.weekly;
+    }
+    if (averageDays <= 17) {
+      return ReminderRepeatFrequency.everyTwoWeeks;
+    }
+    if (averageDays <= 24) {
+      return ReminderRepeatFrequency.everyThreeWeeks;
+    }
+    return ReminderRepeatFrequency.monthly;
+  }
+
+  static bool mileageUpdateDue({
+    required LocalDate lastMileageUpdatedDate,
+    required ReminderRepeatFrequency frequency,
+    required LocalDate today,
+  }) {
+    final nextReminderDate = nextMileageUpdateReminderDate(
+      lastMileageUpdatedDate: lastMileageUpdatedDate,
+      frequency: frequency,
+    );
+    return today.compareTo(nextReminderDate) >= 0;
+  }
+
+  static LocalDate nextMileageUpdateReminderDate({
+    required LocalDate lastMileageUpdatedDate,
+    required ReminderRepeatFrequency frequency,
+  }) {
+    return switch (frequency) {
+      ReminderRepeatFrequency.daily => _addDays(lastMileageUpdatedDate, 1),
+      ReminderRepeatFrequency.weekly => _addDays(lastMileageUpdatedDate, 7),
+      ReminderRepeatFrequency.everyTwoWeeks => _addDays(
+        lastMileageUpdatedDate,
+        14,
+      ),
+      ReminderRepeatFrequency.everyThreeWeeks => _addDays(
+        lastMileageUpdatedDate,
+        21,
+      ),
+      ReminderRepeatFrequency.monthly => lastMileageUpdatedDate.addMonths(1),
+    };
   }
 
   static ReminderProgress progressForItem({
@@ -105,6 +170,10 @@ class MaintenanceRules {
       remainingDays,
     );
   }
+}
+
+LocalDate _addDays(LocalDate date, int days) {
+  return LocalDate.fromDateTime(date.toDateTime().add(Duration(days: days)));
 }
 
 class _Progress {

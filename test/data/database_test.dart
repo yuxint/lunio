@@ -577,6 +577,8 @@ void main() {
 
   test('record can only increase car mileage', () async {
     final (carId, itemId) = await seedCarAndItem();
+    final initialUpdatedAt =
+        (await database.select(database.cars).get()).single.updatedAt;
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
         carId: carId,
@@ -588,6 +590,10 @@ void main() {
       ),
     );
     expect((await repository.listCars()).single.currentMileageKm, 10000);
+    expect(
+      (await database.select(database.cars).get()).single.updatedAt,
+      initialUpdatedAt,
+    );
 
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
@@ -600,6 +606,10 @@ void main() {
       ),
     );
     expect((await repository.listCars()).single.currentMileageKm, 13000);
+    expect(
+      (await database.select(database.cars).get()).single.updatedAt,
+      isNot(initialUpdatedAt),
+    );
   });
 
   test('delete car removes related local records and items', () async {
@@ -1028,6 +1038,11 @@ void main() {
     final (carId, itemId) = await seedCarAndItem();
     await repository.setAppliedCarId(carId);
     await repository.setPreferenceValue('manualDateEnabled', 'true');
+    await repository.ensureDefaultMaintenanceItems();
+    final defaultItemsBeforeClear = await database
+        .select(database.vehicleDefaultMaintenanceItems)
+        .get();
+    expect(defaultItemsBeforeClear, isNotEmpty);
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
         carId: carId,
@@ -1049,6 +1064,11 @@ void main() {
       isEmpty,
     );
     expect(await database.select(database.appPreferences).get(), isEmpty);
+    expect(
+      await database.select(database.vehicleDefaultMaintenanceItems).get(),
+      hasLength(defaultItemsBeforeClear.length),
+    );
+    expect(await database.select(database.vehicleModels).get(), isEmpty);
   });
 
   test('backup restore rolls back when unique constraints fail', () async {

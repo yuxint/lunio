@@ -12,6 +12,8 @@ import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
+import 'package:lunio/domain/entities/maintenance_record.dart';
+import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 
 void main() {
@@ -30,11 +32,21 @@ void main() {
     WidgetTester tester, {
     AppDateContext? dateContext,
     AppDatabase? database,
+    bool systemNotificationsEnabled = false,
+    bool inAppNotificationsEnabled = false,
   }) async {
     final appDatabase = database ?? AppDatabase.inMemory();
     if (database == null) {
       addTearDown(appDatabase.close);
     }
+    await LunioRepository(appDatabase).setPreferenceValue(
+      'systemNotificationsEnabled',
+      systemNotificationsEnabled.toString(),
+    );
+    await LunioRepository(appDatabase).setPreferenceValue(
+      'inAppNotificationsEnabled',
+      inAppNotificationsEnabled.toString(),
+    );
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -66,6 +78,16 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> enableDeveloperMode(WidgetTester tester) async {
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    for (var index = 0; index < 5; index++) {
+      await tester.tap(find.text('版本 1.0.0'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('手动日期'), findsOneWidget);
+  }
+
   Future<void> createDefaultRecord(WidgetTester tester) async {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
@@ -80,6 +102,26 @@ void main() {
     await tester.tap(find.text('保存记录'));
     await tester.pumpAndSettle();
   }
+
+  test(
+    'notification settings default to system notifications enabled',
+    () async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final container = ProviderContainer(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+      );
+      addTearDown(container.dispose);
+
+      final settings = await container.read(
+        notificationSettingsProvider.future,
+      );
+
+      expect(settings.systemNotificationsEnabled, isTrue);
+      expect(settings.inAppNotificationsEnabled, isTrue);
+      expect(settings.dueRepeatFrequency.value, 'weekly');
+    },
+  );
 
   testWidgets('app shell exposes three main entries', (tester) async {
     await pumpApp(tester);
@@ -253,7 +295,7 @@ void main() {
   testWidgets('profile can create a car and set it as applied car', (
     tester,
   ) async {
-    final database = await pumpApp(tester);
+    final database = await pumpApp(tester, inAppNotificationsEnabled: true);
 
     await createDefaultCar(tester);
 
@@ -285,7 +327,11 @@ void main() {
     expect(find.text('备份'), findsOneWidget);
     expect(find.text('JSON 备份'), findsNothing);
 
-    await tester.tap(find.text('导出').first);
+    await tester.tap(find.text('备份'));
+    await tester.pumpAndSettle();
+    expect(calls, isEmpty);
+
+    await tester.tap(find.widgetWithText(TextButton, '导出').first);
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(calls.single.method, 'exportJsonFile');
@@ -313,7 +359,7 @@ void main() {
 
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('导出').first);
+    await tester.tap(find.widgetWithText(TextButton, '导出').first);
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('备份完成'), findsNothing);
@@ -332,6 +378,10 @@ void main() {
     await createDefaultCar(tester);
 
     await tester.tap(find.text('恢复').first);
+    await tester.pumpAndSettle();
+    expect(find.text('恢复数据'), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
     await tester.pumpAndSettle();
     expect(find.text('恢复数据'), findsOneWidget);
 
@@ -357,7 +407,7 @@ void main() {
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('恢复').first);
+    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -377,7 +427,7 @@ void main() {
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('恢复').first);
+    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('恢复').last);
     await tester.pumpAndSettle();
@@ -425,7 +475,7 @@ void main() {
       return null;
     });
 
-    await tester.tap(find.text('恢复').first);
+    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('恢复').last);
     await tester.pumpAndSettle();
@@ -591,7 +641,11 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.tap(find.text('汽油发动机清洁剂（燃油宝）'));
     await tester.pumpAndSettle();
+    expect(find.text('编辑保养项目'), findsNothing);
 
+    await tester.ensureVisible(find.widgetWithText(TextButton, '编辑').last);
+    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
+    await tester.pumpAndSettle();
     expect(find.text('编辑保养项目'), findsOneWidget);
     expect(find.textContaining('默认项目名称保持稳定'), findsNothing);
     await tester.enterText(find.byType(TextField).first, '全合成机油');
@@ -651,6 +705,16 @@ void main() {
     expect(offsetBeforeEdit, greaterThan(0));
 
     await tester.tap(find.text('测试项目 18'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑保养项目'), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.widgetWithText(TextButton, '编辑').last,
+      80,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '编辑').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '测试项目 18 改');
     tester.testTextInput.hide();
@@ -730,7 +794,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('汽油发动机清洁剂（燃油宝）'), findsNothing);
 
-    await tester.tap(find.widgetWithText(TextButton, '恢复'));
+    await tester.tap(find.widgetWithText(TextButton, '恢复').last);
     await tester.pumpAndSettle();
     expect(find.text('恢复默认项目'), findsOneWidget);
     expect(find.text('已存在'), findsNWidgets(13));
@@ -752,8 +816,9 @@ void main() {
   ) async {
     await pumpApp(tester);
     await createDefaultCar(tester);
+    await enableDeveloperMode(tester);
 
-    await tester.tap(find.text('手动日期'));
+    await tester.tap(find.widgetWithText(TextButton, '设置').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();
@@ -795,8 +860,9 @@ void main() {
       dateContext: AppDateContext(readSystemNow: () => DateTime(2026, 1, 31)),
     );
     await createDefaultCar(tester);
+    await enableDeveloperMode(tester);
 
-    await tester.tap(find.text('手动日期'));
+    await tester.tap(find.widgetWithText(TextButton, '设置').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();
@@ -1007,8 +1073,9 @@ void main() {
   testWidgets('profile can enable manual date preference', (tester) async {
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
+    await enableDeveloperMode(tester);
 
-    await tester.tap(find.text('手动日期'));
+    await tester.tap(find.widgetWithText(TextButton, '设置').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();
@@ -1021,4 +1088,302 @@ void main() {
       containsAll(['manualDateEnabled:true', 'manualDate:2026-05-19']),
     );
   });
+
+  testWidgets('profile hides manual date behind developer mode', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+
+    expect(find.text('版本 1.0.0'), findsOneWidget);
+    expect(find.text('手动日期'), findsNothing);
+
+    await enableDeveloperMode(tester);
+    await tester.tap(find.widgetWithText(TextButton, '设置').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存日期'));
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 5; index++) {
+      await tester.tap(find.text('版本 1.0.0 · 开发者模式'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('手动日期'), findsNothing);
+    expect(
+      await LunioRepository(database).getPreferenceValue('manualDateEnabled'),
+      'false',
+    );
+    expect(
+      await LunioRepository(database).getPreferenceValue('manualDate'),
+      isNull,
+    );
+  });
+
+  testWidgets('profile can save maintenance notification settings', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester, inAppNotificationsEnabled: true);
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('通知提醒'));
+    await tester.pumpAndSettle();
+    expect(find.text('到期后提醒次数'), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, '设置').first);
+    await tester.pumpAndSettle();
+    expect(find.text('手机系统通知'), findsOneWidget);
+    expect(find.text('应用内通知'), findsOneWidget);
+    expect(find.text('到期后提醒次数'), findsOneWidget);
+    expect(find.text('每周'), findsOneWidget);
+    expect(find.text('每 2 周'), findsOneWidget);
+    expect(find.text('每月'), findsOneWidget);
+    expect(find.text('每天'), findsNothing);
+    expect(find.text('系统 App 通知'), findsNothing);
+    expect(find.text('打开 App 弹窗通知'), findsNothing);
+    expect(find.text('到期提醒'), findsNothing);
+    expect(find.text('提前提醒'), findsNothing);
+    expect(find.text('超期提醒'), findsNothing);
+    expect(find.text('达到后的提醒次数'), findsNothing);
+
+    await tester.tap(find.text('每 2 周'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存设置'));
+    await tester.pumpAndSettle();
+
+    final repository = LunioRepository(database);
+    expect(
+      await repository.getPreferenceValue('inAppNotificationsEnabled'),
+      'true',
+    );
+    expect(
+      await repository.getPreferenceValue('maintenanceDueEnabled'),
+      'true',
+    );
+    expect(
+      await repository.getPreferenceValue('maintenanceDueRepeat'),
+      'everyTwoWeeks',
+    );
+    expect(find.text('通知设置已保存'), findsNothing);
+    expect(
+      await repository.getPreferenceValue('maintenanceEarlyEnabled'),
+      isNull,
+    );
+    expect(
+      await repository.getPreferenceValue(
+        'maintenanceNotificationEarlyPercent',
+      ),
+      isNull,
+    );
+    expect(
+      await repository.getPreferenceValue('maintenanceOverdueEnabled'),
+      isNull,
+    );
+  });
+
+  testWidgets(
+    'in-app reminder can snooze maintenance item and mileage update',
+    (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final repository = LunioRepository(database);
+      await repository.ensureBootstrapData();
+      final sync = SyncMetadata(
+        status: SyncStatus.pendingCreate,
+        updatedAt: DateTime(2026, 4, 1),
+      );
+      final carId = await repository.createCarWithDefaultItems(
+        Car(
+          brand: '东风本田',
+          model: '思域',
+          currentMileageKm: 0,
+          roadDate: const LocalDate(2026, 5, 19),
+          sync: sync,
+        ),
+      );
+      await repository.setAppliedCarId(carId);
+      final car = (await repository.listCars()).single;
+      final item = (await repository.listMaintenanceItemsForCar(
+        car.id!,
+      )).firstWhere((item) => item.remindByTime);
+      await repository.saveMaintenanceRecord(
+        MaintenanceRecord(
+          carId: car.id!,
+          date: const LocalDate(2025, 5, 19),
+          itemIds: [item.id!],
+          costCents: 0,
+          mileageKm: 0,
+          sync: sync,
+        ),
+      );
+      await repository.setPreferenceValue('inAppNotificationsEnabled', 'true');
+
+      await pumpApp(
+        tester,
+        database: database,
+        inAppNotificationsEnabled: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('保养提醒'), findsOneWidget);
+      expect(find.text(item.name), findsOneWidget);
+      expect(find.textContaining('已超'), findsWidgets);
+      expect(find.textContaining('时间到期已超'), findsNothing);
+      expect(find.textContaining('里程已超'), findsNothing);
+      expect(find.text('更新当前里程'), findsNothing);
+      expect(find.text('15 天内不再提醒'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, '15 天内不再提醒'));
+      await tester.pumpAndSettle();
+      expect(
+        await repository.getPreferenceValue(
+          'maintenanceReminderSnoozedUntil:${item.id}',
+        ),
+        '2026-06-03',
+      );
+
+      expect(find.text('更新当前里程'), findsOneWidget);
+      expect(find.text('保养提醒'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, '15 天内不再提醒'));
+      await tester.pumpAndSettle();
+      expect(
+        await repository.getPreferenceValue(
+          'mileageUpdateSnoozedUntil:${car.id}',
+        ),
+        '2026-06-03',
+      );
+    },
+  );
+
+  testWidgets('mileage update reminder waits for car updated_at cadence', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = LunioRepository(database);
+    await repository.ensureBootstrapData();
+    final sync = SyncMetadata(
+      status: SyncStatus.pendingCreate,
+      updatedAt: DateTime(2026, 5),
+    );
+    final carId = await repository.createCarWithDefaultItems(
+      Car(
+        brand: '东风本田',
+        model: '思域',
+        currentMileageKm: 0,
+        roadDate: const LocalDate(2026, 5, 19),
+        sync: sync,
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    final car = (await repository.listCars()).single;
+    final item = (await repository.listMaintenanceItemsForCar(
+      car.id!,
+    )).firstWhere((item) => item.remindByTime);
+    await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: car.id!,
+        date: const LocalDate(2025, 5, 19),
+        itemIds: [item.id!],
+        costCents: 0,
+        mileageKm: 0,
+        sync: sync,
+      ),
+    );
+    await repository.setPreferenceValue('inAppNotificationsEnabled', 'true');
+
+    await pumpApp(tester, database: database, inAppNotificationsEnabled: true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('保养提醒'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '15 天内不再提醒'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('更新当前里程'), findsNothing);
+  });
+
+  testWidgets(
+    'in-app reminder acknowledgement suppresses reminders for the day',
+    (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final repository = LunioRepository(database);
+      await repository.ensureBootstrapData();
+      final sync = SyncMetadata(
+        status: SyncStatus.pendingCreate,
+        updatedAt: DateTime(2026, 4, 1),
+      );
+      final carId = await repository.createCarWithDefaultItems(
+        Car(
+          brand: '东风本田',
+          model: '思域',
+          currentMileageKm: 0,
+          roadDate: const LocalDate(2026, 5, 19),
+          sync: sync,
+        ),
+      );
+      await repository.setAppliedCarId(carId);
+      final car = (await repository.listCars()).single;
+      final item = (await repository.listMaintenanceItemsForCar(
+        car.id!,
+      )).firstWhere((item) => item.remindByTime);
+      await repository.saveMaintenanceRecord(
+        MaintenanceRecord(
+          carId: car.id!,
+          date: const LocalDate(2025, 5, 19),
+          itemIds: [item.id!],
+          costCents: 0,
+          mileageKm: 0,
+          sync: sync,
+        ),
+      );
+      await repository.setPreferenceValue('inAppNotificationsEnabled', 'true');
+
+      await pumpApp(
+        tester,
+        database: database,
+        inAppNotificationsEnabled: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('保养提醒'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '知道了'));
+      await tester.pumpAndSettle();
+      expect(
+        await repository.getPreferenceValue(
+          'maintenanceReminderAcknowledgedOn:${item.id}',
+        ),
+        '2026-05-19',
+      );
+      expect(find.text('更新当前里程'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '知道了'));
+      await tester.pumpAndSettle();
+      expect(
+        await repository.getPreferenceValue(
+          'mileageUpdateAcknowledgedOn:${car.id}',
+        ),
+        '2026-05-19',
+      );
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.text('保养提醒'), findsNothing);
+      expect(find.text('更新当前里程'), findsNothing);
+
+      await pumpApp(
+        tester,
+        database: database,
+        inAppNotificationsEnabled: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('保养提醒'), findsNothing);
+      expect(find.text('更新当前里程'), findsNothing);
+    },
+  );
 }
