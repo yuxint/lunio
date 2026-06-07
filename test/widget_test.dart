@@ -9,7 +9,9 @@ import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 
 void main() {
@@ -27,9 +29,12 @@ void main() {
   Future<AppDatabase> pumpApp(
     WidgetTester tester, {
     AppDateContext? dateContext,
+    AppDatabase? database,
   }) async {
-    final database = AppDatabase.inMemory();
-    addTearDown(database.close);
+    final appDatabase = database ?? AppDatabase.inMemory();
+    if (database == null) {
+      addTearDown(appDatabase.close);
+    }
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -37,7 +42,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appDatabaseProvider.overrideWithValue(database),
+          appDatabaseProvider.overrideWithValue(appDatabase),
           appDateContextProvider.overrideWithValue(
             dateContext ??
                 AppDateContext(readSystemNow: () => DateTime(2026, 5, 19)),
@@ -47,7 +52,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    return database;
+    return appDatabase;
   }
 
   Future<void> createDefaultCar(WidgetTester tester) async {
@@ -134,11 +139,13 @@ void main() {
     await tester.tap(find.text('记录'));
     await tester.pumpAndSettle();
     expect(find.text('2026-05-19'), findsOneWidget);
+    expect(find.text('13,000 km'), findsOneWidget);
     expect(find.byIcon(Icons.check), findsNWidgets(2));
 
     await tester.tap(find.text('机油').first);
     await tester.pumpAndSettle();
     expect(find.text('2026-05-19'), findsOneWidget);
+    expect(find.text('13,000 km'), findsOneWidget);
     expect(find.byIcon(Icons.check), findsNWidgets(2));
 
     await tester.tap(find.text('按项目'));
@@ -529,8 +536,13 @@ void main() {
     expect(find.byIcon(Icons.chevron_right), findsNothing);
     expect(find.byType(Switch), findsNothing);
     expect(find.widgetWithText(TextButton, '编辑'), findsWidgets);
-    expect(find.widgetWithText(TextButton, '启用'), findsWidgets);
+    expect(find.widgetWithText(TextButton, '已启用'), findsWidgets);
+    expect(find.widgetWithText(TextButton, '启用'), findsNothing);
     expect(find.widgetWithText(TextButton, '删除'), findsWidgets);
+
+    await tester.tap(find.widgetWithText(TextButton, '已启用').first);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextButton, '已禁用'), findsOneWidget);
   });
 
   testWidgets(
@@ -594,6 +606,63 @@ void main() {
       ),
       contains('全合成机油'),
     );
+  });
+
+  testWidgets('maintenance item sheet keeps scroll after editing an item', (
+    tester,
+  ) async {
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+    final car = (await database.select(database.cars).get()).single;
+    final repository = LunioRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.pendingCreate,
+      updatedAt: DateTime(2026, 5, 19),
+    );
+    for (var index = 0; index < 24; index++) {
+      await repository.saveMaintenanceItem(
+        MaintenanceItem(
+          carsId: car.id,
+          name: '测试项目 ${index.toString().padLeft(2, '0')}',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 1000 + index,
+          sortOrder: 1000 + index,
+          sync: sync,
+        ),
+      );
+    }
+
+    await tester.tap(find.widgetWithText(TextButton, '项目').first);
+    await tester.pumpAndSettle();
+    final scrollView = find.byType(SingleChildScrollView).last;
+    final scrollable = find.byType(Scrollable).last;
+    await tester.scrollUntilVisible(
+      find.text('测试项目 18'),
+      220,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+    final offsetBeforeEdit = tester
+        .widget<SingleChildScrollView>(scrollView)
+        .controller!
+        .offset;
+    expect(offsetBeforeEdit, greaterThan(0));
+
+    await tester.tap(find.text('测试项目 18'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '测试项目 18 改');
+    tester.testTextInput.hide();
+    await tester.tap(find.text('保存项目'));
+    await tester.pumpAndSettle();
+
+    final offsetAfterEdit = tester
+        .widget<SingleChildScrollView>(scrollView)
+        .controller!
+        .offset;
+    expect(offsetAfterEdit, greaterThan(0));
+    expect(find.text('测试项目 18 改'), findsOneWidget);
   });
 
   testWidgets('add car item step can remove a loaded default item', (
@@ -744,6 +813,40 @@ void main() {
     expect(find.text('2026年2月28日'), findsOneWidget);
   });
 
+  testWidgets('add car date picker today uses effective app date', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      dateContext: AppDateContext(readSystemNow: () => DateTime(2026, 1, 31)),
+    );
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026年1月31日'), findsOneWidget);
+    await tester.tap(find.text('2026年1月31日'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '1月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(find.text('2026年2月28日'), findsOneWidget);
+
+    await tester.tap(find.text('2026年2月28日'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '今天'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2026年1月31日'), findsOneWidget);
+  });
+
   testWidgets('destructive confirm dialog uses red confirm action', (
     tester,
   ) async {
@@ -867,7 +970,38 @@ void main() {
     expect(find.text('保养提醒'), findsOneWidget);
     expect(find.text('机油'), findsOneWidget);
     expect(find.text('0%'), findsWidgets);
-    expect(find.text('按里程提醒：距离下次约 5,000 公里'), findsOneWidget);
+    expect(find.text('里程：距离下次约 5,000 公里'), findsOneWidget);
+  });
+
+  testWidgets('reminders use manual date for time progress', (tester) async {
+    final database = await pumpApp(
+      tester,
+      dateContext: AppDateContext(readSystemNow: () => DateTime(2026, 5, 19)),
+    );
+    await createDefaultCar(tester);
+    await createDefaultRecord(tester);
+
+    await pumpApp(
+      tester,
+      database: database,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 5, 19),
+        manualDate: const LocalDate(2027, 5, 19),
+      ),
+    );
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('超期'), findsWidgets);
+    expect(find.textContaining('已超期'), findsNothing);
+    expect(find.text('时间：已超 6个月'), findsWidgets);
+
+    await tester.tap(find.text('机油').first);
+    await tester.pumpAndSettle();
+    expect(find.text('上次保养日期'), findsOneWidget);
+    expect(find.text('2026-05-19'), findsOneWidget);
+    expect(find.text('上次保养里程'), findsOneWidget);
+    expect(find.text('13,000 km'), findsOneWidget);
   });
 
   testWidgets('profile can enable manual date preference', (tester) async {

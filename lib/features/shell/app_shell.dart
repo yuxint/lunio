@@ -342,29 +342,154 @@ class _ItemPills extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Wrap(
-      spacing: 7,
-      runSpacing: 7,
-      children: [
-        for (final label in labels)
-          Container(
-            constraints: const BoxConstraints(minHeight: 28),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: tokens.surface2,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: tokens.ink,
-                fontWeight: FontWeight.w700,
+    final textStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: tokens.ink,
+      fontWeight: FontWeight.w700,
+    );
+    final textScaler = MediaQuery.textScalerOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final rows = _packedPillRows(
+          labels: labels,
+          maxWidth: constraints.maxWidth,
+          textStyle: textStyle,
+          textScaler: textScaler,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) ...[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (
+                    var itemIndex = 0;
+                    itemIndex < rows[rowIndex].length;
+                    itemIndex++
+                  ) ...[
+                    if (itemIndex > 0) const SizedBox(width: 6),
+                    SizedBox(
+                      width: rows[rowIndex][itemIndex].width,
+                      child: _ItemPill(
+                        label: rows[rowIndex][itemIndex].label,
+                        style: textStyle,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ),
-          ),
-      ],
+              if (rowIndex < rows.length - 1) const SizedBox(height: 6),
+            ],
+          ],
+        );
+      },
     );
   }
+}
+
+class _ItemPill extends StatelessWidget {
+  const _ItemPill({required this.label, required this.style});
+
+  final String label;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: tokens.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.line.withValues(alpha: 0.72)),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
+      ),
+    );
+  }
+}
+
+class _PackedPill {
+  const _PackedPill({required this.label, required this.width});
+
+  final String label;
+  final double width;
+}
+
+List<List<_PackedPill>> _packedPillRows({
+  required List<String> labels,
+  required double maxWidth,
+  required TextStyle? textStyle,
+  required TextScaler textScaler,
+}) {
+  if (labels.isEmpty) {
+    return const [];
+  }
+  if (!maxWidth.isFinite || maxWidth <= 0) {
+    return [
+      labels.map((label) => _PackedPill(label: label, width: 0)).toList(),
+    ];
+  }
+  const spacing = 6.0;
+  const horizontalPadding = 18.0;
+  const measurementSlack = 4.0;
+  const minPillWidth = 58.0;
+  final remaining = labels
+      .map(
+        (label) => _PackedPill(
+          label: label,
+          width:
+              (_measureTextWidth(label, textStyle, textScaler) +
+                      horizontalPadding +
+                      measurementSlack)
+                  .clamp(minPillWidth, maxWidth),
+        ),
+      )
+      .toList();
+  final rows = <List<_PackedPill>>[];
+  while (remaining.isNotEmpty) {
+    final row = <_PackedPill>[];
+    var usedWidth = 0.0;
+    while (remaining.isNotEmpty) {
+      var selectedIndex = -1;
+      for (var index = 0; index < remaining.length; index++) {
+        final extraSpacing = row.isEmpty ? 0.0 : spacing;
+        if (usedWidth + extraSpacing + remaining[index].width <= maxWidth) {
+          selectedIndex = index;
+          break;
+        }
+      }
+      if (selectedIndex == -1) {
+        if (row.isEmpty) {
+          selectedIndex = 0;
+        } else {
+          break;
+        }
+      }
+      final item = remaining.removeAt(selectedIndex);
+      usedWidth += (row.isEmpty ? 0.0 : spacing) + item.width;
+      row.add(item);
+    }
+    rows.add(row);
+  }
+  return rows;
+}
+
+double _measureTextWidth(String text, TextStyle? style, TextScaler textScaler) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    maxLines: 1,
+    textDirection: TextDirection.ltr,
+    textScaler: textScaler,
+  )..layout();
+  return painter.width;
 }
 
 class _SmallActionButton extends StatelessWidget {
@@ -617,62 +742,175 @@ class _ReminderRow extends StatelessWidget {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final color = row.tone.statusForeground(tokens);
     return LunioCard(
-      child: Row(
-        children: [
-          SizedBox.square(
-            dimension: 58,
-            child: Stack(
-              alignment: Alignment.center,
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        child: InkWell(
+          onTap: () => _showReminderRecordDetail(context, row),
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
               children: [
-                CustomPaint(
-                  size: const Size.square(58),
-                  painter: _ReminderProgressRingPainter(
-                    percent: row.displayPercent.toDouble(),
-                    color: color,
-                    backgroundColor: tokens.surface3,
+                SizedBox.square(
+                  dimension: 58,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CustomPaint(
+                        size: const Size.square(58),
+                        painter: _ReminderProgressRingPainter(
+                          percent: row.displayPercent.toDouble(),
+                          color: color,
+                          backgroundColor: tokens.surface3,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 44,
+                        height: 22,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            row.percentText,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: color,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                SizedBox(
-                  width: 38,
-                  height: 16,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      row.percentText,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 10,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              row.title,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          LunioStatusBadge(label: row.badge, tone: row.tone),
+                        ],
                       ),
-                    ),
+                      const SizedBox(height: 6),
+                      for (final detail in row.detailTexts) ...[
+                        Text(
+                          detail,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (detail != row.detailTexts.last)
+                          const SizedBox(height: 2),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+        ),
+      ),
+    );
+  }
+}
+
+void _showReminderRecordDetail(BuildContext context, _ReminderViewData row) {
+  final record = row.latestRecord;
+  _showLunioModalSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) {
+      final tokens = Theme.of(context).extension<LunioTokens>()!;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+        child: LunioSheetScaffold(
+          title: row.title,
+          subtitle: row.badge == '正常' ? '保养状态正常' : '当前状态：${row.badge}',
+          child: record == null
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: tokens.surface2,
+                    borderRadius: BorderRadius.circular(tokens.radiusLarge),
+                  ),
+                  child: Text(
+                    '暂无上次保养记录',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: tokens.muted,
+                      fontWeight: FontWeight.w700,
                     ),
-                    LunioStatusBadge(label: row.badge, tone: row.tone),
+                  ),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ReminderRecordMetric(
+                            label: '上次保养日期',
+                            value: record.date.toString(),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ReminderRecordMetric(
+                            label: '上次保养里程',
+                            value: '${_formatNumber(record.mileageKm)} km',
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                for (final detail in row.detailTexts) ...[
-                  Text(detail, style: Theme.of(context).textTheme.bodySmall),
-                  if (detail != row.detailTexts.last) const SizedBox(height: 2),
-                ],
-              ],
+        ),
+      );
+    },
+  );
+}
+
+class _ReminderRecordMetric extends StatelessWidget {
+  const _ReminderRecordMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.surface2,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        border: Border.all(color: tokens.line.withValues(alpha: 0.72)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: tokens.muted,
+              fontWeight: FontWeight.w700,
             ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ],
       ),
@@ -894,12 +1132,14 @@ class _RecordCycleList extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        record.date.toString(),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+                    Text(
+                      record.date.toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    const Spacer(),
+                    const SizedBox(width: 10),
                     Text(
                       _formatMoney(record.costCents),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -910,31 +1150,55 @@ class _RecordCycleList extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  _recordSummaryText(record),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                _ItemPills(labels: _recordItemNameList(record, items)),
-                const SizedBox(height: 12),
                 Row(
                   children: [
-                    _SmallActionButton(
-                      label: '编辑',
-                      onPressed: () => onEdit(record),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(
+                            '${_formatNumber(record.mileageKm)} km',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          if ((record.note ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                record.note!.trim(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    _SmallActionButton(
-                      label: '删除',
-                      danger: true,
-                      onPressed: () => onDelete(record),
+                    const SizedBox(width: 10),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SmallActionButton(
+                          label: '编辑',
+                          onPressed: () => onEdit(record),
+                        ),
+                        const SizedBox(width: 8),
+                        _SmallActionButton(
+                          label: '删除',
+                          danger: true,
+                          onPressed: () => onDelete(record),
+                        ),
+                      ],
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                _ItemPills(labels: _recordItemNameList(record, items)),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          if (record != records.last) const SizedBox(height: 12),
         ],
       ],
     );
@@ -992,13 +1256,17 @@ class _RecordItemList extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  '${row.record.date} · ${_formatNumber(row.record.mileageKm)} km',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
                 Row(
                   children: [
+                    Expanded(
+                      child: Text(
+                        '${row.record.date} · ${_formatNumber(row.record.mileageKm)} km',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     _SmallActionButton(
                       label: '编辑',
                       onPressed: () => onEdit(row.record, row.itemId),
@@ -1064,14 +1332,6 @@ void _toggleSelection(Set<int> values, int value) {
   if (!values.add(value)) {
     values.remove(value);
   }
-}
-
-String _recordSummaryText(MaintenanceRecord record) {
-  final note = record.note?.trim();
-  if (note == null || note.isEmpty) {
-    return '${_formatNumber(record.mileageKm)} km';
-  }
-  return '${_formatNumber(record.mileageKm)} km · $note';
 }
 
 class _ProfilePreviewPage extends ConsumerWidget {
@@ -1531,12 +1791,14 @@ class _ErrorPage extends StatelessWidget {
 class _AddCarForm extends StatefulWidget {
   const _AddCarForm({
     required this.vehicleModels,
+    required this.today,
     this.initialCar,
     required this.onSubmit,
     this.submitLabel,
   });
 
   final List<VehicleModel> vehicleModels;
+  final LocalDate today;
   final Car? initialCar;
   final Future<void> Function(Car car) onSubmit;
   final String? submitLabel;
@@ -1565,7 +1827,7 @@ class _AddCarFormState extends State<_AddCarForm> {
     mileageController = TextEditingController(
       text: initialCar?.currentMileageKm.toString() ?? '0',
     );
-    roadDate = initialCar?.roadDate ?? LocalDate.fromDateTime(DateTime.now());
+    roadDate = initialCar?.roadDate ?? widget.today;
   }
 
   @override
@@ -1669,8 +1931,9 @@ class _AddCarFormState extends State<_AddCarForm> {
       initialDate: roadDate,
       firstDate: const LocalDate(1990, 1, 1),
       lastDate: LocalDate.fromDateTime(
-        DateTime.now().add(const Duration(days: 365)),
+        widget.today.toDateTime().add(const Duration(days: 365)),
       ),
+      today: widget.today,
     );
     if (picked == null || !mounted) {
       return;
@@ -1723,11 +1986,13 @@ class _AddCarFormState extends State<_AddCarForm> {
 class _AddCarWizard extends StatefulWidget {
   const _AddCarWizard({
     required this.vehicleModels,
+    required this.today,
     required this.loadDefaultItems,
     required this.onSubmit,
   });
 
   final List<VehicleModel> vehicleModels;
+  final LocalDate today;
   final Future<List<VehicleDefaultMaintenanceItem>> Function(Car car)
   loadDefaultItems;
   final Future<void> Function(Car car, List<MaintenanceItem> items) onSubmit;
@@ -1752,6 +2017,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
     if (car == null) {
       return _AddCarForm(
         vehicleModels: widget.vehicleModels,
+        today: widget.today,
         submitLabel: '下一步',
         onSubmit: _handleCarDraft,
       );
@@ -2461,6 +2727,16 @@ void _showAddCarSheet(BuildContext context, WidgetRef ref) {
         child: Consumer(
           builder: (context, ref, child) {
             final vehicleModels = ref.watch(vehicleModelsProvider);
+            final today = ref.watch(effectiveTodayProvider);
+            if (vehicleModels.isLoading || today.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (vehicleModels.hasError) {
+              return LunioInlineMessage(message: '车型加载失败，请稍后重试');
+            }
+            if (today.hasError) {
+              return LunioInlineMessage(message: '日期加载失败，请稍后重试');
+            }
             return vehicleModels.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stackTrace) =>
@@ -2471,6 +2747,7 @@ void _showAddCarSheet(BuildContext context, WidgetRef ref) {
                 }
                 return _AddCarWizard(
                   vehicleModels: models,
+                  today: today.value!,
                   loadDefaultItems: (car) async {
                     final repository = ref.read(lunioRepositoryProvider);
                     await repository.ensureBootstrapData();
@@ -2511,6 +2788,16 @@ void _showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
         child: Consumer(
           builder: (context, ref, child) {
             final vehicleModels = ref.watch(vehicleModelsProvider);
+            final today = ref.watch(effectiveTodayProvider);
+            if (vehicleModels.isLoading || today.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (vehicleModels.hasError) {
+              return LunioInlineMessage(message: '车型加载失败，请稍后重试');
+            }
+            if (today.hasError) {
+              return LunioInlineMessage(message: '日期加载失败，请稍后重试');
+            }
             return vehicleModels.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stackTrace) =>
@@ -2529,6 +2816,7 @@ void _showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
                         ),
                       ]
                     : models,
+                today: today.value!,
                 initialCar: car,
                 onSubmit: (updatedCar) async {
                   await ref.read(lunioRepositoryProvider).updateCar(updatedCar);
@@ -2654,6 +2942,7 @@ class _MaintenanceRecordForm extends ConsumerStatefulWidget {
     required this.car,
     required this.items,
     required this.initialDate,
+    required this.today,
     this.record,
     required this.reloadItems,
     required this.onSubmit,
@@ -2662,6 +2951,7 @@ class _MaintenanceRecordForm extends ConsumerStatefulWidget {
   final Car car;
   final List<MaintenanceItem> items;
   final LocalDate initialDate;
+  final LocalDate today;
   final MaintenanceRecord? record;
   final Future<List<MaintenanceItem>> Function() reloadItems;
   final Future<void> Function(
@@ -3092,8 +3382,9 @@ class _MaintenanceRecordFormState
       initialDate: recordDate,
       firstDate: widget.car.roadDate,
       lastDate: LocalDate.fromDateTime(
-        DateTime.now().add(const Duration(days: 365)),
+        widget.today.toDateTime().add(const Duration(days: 365)),
       ),
+      today: widget.today,
     );
     if (picked == null || !mounted) {
       return;
@@ -3225,6 +3516,7 @@ Future<void> _showMaintenanceRecordFormSheet(
           car: car,
           items: items,
           initialDate: today,
+          today: today,
           record: record,
           reloadItems: () => ref
               .read(lunioRepositoryProvider)
@@ -3360,8 +3652,12 @@ class _MaintenanceItemsSheetContent extends ConsumerStatefulWidget {
 
 class _MaintenanceItemsSheetContentState
     extends ConsumerState<_MaintenanceItemsSheetContent> {
-  Future<List<MaintenanceItem>>? itemsFuture;
+  final scrollController = ScrollController();
+  List<MaintenanceItem>? items;
+  bool itemsLoading = false;
+  String? itemsError;
   int? loadedCarId;
+  int loadGeneration = 0;
 
   @override
   void initState() {
@@ -3382,6 +3678,7 @@ class _MaintenanceItemsSheetContentState
   @override
   void dispose() {
     widget.refreshListenable.removeListener(_handleExternalRefresh);
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -3395,8 +3692,9 @@ class _MaintenanceItemsSheetContentState
     if (targetCar?.id == null) {
       return const LunioInlineMessage(message: '请先新增车辆');
     }
-    _ensureItemsFuture(targetCar!.id!);
+    _ensureItemsLoaded(targetCar!.id!);
     final maxListHeight = MediaQuery.sizeOf(context).height * 0.54;
+    final currentItems = items;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3426,71 +3724,75 @@ class _MaintenanceItemsSheetContentState
           ],
         ),
         const SizedBox(height: 12),
-        FutureBuilder<List<MaintenanceItem>>(
-          future: itemsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 28),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            if (snapshot.hasError) {
-              return Text('加载失败：${_friendlyError(snapshot.error!)}');
-            }
-            return ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxListHeight),
-              child: SingleChildScrollView(
-                child: _MaintenanceItemList(
-                  items: snapshot.data ?? const [],
-                  onEdit: (item) =>
-                      _showMaintenanceItemFormSheet(
-                        context,
-                        ref,
-                        carId: item.carsId,
-                        item: item,
-                      ).then((saved) {
-                        if (saved == true) {
-                          _reload(targetCar.id!);
-                        }
-                      }),
-                  onToggle: (item) async {
-                    await _toggleMaintenanceItem(context, ref, item);
-                    _reload(targetCar.id!);
-                  },
-                  onDelete: (item) async {
-                    await _deleteMaintenanceItem(context, ref, item);
-                    _reload(targetCar.id!);
-                  },
-                ),
+        if (itemsLoading && currentItems == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 28),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (itemsError != null && currentItems == null)
+          Text('加载失败：$itemsError')
+        else ...[
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxListHeight),
+            child: SingleChildScrollView(
+              controller: scrollController,
+              child: _MaintenanceItemList(
+                items: currentItems ?? const [],
+                onEdit: (item) async {
+                  final saved = await _showMaintenanceItemFormSheet(
+                    context,
+                    ref,
+                    carId: item.carsId,
+                    item: item,
+                  );
+                  if (saved == true) {
+                    await _reload(targetCar.id!);
+                  }
+                },
+                onToggle: (item) async {
+                  await _toggleMaintenanceItem(context, ref, item);
+                  await _reload(targetCar.id!);
+                },
+                onDelete: (item) async {
+                  await _deleteMaintenanceItem(context, ref, item);
+                  await _reload(targetCar.id!);
+                },
               ),
-            );
-          },
-        ),
+            ),
+          ),
+          if (itemsError != null) ...[
+            const SizedBox(height: 10),
+            LunioInlineMessage(
+              message: '刷新失败：$itemsError',
+              tone: LunioStatusTone.danger,
+            ),
+          ],
+        ],
       ],
     );
   }
 
-  void _ensureItemsFuture(int carId) {
-    if (loadedCarId == carId && itemsFuture != null) {
+  void _ensureItemsLoaded(int carId) {
+    if (loadedCarId == carId && (items != null || itemsLoading)) {
       return;
     }
     loadedCarId = carId;
-    itemsFuture = ref
-        .read(lunioRepositoryProvider)
-        .listMaintenanceItemsForCar(carId);
+    items = null;
+    itemsError = null;
+    itemsLoading = true;
+    _loadItems(carId, resetScroll: true);
   }
 
-  void _reload(int carId) {
+  Future<void> _reload(int carId) async {
     if (!mounted) {
       return;
     }
     setState(() {
       loadedCarId = carId;
-      itemsFuture = ref
-          .read(lunioRepositoryProvider)
-          .listMaintenanceItemsForCar(carId);
+      itemsError = null;
+      itemsLoading = items == null;
     });
+    await _loadItems(carId);
   }
 
   void _handleExternalRefresh() {
@@ -3498,7 +3800,35 @@ class _MaintenanceItemsSheetContentState
     if (carId == null) {
       return;
     }
-    _reload(carId);
+    unawaited(_reload(carId));
+  }
+
+  Future<void> _loadItems(int carId, {bool resetScroll = false}) async {
+    final generation = ++loadGeneration;
+    try {
+      final nextItems = await ref
+          .read(lunioRepositoryProvider)
+          .listMaintenanceItemsForCar(carId);
+      if (!mounted || generation != loadGeneration || loadedCarId != carId) {
+        return;
+      }
+      setState(() {
+        items = nextItems;
+        itemsError = null;
+        itemsLoading = false;
+      });
+      if (resetScroll && scrollController.hasClients) {
+        scrollController.jumpTo(0);
+      }
+    } catch (error) {
+      if (!mounted || generation != loadGeneration || loadedCarId != carId) {
+        return;
+      }
+      setState(() {
+        itemsError = _friendlyError(error);
+        itemsLoading = false;
+      });
+    }
   }
 }
 
@@ -3561,7 +3891,7 @@ class _MaintenanceItemCard extends StatelessWidget {
         _SmallActionButton(label: '编辑', onPressed: onEdit, secondary: true),
         const SizedBox(width: 8),
         _SmallActionButton(
-          label: item.enabled ? '启用' : '禁用',
+          label: item.enabled ? '已启用' : '已禁用',
           onPressed: onToggle,
           primary: item.enabled,
           muted: !item.enabled,
@@ -4230,6 +4560,7 @@ Future<LocalDate?> _showSimpleDatePicker(
   required LocalDate initialDate,
   required LocalDate firstDate,
   required LocalDate lastDate,
+  LocalDate? today,
 }) {
   return _showLunioModalSheet<LocalDate>(
     context: context,
@@ -4245,6 +4576,7 @@ Future<LocalDate?> _showSimpleDatePicker(
           initialDate: initialDate,
           firstDate: firstDate,
           lastDate: lastDate,
+          today: today ?? LocalDate.fromDateTime(DateTime.now()),
         ),
       ),
     ),
@@ -4256,11 +4588,13 @@ class _SimpleDatePicker extends StatefulWidget {
     required this.initialDate,
     required this.firstDate,
     required this.lastDate,
+    required this.today,
   });
 
   final LocalDate initialDate;
   final LocalDate firstDate;
   final LocalDate lastDate;
+  final LocalDate today;
 
   @override
   State<_SimpleDatePicker> createState() => _SimpleDatePickerState();
@@ -4538,7 +4872,7 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
   }
 
   void _selectToday() {
-    final today = LocalDate.fromDateTime(DateTime.now());
+    final today = widget.today;
     setState(() {
       selectedDate = today;
       visibleYear = today.year;
@@ -4577,7 +4911,7 @@ class _SimpleDatePickerState extends State<_SimpleDatePicker> {
   }
 
   bool _todayInRange() {
-    final today = LocalDate.fromDateTime(DateTime.now());
+    final today = widget.today;
     return today.compareTo(widget.firstDate) >= 0 &&
         today.compareTo(widget.lastDate) <= 0;
   }
@@ -4829,10 +5163,15 @@ class _DateCell extends StatelessWidget {
 }
 
 class _ReminderViewData {
-  const _ReminderViewData({required this.item, required this.progress});
+  const _ReminderViewData({
+    required this.item,
+    required this.progress,
+    required this.latestRecord,
+  });
 
   final MaintenanceItem item;
   final ReminderProgress progress;
+  final MaintenanceRecord? latestRecord;
 
   String get title => item.name;
 
@@ -4855,8 +5194,8 @@ class _ReminderViewData {
   String get badge {
     return switch (progress.status) {
       ReminderStatus.normal => '正常',
-      ReminderStatus.warning => '已到期',
-      ReminderStatus.danger => '已超期',
+      ReminderStatus.warning => '到期',
+      ReminderStatus.danger => '超期',
     };
   }
 
@@ -4891,7 +5230,13 @@ List<_ReminderViewData> _buildReminderRows({
       noHistoryBaselineDate: car.roadDate,
       today: today,
     );
-    rows.add(_ReminderViewData(item: item, progress: progress));
+    rows.add(
+      _ReminderViewData(
+        item: item,
+        progress: progress,
+        latestRecord: latestRecord,
+      ),
+    );
   }
   rows.sort((left, right) {
     final statusCompare = _statusRank(
@@ -4968,13 +5313,13 @@ String _dueOverviewText(
       .where((row) => row.progress.status == ReminderStatus.warning)
       .length;
   if (overdueCount > 0 && dueCount > 0) {
-    return '已超期 $overdueCount / 已到期 $dueCount';
+    return '超期 $overdueCount / 到期 $dueCount';
   }
   if (overdueCount > 0) {
-    return '已超期 $overdueCount';
+    return '超期 $overdueCount';
   }
   if (dueCount > 0) {
-    return '已到期 $dueCount';
+    return '到期 $dueCount';
   }
   return '全部正常';
 }
@@ -5107,22 +5452,22 @@ String _formatCompactTimeText(int months) {
 
 String _mileageReminderText(int remainingKm) {
   if (remainingKm > 0) {
-    return '按里程提醒：距离下次约 ${_formatNumber(remainingKm)} 公里';
+    return '里程：距离下次约 ${_formatNumber(remainingKm)} 公里';
   }
   if (remainingKm == 0) {
-    return '按里程提醒：已到期';
+    return '里程：已到期';
   }
-  return '按里程提醒：已超 ${_formatNumber(remainingKm.abs())} 公里';
+  return '里程：已超 ${_formatNumber(remainingKm.abs())} 公里';
 }
 
 String _timeReminderText(int remainingDays) {
   if (remainingDays > 0) {
-    return '按时间提醒：距离下次约 ${_formatReminderDuration(remainingDays)}';
+    return '时间：距离下次约 ${_formatReminderDuration(remainingDays)}';
   }
   if (remainingDays == 0) {
-    return '按时间提醒：今日到期';
+    return '时间：今日到期';
   }
-  return '按时间提醒：已超 ${_formatReminderDuration(remainingDays.abs())}';
+  return '时间：已超 ${_formatReminderDuration(remainingDays.abs())}';
 }
 
 String _formatReminderDuration(int days) {
