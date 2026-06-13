@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
 import '../../core/date/local_date.dart';
@@ -5,6 +7,7 @@ import '../../core/id/snowflake_id_generator.dart';
 import '../../domain/entities/car.dart' as domain;
 import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
+import '../../domain/entities/parking_countdown.dart' as domain;
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart' as domain;
 import '../../domain/entities/vehicle_model.dart' as domain;
@@ -16,6 +19,7 @@ import '../database/app_database.dart';
 class LunioRepository {
   const LunioRepository(this.database);
 
+  static const _parkingCountdownPreferenceKey = 'parkingCountdown';
   static final SnowflakeIdGenerator _idGenerator = SnowflakeIdGenerator();
 
   final AppDatabase database;
@@ -822,6 +826,30 @@ class LunioRepository {
 
   Future<void> setPreferenceValue(String key, String? value) async {
     return _writePreferenceValue(key, value);
+  }
+
+  Future<domain.ParkingCountdown?> getParkingCountdown() async {
+    final value = await getPreferenceValue(_parkingCountdownPreferenceKey);
+    if (value == null) {
+      return null;
+    }
+    try {
+      final json = jsonDecode(value) as Map<String, Object?>;
+      return domain.ParkingCountdown.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveParkingCountdown(domain.ParkingCountdown countdown) {
+    return setPreferenceValue(
+      _parkingCountdownPreferenceKey,
+      jsonEncode(countdown.toJson()),
+    );
+  }
+
+  Future<void> clearParkingCountdown() {
+    return setPreferenceValue(_parkingCountdownPreferenceKey, null);
   }
 
   Future<void> clearAllData() {

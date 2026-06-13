@@ -64,6 +64,9 @@ hooks:
     sqlite3:
       source: source
       path: third_party/sqlite/sqlite3.c
+      defines:
+        defines:
+          - HAVE_GETHOSTUUID=0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

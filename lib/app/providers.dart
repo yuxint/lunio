@@ -9,6 +9,7 @@ import '../domain/entities/car.dart';
 import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
 import '../domain/entities/notification_settings.dart';
+import '../domain/entities/parking_countdown.dart';
 import '../domain/entities/vehicle_model.dart';
 
 final appDateContextProvider = Provider<AppDateContext>(
@@ -65,6 +66,10 @@ final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
       await repository.getPreferenceValue('maintenanceDueRepeat'),
     ),
   );
+});
+
+final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
+  return ref.watch(lunioRepositoryProvider).getParkingCountdown();
 });
 
 final effectiveTodayProvider = FutureProvider<LocalDate>((ref) async {
@@ -143,6 +148,7 @@ void invalidatePreferenceProviders(WidgetRef ref) {
 
 void invalidateAllAppDataProviders(WidgetRef ref) {
   ref.invalidate(defaultMaintenanceBootstrapProvider);
+  ref.invalidate(parkingCountdownProvider);
   invalidateVehicleProviders(ref);
   invalidatePreferenceProviders(ref);
 }

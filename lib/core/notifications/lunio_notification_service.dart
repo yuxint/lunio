@@ -5,6 +5,7 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../domain/entities/notification_settings.dart';
+import '../../domain/entities/parking_countdown.dart';
 
 class LunioScheduledNotification {
   const LunioScheduledNotification({
@@ -24,6 +25,8 @@ class LunioScheduledNotification {
 
 class LunioNotificationService {
   LunioNotificationService._();
+
+  static const _parkingCountdownNotificationId = 9001;
 
   static final LunioNotificationService instance = LunioNotificationService._();
 
@@ -121,6 +124,44 @@ class LunioNotificationService {
     for (var id = 8000; id < 9000; id++) {
       await _plugin.cancel(id: id);
     }
+  }
+
+  Future<void> scheduleParkingCountdownNotification(
+    ParkingCountdown countdown,
+  ) async {
+    await initialize();
+    await cancelParkingCountdownNotification();
+    final scheduledDate = tz.TZDateTime.from(countdown.endsAt, tz.local);
+    if (!scheduledDate.isAfter(tz.TZDateTime.now(tz.local))) {
+      return;
+    }
+    await _plugin.zonedSchedule(
+      id: _parkingCountdownNotificationId,
+      title: '停车倒计时',
+      body: '免费停车时间已到，记得及时离场。',
+      scheduledDate: scheduledDate,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'lunio_parking',
+          'Lunio 停车计时',
+          channelDescription: '停车倒计时到点提醒',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: 'lunio:parkingCountdown',
+    );
+  }
+
+  Future<void> cancelParkingCountdownNotification() async {
+    await initialize();
+    await _plugin.cancel(id: _parkingCountdownNotificationId);
   }
 
   Future<void> _configureLocalTimezone() async {

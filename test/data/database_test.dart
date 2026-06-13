@@ -6,6 +6,7 @@ import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
+import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/domain/entities/vehicle_default_maintenance_item.dart';
 
@@ -869,6 +870,27 @@ void main() {
     expect(restoredCar.id, isNot(carId));
     expect(await repository.getAppliedCarId(), '${restoredCar.id}');
     expect(await repository.getPreferenceValue('manualDate'), isNull);
+  });
+
+  test('parking countdown is temporary preference outside backup', () async {
+    final countdown = ParkingCountdown(
+      startedAt: DateTime(2026, 6, 10, 10, 20, 15),
+      durationSeconds: 1800,
+    );
+
+    await repository.saveParkingCountdown(countdown);
+
+    expect(await repository.getParkingCountdown(), countdown);
+    expect(
+      await repository.getPreferenceValue('parkingCountdown'),
+      contains('"durationSeconds":1800'),
+    );
+    final backup = await repository.exportBackupPayload();
+    expect(const BackupCodec().encode(backup), isNot(contains('parking')));
+
+    await repository.clearParkingCountdown();
+
+    expect(await repository.getParkingCountdown(), isNull);
   });
 
   test(

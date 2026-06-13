@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
+import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 
 void main() {
@@ -91,7 +93,7 @@ void main() {
   Future<void> createDefaultRecord(WidgetTester tester) async {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('新增保养记录'));
+    await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), '13000');
     await tester.enterText(find.byType(TextField).at(1), '428.00');
@@ -139,6 +141,7 @@ void main() {
     await tester.tap(find.text('记录'));
     await tester.pumpAndSettle();
     expect(find.text('保养记录'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
 
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
@@ -196,7 +199,7 @@ void main() {
     expect(find.textContaining('¥428.00'), findsNothing);
   });
 
-  testWidgets('floating add action opens placeholder bottom sheet', (
+  testWidgets('reminder action row opens maintenance and parking sheets', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -204,7 +207,18 @@ void main() {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('新增保养记录'));
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.widgetWithText(FilledButton, '新增保养记录'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '停车倒计时'), findsOneWidget);
+    final addRecordButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '新增保养记录'),
+    );
+    final parkingButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '停车倒计时'),
+    );
+    expect(parkingButton.style, addRecordButton.style);
+
+    await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
 
     expect(find.text('新增保养记录'), findsWidgets);
@@ -222,6 +236,12 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     expect(find.text('下一步'), findsNothing);
+
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+    expect(find.text('停车计时'), findsOneWidget);
+    expect(find.text('入场时间'), findsOneWidget);
+    expect(find.text('0.5 小时'), findsOneWidget);
   });
 
   testWidgets('reminders without records show empty due overview', (
@@ -240,6 +260,157 @@ void main() {
     expect(find.text('按当前应用车辆计算里程与时间进度'), findsNothing);
   });
 
+  testWidgets('reminders can start and end parking countdown', (tester) async {
+    final database = await pumpApp(
+      tester,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 10, 20),
+      ),
+    );
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('停车计时'), findsOneWidget);
+    expect(find.text('入场时间'), findsOneWidget);
+    expect(find.text('10:20:00'), findsOneWidget);
+    expect(find.text('免费时长'), findsOneWidget);
+    expect(find.text('0.5 小时'), findsOneWidget);
+    await tester.tap(find.text('开始计时'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('剩余充足'), findsOneWidget);
+    expect(find.text('10:50:00 前离场'), findsOneWidget);
+    expect(find.textContaining('还剩'), findsNothing);
+    expect(await LunioRepository(database).getParkingCountdown(), isNotNull);
+
+    await tester.tap(find.widgetWithText(TextButton, '结束'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FilledButton, '停车倒计时'), findsOneWidget);
+    expect(await LunioRepository(database).getParkingCountdown(), isNull);
+  });
+
+  testWidgets('parking countdown accepts custom minutes', (tester) async {
+    final database = await pumpApp(
+      tester,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 10, 20),
+      ),
+    );
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, '免费时长'), '45');
+    await tester.tap(find.text('开始计时'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('11:05:00 前离场'), findsOneWidget);
+    expect(find.textContaining('还剩'), findsNothing);
+    final countdown = await LunioRepository(database).getParkingCountdown();
+    expect(countdown?.durationSeconds, 2700);
+  });
+
+  testWidgets('parking countdown entry time uses scroll wheels', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 10, 20, 15),
+      ),
+    );
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+
+    final durationField = tester.widget<TextField>(
+      find.widgetWithText(TextField, '免费时长'),
+    );
+    expect(durationField.keyboardType, TextInputType.text);
+    expect(durationField.textInputAction, TextInputAction.done);
+    expect(durationField.inputFormatters, hasLength(1));
+    expect(
+      durationField.inputFormatters!.single,
+      isA<FilteringTextInputFormatter>(),
+    );
+
+    await tester.tap(find.text('10:20:15'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择入场时间'), findsOneWidget);
+    expect(find.byType(CupertinoPicker), findsNWidgets(3));
+    expect(find.text('时'), findsOneWidget);
+    expect(find.text('分'), findsOneWidget);
+    expect(find.text('秒'), findsOneWidget);
+  });
+
+  testWidgets('reminders show expired parking countdown', (tester) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    await LunioRepository(database).saveParkingCountdown(
+      ParkingCountdown(
+        startedAt: DateTime(2026, 6, 10, 10, 20, 15),
+        durationSeconds: 1800,
+      ),
+    );
+
+    await pumpApp(
+      tester,
+      database: database,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 11, 2, 15),
+      ),
+    );
+
+    expect(find.text('已超时'), findsWidgets);
+    expect(find.textContaining('已超 '), findsNothing);
+    expect(find.text('10:50:15 已到点'), findsOneWidget);
+  });
+
+  testWidgets('parking countdown button is disabled while countdown runs', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    await LunioRepository(database).saveParkingCountdown(
+      ParkingCountdown(
+        startedAt: DateTime(2026, 6, 10, 10, 20),
+        durationSeconds: 1800,
+      ),
+    );
+    await pumpApp(
+      tester,
+      database: database,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 10, 20),
+      ),
+    );
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '停车倒计时'),
+    );
+    expect(button.onPressed, isNull);
+
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+    expect(find.text('停车计时'), findsNothing);
+  });
+
   testWidgets('record form shows car and can add maintenance item', (
     tester,
   ) async {
@@ -248,7 +419,7 @@ void main() {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('新增保养记录'));
+    await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
 
     expect(find.text('东风本田 思域'), findsWidgets);
@@ -958,7 +1129,7 @@ void main() {
     await createDefaultCar(tester);
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('新增保养记录'));
+    await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), '12000');
     await tester.tap(find.text('机油').last);
