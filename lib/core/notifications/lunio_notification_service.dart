@@ -14,6 +14,8 @@ class LunioScheduledNotification {
     required this.body,
     required this.repeatFrequency,
     this.scheduledMinuteOffset = 0,
+    this.androidChannelId = 'lunio_maintenance_due_heads_up',
+    this.androidChannelName = 'Lunio 保养到期提醒',
     this.occurrenceCount = 8,
   });
 
@@ -22,6 +24,8 @@ class LunioScheduledNotification {
   final String body;
   final ReminderRepeatFrequency repeatFrequency;
   final int scheduledMinuteOffset;
+  final String androidChannelId;
+  final String androidChannelName;
   final int occurrenceCount;
 }
 
@@ -146,13 +150,13 @@ class LunioNotificationService {
           title: notification.title,
           body: notification.body,
           scheduledDate: adjustedDate,
-          notificationDetails: const NotificationDetails(
+          notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
-              'lunio_reminders_alerts',
-              'Lunio 到期提醒',
+              notification.androidChannelId,
+              notification.androidChannelName,
               channelDescription: '车辆保养和里程更新提醒',
-              importance: Importance.high,
-              priority: Priority.high,
+              importance: Importance.max,
+              priority: Priority.max,
               category: AndroidNotificationCategory.reminder,
               icon: _androidNotificationIcon,
             ),
@@ -200,11 +204,11 @@ class LunioNotificationService {
       scheduledDate: scheduledDate,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
-          'lunio_parking_due',
+          'lunio_parking_due_heads_up',
           'Lunio 停车到点提醒',
           channelDescription: '停车倒计时到点提醒',
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
           category: AndroidNotificationCategory.alarm,
           audioAttributesUsage: AudioAttributesUsage.alarm,
           icon: _androidNotificationIcon,

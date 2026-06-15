@@ -109,6 +109,8 @@ void main() {
         body: '建议更新测试车辆的当前里程。',
         repeatFrequency: ReminderRepeatFrequency.monthly,
         scheduledMinuteOffset: 5,
+        androidChannelId: 'lunio_mileage_update_heads_up',
+        androidChannelName: 'Lunio 里程更新提醒',
         occurrenceCount: 1,
       ),
     ]);
@@ -118,24 +120,29 @@ void main() {
         .toList();
     expect(scheduledCalls, hasLength(2));
     final scheduledByTitle = <String, DateTime>{};
+    final channelByTitle = <String, String>{};
     for (final scheduledCall in scheduledCalls) {
       final arguments = scheduledCall.arguments as Map<Object?, Object?>;
       final scheduledDate = DateTime.parse(
         arguments['scheduledDateTime'] as String,
       );
       expect(scheduledDate.second, 0);
-      scheduledByTitle[arguments['title'] as String] = scheduledDate;
+      final title = arguments['title'] as String;
+      scheduledByTitle[title] = scheduledDate;
       final specifics = arguments['platformSpecifics'] as Map<Object?, Object?>;
-      expect(specifics['channelId'], 'lunio_reminders_alerts');
-      expect(specifics['importance'], 4);
-      expect(specifics['priority'], 1);
+      channelByTitle[title] = specifics['channelId'] as String;
+      expect(specifics['importance'], 5);
+      expect(specifics['priority'], 2);
       expect(specifics['category'], 'reminder');
+      expect(specifics['fullScreenIntent'], isFalse);
       expect(specifics['scheduleMode'], 'exactAllowWhileIdle');
     }
     expect(scheduledByTitle['保养提醒']!.hour, 9);
     expect(scheduledByTitle['保养提醒']!.minute, 0);
+    expect(channelByTitle['保养提醒'], 'lunio_maintenance_due_heads_up');
     expect(scheduledByTitle['更新车辆里程']!.hour, 9);
     expect(scheduledByTitle['更新车辆里程']!.minute, 5);
+    expect(channelByTitle['更新车辆里程'], 'lunio_mileage_update_heads_up');
   });
 
   test('reminder notifications avoid parking countdown due time', () async {
@@ -154,6 +161,8 @@ void main() {
           body: '建议更新测试车辆的当前里程。',
           repeatFrequency: ReminderRepeatFrequency.monthly,
           scheduledMinuteOffset: 5,
+          androidChannelId: 'lunio_mileage_update_heads_up',
+          androidChannelName: 'Lunio 里程更新提醒',
           occurrenceCount: 1,
         ),
       ],
@@ -229,12 +238,13 @@ void main() {
       expect(scheduleArguments['body'], '免费停车时间已到，记得及时离场。');
       final scheduleSpecifics =
           scheduleArguments['platformSpecifics'] as Map<Object?, Object?>;
-      expect(scheduleSpecifics['channelId'], 'lunio_parking_due');
+      expect(scheduleSpecifics['channelId'], 'lunio_parking_due_heads_up');
       expect(scheduleSpecifics['icon'], 'ic_lunio_notification');
-      expect(scheduleSpecifics['importance'], 4);
-      expect(scheduleSpecifics['priority'], 1);
+      expect(scheduleSpecifics['importance'], 5);
+      expect(scheduleSpecifics['priority'], 2);
       expect(scheduleSpecifics['category'], 'alarm');
       expect(scheduleSpecifics['audioAttributesUsage'], 4);
+      expect(scheduleSpecifics['fullScreenIntent'], isFalse);
       expect(scheduleSpecifics['scheduleMode'], 'exactAllowWhileIdle');
     },
   );

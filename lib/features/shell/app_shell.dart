@@ -7069,6 +7069,8 @@ Future<List<LunioScheduledNotification>> _buildScheduledNotifications({
           records,
         ),
         scheduledMinuteOffset: 5,
+        androidChannelId: 'lunio_mileage_update_heads_up',
+        androidChannelName: 'Lunio 里程更新提醒',
       ),
     );
   }
