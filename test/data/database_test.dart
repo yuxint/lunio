@@ -143,7 +143,7 @@ void main() {
       final items = await repository.listMaintenanceItemsForCar(carId);
       expect(
         items.map((item) => item.name),
-        containsAll(['汽油发动机清洁剂（燃油宝）', '机油', '机滤', '空调滤芯']),
+        containsAll(['燃油宝', '机油', '机滤', '空调滤芯']),
       );
       expect(items, hasLength(14));
       final oilItems = items.where(

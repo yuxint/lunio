@@ -26,7 +26,9 @@ class LunioScheduledNotification {
 class LunioNotificationService {
   LunioNotificationService._();
 
+  static const _androidNotificationIcon = 'ic_lunio_notification';
   static const _parkingCountdownNotificationId = 9001;
+  static const _parkingCountdownOngoingNotificationId = 9002;
 
   static final LunioNotificationService instance = LunioNotificationService._();
 
@@ -41,7 +43,7 @@ class LunioNotificationService {
     tz_data.initializeTimeZones();
     await _configureLocalTimezone();
     const initializationSettings = InitializationSettings(
-      android: AndroidInitializationSettings('ic_launcher'),
+      android: AndroidInitializationSettings(_androidNotificationIcon),
       iOS: DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
@@ -81,9 +83,46 @@ class LunioNotificationService {
     return !kIsWeb;
   }
 
+  Future<bool> notificationsEnabled() async {
+    await initialize();
+    final iosPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (iosPlugin != null) {
+      return (await iosPlugin.checkPermissions())?.isEnabled ?? false;
+    }
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin != null) {
+      return await androidPlugin.areNotificationsEnabled() ?? false;
+    }
+    return !kIsWeb;
+  }
+
+  Future<bool> requestExactAlarmPermission() async {
+    await initialize();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin == null) {
+      return true;
+    }
+    final canScheduleExact =
+        await androidPlugin.canScheduleExactNotifications() ?? false;
+    if (canScheduleExact) {
+      return true;
+    }
+    return await androidPlugin.requestExactAlarmsPermission() ?? false;
+  }
+
   Future<void> rescheduleNotifications(
-    List<LunioScheduledNotification> notifications,
-  ) async {
+    List<LunioScheduledNotification> notifications, {
+    bool exactAlarm = true,
+  }) async {
     await initialize();
     await cancelLunioNotifications();
     for (final notification in notifications) {
@@ -101,6 +140,7 @@ class LunioNotificationService {
               channelDescription: '车辆保养和里程更新提醒',
               importance: Importance.high,
               priority: Priority.high,
+              icon: _androidNotificationIcon,
             ),
             iOS: DarwinNotificationDetails(
               presentAlert: true,
@@ -108,7 +148,9 @@ class LunioNotificationService {
               presentSound: true,
             ),
           ),
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          androidScheduleMode: exactAlarm
+              ? AndroidScheduleMode.exactAllowWhileIdle
+              : AndroidScheduleMode.inexactAllowWhileIdle,
           payload: 'lunio:${notification.id}',
         );
         scheduledDate = _nextOccurrence(
@@ -127,14 +169,16 @@ class LunioNotificationService {
   }
 
   Future<void> scheduleParkingCountdownNotification(
-    ParkingCountdown countdown,
-  ) async {
+    ParkingCountdown countdown, {
+    bool exactAlarm = true,
+  }) async {
     await initialize();
     await cancelParkingCountdownNotification();
     final scheduledDate = tz.TZDateTime.from(countdown.endsAt, tz.local);
     if (!scheduledDate.isAfter(tz.TZDateTime.now(tz.local))) {
       return;
     }
+    await _showAndroidParkingCountdownNotification(countdown);
     await _plugin.zonedSchedule(
       id: _parkingCountdownNotificationId,
       title: '停车倒计时',
@@ -147,6 +191,7 @@ class LunioNotificationService {
           channelDescription: '停车倒计时到点提醒',
           importance: Importance.high,
           priority: Priority.high,
+          icon: _androidNotificationIcon,
         ),
         iOS: DarwinNotificationDetails(
           presentAlert: true,
@@ -154,7 +199,9 @@ class LunioNotificationService {
           presentSound: true,
         ),
       ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: exactAlarm
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
       payload: 'lunio:parkingCountdown',
     );
   }
@@ -162,6 +209,54 @@ class LunioNotificationService {
   Future<void> cancelParkingCountdownNotification() async {
     await initialize();
     await _plugin.cancel(id: _parkingCountdownNotificationId);
+    await _plugin.cancel(id: _parkingCountdownOngoingNotificationId);
+  }
+
+  Future<void> _showAndroidParkingCountdownNotification(
+    ParkingCountdown countdown,
+  ) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    final remainingMilliseconds = countdown.endsAt
+        .difference(DateTime.now())
+        .inMilliseconds;
+    if (remainingMilliseconds <= 0) {
+      return;
+    }
+    await _plugin.show(
+      id: _parkingCountdownOngoingNotificationId,
+      title: '停车倒计时',
+      body: '免费离场时间 ${_formatClock(countdown.endsAt)}',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'lunio_parking_ongoing',
+          'Lunio 停车倒计时',
+          channelDescription: '停车倒计时进行中的常驻提醒',
+          importance: Importance.low,
+          priority: Priority.low,
+          autoCancel: false,
+          ongoing: true,
+          silent: true,
+          onlyAlertOnce: true,
+          showWhen: true,
+          when: countdown.endsAt.millisecondsSinceEpoch,
+          icon: _androidNotificationIcon,
+          usesChronometer: true,
+          chronometerCountDown: true,
+          timeoutAfter: remainingMilliseconds,
+          visibility: NotificationVisibility.public,
+        ),
+      ),
+      payload: 'lunio:parkingCountdown',
+    );
+  }
+
+  String _formatClock(DateTime dateTime) {
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final second = dateTime.second.toString().padLeft(2, '0');
+    return '$hour:$minute:$second';
   }
 
   Future<void> _configureLocalTimezone() async {

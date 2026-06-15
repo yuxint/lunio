@@ -11,6 +11,7 @@ import '../../app/providers.dart';
 import '../../core/date/local_date.dart';
 import '../../core/notifications/lunio_notification_service.dart';
 import '../../core/platform/native_files.dart';
+import '../../core/platform/native_notification_settings.dart';
 import '../../core/theme/lunio_tokens.dart';
 import '../../core/widgets/lunio_components.dart';
 import '../../data/backup/backup_codec.dart';
@@ -26,6 +27,8 @@ import '../../domain/entities/vehicle_default_maintenance_item.dart';
 import '../../domain/entities/vehicle_model.dart';
 import '../../domain/rules/maintenance_rules.dart';
 import '../../domain/rules/parking_countdown_rules.dart';
+
+int _notificationSyncGeneration = 0;
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.selectedIndex});
@@ -184,15 +187,21 @@ class _AppShellState extends ConsumerState<AppShell>
     if (car == null || items == null || records == null || today == null) {
       return;
     }
+    final dataSignature = _reminderNotificationDataSignature(
+      car: car,
+      items: items,
+      records: records,
+      today: today,
+    );
     final systemSignature = settings.systemNotificationsEnabled
-        ? '${car.id}:${car.currentMileageKm}:${car.sync.updatedAt.toIso8601String()}:'
-              '${today.toString()}:${items.length}:${records.length}:'
-              '${settings.dueRepeatFrequency.value}'
+        ? '${settings.dueRepeatFrequency.value}:$dataSignature'
         : 'system-off';
+    final syncGeneration = _notificationSyncGeneration;
     if (_systemNotificationSignature != systemSignature) {
       _systemNotificationSignature = systemSignature;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _applySystemNotificationSchedule(
+          syncGeneration: syncGeneration,
           settings: settings,
           car: car,
           items: items,
@@ -203,13 +212,12 @@ class _AppShellState extends ConsumerState<AppShell>
     }
     final inAppSignature =
         '${settings.inAppNotificationsEnabled}:'
-        '${car.id}:${car.currentMileageKm}:${car.sync.updatedAt.toIso8601String()}:'
-        '${today.toString()}:'
-        '${items.length}:${records.length}';
+        '${settings.maintenanceDueEnabled}:$dataSignature';
     if (_inAppNotificationSignature != inAppSignature) {
       _inAppNotificationSignature = inAppSignature;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showDueInAppNotifications(
+          syncGeneration: syncGeneration,
           settings: settings,
           car: car,
           items: items,
@@ -231,6 +239,18 @@ class _AppShellState extends ConsumerState<AppShell>
         'systemNotificationPermissionRequested',
       );
       if (requested == 'true') {
+        final enabled = await LunioNotificationService.instance
+            .notificationsEnabled();
+        final currentValue = await repository.getPreferenceValue(
+          'systemNotificationsEnabled',
+        );
+        if (currentValue != enabled.toString()) {
+          await repository.setPreferenceValue(
+            'systemNotificationsEnabled',
+            enabled.toString(),
+          );
+          invalidatePreferenceProviders(ref);
+        }
         return;
       }
       final granted = await LunioNotificationService.instance
@@ -254,18 +274,47 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _applySystemNotificationSchedule({
+    required int syncGeneration,
     required LunioNotificationSettings settings,
     required Car car,
     required List<MaintenanceItem> items,
     required List<MaintenanceRecord> records,
     required LocalDate today,
   }) async {
+    if (syncGeneration != _notificationSyncGeneration) {
+      return;
+    }
     if (_syncingSystemNotifications) {
       return;
     }
     _syncingSystemNotifications = true;
     try {
       if (!settings.systemNotificationsEnabled) {
+        await LunioNotificationService.instance.cancelLunioNotifications();
+        return;
+      }
+      final repository = ref.read(lunioRepositoryProvider);
+      var notificationsEnabled = await LunioNotificationService.instance
+          .notificationsEnabled();
+      if (!notificationsEnabled) {
+        final requested = await repository.getPreferenceValue(
+          'systemNotificationPermissionRequested',
+        );
+        if (requested != 'true') {
+          notificationsEnabled = await LunioNotificationService.instance
+              .requestNotificationPermission();
+          await repository.setPreferenceValue(
+            'systemNotificationPermissionRequested',
+            'true',
+          );
+        }
+      }
+      if (!notificationsEnabled) {
+        await repository.setPreferenceValue(
+          'systemNotificationsEnabled',
+          'false',
+        );
+        invalidatePreferenceProviders(ref);
         await LunioNotificationService.instance.cancelLunioNotifications();
         return;
       }
@@ -277,8 +326,17 @@ class _AppShellState extends ConsumerState<AppShell>
         records: records,
         today: today,
       );
+      if (notifications.isEmpty) {
+        await LunioNotificationService.instance.rescheduleNotifications(
+          notifications,
+        );
+        return;
+      }
+      final exactAlarmGranted = await LunioNotificationService.instance
+          .requestExactAlarmPermission();
       await LunioNotificationService.instance.rescheduleNotifications(
         notifications,
+        exactAlarm: exactAlarmGranted,
       );
     } finally {
       _syncingSystemNotifications = false;
@@ -286,12 +344,16 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _showDueInAppNotifications({
+    required int syncGeneration,
     required LunioNotificationSettings settings,
     required Car car,
     required List<MaintenanceItem> items,
     required List<MaintenanceRecord> records,
     required LocalDate today,
   }) async {
+    if (syncGeneration != _notificationSyncGeneration) {
+      return;
+    }
     if (_checkingInAppNotifications ||
         !settings.inAppNotificationsEnabled ||
         !mounted) {
@@ -319,7 +381,7 @@ class _AppShellState extends ConsumerState<AppShell>
             ) &&
             !await _isAcknowledgedToday(
               repository,
-              _maintenanceReminderAcknowledgedKey(itemId),
+              _maintenanceInAppReminderAcknowledgedKey(itemId),
               today,
             )) {
           dueNotices.add(notice);
@@ -335,7 +397,7 @@ class _AppShellState extends ConsumerState<AppShell>
           ) &&
           !await _isAcknowledgedToday(
             repository,
-            _mileageUpdateAcknowledgedKey(car.id!),
+            _mileageUpdateInAppAcknowledgedKey(car.id!),
             today,
           );
       if ((dueNotices.isEmpty && !showMileageReminder) || !mounted) {
@@ -360,7 +422,7 @@ class _AppShellState extends ConsumerState<AppShell>
               final itemId = notice.item.id;
               if (itemId != null) {
                 await repository.setPreferenceValue(
-                  _maintenanceReminderAcknowledgedKey(itemId),
+                  _maintenanceInAppReminderAcknowledgedKey(itemId),
                   today.toString(),
                 );
               }
@@ -383,7 +445,7 @@ class _AppShellState extends ConsumerState<AppShell>
           final carId = car.id;
           if (action == _ReminderDialogAction.acknowledged && carId != null) {
             await repository.setPreferenceValue(
-              _mileageUpdateAcknowledgedKey(carId),
+              _mileageUpdateInAppAcknowledgedKey(carId),
               today.toString(),
             );
           }
@@ -1587,18 +1649,21 @@ Future<void> _showParkingCountdownSheet(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) => Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-      child: LunioSheetScaffold(
-        title: '停车计时',
-        subtitle: '设置入场时间和免费停车时长。',
-        child: _ParkingCountdownForm(
-          now: now,
-          initial: initial,
-          onSubmit: (countdown) => _saveParkingCountdown(ref, countdown),
+    builder: (context) {
+      final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(18, 0, 18, bottomInset + 16),
+        child: LunioSheetScaffold(
+          title: '停车计时',
+          subtitle: '设置入场时间和免费停车时长。',
+          child: _ParkingCountdownForm(
+            now: now,
+            initial: initial,
+            onSubmit: (countdown) => _saveParkingCountdown(ref, countdown),
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
@@ -1614,9 +1679,22 @@ Future<void> _saveParkingCountdown(
   }
   final granted = await LunioNotificationService.instance
       .requestNotificationPermission();
+  await ref
+      .read(lunioRepositoryProvider)
+      .setPreferenceValue('systemNotificationPermissionRequested', 'true');
   if (granted) {
+    final exactAlarmGranted = await LunioNotificationService.instance
+        .requestExactAlarmPermission();
     await LunioNotificationService.instance
-        .scheduleParkingCountdownNotification(countdown);
+        .scheduleParkingCountdownNotification(
+          countdown,
+          exactAlarm: exactAlarmGranted,
+        );
+  } else {
+    await ref
+        .read(lunioRepositoryProvider)
+        .setPreferenceValue('systemNotificationsEnabled', 'false');
+    invalidatePreferenceProviders(ref);
   }
 }
 
@@ -2396,6 +2474,7 @@ class _ProfilePreviewPageState extends ConsumerState<_ProfilePreviewPage> {
     );
     return LunioPage(
       title: '个人中心',
+      bottomPadding: 72,
       children: [
         LunioSection(
           title: '我的车辆',
@@ -2521,12 +2600,7 @@ class _ProfilePreviewPageState extends ConsumerState<_ProfilePreviewPage> {
 }
 
 String _notificationSettingsSubtitle(LunioNotificationSettings settings) {
-  final channels = <String>[
-    if (settings.systemNotificationsEnabled) '手机系统通知',
-    if (settings.inAppNotificationsEnabled) '应用内通知',
-  ];
-  final channelText = channels.isEmpty ? '提醒关闭' : channels.join(' + ');
-  return '$channelText · 到期后：${settings.dueRepeatFrequency.label}';
+  return '手机系统通知、应用内通知 · 到期后：${settings.dueRepeatFrequency.label}';
 }
 
 class _VersionFooter extends StatelessWidget {
@@ -5448,6 +5522,7 @@ Future<void> _restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
     }
     const codec = BackupCodec();
     final payload = codec.decode(json);
+    _notificationSyncGeneration++;
     await ref.read(lunioRepositoryProvider).restoreBackupPayload(payload);
     invalidateAllAppDataProviders(ref);
     if (context.mounted) {
@@ -5490,52 +5565,97 @@ Future<void> _clearAllData(BuildContext context, WidgetRef ref) async {
   if (confirmed != true) {
     return;
   }
+  _notificationSyncGeneration++;
   await ref.read(lunioRepositoryProvider).clearAllData();
   invalidateAllAppDataProviders(ref);
 }
 
-void _showNotificationSettingsSheet(BuildContext context, WidgetRef ref) {
-  final initialSettings = ref
+Future<void> _showNotificationSettingsSheet(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  var initialSettings = ref
       .read(notificationSettingsProvider)
       .maybeWhen(
         data: (value) => value,
         orElse: () => const LunioNotificationSettings(),
       );
+  final systemNotificationsEnabled = await _refreshSystemNotificationPreference(
+    ref,
+  );
+  if (!context.mounted) {
+    return;
+  }
+  initialSettings = initialSettings.copyWith(
+    systemNotificationsEnabled: systemNotificationsEnabled,
+  );
   _showLunioModalSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) {
+    builder: (sheetContext) {
       return Padding(
         padding: EdgeInsets.fromLTRB(
           18,
           0,
           18,
-          MediaQuery.of(context).viewInsets.bottom + 24,
+          MediaQuery.of(sheetContext).viewInsets.bottom + 24,
         ),
         child: _NotificationSettingsForm(
           initialSettings: initialSettings,
-          onSubmit: (settings) async {
-            var nextSettings = settings;
-            if (settings.systemNotificationsEnabled) {
-              final granted = await LunioNotificationService.instance
-                  .requestNotificationPermission();
-              if (!granted) {
-                nextSettings = settings.copyWith(
-                  systemNotificationsEnabled: false,
-                );
-              }
+          onOpenSystemSettings: () async {
+            final opened =
+                await NativeNotificationSettings.openNotificationSettings();
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
             }
-            await _saveNotificationSettings(ref, nextSettings);
+            if (!opened && context.mounted) {
+              _showStatusOverlay(
+                context,
+                '无法打开系统设置，请在系统设置中搜索 Lunio',
+                _StatusOverlayTone.info,
+              );
+            }
+          },
+          onSubmit: (settings) async {
+            final systemNotificationsEnabled =
+                await _refreshSystemNotificationPreference(ref);
+            await _saveNotificationSettings(
+              ref,
+              settings.copyWith(
+                systemNotificationsEnabled: systemNotificationsEnabled,
+              ),
+            );
             invalidatePreferenceProviders(ref);
-            if (context.mounted) {
-              Navigator.of(context).pop();
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
             }
           },
         ),
       );
     },
   );
+}
+
+Future<bool> _refreshSystemNotificationPreference(WidgetRef ref) async {
+  final repository = ref.read(lunioRepositoryProvider);
+  final currentValue = await repository.getPreferenceValue(
+    'systemNotificationsEnabled',
+  );
+  try {
+    final enabled = await LunioNotificationService.instance
+        .notificationsEnabled();
+    if (currentValue != enabled.toString()) {
+      await repository.setPreferenceValue(
+        'systemNotificationsEnabled',
+        enabled.toString(),
+      );
+      invalidatePreferenceProviders(ref);
+    }
+    return enabled;
+  } catch (_) {
+    return currentValue != 'false';
+  }
 }
 
 Future<void> _saveNotificationSettings(
@@ -5842,10 +5962,12 @@ class _ReminderNotificationSegment extends StatelessWidget {
 class _NotificationSettingsForm extends StatefulWidget {
   const _NotificationSettingsForm({
     required this.initialSettings,
+    required this.onOpenSystemSettings,
     required this.onSubmit,
   });
 
   final LunioNotificationSettings initialSettings;
+  final Future<void> Function() onOpenSystemSettings;
   final Future<void> Function(LunioNotificationSettings settings) onSubmit;
 
   @override
@@ -5860,7 +5982,6 @@ class _NotificationSettingsFormState extends State<_NotificationSettingsForm> {
     ReminderRepeatFrequency.monthly,
   ];
 
-  late bool systemNotificationsEnabled;
   late bool inAppNotificationsEnabled;
   late ReminderRepeatFrequency dueRepeatFrequency;
   bool saving = false;
@@ -5869,7 +5990,6 @@ class _NotificationSettingsFormState extends State<_NotificationSettingsForm> {
   void initState() {
     super.initState();
     final settings = widget.initialSettings;
-    systemNotificationsEnabled = settings.systemNotificationsEnabled;
     inAppNotificationsEnabled = settings.inAppNotificationsEnabled;
     dueRepeatFrequency = dueRepeatOptions.contains(settings.dueRepeatFrequency)
         ? settings.dueRepeatFrequency
@@ -5885,13 +6005,9 @@ class _NotificationSettingsFormState extends State<_NotificationSettingsForm> {
         children: [
           Text('通知提醒', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 14),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('手机系统通知'),
-            value: systemNotificationsEnabled,
-            onChanged: saving
-                ? null
-                : (value) => setState(() => systemNotificationsEnabled = value),
+          _SystemNotificationStatusRow(
+            enabled: widget.initialSettings.systemNotificationsEnabled,
+            onOpenSettings: saving ? null : widget.onOpenSystemSettings,
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -5945,7 +6061,8 @@ class _NotificationSettingsFormState extends State<_NotificationSettingsForm> {
     try {
       await widget.onSubmit(
         LunioNotificationSettings(
-          systemNotificationsEnabled: systemNotificationsEnabled,
+          systemNotificationsEnabled:
+              widget.initialSettings.systemNotificationsEnabled,
           inAppNotificationsEnabled: inAppNotificationsEnabled,
           maintenanceDueEnabled: true,
           dueRepeatFrequency: dueRepeatFrequency,
@@ -5956,6 +6073,59 @@ class _NotificationSettingsFormState extends State<_NotificationSettingsForm> {
         setState(() => saving = false);
       }
     }
+  }
+}
+
+class _SystemNotificationStatusRow extends StatelessWidget {
+  const _SystemNotificationStatusRow({
+    required this.enabled,
+    required this.onOpenSettings,
+  });
+
+  final bool enabled;
+  final Future<void> Function()? onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: tokens.surface2,
+          borderRadius: BorderRadius.circular(tokens.radiusMedium),
+          border: Border.all(color: tokens.line),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('手机系统通知'),
+                  const SizedBox(height: 4),
+                  Text(
+                    enabled ? '系统已开启' : '系统已关闭',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: tokens.muted),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: onOpenSettings == null
+                  ? null
+                  : () {
+                      onOpenSettings!();
+                    },
+              child: const Text('系统设置'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -6851,15 +7021,10 @@ Future<List<LunioScheduledNotification>> _buildScheduledNotifications({
       continue;
     }
     if (!await _isSnoozed(
-          repository,
-          _maintenanceReminderSnoozeKey(itemId),
-          today,
-        ) &&
-        !await _isAcknowledgedToday(
-          repository,
-          _maintenanceReminderAcknowledgedKey(itemId),
-          today,
-        )) {
+      repository,
+      _maintenanceReminderSnoozeKey(itemId),
+      today,
+    )) {
       activeMaintenanceNotices.add(notice);
     }
   }
@@ -6881,12 +7046,7 @@ Future<List<LunioScheduledNotification>> _buildScheduledNotifications({
   }
   if (car.id != null &&
       _mileageUpdateReminderDue(car: car, records: records, today: today) &&
-      !await _isSnoozed(repository, _mileageUpdateSnoozeKey(car.id!), today) &&
-      !await _isAcknowledgedToday(
-        repository,
-        _mileageUpdateAcknowledgedKey(car.id!),
-        today,
-      )) {
+      !await _isSnoozed(repository, _mileageUpdateSnoozeKey(car.id!), today)) {
     notifications.add(
       LunioScheduledNotification(
         id: 8900,
@@ -6899,6 +7059,53 @@ Future<List<LunioScheduledNotification>> _buildScheduledNotifications({
     );
   }
   return notifications;
+}
+
+String _reminderNotificationDataSignature({
+  required Car car,
+  required List<MaintenanceItem> items,
+  required List<MaintenanceRecord> records,
+  required LocalDate today,
+}) {
+  final itemSignature = items
+      .map((item) {
+        return [
+          item.id,
+          item.carsId,
+          item.enabled,
+          item.remindByMileage,
+          item.remindByTime,
+          item.mileageIntervalKm,
+          item.timeIntervalMonths,
+          item.notOverdueUpperLimit,
+          item.overdueUpperLimit,
+          item.sortOrder,
+          item.sync.updatedAt.toIso8601String(),
+          item.sync.version,
+        ].join(',');
+      })
+      .join('|');
+  final recordSignature = records
+      .map((record) {
+        return [
+          record.id,
+          record.carId,
+          record.date,
+          record.mileageKm,
+          record.itemIds.join('+'),
+          record.sync.updatedAt.toIso8601String(),
+          record.sync.version,
+        ].join(',');
+      })
+      .join('|');
+  return [
+    car.id,
+    car.currentMileageKm,
+    car.sync.updatedAt.toIso8601String(),
+    today,
+    itemSignature,
+    recordSignature,
+  ].join(';');
 }
 
 bool _mileageUpdateReminderDue({
@@ -6984,16 +7191,16 @@ String _mileageUpdateSnoozeKey(int carId) {
   return 'mileageUpdateSnoozedUntil:$carId';
 }
 
-String _mileageUpdateAcknowledgedKey(int carId) {
-  return 'mileageUpdateAcknowledgedOn:$carId';
+String _mileageUpdateInAppAcknowledgedKey(int carId) {
+  return 'mileageUpdateInAppAcknowledgedOn:$carId';
 }
 
 String _maintenanceReminderSnoozeKey(int itemId) {
   return 'maintenanceReminderSnoozedUntil:$itemId';
 }
 
-String _maintenanceReminderAcknowledgedKey(int itemId) {
-  return 'maintenanceReminderAcknowledgedOn:$itemId';
+String _maintenanceInAppReminderAcknowledgedKey(int itemId) {
+  return 'maintenanceInAppReminderAcknowledgedOn:$itemId';
 }
 
 LocalDate _snoozeUntilDate(LocalDate today) {
@@ -7041,6 +7248,9 @@ List<_ReminderViewData> _maintenanceNotices({
   required List<MaintenanceRecord> records,
   required LocalDate today,
 }) {
+  if (records.isEmpty) {
+    return const [];
+  }
   final rows = _buildReminderRows(
     car: car,
     items: items,

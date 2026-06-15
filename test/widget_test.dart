@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +22,13 @@ import 'package:lunio/domain/entities/sync_metadata.dart';
 
 void main() {
   const nativeFilesChannel = MethodChannel('lunio/native_files');
+  const nativeNotificationSettingsChannel = MethodChannel(
+    'lunio/native_notification_settings',
+  );
+  const notificationsChannel = MethodChannel(
+    'dexterous.com/flutter/local_notifications',
+  );
+  const timezoneChannel = MethodChannel('flutter_timezone');
 
   void mockNativeFiles(Future<Object?> Function(MethodCall call) handler) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -28,6 +37,51 @@ void main() {
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativeFilesChannel, null),
     );
+  }
+
+  void mockNativeNotificationSettings(
+    Future<Object?> Function(MethodCall call) handler,
+  ) {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativeNotificationSettingsChannel, handler);
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativeNotificationSettingsChannel, null),
+    );
+  }
+
+  VoidCallback mockAndroidNotifications(
+    List<MethodCall> calls, {
+    bool notificationsEnabled = true,
+  }) {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    AndroidFlutterLocalNotificationsPlugin.registerWith();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(timezoneChannel, (call) async {
+          if (call.method == 'getLocalTimezone') {
+            return 'Asia/Shanghai';
+          }
+          return null;
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+          calls.add(call);
+          return switch (call.method) {
+            'initialize' => true,
+            'requestNotificationsPermission' => true,
+            'areNotificationsEnabled' => notificationsEnabled,
+            'canScheduleExactNotifications' => true,
+            'requestExactAlarmsPermission' => true,
+            _ => null,
+          };
+        });
+    return () {
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(notificationsChannel, null);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(timezoneChannel, null);
+    };
   }
 
   Future<AppDatabase> pumpApp(
@@ -146,6 +200,8 @@ void main() {
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
     expect(find.text('个人中心'), findsOneWidget);
+    final profileList = tester.widget<ListView>(find.byType(ListView).first);
+    expect(profileList.padding, const EdgeInsets.fromLTRB(18, 2, 18, 72));
   });
 
   testWidgets('theme switch stays on profile without success feedback', (
@@ -292,6 +348,81 @@ void main() {
 
     expect(find.widgetWithText(FilledButton, '停车倒计时'), findsOneWidget);
     expect(await LunioRepository(database).getParkingCountdown(), isNull);
+  });
+
+  testWidgets('parking countdown sheet keeps actions above keyboard', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 10, 20),
+      ),
+    );
+    await createDefaultCar(tester);
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    const keyboardHeight = 360.0;
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboardHeight);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextField, '免费时长'));
+    await tester.pumpAndSettle();
+
+    final keyboardTop =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio -
+        keyboardHeight;
+    final startButtonBottom = tester
+        .getBottomLeft(find.widgetWithText(FilledButton, '开始计时'))
+        .dy;
+    expect(startButtonBottom, lessThanOrEqualTo(keyboardTop));
+  });
+
+  testWidgets('parking countdown starts Android notification timer', (
+    tester,
+  ) async {
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+    try {
+      await pumpApp(
+        tester,
+        dateContext: AppDateContext(readSystemNow: () => DateTime.now()),
+        systemNotificationsEnabled: true,
+      );
+      await createDefaultCar(tester);
+      notificationCalls.clear();
+
+      await tester.tap(find.text('提醒'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('开始计时'));
+      await tester.pumpAndSettle();
+
+      expect(
+        notificationCalls.map((call) => call.method),
+        containsAll(<String>[
+          'requestNotificationsPermission',
+          'show',
+          'zonedSchedule',
+        ]),
+      );
+      final showCall = notificationCalls.singleWhere(
+        (call) => call.method == 'show',
+      );
+      final showArguments = showCall.arguments as Map<Object?, Object?>;
+      final showSpecifics =
+          showArguments['platformSpecifics'] as Map<Object?, Object?>;
+      expect(showSpecifics['channelId'], 'lunio_parking_ongoing');
+      expect(showSpecifics['ongoing'], isTrue);
+      expect(showSpecifics['chronometerCountDown'], isTrue);
+    } finally {
+      cleanupNotifications();
+    }
   });
 
   testWidgets('parking countdown accepts custom minutes', (tester) async {
@@ -470,6 +601,7 @@ void main() {
 
     await createDefaultCar(tester);
 
+    expect(find.text('保养提醒'), findsNothing);
     expect(find.text('东风本田 思域'), findsWidgets);
     expect(find.text('当前'), findsOneWidget);
     expect(find.textContaining('0km'), findsOneWidget);
@@ -481,6 +613,38 @@ void main() {
       await database.select(database.maintenanceItems).get(),
       hasLength(14),
     );
+  });
+
+  testWidgets('in-app reminders wait for the first maintenance record', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = LunioRepository(database);
+    await repository.ensureBootstrapData();
+    final sync = SyncMetadata(
+      status: SyncStatus.pendingCreate,
+      updatedAt: DateTime(2026, 5, 19),
+    );
+    final carId = await repository.createCarWithDefaultItems(
+      Car(
+        brand: '东风本田',
+        model: '思域',
+        currentMileageKm: 0,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: sync,
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    await repository.setPreferenceValue('inAppNotificationsEnabled', 'true');
+
+    await pumpApp(tester, database: database, inAppNotificationsEnabled: true);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无保养记录，记录首保后再生成保养提醒。'), findsOneWidget);
+    expect(find.text('15 天内不再提醒'), findsNothing);
   });
 
   testWidgets('profile backup exports json through native file saver', (
@@ -810,7 +974,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));
-    await tester.tap(find.text('汽油发动机清洁剂（燃油宝）'));
+    await tester.tap(find.text('燃油宝'));
     await tester.pumpAndSettle();
     expect(find.text('编辑保养项目'), findsNothing);
 
@@ -963,7 +1127,7 @@ void main() {
 
     await tester.tap(find.byTooltip('删除').first);
     await tester.pumpAndSettle();
-    expect(find.text('汽油发动机清洁剂（燃油宝）'), findsNothing);
+    expect(find.text('燃油宝'), findsNothing);
 
     await tester.tap(find.widgetWithText(TextButton, '恢复').last);
     await tester.pumpAndSettle();
@@ -971,7 +1135,7 @@ void main() {
     expect(find.text('已存在'), findsNWidgets(13));
     await tester.tap(find.widgetWithText(FilledButton, '恢复'));
     await tester.pumpAndSettle();
-    expect(find.text('汽油发动机清洁剂（燃油宝）'), findsOneWidget);
+    expect(find.text('燃油宝'), findsOneWidget);
 
     await tester.tap(find.text('保存车辆'));
     await tester.pumpAndSettle();
@@ -1296,62 +1460,142 @@ void main() {
   testWidgets('profile can save maintenance notification settings', (
     tester,
   ) async {
-    final database = await pumpApp(tester, inAppNotificationsEnabled: true);
-    await createDefaultCar(tester);
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+    try {
+      final database = await pumpApp(tester, inAppNotificationsEnabled: true);
+      await createDefaultCar(tester);
 
-    await tester.tap(find.text('通知提醒'));
-    await tester.pumpAndSettle();
-    expect(find.text('到期后提醒次数'), findsNothing);
+      await tester.tap(find.text('通知提醒'));
+      await tester.pumpAndSettle();
+      expect(find.text('手机系统通知、应用内通知 · 到期后：每周'), findsOneWidget);
+      expect(find.text('到期后提醒次数'), findsNothing);
 
-    await tester.tap(find.widgetWithText(TextButton, '设置').first);
-    await tester.pumpAndSettle();
-    expect(find.text('手机系统通知'), findsOneWidget);
-    expect(find.text('应用内通知'), findsOneWidget);
-    expect(find.text('到期后提醒次数'), findsOneWidget);
-    expect(find.text('每周'), findsOneWidget);
-    expect(find.text('每 2 周'), findsOneWidget);
-    expect(find.text('每月'), findsOneWidget);
-    expect(find.text('每天'), findsNothing);
-    expect(find.text('系统 App 通知'), findsNothing);
-    expect(find.text('打开 App 弹窗通知'), findsNothing);
-    expect(find.text('到期提醒'), findsNothing);
-    expect(find.text('提前提醒'), findsNothing);
-    expect(find.text('超期提醒'), findsNothing);
-    expect(find.text('达到后的提醒次数'), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, '设置').first);
+      await tester.pumpAndSettle();
+      expect(find.text('手机系统通知'), findsOneWidget);
+      expect(find.text('应用内通知'), findsOneWidget);
+      expect(find.text('到期后提醒次数'), findsOneWidget);
+      expect(find.text('每周'), findsOneWidget);
+      expect(find.text('每 2 周'), findsOneWidget);
+      expect(find.text('每月'), findsOneWidget);
+      expect(find.text('每天'), findsNothing);
+      expect(find.text('系统 App 通知'), findsNothing);
+      expect(find.text('打开 App 弹窗通知'), findsNothing);
+      expect(find.text('到期提醒'), findsNothing);
+      expect(find.text('提前提醒'), findsNothing);
+      expect(find.text('超期提醒'), findsNothing);
+      expect(find.text('达到后的提醒次数'), findsNothing);
 
-    await tester.tap(find.text('每 2 周'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('保存设置'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('每 2 周'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存设置'));
+      await tester.pumpAndSettle();
 
-    final repository = LunioRepository(database);
-    expect(
-      await repository.getPreferenceValue('inAppNotificationsEnabled'),
-      'true',
-    );
-    expect(
-      await repository.getPreferenceValue('maintenanceDueEnabled'),
-      'true',
-    );
-    expect(
-      await repository.getPreferenceValue('maintenanceDueRepeat'),
-      'everyTwoWeeks',
-    );
-    expect(find.text('通知设置已保存'), findsNothing);
-    expect(
-      await repository.getPreferenceValue('maintenanceEarlyEnabled'),
-      isNull,
-    );
-    expect(
-      await repository.getPreferenceValue(
-        'maintenanceNotificationEarlyPercent',
-      ),
-      isNull,
-    );
-    expect(
-      await repository.getPreferenceValue('maintenanceOverdueEnabled'),
-      isNull,
-    );
+      final repository = LunioRepository(database);
+      expect(
+        await repository.getPreferenceValue('inAppNotificationsEnabled'),
+        'true',
+      );
+      expect(
+        await repository.getPreferenceValue('maintenanceDueEnabled'),
+        'true',
+      );
+      expect(
+        await repository.getPreferenceValue('maintenanceDueRepeat'),
+        'everyTwoWeeks',
+      );
+      expect(find.text('手机系统通知、应用内通知 · 到期后：每 2 周'), findsOneWidget);
+      expect(find.text('通知设置已保存'), findsNothing);
+      expect(
+        await repository.getPreferenceValue('maintenanceEarlyEnabled'),
+        isNull,
+      );
+      expect(
+        await repository.getPreferenceValue(
+          'maintenanceNotificationEarlyPercent',
+        ),
+        isNull,
+      );
+      expect(
+        await repository.getPreferenceValue('maintenanceOverdueEnabled'),
+        isNull,
+      );
+    } finally {
+      cleanupNotifications();
+    }
+  });
+
+  testWidgets(
+    'notification settings refresh system permission status on open',
+    (tester) async {
+      final notificationCalls = <MethodCall>[];
+      final cleanupNotifications = mockAndroidNotifications(
+        notificationCalls,
+        notificationsEnabled: false,
+      );
+      try {
+        final database = AppDatabase.inMemory();
+        addTearDown(database.close);
+        final repository = LunioRepository(database);
+        await repository.setPreferenceValue(
+          'systemNotificationPermissionRequested',
+          'true',
+        );
+
+        await pumpApp(
+          tester,
+          database: database,
+          systemNotificationsEnabled: true,
+        );
+
+        await tester.tap(find.text('我的'));
+        await tester.pumpAndSettle();
+        notificationCalls.clear();
+        await tester.tap(find.widgetWithText(TextButton, '设置').first);
+        await tester.pumpAndSettle();
+
+        expect(
+          notificationCalls.map((call) => call.method),
+          contains('areNotificationsEnabled'),
+        );
+        expect(
+          await repository.getPreferenceValue('systemNotificationsEnabled'),
+          'false',
+        );
+      } finally {
+        cleanupNotifications();
+      }
+    },
+  );
+
+  testWidgets('notification settings opens system notification settings', (
+    tester,
+  ) async {
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+    var openSettingsCount = 0;
+    mockNativeNotificationSettings((call) async {
+      if (call.method == 'openNotificationSettings') {
+        openSettingsCount++;
+        return true;
+      }
+      return null;
+    });
+    try {
+      await pumpApp(tester, inAppNotificationsEnabled: true);
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(TextButton, '设置').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('系统设置'));
+      await tester.pumpAndSettle();
+
+      expect(openSettingsCount, 1);
+    } finally {
+      cleanupNotifications();
+    }
   });
 
   testWidgets(
@@ -1398,8 +1642,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('保养提醒'), findsOneWidget);
-      expect(find.text(item.name), findsOneWidget);
+      expect(find.text('保养提醒'), findsWidgets);
+      expect(find.text(item.name), findsWidgets);
       expect(find.textContaining('已超'), findsWidgets);
       expect(find.textContaining('时间到期已超'), findsNothing);
       expect(find.textContaining('里程已超'), findsNothing);
@@ -1416,7 +1660,10 @@ void main() {
       );
 
       expect(find.text('更新当前里程'), findsOneWidget);
-      expect(find.text('保养提醒'), findsNothing);
+      expect(
+        find.descendant(of: find.byType(Dialog), matching: find.text('保养提醒')),
+        findsNothing,
+      );
       await tester.tap(find.widgetWithText(FilledButton, '15 天内不再提醒'));
       await tester.pumpAndSettle();
       expect(
@@ -1478,6 +1725,8 @@ void main() {
   testWidgets(
     'in-app reminder acknowledgement suppresses reminders for the day',
     (tester) async {
+      final notificationCalls = <MethodCall>[];
+      final cleanupNotifications = mockAndroidNotifications(notificationCalls);
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final repository = LunioRepository(database);
@@ -1515,16 +1764,18 @@ void main() {
       await pumpApp(
         tester,
         database: database,
+        systemNotificationsEnabled: true,
         inAppNotificationsEnabled: true,
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('保养提醒'), findsOneWidget);
+      expect(find.text('保养提醒'), findsWidgets);
+      notificationCalls.clear();
       await tester.tap(find.widgetWithText(FilledButton, '知道了'));
       await tester.pumpAndSettle();
       expect(
         await repository.getPreferenceValue(
-          'maintenanceReminderAcknowledgedOn:${item.id}',
+          'maintenanceInAppReminderAcknowledgedOn:${item.id}',
         ),
         '2026-05-19',
       );
@@ -1533,9 +1784,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         await repository.getPreferenceValue(
-          'mileageUpdateAcknowledgedOn:${car.id}',
+          'mileageUpdateInAppAcknowledgedOn:${car.id}',
         ),
         '2026-05-19',
+      );
+      expect(
+        notificationCalls
+            .where((call) => call.method == 'zonedSchedule')
+            .map((call) => call.arguments as Map<Object?, Object?>)
+            .map((arguments) => arguments['title']),
+        contains('保养提醒'),
       );
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
@@ -1543,7 +1801,7 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
 
-      expect(find.text('保养提醒'), findsNothing);
+      expect(find.widgetWithText(FilledButton, '知道了'), findsNothing);
       expect(find.text('更新当前里程'), findsNothing);
 
       await pumpApp(
@@ -1553,8 +1811,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('保养提醒'), findsNothing);
+      expect(find.widgetWithText(FilledButton, '知道了'), findsNothing);
       expect(find.text('更新当前里程'), findsNothing);
+      cleanupNotifications();
     },
   );
 }

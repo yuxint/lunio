@@ -594,6 +594,11 @@
   - `android/app/src/main/kotlin/com/example/lunio/MainActivity.kt` 已接入 `lunio/native_files` MethodChannel。
   - Android 备份分享调用系统分享面板，以 JSON 文本方式分享备份内容。
   - Android 数据恢复调用系统文件选择器读取 JSON 文本。
+- 2026-06-14 追加补齐：
+  - Android 备份导出写入成功后返回 `true`，与 Flutter `NativeFiles.exportJsonFile` 的成功反馈语义对齐。
+  - Android `flutter_local_notifications` scheduled notification 配置已补齐：`RECEIVE_BOOT_COMPLETED`、scheduled receiver、boot receiver、core library desugaring 和 release icon keep 资源。
+  - Android 通知小图标改为 `@drawable/ic_lunio_notification`，避免 `flutter_local_notifications` 初始化时因找不到 `ic_launcher` drawable 而卡在启动页。
+  - 停车倒计时在 Android 上新增常驻通知：开始计时时展示 `lunio_parking_ongoing` 通道通知，使用系统 chronometer 倒计时显示离场时间；结束计时时同时取消到点提醒和常驻通知。
 - 当前状态：
   - Android Flutter 工程已存在。
   - `android/app/build.gradle.kts` 当前 `applicationId` 仍是 `com.example.lunio`，发布前需与你确认正式包名。
@@ -603,7 +608,7 @@
   - 已安装 Android 36 Google APIs arm64 system image，并创建 `lunio_api36` AVD。
   - SQLite native asset 已改为 `source: source`，使用仓库内 `third_party/sqlite/sqlite3.c`。
   - `third_party/sqlite/sqlite3.c` 和 `sqlite3.h` 来自 SQLite 官方 `sqlite-autoconf-3530000.tar.gz`，版本 3.53.0。
-  - Android release APK 构建通过，产物为 `build/app/outputs/flutter-apk/app-release.apk`，大小 58.3MB。
+  - Android release APK 构建通过，产物为 `build/app/outputs/flutter-apk/app-release.apk`，当前大小 60.7MB。
   - Android 模拟器运行验证通过：启动后数据库正常加载，没有 `libsqlite3.so` not found。
   - Android 基础交互验证通过：提醒页、记录页、我的页、车辆新增、记录新增、备份分享、恢复文件选择器。
   - 当前仍未做真实 Android 物理机验证；发布前建议用至少一台目标 Android 真机复核文件选择器、系统分享面板、返回键、键盘遮挡和安全区。
@@ -674,3 +679,18 @@
     - `/private/tmp/lunio_android_system_share.png`
     - `/private/tmp/lunio_android_file_picker_open.png`
   - 未执行 Android 物理机验证：当前只覆盖 Android 模拟器。
+- 2026-06-14 Android 追平 iOS 基准补齐：
+  - `flutter analyze` 通过。
+  - `flutter test` 通过，共 108 项测试。
+  - `flutter test test/core/notifications/lunio_notification_service_test.dart` 通过。
+  - `flutter test test/widget_test.dart --plain-name "parking countdown starts Android notification timer"` 通过。
+  - `flutter build apk` 通过，产物为 `build/app/outputs/flutter-apk/app-release.apk`，大小 60.7MB。
+  - `flutter build apk` 仍提示 `flutter_timezone` 使用旧 Kotlin Gradle Plugin；当前不阻塞构建，但后续 Flutter 版本可能需要跟进插件升级或迁移。
+  - `flutter build ios --simulator` 最终复跑未完成：当前本机只有 iOS Simulator 26.2 SDK，但可用模拟器设备在 iOS 26.3 runtime 下，Xcode 未返回可用 simulator destination；失败发生在目的地选择阶段，未进入代码编译错误。
+  - Android Studio 启动的 `lunio_api36` AVD 已被 `adb` 识别为 `emulator-5554`；`adb install -r build/app/outputs/flutter-apk/app-release.apk` 通过。
+  - Android 启动卡住根因已确认：`LunioNotificationService.initialize()` 使用 `ic_launcher` 作为 Android 通知默认图标，但插件要求 drawable 资源，logcat 报 `PlatformException(invalid_icon, The resource ic_launcher could not be found...)`，导致 `main()` 在 `runApp` 前中断。
+  - 修复后模拟器启动验证通过：App 不再停留在 Flutter 启动页，能进入「保养提醒」主界面并弹出 Android 通知权限请求；logcat 未再出现 `invalid_icon`、`Unhandled Exception`、`FATAL` 或 `ANR`。
+  - Android 停车倒计时运行验证通过：通过真实 UI 新增车辆、启动 30 分钟停车倒计时；`dumpsys notification --noredact` 可见 `id=9002`、渠道 `lunio_parking_ongoing`、文案 `免费离场时间 HH:mm:ss`、`ONGOING_EVENT|ONLY_ALERT_ONCE|SILENT`；`dumpsys alarm` 可见到点提醒由 `ScheduledNotificationReceiver` 调度。
+  - Android 停车倒计时清理验证通过：点击「结束」后 active notification 不再包含 `com.example.lunio` 的 9002 通知，alarm 中对应记录变为 `Reason=alarm_cancelled` 历史快照。
+  - 运行截图留存：`/tmp/lunio_android_verify/after_icon_fix.png`。
+  - 默认模板文案测试已与当前 seed `燃油宝` 对齐，相关 `database_test.dart` 和 `widget_test.dart` 用例已恢复通过。

@@ -2,6 +2,8 @@ package com.example.lunio
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,6 +27,35 @@ class MainActivity : FlutterActivity() {
                 )
                 "pickJsonFile" -> pickJsonFile(result)
                 else -> result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "lunio/native_notification_settings",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openNotificationSettings" -> openNotificationSettings(result)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun openNotificationSettings(result: MethodChannel.Result) {
+        try {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            }
+            startActivity(intent)
+            result.success(true)
+        } catch (error: Exception) {
+            try {
+                val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(fallback)
+                result.success(true)
+            } catch (fallbackError: Exception) {
+                result.error("open_failed", fallbackError.localizedMessage, null)
             }
         }
     }
@@ -123,7 +154,7 @@ class MainActivity : FlutterActivity() {
             outputStream.bufferedWriter().use {
                 it.write(content)
             }
-            result.success(null)
+            result.success(true)
         } catch (error: Exception) {
             result.error("write_failed", error.localizedMessage, null)
         }

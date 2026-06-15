@@ -8,18 +8,20 @@ class LunioPage extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.trailing,
+    this.bottomPadding = 102,
     required this.children,
   });
 
   final String title;
   final String? subtitle;
   final Widget? trailing;
+  final double bottomPadding;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 2, 18, 102),
+      padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPadding),
       children: [
         LunioTopBar(title: title, subtitle: subtitle, trailing: trailing),
         const SizedBox(height: 12),

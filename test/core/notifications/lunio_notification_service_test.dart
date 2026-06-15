@@ -1,0 +1,206 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lunio/core/notifications/lunio_notification_service.dart';
+import 'package:lunio/domain/entities/notification_settings.dart';
+import 'package:lunio/domain/entities/parking_countdown.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const notificationsChannel = MethodChannel(
+    'dexterous.com/flutter/local_notifications',
+  );
+  const timezoneChannel = MethodChannel('flutter_timezone');
+
+  late List<MethodCall> notificationCalls;
+
+  setUp(() {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    AndroidFlutterLocalNotificationsPlugin.registerWith();
+    notificationCalls = <MethodCall>[];
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(timezoneChannel, (call) async {
+          if (call.method == 'getLocalTimezone') {
+            return 'Asia/Shanghai';
+          }
+          return null;
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+          notificationCalls.add(call);
+          return switch (call.method) {
+            'initialize' => true,
+            'requestNotificationsPermission' => true,
+            'areNotificationsEnabled' => true,
+            'canScheduleExactNotifications' => true,
+            'requestExactAlarmsPermission' => true,
+            _ => null,
+          };
+        });
+  });
+
+  tearDown(() {
+    debugDefaultTargetPlatformOverride = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(timezoneChannel, null);
+  });
+
+  test(
+    'Android notification permission status is read from the system',
+    () async {
+      await LunioNotificationService.instance.notificationsEnabled();
+
+      expect(
+        notificationCalls.map((call) => call.method),
+        contains('areNotificationsEnabled'),
+      );
+    },
+  );
+
+  test('iOS notification permission status is read from the system', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    IOSFlutterLocalNotificationsPlugin.registerWith();
+    notificationCalls.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+          notificationCalls.add(call);
+          return switch (call.method) {
+            'initialize' => true,
+            'checkPermissions' => {
+              'isEnabled': true,
+              'isSoundEnabled': true,
+              'isAlertEnabled': true,
+              'isBadgeEnabled': true,
+              'isProvisionalEnabled': false,
+              'isCriticalEnabled': false,
+            },
+            _ => null,
+          };
+        });
+
+    final enabled = await LunioNotificationService.instance
+        .notificationsEnabled();
+
+    expect(enabled, isTrue);
+    expect(
+      notificationCalls.map((call) => call.method),
+      contains('checkPermissions'),
+    );
+  });
+
+  test('maintenance notifications use a precise 9:00 schedule', () async {
+    await LunioNotificationService.instance.rescheduleNotifications([
+      const LunioScheduledNotification(
+        id: 8000,
+        title: '保养提醒',
+        body: '测试车辆有保养项目到期。',
+        repeatFrequency: ReminderRepeatFrequency.weekly,
+        occurrenceCount: 1,
+      ),
+    ]);
+
+    final scheduledCall = notificationCalls.singleWhere(
+      (call) => call.method == 'zonedSchedule',
+    );
+    final arguments = scheduledCall.arguments as Map<Object?, Object?>;
+    final scheduledDate = DateTime.parse(
+      arguments['scheduledDateTime'] as String,
+    );
+    expect(scheduledDate.hour, 9);
+    expect(scheduledDate.minute, 0);
+    expect(scheduledDate.second, 0);
+    final specifics = arguments['platformSpecifics'] as Map<Object?, Object?>;
+    expect(specifics['scheduleMode'], 'exactAllowWhileIdle');
+  });
+
+  test(
+    'parking countdown schedules due alert and Android ongoing timer',
+    () async {
+      final startedAt = DateTime.now();
+      final countdown = ParkingCountdown(
+        startedAt: startedAt,
+        durationSeconds: 1800,
+      );
+      final leaveTime = _formatClock(countdown.endsAt);
+
+      await LunioNotificationService.instance
+          .scheduleParkingCountdownNotification(countdown);
+
+      expect(
+        notificationCalls.map((call) => call.method),
+        containsAllInOrder(<String>[
+          'cancel',
+          'cancel',
+          'show',
+          'zonedSchedule',
+        ]),
+      );
+
+      final showCall = notificationCalls.singleWhere(
+        (call) => call.method == 'show',
+      );
+      final showArguments = showCall.arguments as Map<Object?, Object?>;
+      expect(showArguments['title'], '停车倒计时');
+      expect(showArguments['body'], '免费离场时间 $leaveTime');
+      expect(showArguments['payload'], 'lunio:parkingCountdown');
+      final showSpecifics =
+          showArguments['platformSpecifics'] as Map<Object?, Object?>;
+      expect(showSpecifics['channelId'], 'lunio_parking_ongoing');
+      expect(showSpecifics['icon'], 'ic_lunio_notification');
+      expect(showSpecifics['ongoing'], isTrue);
+      expect(showSpecifics['autoCancel'], isFalse);
+      expect(showSpecifics['silent'], isTrue);
+      expect(showSpecifics['showWhen'], isTrue);
+      expect(showSpecifics['when'], countdown.endsAt.millisecondsSinceEpoch);
+      expect(showSpecifics['usesChronometer'], isTrue);
+      expect(showSpecifics['chronometerCountDown'], isTrue);
+      expect(showSpecifics['timeoutAfter'], isA<int>());
+      expect(showSpecifics['timeoutAfter'] as int, greaterThan(0));
+      expect(showSpecifics['timeoutAfter'] as int, lessThanOrEqualTo(1800000));
+
+      final scheduledCall = notificationCalls.singleWhere(
+        (call) => call.method == 'zonedSchedule',
+      );
+      final scheduleArguments =
+          scheduledCall.arguments as Map<Object?, Object?>;
+      expect(scheduleArguments['title'], '停车倒计时');
+      expect(scheduleArguments['body'], '免费停车时间已到，记得及时离场。');
+      final scheduleSpecifics =
+          scheduleArguments['platformSpecifics'] as Map<Object?, Object?>;
+      expect(scheduleSpecifics['channelId'], 'lunio_parking');
+      expect(scheduleSpecifics['icon'], 'ic_lunio_notification');
+      expect(scheduleSpecifics['scheduleMode'], 'exactAllowWhileIdle');
+    },
+  );
+
+  test(
+    'parking countdown cancellation clears due alert and ongoing timer',
+    () async {
+      await LunioNotificationService.instance
+          .cancelParkingCountdownNotification();
+
+      final cancelCalls = notificationCalls
+          .where((call) => call.method == 'cancel')
+          .map((call) => call.arguments as Map<Object?, Object?>)
+          .toList();
+      expect(cancelCalls, hasLength(2));
+      expect(
+        cancelCalls.map((arguments) => arguments['id']),
+        containsAll([9001, 9002]),
+      );
+    },
+  );
+}
+
+String _formatClock(DateTime dateTime) {
+  final hour = dateTime.hour.toString().padLeft(2, '0');
+  final minute = dateTime.minute.toString().padLeft(2, '0');
+  final second = dateTime.second.toString().padLeft(2, '0');
+  return '$hour:$minute:$second';
+}

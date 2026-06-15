@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var documentPickerResult: FlutterResult?
   private var documentPickerMode: DocumentPickerMode?
+  private var nativeNotificationSettingsChannel: FlutterMethodChannel?
 
   private enum DocumentPickerMode {
     case exportJson
@@ -18,6 +19,14 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     configureNativeFilesChannel()
+    DispatchQueue.main.async { [weak self] in
+      self?.configureNativeNotificationSettingsChannelIfNeeded()
+    }
+  }
+
+  override func sceneDidBecomeActive(_ scene: UIScene) {
+    super.sceneDidBecomeActive(scene)
+    configureNativeNotificationSettingsChannelIfNeeded()
   }
 
   private func configureNativeFilesChannel() {
@@ -38,6 +47,52 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
         result(FlutterMethodNotImplemented)
       }
     }
+  }
+
+  private func configureNativeNotificationSettingsChannelIfNeeded() {
+    guard nativeNotificationSettingsChannel == nil else {
+      return
+    }
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "lunio/native_notification_settings",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "openNotificationSettings":
+        self?.openNotificationSettings(result: result)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    nativeNotificationSettingsChannel = channel
+  }
+
+  private func openNotificationSettings(result: @escaping FlutterResult) {
+    let fallbackURL = URL(string: UIApplication.openSettingsURLString)
+    guard let url = fallbackURL else {
+      result(FlutterError(code: "invalid_url", message: "Unable to open app settings", details: nil))
+      return
+    }
+    openSettingsURL(url, fallbackURL: nil, result: result)
+  }
+
+  private func openSettingsURL(_ url: URL, fallbackURL: URL?, result: @escaping FlutterResult) {
+    let completion: (Bool) -> Void = { [weak self] opened in
+      guard !opened, url.absoluteString != fallbackURL?.absoluteString, let fallbackURL else {
+        result(opened)
+        return
+      }
+      self?.openSettingsURL(fallbackURL, fallbackURL: nil, result: result)
+    }
+    if let windowScene = window?.windowScene {
+      windowScene.open(url, options: nil, completionHandler: completion)
+      return
+    }
+    UIApplication.shared.open(url, options: [:], completionHandler: completion)
   }
 
   private func exportJsonFile(
