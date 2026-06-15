@@ -77,12 +77,14 @@ class _AppShellState extends ConsumerState<AppShell>
     final items = ref.watch(appliedCarMaintenanceItemsProvider);
     final records = ref.watch(appliedCarRecordsProvider);
     final today = ref.watch(effectiveTodayProvider);
+    final parkingCountdown = ref.watch(parkingCountdownProvider);
     _syncReminderNotifications(
       settingsValue: notificationSettings,
       carValue: appliedCar,
       itemsValue: items,
       recordsValue: records,
       todayValue: today,
+      parkingCountdownValue: parkingCountdown,
     );
     final pages = [
       const _ReminderPreviewPage(),
@@ -158,6 +160,7 @@ class _AppShellState extends ConsumerState<AppShell>
     required AsyncValue<List<MaintenanceItem>> itemsValue,
     required AsyncValue<List<MaintenanceRecord>> recordsValue,
     required AsyncValue<LocalDate> todayValue,
+    required AsyncValue<ParkingCountdown?> parkingCountdownValue,
   }) {
     final settings = settingsValue.maybeWhen(
       data: (value) => value,
@@ -173,6 +176,10 @@ class _AppShellState extends ConsumerState<AppShell>
       orElse: () => null,
     );
     final today = todayValue.maybeWhen(
+      data: (value) => value,
+      orElse: () => null,
+    );
+    final parkingCountdown = parkingCountdownValue.maybeWhen(
       data: (value) => value,
       orElse: () => null,
     );
@@ -194,7 +201,9 @@ class _AppShellState extends ConsumerState<AppShell>
       today: today,
     );
     final systemSignature = settings.systemNotificationsEnabled
-        ? '${settings.dueRepeatFrequency.value}:$dataSignature'
+        ? '${settings.dueRepeatFrequency.value}:'
+              '${_parkingCountdownReminderSignature(parkingCountdown)}:'
+              '$dataSignature'
         : 'system-off';
     final syncGeneration = _notificationSyncGeneration;
     if (_systemNotificationSignature != systemSignature) {
@@ -207,6 +216,7 @@ class _AppShellState extends ConsumerState<AppShell>
           items: items,
           records: records,
           today: today,
+          parkingCountdown: parkingCountdown,
         );
       });
     }
@@ -280,6 +290,7 @@ class _AppShellState extends ConsumerState<AppShell>
     required List<MaintenanceItem> items,
     required List<MaintenanceRecord> records,
     required LocalDate today,
+    required ParkingCountdown? parkingCountdown,
   }) async {
     if (syncGeneration != _notificationSyncGeneration) {
       return;
@@ -329,6 +340,7 @@ class _AppShellState extends ConsumerState<AppShell>
       if (notifications.isEmpty) {
         await LunioNotificationService.instance.rescheduleNotifications(
           notifications,
+          reservedDateTimes: _reservedNotificationDateTimes(parkingCountdown),
         );
         return;
       }
@@ -337,6 +349,7 @@ class _AppShellState extends ConsumerState<AppShell>
       await LunioNotificationService.instance.rescheduleNotifications(
         notifications,
         exactAlarm: exactAlarmGranted,
+        reservedDateTimes: _reservedNotificationDateTimes(parkingCountdown),
       );
     } finally {
       _syncingSystemNotifications = false;
@@ -7055,10 +7068,27 @@ Future<List<LunioScheduledNotification>> _buildScheduledNotifications({
         repeatFrequency: MaintenanceRules.mileageUpdateFrequencyForRecords(
           records,
         ),
+        scheduledMinuteOffset: 5,
       ),
     );
   }
   return notifications;
+}
+
+List<DateTime> _reservedNotificationDateTimes(
+  ParkingCountdown? parkingCountdown,
+) {
+  if (parkingCountdown == null) {
+    return const [];
+  }
+  return [parkingCountdown.endsAt];
+}
+
+String _parkingCountdownReminderSignature(ParkingCountdown? parkingCountdown) {
+  if (parkingCountdown == null) {
+    return 'parking:none';
+  }
+  return 'parking:${parkingCountdown.endsAt.toIso8601String()}';
 }
 
 String _reminderNotificationDataSignature({

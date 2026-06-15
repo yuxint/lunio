@@ -94,7 +94,7 @@ void main() {
     );
   });
 
-  test('maintenance notifications use a precise 9:00 schedule', () async {
+  test('reminder notifications use alert channel at precise 9:00', () async {
     await LunioNotificationService.instance.rescheduleNotifications([
       const LunioScheduledNotification(
         id: 8000,
@@ -103,20 +103,76 @@ void main() {
         repeatFrequency: ReminderRepeatFrequency.weekly,
         occurrenceCount: 1,
       ),
+      const LunioScheduledNotification(
+        id: 8900,
+        title: '更新车辆里程',
+        body: '建议更新测试车辆的当前里程。',
+        repeatFrequency: ReminderRepeatFrequency.monthly,
+        scheduledMinuteOffset: 5,
+        occurrenceCount: 1,
+      ),
     ]);
 
-    final scheduledCall = notificationCalls.singleWhere(
+    final scheduledCalls = notificationCalls
+        .where((call) => call.method == 'zonedSchedule')
+        .toList();
+    expect(scheduledCalls, hasLength(2));
+    final scheduledByTitle = <String, DateTime>{};
+    for (final scheduledCall in scheduledCalls) {
+      final arguments = scheduledCall.arguments as Map<Object?, Object?>;
+      final scheduledDate = DateTime.parse(
+        arguments['scheduledDateTime'] as String,
+      );
+      expect(scheduledDate.second, 0);
+      scheduledByTitle[arguments['title'] as String] = scheduledDate;
+      final specifics = arguments['platformSpecifics'] as Map<Object?, Object?>;
+      expect(specifics['channelId'], 'lunio_reminders_alerts');
+      expect(specifics['importance'], 4);
+      expect(specifics['priority'], 1);
+      expect(specifics['category'], 'reminder');
+      expect(specifics['scheduleMode'], 'exactAllowWhileIdle');
+    }
+    expect(scheduledByTitle['保养提醒']!.hour, 9);
+    expect(scheduledByTitle['保养提醒']!.minute, 0);
+    expect(scheduledByTitle['更新车辆里程']!.hour, 9);
+    expect(scheduledByTitle['更新车辆里程']!.minute, 5);
+  });
+
+  test('reminder notifications avoid parking countdown due time', () async {
+    await LunioNotificationService.instance.rescheduleNotifications(
+      [
+        const LunioScheduledNotification(
+          id: 8000,
+          title: '保养提醒',
+          body: '测试车辆有保养项目到期。',
+          repeatFrequency: ReminderRepeatFrequency.weekly,
+          occurrenceCount: 1,
+        ),
+        const LunioScheduledNotification(
+          id: 8900,
+          title: '更新车辆里程',
+          body: '建议更新测试车辆的当前里程。',
+          repeatFrequency: ReminderRepeatFrequency.monthly,
+          scheduledMinuteOffset: 5,
+          occurrenceCount: 1,
+        ),
+      ],
+      reservedDateTimes: [_nextReminderDate()],
+    );
+
+    final scheduledByTitle = <String, DateTime>{};
+    for (final scheduledCall in notificationCalls.where(
       (call) => call.method == 'zonedSchedule',
-    );
-    final arguments = scheduledCall.arguments as Map<Object?, Object?>;
-    final scheduledDate = DateTime.parse(
-      arguments['scheduledDateTime'] as String,
-    );
-    expect(scheduledDate.hour, 9);
-    expect(scheduledDate.minute, 0);
-    expect(scheduledDate.second, 0);
-    final specifics = arguments['platformSpecifics'] as Map<Object?, Object?>;
-    expect(specifics['scheduleMode'], 'exactAllowWhileIdle');
+    )) {
+      final arguments = scheduledCall.arguments as Map<Object?, Object?>;
+      scheduledByTitle[arguments['title'] as String] = DateTime.parse(
+        arguments['scheduledDateTime'] as String,
+      );
+    }
+    expect(scheduledByTitle['保养提醒']!.hour, 9);
+    expect(scheduledByTitle['保养提醒']!.minute, 5);
+    expect(scheduledByTitle['更新车辆里程']!.hour, 9);
+    expect(scheduledByTitle['更新车辆里程']!.minute, 10);
   });
 
   test(
@@ -173,8 +229,12 @@ void main() {
       expect(scheduleArguments['body'], '免费停车时间已到，记得及时离场。');
       final scheduleSpecifics =
           scheduleArguments['platformSpecifics'] as Map<Object?, Object?>;
-      expect(scheduleSpecifics['channelId'], 'lunio_parking');
+      expect(scheduleSpecifics['channelId'], 'lunio_parking_due');
       expect(scheduleSpecifics['icon'], 'ic_lunio_notification');
+      expect(scheduleSpecifics['importance'], 4);
+      expect(scheduleSpecifics['priority'], 1);
+      expect(scheduleSpecifics['category'], 'alarm');
+      expect(scheduleSpecifics['audioAttributesUsage'], 4);
       expect(scheduleSpecifics['scheduleMode'], 'exactAllowWhileIdle');
     },
   );
@@ -203,4 +263,13 @@ String _formatClock(DateTime dateTime) {
   final minute = dateTime.minute.toString().padLeft(2, '0');
   final second = dateTime.second.toString().padLeft(2, '0');
   return '$hour:$minute:$second';
+}
+
+DateTime _nextReminderDate() {
+  final now = DateTime.now();
+  var next = DateTime(now.year, now.month, now.day, 9);
+  if (!next.isAfter(now)) {
+    next = next.add(const Duration(days: 1));
+  }
+  return next;
 }

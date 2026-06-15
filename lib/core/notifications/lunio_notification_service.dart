@@ -13,6 +13,7 @@ class LunioScheduledNotification {
     required this.title,
     required this.body,
     required this.repeatFrequency,
+    this.scheduledMinuteOffset = 0,
     this.occurrenceCount = 8,
   });
 
@@ -20,6 +21,7 @@ class LunioScheduledNotification {
   final String title;
   final String body;
   final ReminderRepeatFrequency repeatFrequency;
+  final int scheduledMinuteOffset;
   final int occurrenceCount;
 }
 
@@ -122,24 +124,36 @@ class LunioNotificationService {
   Future<void> rescheduleNotifications(
     List<LunioScheduledNotification> notifications, {
     bool exactAlarm = true,
+    List<DateTime> reservedDateTimes = const [],
   }) async {
     await initialize();
     await cancelLunioNotifications();
+    final occupiedScheduleSlots = reservedDateTimes
+        .map(_scheduleSlotKey)
+        .toSet();
     for (final notification in notifications) {
-      var scheduledDate = _nextScheduleDate(notification.repeatFrequency);
+      var scheduledDate = _nextScheduleDate(
+        notification.repeatFrequency,
+        minuteOffset: notification.scheduledMinuteOffset,
+      );
       for (var index = 0; index < notification.occurrenceCount; index++) {
+        final adjustedDate = _firstAvailableScheduleDate(
+          scheduledDate,
+          occupiedScheduleSlots,
+        );
         await _plugin.zonedSchedule(
           id: notification.id + index,
           title: notification.title,
           body: notification.body,
-          scheduledDate: scheduledDate,
+          scheduledDate: adjustedDate,
           notificationDetails: const NotificationDetails(
             android: AndroidNotificationDetails(
-              'lunio_reminders',
-              'Lunio 提醒',
+              'lunio_reminders_alerts',
+              'Lunio 到期提醒',
               channelDescription: '车辆保养和里程更新提醒',
               importance: Importance.high,
               priority: Priority.high,
+              category: AndroidNotificationCategory.reminder,
               icon: _androidNotificationIcon,
             ),
             iOS: DarwinNotificationDetails(
@@ -186,11 +200,13 @@ class LunioNotificationService {
       scheduledDate: scheduledDate,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
-          'lunio_parking',
-          'Lunio 停车计时',
+          'lunio_parking_due',
+          'Lunio 停车到点提醒',
           channelDescription: '停车倒计时到点提醒',
           importance: Importance.high,
           priority: Priority.high,
+          category: AndroidNotificationCategory.alarm,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
           icon: _androidNotificationIcon,
         ),
         iOS: DarwinNotificationDetails(
@@ -268,9 +284,18 @@ class LunioNotificationService {
     }
   }
 
-  tz.TZDateTime _nextScheduleDate(ReminderRepeatFrequency frequency) {
+  tz.TZDateTime _nextScheduleDate(
+    ReminderRepeatFrequency frequency, {
+    int minuteOffset = 0,
+  }) {
     final now = tz.TZDateTime.now(tz.local);
-    var next = tz.TZDateTime(tz.local, now.year, now.month, now.day, 9);
+    var next = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      9,
+    ).add(Duration(minutes: minuteOffset));
     if (!next.isAfter(now)) {
       next = next.add(const Duration(days: 1));
     }
@@ -305,5 +330,26 @@ class LunioNotificationService {
         date.minute,
       ),
     };
+  }
+
+  tz.TZDateTime _firstAvailableScheduleDate(
+    tz.TZDateTime date,
+    Set<String> occupiedSlots,
+  ) {
+    var candidate = date;
+    while (occupiedSlots.contains(_scheduleSlotKey(candidate))) {
+      candidate = candidate.add(const Duration(minutes: 5));
+    }
+    occupiedSlots.add(_scheduleSlotKey(candidate));
+    return candidate;
+  }
+
+  String _scheduleSlotKey(DateTime dateTime) {
+    final localDateTime = tz.TZDateTime.from(dateTime, tz.local);
+    return '${localDateTime.year}-'
+        '${localDateTime.month.toString().padLeft(2, '0')}-'
+        '${localDateTime.day.toString().padLeft(2, '0')} '
+        '${localDateTime.hour.toString().padLeft(2, '0')}:'
+        '${localDateTime.minute.toString().padLeft(2, '0')}';
   }
 }
