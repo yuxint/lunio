@@ -19,6 +19,7 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 - 保养提醒进度计算。
 - App 内提醒弹窗。
 - 系统本地通知调度。
+- 提醒页停车倒计时。
 - JSON 备份导出和恢复。
 - 开发者模式下的手动日期。
 - 浅色、深色和跟随系统主题。
@@ -30,6 +31,7 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 - 支付、订单、预约和门店。
 - 图片附件、OCR 和保养单扫描。
 - 多设备实时协作。
+- iOS Live Activity、Dynamic Island 和 Widget Extension。
 
 ## 3. 数据版本和稳定标识
 
@@ -367,10 +369,13 @@ Lunio 当前有两类通知：
 - 每次重排先取消 ID 8000 到 8999 范围内的 Lunio 通知。
 - 保养到期通知使用起始 ID 8000。
 - 更新车辆里程通知使用起始 ID 8900。
+- 停车倒计时到点通知使用固定 ID 9001。
+- Android 停车倒计时常驻通知使用固定 ID 9002。
 - 每条通知默认预排 8 次。
 - 首次通知时间为本地时区下一个 09:00；如果今天 09:00 已过，则从明天 09:00 开始。
 - 每周、每 2 周、每 3 周使用固定天数递增。
 - 每月使用本地时区月份递增。
+- 常规保养和里程更新通知会避开停车倒计时到点时间，避免与停车到点通知落在同一分钟。
 
 系统通知内容：
 
@@ -447,9 +452,67 @@ App 内通知在壳层根据当前数据即时检查。
 - 车辆 `updatedAt` 不只在手动更新里程时变化；记录保存抬高车辆里程也会更新它。
 - 如果车辆里程刚因记录保存被抬高，里程更新提醒会按新的 `updatedAt` 延后。
 
-## 8. 频率计算逻辑
+## 8. 停车倒计时
 
-### 8.1 保养到期通知频率
+停车倒计时是提醒页里的临时高频工具，不属于车辆、保养项目或保养记录。
+
+### 8.1 数据存储
+
+存储规则：
+
+- 停车倒计时保存在 `app_preferences.parkingCountdown`。
+- 内容是 JSON，包含 `startedAt` 和 `durationSeconds`。
+- `durationSeconds` 必须大于 0。
+- `endsAt = startedAt + durationSeconds`。
+- JSON 解析失败时按没有停车倒计时处理。
+- 停车倒计时不进入备份 JSON；导出内容不包含 `parkingCountdown` 或其他 `app_preferences`。
+
+清理规则：
+
+- 用户点击结束倒计时会删除 `parkingCountdown`。
+- 清空数据会删除所有 App 偏好，因此也会删除停车倒计时。
+- 恢复备份会先清空 App 偏好，因此不会保留恢复前的停车倒计时。
+
+### 8.2 进度和状态
+
+计算入口是 `ParkingCountdownRules.progress`。
+
+规则：
+
+- 如果当前时间早于到点时间，按剩余毫秒计算剩余百分比。
+- 剩余百分比大于 20：状态为正常。
+- 剩余百分比小于等于 20：状态为即将到点。
+- 当前时间达到或超过到点时间：状态为已超时。
+- 超时时 `remainingSeconds=0`，并按超出时长计算 `expiredSeconds`。
+
+展示规则：
+
+- 提醒页只有存在停车倒计时时展示停车倒计时卡片。
+- 停车倒计时卡片位于当前车辆卡片和保养提醒列表之间。
+- 倒计时运行中，开始停车倒计时入口禁用，避免叠加多个倒计时。
+- 入场时间使用时、分、秒滚轮选择。
+- 免费时长使用整数分钟输入，快捷时长 chip 只是快速填值。
+
+### 8.3 通知
+
+系统通知开启时，保存停车倒计时会调度到点提醒。
+
+通知规则：
+
+- 保存新倒计时前先取消已有停车倒计时通知。
+- 如果到点时间已经不晚于当前时间，不再调度到点通知。
+- 到点通知标题为“停车倒计时”，内容提示免费停车时间已到。
+- 到点通知 payload 为 `lunio:parkingCountdown`。
+- Android 优先使用 exact alarm；无法使用精确闹钟时回退到 inexact 调度。
+- Android 会额外展示 `lunio_parking_ongoing` 常驻通知，使用系统 chronometer 倒计时显示免费离场时间。
+- 结束倒计时会同时取消到点提醒和 Android 常驻通知。
+- 关闭系统通知、清空数据和恢复备份时，也必须清理停车倒计时通知。
+
+当前仓库没有 iOS Live Activity、Dynamic Island 或 Widget Extension 接线，停车倒计时的系统外展示只按本地通知能力处理。
+
+## 9. 频率计算逻辑
+
+### 9.1 保养到期通知频率
 
 保养到期系统通知频率直接来自用户设置：
 
@@ -459,7 +522,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 当前 `_maintenanceRepeatFrequency` 不根据项目严重程度、超期天数或车辆使用强度动态调整，直接返回设置值。
 
-### 8.2 里程更新提醒频率
+### 9.2 里程更新提醒频率
 
 里程更新频率由最近保养节奏推导。
 
@@ -494,9 +557,9 @@ App 内通知在壳层根据当前数据即时检查。
 - 每 3 周：上次日期 + 21 天。
 - 每月：上次日期加 1 个月，月底日期按 `LocalDate.addMonths` 收敛。
 
-## 9. 保养记录流程
+## 10. 保养记录流程
 
-### 9.1 新增记录
+### 10.1 新增记录
 
 新增记录表单分两步。
 
@@ -529,7 +592,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 同一事务内校验同车同日同项目唯一。
 - 如果记录里程高于车辆当前里程，同步抬高车辆当前里程。
 
-### 9.2 编辑记录
+### 10.2 编辑记录
 
 编辑记录也走两步流程。
 
@@ -542,7 +605,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 车辆当前里程只会被更高记录里程抬高，不会回退。
 - 只有所选项目允许在确认页同步更新提醒间隔。
 
-### 9.3 按项目删除
+### 10.3 按项目删除
 
 按项目维度删除记录时：
 
@@ -552,9 +615,9 @@ App 内通知在壳层根据当前数据即时检查。
 
 删除保养记录不会自动回退车辆当前里程。
 
-## 10. 保养项目和车辆配置流程
+## 11. 保养项目和车辆配置流程
 
-### 10.1 创建车辆
+### 11.1 创建车辆
 
 创建车辆时：
 
@@ -564,7 +627,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 如果用户在新增车辆流程中调整项目配置，最终保存时应以页面草稿统一写入，而不是在恢复默认或编辑草稿时提前落库。
 
-### 10.2 编辑保养项目
+### 11.2 编辑保养项目
 
 编辑项目时可调整：
 
@@ -578,7 +641,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 禁用和删除都必须保证该车辆至少还有一个启用项目。
 
-### 10.3 默认模板维护
+### 11.3 默认模板维护
 
 启动 bootstrap 会保证内置车型和默认保养项目存在。
 
@@ -589,9 +652,9 @@ App 内通知在壳层根据当前数据即时检查。
 - 对权威默认车型，如果现有模板与内置模板不一致，会先删除该车型默认模板，再按内置模板重建。
 - 这只影响 `vehicle_default_maintenance_items`，不会直接改已经创建车辆的 `maintenance_items`。
 
-## 11. 备份导出和恢复
+## 12. 备份导出和恢复
 
-### 11.1 导出
+### 12.1 导出
 
 导出结构：
 
@@ -608,7 +671,9 @@ App 内通知在壳层根据当前数据即时检查。
 - 费用导出为 `costCents`。
 - 里程导出为 `mileageKm`。
 
-### 11.2 恢复
+当前备份不导出 `app_preferences`。这意味着当前应用车辆、开发者模式、手动日期、主题模式、通知设置、提醒延后/确认状态和停车倒计时都不随备份迁移。
+
+### 12.2 恢复
 
 恢复入口会先让用户确认，再选择 JSON 文件。
 
@@ -625,6 +690,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 恢复时维护源 item ID 到新 item ID 的映射。
 - 记录恢复时按映射写入新 car ID 和新 item ID。
 - 恢复后当前应用车辆写为第一辆恢复出来的车辆。
+- 恢复后手动日期、主题模式、通知设置、提醒延后/确认状态和停车倒计时都保持清空状态，除非后续用户重新设置。
 - 如果恢复失败，事务回滚，不留下半导入状态。
 
 引用校验：
@@ -636,7 +702,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 保养记录项目必须引用存在的项目。
 - 保养记录项目必须属于该记录车辆。
 
-### 11.3 清空数据
+### 12.3 清空数据
 
 清空数据会删除：
 
@@ -654,7 +720,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 修改恢复逻辑时要特别检查默认项目唯一约束和 bootstrap 内置模板是否会互相覆盖。
 - 清空后 bootstrap provider 会再次补齐内置车型和默认项目。
 
-## 12. 偏好 key
+## 13. 偏好 key
 
 重要偏好 key：
 
@@ -668,6 +734,7 @@ App 内通知在壳层根据当前数据即时检查。
 - `maintenanceDueEnabled`：保养到期提醒是否开启。
 - `maintenanceDueRepeat`：保养到期系统通知重复频率。
 - `systemNotificationPermissionRequested`：是否请求过系统通知权限。
+- `parkingCountdown`：停车倒计时临时状态，JSON 值，不进入备份。
 - `maintenanceReminderSnoozedUntil:{itemId}`：某保养项目延后提醒到期日。
 - `maintenanceReminderAcknowledgedOn:{itemId}`：某保养项目当天已确认。
 - `mileageUpdateSnoozedUntil:{carId}`：某车辆里程更新延后提醒到期日。
@@ -680,7 +747,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 通知触发和抑制逻辑。
 - 备份恢复是否应保留或清空相关偏好。
 
-## 13. 全局业务约束
+## 14. 全局业务约束
 
 日期：
 
@@ -713,6 +780,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 保养记录按车辆隔离。
 - 提醒、通知和记录列表按当前应用车辆隔离。
 - 删除车辆必须清理车辆边界内的数据。
+- 停车倒计时不按车辆隔离，是全局临时状态；恢复备份和清空数据会清掉它。
 
 通知：
 
@@ -720,8 +788,9 @@ App 内通知在壳层根据当前数据即时检查。
 - 通知只关心到期和超期项目。
 - 当天确认只压制当天。
 - 15 天延后包含到期当天，即 `snoozedUntil >= today` 时仍被压制。
+- 停车倒计时到点通知和 Android 常驻通知必须一起调度或一起取消。
 
-## 14. 高风险修改点
+## 15. 高风险修改点
 
 修改以下逻辑时，应同步补充或检查测试：
 
@@ -729,6 +798,8 @@ App 内通知在壳层根据当前数据即时检查。
 - `MaintenanceRules.mileageUpdateFrequencyForRecords`：影响里程更新提醒频率。
 - `_buildReminderRows`：影响提醒排序、通知摘要和到期弹窗。
 - `_buildScheduledNotifications`：影响系统通知内容和调度。
+- `ParkingCountdownRules.progress`：影响停车倒计时卡片状态、颜色和文案。
+- `LunioNotificationService.scheduleParkingCountdownNotification`：影响停车倒计时到点提醒和 Android 常驻通知。
 - `_showDueInAppNotifications`：影响 App 内弹窗、当天确认和延后提醒。
 - `saveMaintenanceRecordWithItemUpdates` / `updateMaintenanceRecordWithItemUpdates`：影响记录保存和提醒间隔回写。
 - `restoreBackupPayload`：影响备份恢复事务、ID 重映射和默认数据冲突。
@@ -741,16 +812,19 @@ App 内通知在壳层根据当前数据即时检查。
 - App 内通知和关键交互：`flutter test test/widget_test.dart`。
 - 普通 Dart/Flutter 改动：先跑 `flutter analyze`。
 
-## 15. 当前代码来源
+## 16. 当前代码来源
 
 本文档按当前仓库代码梳理，主要事实源：
 
 - `lib/domain/rules/maintenance_rules.dart`
+- `lib/domain/rules/parking_countdown_rules.dart`
 - `lib/domain/rules/record_rules.dart`
 - `lib/domain/rules/applied_car_rules.dart`
 - `lib/core/date/local_date.dart`
 - `lib/core/date/app_date_context.dart`
 - `lib/core/notifications/lunio_notification_service.dart`
+- `lib/core/platform/native_files.dart`
+- `lib/core/platform/native_notification_settings.dart`
 - `lib/app/providers.dart`
 - `lib/features/shell/app_shell.dart`
 - `lib/data/database/app_database.dart`

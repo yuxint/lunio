@@ -1,335 +1,233 @@
-# v1 数据库表结构
+# 当前数据库表结构
 
-本文描述 Lunio Flutter 迁移第一版 SQLite 表结构。讨论时可以按 MySQL 视角表达，落地时统一转换成 SQLite 口径。
+本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `4`。
 
-当前 schema 版本为 `1`，已按当前讨论结果定为第一版。
+本文只记录当前代码事实，不定义未来迁移方案。事实源是 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
-## MySQL 到 SQLite 的转换约定
+## 版本和迁移策略
 
-- MySQL `AUTO_INCREMENT BIGINT/INT PRIMARY KEY` 转为 SQLite `INTEGER PRIMARY KEY AUTOINCREMENT`。
-- MySQL `DATETIME` 转为 SQLite `TEXT`，建议存 ISO-8601 字符串。
-- 金额字段使用 SQLite `INTEGER`，单位为分，页面层负责转换成元并保留 2 位小数。
-- MySQL `BOOLEAN/TINYINT(1)` 转为 SQLite `INTEGER`，`0/1` 表示 false/true。
-- MySQL 表注释和字段注释转为 DDL 前后的 `--` 注释。
-- 当前不声明数据库外键约束，但字段语义会注明来源表。
+- 当前数据库：`schemaVersion = 4`。
+- schema 1 升级到 2 时，现有表会被删除并重建。
+- schema 2 升级到 3 时，迁移 `maintenance_items`。
+- schema 3 升级到 4 时，迁移 `cars`。
+- 当前代码没有声明数据库外键约束；关联完整性由 Repository 在事务中校验和维护。
 
-## v1 DDL
+## 类型约定
 
-```sql
--- 车辆表。
--- 删除车辆时采用物理删除，并由业务层同事务删除：
--- 1. maintenance_items 中 cars_id 等于该车辆 id 的数据；
--- 2. maintenance_records 中 car_id 等于该车辆 id 的数据；
--- 3. maintenance_record_items 中 car_id 等于该车辆 id 的数据；
--- 4. app_preferences 中 key='appliedCarId' 且 value 等于该车辆 id 的数据。
--- vehicle_default_maintenance_items 是基础数据，不随车辆删除。
-CREATE TABLE cars (
-  -- 自增主键。
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+- 主键使用 SQLite `INTEGER`，由代码显式写入或通过 `_nextId()` 生成。
+- 业务日期保存为 `TEXT`，格式为 `yyyy-MM-dd`。
+- 同步更新时间保存为 ISO-8601 `TEXT`。
+- 金额保存为 `INTEGER`，单位为分。
+- 布尔值由 Drift `BoolColumn` 映射到 SQLite 整数语义。
 
-  -- 品牌，例如“本田”“日产”。
-  brand TEXT NOT NULL,
-
-  -- 车型，例如“22款思域”“22款轩逸”。
-  model TEXT NOT NULL,
-
-  -- 当前里程，单位公里。
-  current_mileage_km INTEGER NOT NULL,
-
-  -- 上路日期，业务格式 yyyy-MM-dd。
-  road_date TEXT NOT NULL,
-
-  -- 云同步预留状态，例如 synced / pendingCreate / pendingUpdate / pendingDelete。
-  sync_status TEXT NOT NULL DEFAULT 'synced',
-
-  -- 最后更新时间，ISO-8601 字符串。
-  updated_at TEXT NOT NULL,
-
-  -- 云同步/冲突处理预留版本号。
-  version INTEGER NOT NULL DEFAULT 1
-);
-
--- 同一品牌 + 车型 + 上路日期唯一。
--- brand_model_key 不作为表字段，只作为表达车型目录的口径，不用于车辆唯一性。
-CREATE UNIQUE INDEX idx_cars_brand_model_road_date
-ON cars (brand, model, road_date);
-
-
--- 车辆默认保养项目基础数据表。
--- 这张表不归属于某一辆用户车辆，删除 cars 时不联动删除。
--- 新增车辆时，用户选择品牌 + 车型后，从本表加载匹配的默认项目列表；
--- 保存车辆时，再把这些默认项目复制插入 maintenance_items。
-CREATE TABLE vehicle_default_maintenance_items (
-  -- 自增主键。
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-  -- 车辆品牌。
-  vehicle_brand TEXT NOT NULL,
-
-  -- 车型。
-  vehicle_model TEXT NOT NULL,
-
-  -- 项目名称。
-  item_name TEXT NOT NULL,
-
-  -- 是否按里程提醒；0=false，1=true。
-  remind_by_mileage INTEGER NOT NULL,
-
-  -- 是否按时间提醒；0=false，1=true。
-  remind_by_time INTEGER NOT NULL,
-
-  -- 里程提醒间隔，单位公里。
-  mileage_interval_km INTEGER,
-
-  -- 时间提醒间隔，单位月。
-  time_interval_months INTEGER,
-
-  -- 未超期值上限。
-  -- 进度条绿色范围固定为 0 到 not_overdue_upper_limit，默认 100。
-  not_overdue_upper_limit REAL NOT NULL DEFAULT 100,
-
-  -- 超期值上限。
-  -- 进度条黄色范围为 not_overdue_upper_limit 到 overdue_upper_limit，默认 125。
-  -- 大于 overdue_upper_limit 时为红色。
-  overdue_upper_limit REAL NOT NULL DEFAULT 125,
-
-  -- 项目排序。
-  sort_order INTEGER NOT NULL,
-
-  -- 云同步预留状态，例如 synced / pendingCreate / pendingUpdate / pendingDelete。
-  sync_status TEXT NOT NULL DEFAULT 'synced',
-
-  -- 最后更新时间，ISO-8601 字符串。
-  updated_at TEXT NOT NULL,
-
-  -- 云同步/冲突处理预留版本号。
-  version INTEGER NOT NULL DEFAULT 1
-);
-
--- 按品牌 + 车型加载默认项目列表。
-CREATE INDEX idx_default_items_brand_model
-ON vehicle_default_maintenance_items (vehicle_brand, vehicle_model);
-
--- 同一品牌 + 车型 + 项目名称唯一。
--- 注意：如果唯一索引只有 vehicle_brand + vehicle_model，则一个车型只能配置一条默认保养项目。
--- 当前表是一行一个项目，所以这里建议使用 vehicle_brand + vehicle_model + item_name。
-CREATE UNIQUE INDEX idx_default_items_brand_model_name
-ON vehicle_default_maintenance_items (vehicle_brand, vehicle_model, item_name);
-
-
--- 保养项目表。
--- cars_id 来源于 cars.id，但当前不声明数据库外键约束。
--- 默认项目和自定义项目都按用户车辆持久化。
-CREATE TABLE maintenance_items (
-  -- 自增主键。
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-  -- 所属车辆 ID，来源于 cars.id。
-  cars_id INTEGER NOT NULL,
-
-  -- 展示名称；不作为跨版本稳定主键。
-  name TEXT NOT NULL,
-
-  -- 是否启用；禁用项目允许被历史记录继续引用，只是在新增记录时不展示。
-  enabled INTEGER NOT NULL DEFAULT 1,
-
-  -- 是否按里程提醒；0=false，1=true。
-  remind_by_mileage INTEGER NOT NULL,
-
-  -- 是否按时间提醒；0=false，1=true。
-  remind_by_time INTEGER NOT NULL,
-
-  -- 里程提醒间隔，单位公里。
-  mileage_interval_km INTEGER,
-
-  -- 时间提醒间隔，单位月。
-  time_interval_months INTEGER,
-
-  -- 未超期值上限。
-  -- 进度条绿色范围固定为 0 到 not_overdue_upper_limit，默认 100。
-  not_overdue_upper_limit REAL NOT NULL DEFAULT 100,
-
-  -- 超期值上限。
-  -- 进度条黄色范围为 not_overdue_upper_limit 到 overdue_upper_limit，默认 125。
-  -- 大于 overdue_upper_limit 时为红色。
-  overdue_upper_limit REAL NOT NULL DEFAULT 125,
-
-  -- 同一车辆内的项目排序。
-  sort_order INTEGER NOT NULL,
-
-  -- 云同步预留状态，例如 synced / pendingCreate / pendingUpdate / pendingDelete。
-  sync_status TEXT NOT NULL DEFAULT 'synced',
-
-  -- 最后更新时间，ISO-8601 字符串。
-  updated_at TEXT NOT NULL,
-
-  -- 云同步/冲突处理预留版本号。
-  version INTEGER NOT NULL DEFAULT 1
-);
-
--- 同一车辆内项目名称唯一。
-CREATE UNIQUE INDEX idx_maintenance_items_cars_name
-ON maintenance_items (cars_id, name);
-
-
--- 保养记录主表。
--- car_id 来源于 cars.id，但当前不声明数据库外键约束。
--- 删除记录采用物理删除，并由业务层同步删除该记录关联的记录项目。
-CREATE TABLE maintenance_records (
-  -- 自增主键。
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-  -- 所属车辆 ID，来源于 cars.id。
-  car_id INTEGER NOT NULL,
-
-  -- 保养日期，业务格式 yyyy-MM-dd。
-  date TEXT NOT NULL,
-
-  -- 保养发生时里程，单位公里。
-  mileage_km INTEGER NOT NULL,
-
-  -- 费用，单位分。页面层负责转换成元并保留 2 位小数。
-  cost_cents INTEGER NOT NULL,
-
-  -- 备注。
-  note TEXT,
-
-  -- 云同步预留状态，例如 synced / pendingCreate / pendingUpdate / pendingDelete。
-  sync_status TEXT NOT NULL DEFAULT 'synced',
-
-  -- 最后更新时间，ISO-8601 字符串。
-  updated_at TEXT NOT NULL,
-
-  -- 云同步/冲突处理预留版本号。
-  version INTEGER NOT NULL DEFAULT 1
-);
-
--- 同一车辆同一天只能有一条保养记录。
-CREATE UNIQUE INDEX idx_maintenance_records_car_date
-ON maintenance_records (car_id, date);
-
-
--- 保养记录项目表。
--- 用于表达“一条保养记录包含多个保养项目”。
--- maintenance_record_id 来源于 maintenance_records.id，item_id 来源于 maintenance_items.id。
--- 当前不声明数据库外键约束。
-CREATE TABLE maintenance_record_items (
-  -- 自增主键。
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-  -- 保养记录 ID，来源于 maintenance_records.id。
-  maintenance_record_id INTEGER NOT NULL,
-
-  -- 所属车辆 ID，来源于 cars.id。
-  -- 这里保留冗余值，用于表达同车同日同项目唯一口径并减少查询 join。
-  car_id INTEGER NOT NULL,
-
-  -- 保养项目 ID，来源于 maintenance_items.id。
-  item_id INTEGER NOT NULL,
-
-  -- 保养日期，业务格式 yyyy-MM-dd。
-  -- 这里按当前讨论结果冗余，用于数据库层建立同车同日同项目唯一索引。
-  date TEXT NOT NULL
-);
-
--- 同一车辆同一天同项目只能出现一次。
--- 因为 maintenance_records 已经有 UNIQUE(car_id, date)，
--- 所以该索引也可以覆盖“同一条保养记录内同一项目不能重复”的约束。
-CREATE UNIQUE INDEX idx_maintenance_record_items_car_date_item
-ON maintenance_record_items (car_id, date, item_id);
-
-
--- 应用偏好表。
--- 参与备份，并预留云同步字段。
-CREATE TABLE app_preferences (
-  -- 自增主键。
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-  -- 偏好键，例如 appliedCarId / manualDateEnabled / manualDate。
-  key TEXT NOT NULL,
-
-  -- 偏好值。
-  -- appliedCarId 的值来源于 cars.id。
-  value TEXT,
-
-  -- 云同步预留状态，例如 synced / pendingCreate / pendingUpdate / pendingDelete。
-  sync_status TEXT NOT NULL DEFAULT 'synced',
-
-  -- 最后更新时间，ISO-8601 字符串。
-  updated_at TEXT NOT NULL,
-
-  -- 云同步/冲突处理预留版本号。
-  version INTEGER NOT NULL DEFAULT 1
-);
-
--- 偏好键唯一。
-CREATE UNIQUE INDEX idx_app_preferences_key
-ON app_preferences (key);
-```
-
-## 表结构说明
+## 表结构
 
 ### `cars`
 
-- `id`：所有业务引用车辆时使用的稳定 ID。
-- `brand + model + road_date`：通过唯一索引限制同一品牌+车型+上路日期只能存在一辆车，同车型不同上路日期可分别建车。
-- `brandModelKey`：不再作为字段存在。
-- 删除车辆：物理删除，关联数据由业务层同事务清理。
-- 删除车辆时，`app_preferences` 中 `key='appliedCarId'` 且 `value` 等于该车辆 ID 的数据也要删除。
+车辆表。
+
+字段：
+
+- `id`：主键。
+- `brand`：品牌。
+- `model`：车型。
+- `current_mileage_km`：当前里程，单位公里。
+- `road_date`：上路日期，格式 `yyyy-MM-dd`。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`brand + model + road_date`。
+
+### `vehicle_models`
+
+车型列表表。用于新增车辆时的品牌/车型选项和 bootstrap。
+
+字段：
+
+- `id`：主键。
+- `brand`：品牌。
+- `model`：车型。
+- `sort_order`：排序值。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`brand + model`。
 
 ### `vehicle_default_maintenance_items`
 
-- 这是基础数据表，不归属于用户车辆。
-- 删除 `cars` 不会删除这张表的数据。
-- 新增车辆时，根据用户选择的 `vehicle_brand + vehicle_model` 加载默认保养项目列表。
-- 保存车辆时，把加载并经过用户确认的默认项目复制到 `maintenance_items`。
-- 当前建议：
-  - 用普通索引 `vehicle_brand + vehicle_model` 支持加载。
-  - 用唯一索引 `vehicle_brand + vehicle_model + item_name` 防止同车型下项目名重复。
+车型默认保养项目模板表。它不归属于某一辆用户车辆；创建车辆或恢复默认配置时，会从这里复制到 `maintenance_items`。
+
+字段：
+
+- `id`：主键。
+- `vehicle_brand`：车辆品牌。
+- `vehicle_model`：车型。
+- `item_name`：项目名称。
+- `remind_by_mileage`：是否按里程提醒。
+- `remind_by_time`：是否按时间提醒。
+- `mileage_interval_km`：里程提醒间隔，单位公里，可空。
+- `time_interval_months`：时间提醒间隔，单位月，可空。
+- `not_overdue_upper_limit`：到期阈值，默认 `100`。
+- `overdue_upper_limit`：超期阈值，默认 `125`。
+- `sort_order`：排序值。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`vehicle_brand + vehicle_model + item_name`。
 
 ### `maintenance_items`
 
-- `cars_id`：来源于 `cars.id`。
-- `catalog_key`：已删除。
-- `not_overdue_upper_limit`：未超期值上限，默认 100。
-- `overdue_upper_limit`：超期值上限，默认 125。
-- 进度条颜色：
-  - 绿色：`0 <= progress < not_overdue_upper_limit`。
-  - 黄色：`not_overdue_upper_limit <= progress < overdue_upper_limit`。
-  - 红色：`progress >= overdue_upper_limit`。
+车辆内实际保养项目表。默认项目和用户自定义项目都落在这里，按车辆隔离。
+
+字段：
+
+- `id`：主键。
+- `cars_id`：所属车辆 ID，来源于 `cars.id`。
+- `name`：项目名称。
+- `enabled`：是否启用，默认 `true`。
+- `remind_by_mileage`：是否按里程提醒。
+- `remind_by_time`：是否按时间提醒。
+- `mileage_interval_km`：里程提醒间隔，单位公里，可空。
+- `time_interval_months`：时间提醒间隔，单位月，可空。
+- `not_overdue_upper_limit`：到期阈值，默认 `100`。
+- `overdue_upper_limit`：超期阈值，默认 `125`。
+- `sort_order`：排序值。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
 - 唯一键：`cars_id + name`。
-- 禁用项目：允许被历史记录继续引用；新增记录时不显示禁用项目，这是业务逻辑，不放入数据库约束。
+
+业务注意：
+
+- 禁用项目允许被历史记录继续引用，但不参与提醒和新增记录默认候选。
+- 删除或禁用项目时，Repository/UI 必须保证该车仍至少有一个启用项目。
+- 有历史记录关联的项目不能删除。
 
 ### `maintenance_records`
 
-- `car_id`：来源于 `cars.id`。
-- `cycleKey`：去掉，不再作为字段。
+保养记录主表。
+
+字段：
+
+- `id`：主键。
+- `car_id`：所属车辆 ID，来源于 `cars.id`。
+- `date`：保养日期，格式 `yyyy-MM-dd`。
+- `mileage_km`：保养发生时里程，单位公里。
+- `cost_cents`：费用，单位分。
+- `note`：备注，可空。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
 - 唯一键：`car_id + date`。
-- `cost_cents`：使用 `INTEGER`，单位为分；页面层负责转换成元并展示 2 位小数。
-- 删除记录：物理删除，关联记录项目由业务层同事务清理。
-- 不增加币种字段。
+
+业务注意：
+
+- 同一车辆同一天只能有一条保养记录。
+- 保存记录时，如果记录里程高于车辆当前里程，会抬高车辆当前里程；不会因为删除或编辑记录而回退。
 
 ### `maintenance_record_items`
 
-- `maintenance_record_id`：来源于 `maintenance_records.id`，用于支持一条保养记录包含多个项目。
-- `car_id`：来源于 `cars.id`，当前保留冗余。
-- `item_id`：来源于 `maintenance_items.id`。
-- `date`：按当前讨论结果保留冗余，用于数据库层建立 `car_id + date + item_id` 唯一索引。
-- `cycleItemKey`：不作为字段保留。
-- 不增加 `costShareCents`。
+保养记录和保养项目关联表，用于表达一条记录包含多个项目。
+
+字段：
+
+- `id`：主键。
+- `maintenance_record_id`：保养记录 ID，来源于 `maintenance_records.id`。
+- `car_id`：所属车辆 ID，冗余保存。
+- `item_id`：保养项目 ID，来源于 `maintenance_items.id`。
+- `date`：保养日期，冗余保存，格式 `yyyy-MM-dd`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`car_id + date + item_id`。
+
+业务注意：
+
+- Repository 保存记录时会校验项目存在且属于同一车辆。
+- 同一车辆同一天同一项目只能出现一次。
 
 ### `app_preferences`
 
-- `id`：自增主键。
-- `key`：偏好键，唯一。
-- `value`：偏好值。
-- `appliedCarId`：值来源于 `cars.id`。
-- `sync_status`、`updated_at`、`version`：参与后续云同步和备份。
+应用偏好表。用于当前应用车辆、手动日期、主题、通知设置、提醒抑制和停车倒计时等本地状态。
 
-## 已确认约定
+字段：
 
-1. `vehicle_default_maintenance_items` 使用普通索引 `vehicle_brand + vehicle_model` 加载默认项目列表，使用唯一索引 `vehicle_brand + vehicle_model + item_name` 防止同车型下项目重复。
-2. `maintenance_record_items.date` 保留冗余，保存记录项目时必须与 `maintenance_records.date` 同步写入。
-3. `maintenance_record_items` 只保留唯一索引 `car_id + date + item_id`，不再额外建立 `maintenance_record_id + item_id` 唯一索引。
-4. 金额字段统一使用 `cost_cents INTEGER`，单位为分，页面层负责展示为元。
-5. 当前不声明数据库外键约束，所有关联删除和引用校验由业务层在事务中保证。
+- `id`：主键。
+- `key`：偏好键。
+- `value`：偏好值，可空。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`key`。
+
+重要 key：
+
+- `appliedCarId`
+- `developerModeEnabled`
+- `manualDateEnabled`
+- `manualDate`
+- `themeMode`
+- `systemNotificationsEnabled`
+- `inAppNotificationsEnabled`
+- `maintenanceDueEnabled`
+- `maintenanceDueRepeat`
+- `systemNotificationPermissionRequested`
+- `parkingCountdown`
+- `maintenanceReminderSnoozedUntil:{itemId}`
+- `maintenanceReminderAcknowledgedOn:{itemId}`
+- `mileageUpdateSnoozedUntil:{carId}`
+- `mileageUpdateAcknowledgedOn:{carId}`
+
+## 删除和恢复边界
+
+- 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联，并清理指向该车的 `appliedCarId`。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、车辆和车型列表。
+- 清空数据不删除 `vehicle_default_maintenance_items`；bootstrap 会按内置模板补齐车型和默认项目。
+- 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。
+
+## 备份契约边界
+
+当前 JSON 备份契约版本为 `schemaVersion = 2`，由 `lib/data/backup/backup_codec.dart` 编码/解码。
+
+备份导出包含：
+
+- `cars`
+- `defaultMaintenanceItems`
+- `maintenanceItems`
+- `records`
+
+备份不包含：
+
+- `app_preferences`
+- 当前应用车辆偏好
+- 手动日期和开发者模式
+- 主题和通知设置
+- 提醒延后/确认状态
+- 停车倒计时
+
+恢复备份时，源车辆 ID 和项目 ID 会映射为新 ID；恢复完成后当前应用车辆写为第一辆恢复出的车辆。

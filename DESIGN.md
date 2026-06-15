@@ -1,5 +1,5 @@
 ---
-version: "alpha"
+version: "v1"
 name: "Lunio Vehicle Care"
 description: "A calm, utilitarian mobile design system for a local vehicle maintenance app across iOS and Android."
 colors:
@@ -301,6 +301,8 @@ components:
 
 Lunio Vehicle Care is a calm, utilitarian mobile app design system for personal vehicle maintenance. It should feel like a reliable garage logbook translated into a modern phone interface: quiet, practical, readable, and composed under repeated daily use.
 
+This document now describes the formal v1 product UI. The current Flutter app has real reminder, record, vehicle, backup, notification, parking countdown, manual date, and theme flows; do not treat these screens as placeholder prototypes when making future design changes.
+
 The product is not decorative or editorial. The interface is built around three recurring tasks: check maintenance urgency, record service work, and manage vehicles or backups. Every screen should make the current vehicle obvious, keep actions close to the relevant data, and avoid marketing-style hero sections or ornamental card stacks.
 
 The emotional target is steady confidence. The system uses cool neutral surfaces, diffused shadows, compact information cards, and rounded-but-not-playful geometry. It should feel equally natural on iOS and Android, with no dependency on platform-specific glass, tab, or sheet styling.
@@ -360,6 +362,10 @@ The current vehicle card is the anchor of the reminder screen. It uses the curre
 
 Reminder rows combine a circular progress indicator, item title, status badge, and plain-language remaining distance or time. The row should support normal, warning, and overdue states without changing its structure. Sort high-urgency rows first.
 
+### Parking Countdown
+
+Parking countdown is a temporary but high-priority reminder-screen utility. It sits between the current vehicle card and the maintenance reminder list. It uses the same normal, warning, and danger semantics as maintenance reminders: green for enough time remaining, amber when remaining time is at or below 20%, and red after timeout. The countdown entry uses an iOS-style wheel for entry time and an integer minute input for free duration, with shortcut chips only as accelerators.
+
 ### Records
 
 Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color.
@@ -394,3 +400,4 @@ Toasts are dark neutral surfaces with white or high-contrast text and rounded co
 - Don't use project names or displayed maintenance item names as stable identifiers in product flows.
 - Don't overcrowd the bottom navigation or add more than the three primary tabs without revisiting the information architecture.
 - Don't use heavy dark shadows, glossy glass surfaces, or platform-specific visual tricks that would make iOS and Android diverge.
+- Don't describe iOS Live Activity, Dynamic Island, or widget surfaces as current product UI unless those targets are actually present in the repository.
