@@ -160,6 +160,42 @@ void main() {
     },
   );
 
+  test('bootstraps default maintenance items for sylphy and corolla', () async {
+    await repository.ensureDefaultMaintenanceItems();
+
+    final sylphyItems = await repository.listDefaultItemsForModel(
+      brand: '东风日产',
+      model: '轩逸',
+    );
+    final corollaItems = await repository.listDefaultItemsForModel(
+      brand: '一汽丰田',
+      model: '卡罗拉',
+    );
+
+    expect(_defaultItemRules(sylphyItems), [
+      '机油|true|true|5000|6',
+      '机滤|true|true|5000|6',
+      '空气滤芯|true|false|20000|null',
+      '空调滤芯|true|false|20000|null',
+      '汽油滤芯|true|false|20000|null',
+      '刹车油|true|true|40000|24',
+      '变速箱油|true|false|100000|null',
+      '火花塞|true|false|100000|null',
+      '轮胎换位|true|false|10000|null',
+    ]);
+    expect(_defaultItemRules(corollaItems), [
+      '机油|true|true|10000|6',
+      '机滤|true|true|10000|6',
+      '空调滤芯|true|true|20000|12',
+      '空气滤芯|true|false|40000|null',
+      '刹车油|true|true|40000|24',
+      '变速箱油|true|true|80000|48',
+      '汽油滤芯|true|false|80000|null',
+      '火花塞|true|false|100000|null',
+      '轮胎换位|true|false|10000|null',
+    ]);
+  });
+
   test('writes snowflake ids for all local tables', () async {
     await repository.ensureBootstrapData();
     final carId = await repository.createCarWithDefaultItems(
@@ -1122,4 +1158,12 @@ void main() {
     expect(await database.select(database.cars).get(), hasLength(1));
     expect(await repository.getAppliedCarId(), '$carId');
   });
+}
+
+List<String> _defaultItemRules(List<VehicleDefaultMaintenanceItem> items) {
+  return [
+    for (final item in items)
+      '${item.itemName}|${item.remindByMileage}|${item.remindByTime}|'
+          '${item.mileageIntervalKm}|${item.timeIntervalMonths}',
+  ];
 }

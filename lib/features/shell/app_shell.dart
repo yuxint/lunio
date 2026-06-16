@@ -3189,6 +3189,7 @@ class _AddCarWizard extends StatefulWidget {
     required this.vehicleModels,
     required this.today,
     required this.loadDefaultItems,
+    required this.onMaintenanceStepChanged,
     required this.onSubmit,
   });
 
@@ -3196,6 +3197,7 @@ class _AddCarWizard extends StatefulWidget {
   final LocalDate today;
   final Future<List<VehicleDefaultMaintenanceItem>> Function(Car car)
   loadDefaultItems;
+  final ValueChanged<bool> onMaintenanceStepChanged;
   final Future<void> Function(Car car, List<MaintenanceItem> items) onSubmit;
 
   @override
@@ -3234,7 +3236,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
       items: items,
       saving: saving || loadingItems,
       errorText: errorText,
-      onBack: saving ? null : () => setState(() => carDraft = null),
+      onBack: saving ? null : _returnToCarStep,
       onChanged: (nextItems) => setState(() => itemDrafts = nextItems),
       onAdd: saving ? null : _addItem,
       onRestoreDefaults: saving ? null : () => _restoreDefaultItems(car, items),
@@ -3244,6 +3246,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
 
   Future<void> _handleCarDraft(Car car) async {
     final nextKey = '${car.brand}\u0000${car.model}';
+    widget.onMaintenanceStepChanged(true);
     setState(() {
       carDraft = car;
       loadingItems = itemModelKey != nextKey || itemDrafts == null;
@@ -3274,7 +3277,13 @@ class _AddCarWizardState extends State<_AddCarWizard> {
         loadingItems = false;
         errorText = _friendlyError(error);
       });
+      widget.onMaintenanceStepChanged(false);
     }
+  }
+
+  void _returnToCarStep() {
+    widget.onMaintenanceStepChanged(false);
+    setState(() => carDraft = null);
   }
 
   Future<void> _submit() async {
@@ -3922,54 +3931,72 @@ void _showAddCarSheet(BuildContext context, WidgetRef ref) {
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
-      return _PrototypeSheetFrame(
-        title: '添加车辆',
-        bottomInset: MediaQuery.of(context).viewInsets.bottom,
-        child: Consumer(
-          builder: (context, ref, child) {
-            final vehicleModels = ref.watch(vehicleModelsProvider);
-            final today = ref.watch(effectiveTodayProvider);
-            if (vehicleModels.isLoading || today.isLoading) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (vehicleModels.hasError) {
-              return LunioInlineMessage(message: '车型加载失败，请稍后重试');
-            }
-            if (today.hasError) {
-              return LunioInlineMessage(message: '日期加载失败，请稍后重试');
-            }
-            return vehicleModels.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stackTrace) =>
-                  LunioInlineMessage(message: '车型加载失败，请稍后重试'),
-              data: (models) {
-                if (models.isEmpty) {
-                  return const LunioInlineMessage(message: '暂无可选车型');
+      var isMaintenanceStep = false;
+      return StatefulBuilder(
+        builder: (context, setSheetState) {
+          return _PrototypeSheetFrame(
+            title: isMaintenanceStep ? '保养项目' : '添加车辆',
+            subtitle: isMaintenanceStep ? '以下保养项目只做参考，具体以官方保养手册为准' : null,
+            bottomInset: MediaQuery.of(context).viewInsets.bottom,
+            child: Consumer(
+              builder: (context, ref, child) {
+                final vehicleModels = ref.watch(vehicleModelsProvider);
+                final today = ref.watch(effectiveTodayProvider);
+                if (vehicleModels.isLoading || today.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
                 }
-                return _AddCarWizard(
-                  vehicleModels: models,
-                  today: today.value!,
-                  loadDefaultItems: (car) async {
-                    final repository = ref.read(lunioRepositoryProvider);
-                    await repository.ensureBootstrapData();
-                    return repository.listDefaultItemsForModel(
-                      brand: car.brand,
-                      model: car.model,
-                    );
-                  },
-                  onSubmit: (car, items) async {
-                    final repository = ref.read(lunioRepositoryProvider);
-                    await repository.createCarWithMaintenanceItems(car, items);
-                    invalidateVehicleProviders(ref);
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
+                if (vehicleModels.hasError) {
+                  return LunioInlineMessage(message: '车型加载失败，请稍后重试');
+                }
+                if (today.hasError) {
+                  return LunioInlineMessage(message: '日期加载失败，请稍后重试');
+                }
+                return vehicleModels.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (error, stackTrace) =>
+                      LunioInlineMessage(message: '车型加载失败，请稍后重试'),
+                  data: (models) {
+                    if (models.isEmpty) {
+                      return const LunioInlineMessage(message: '暂无可选车型');
                     }
+                    return _AddCarWizard(
+                      vehicleModels: models,
+                      today: today.value!,
+                      loadDefaultItems: (car) async {
+                        final repository = ref.read(lunioRepositoryProvider);
+                        await repository.ensureBootstrapData();
+                        return repository.listDefaultItemsForModel(
+                          brand: car.brand,
+                          model: car.model,
+                        );
+                      },
+                      onMaintenanceStepChanged: (nextValue) {
+                        if (isMaintenanceStep == nextValue) {
+                          return;
+                        }
+                        setSheetState(() {
+                          isMaintenanceStep = nextValue;
+                        });
+                      },
+                      onSubmit: (car, items) async {
+                        final repository = ref.read(lunioRepositoryProvider);
+                        await repository.createCarWithMaintenanceItems(
+                          car,
+                          items,
+                        );
+                        invalidateVehicleProviders(ref);
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    );
                   },
                 );
               },
-            );
-          },
-        ),
+            ),
+          );
+        },
       );
     },
   );

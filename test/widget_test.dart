@@ -828,11 +828,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
+    expect(find.text('添加车辆'), findsOneWidget);
     expect(find.textContaining('同一品牌车型'), findsNothing);
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
 
     expect(find.text('上一步'), findsOneWidget);
+    expect(find.text('保养项目'), findsOneWidget);
+    expect(find.text('以下保养项目只做参考，具体以官方保养手册为准'), findsOneWidget);
     expect(find.textContaining('同一品牌车型'), findsNothing);
     expect(await database.select(database.cars).get(), isEmpty);
     expect(await database.select(database.maintenanceItems).get(), isEmpty);
