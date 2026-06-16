@@ -2613,7 +2613,7 @@ class _ProfilePreviewPageState extends ConsumerState<_ProfilePreviewPage> {
 }
 
 String _notificationSettingsSubtitle(LunioNotificationSettings settings) {
-  return '手机系统通知、应用内通知 · 到期后：${settings.dueRepeatFrequency.label}';
+  return '手机系统通知、应用内通知';
 }
 
 class _VersionFooter extends StatelessWidget {
@@ -3016,7 +3016,7 @@ class _AddCarFormState extends State<_AddCarForm> {
   String? errorText;
   bool saving = false;
 
-  bool get isEditing => widget.initialCar != null;
+  bool get isEditing => widget.initialCar?.id != null;
 
   @override
   void initState() {
@@ -3209,6 +3209,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
   List<MaintenanceItem>? itemDrafts;
   List<VehicleDefaultMaintenanceItem>? defaultItemTemplates;
   String? itemModelKey;
+  bool editingCarDraft = false;
   bool loadingItems = false;
   bool saving = false;
   String? errorText;
@@ -3217,10 +3218,11 @@ class _AddCarWizardState extends State<_AddCarWizard> {
   Widget build(BuildContext context) {
     final car = carDraft;
     final items = itemDrafts;
-    if (car == null) {
+    if (car == null || editingCarDraft) {
       return _AddCarForm(
         vehicleModels: widget.vehicleModels,
         today: widget.today,
+        initialCar: carDraft,
         submitLabel: '下一步',
         onSubmit: _handleCarDraft,
       );
@@ -3249,6 +3251,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
     widget.onMaintenanceStepChanged(true);
     setState(() {
       carDraft = car;
+      editingCarDraft = false;
       loadingItems = itemModelKey != nextKey || itemDrafts == null;
       errorText = null;
     });
@@ -3274,6 +3277,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
       }
       setState(() {
         carDraft = null;
+        editingCarDraft = false;
         loadingItems = false;
         errorText = _friendlyError(error);
       });
@@ -3283,7 +3287,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
 
   void _returnToCarStep() {
     widget.onMaintenanceStepChanged(false);
-    setState(() => carDraft = null);
+    setState(() => editingCarDraft = true);
   }
 
   Future<void> _submit() async {

@@ -649,7 +649,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 - `ensureVehicleModels` 补齐内置车型。
 - `ensureDefaultMaintenanceItems` 补齐内置默认保养项目。
-- 对权威默认车型，如果现有模板与内置模板不一致，会先删除该车型默认模板，再按内置模板重建。
+- 如果同品牌、车型、项目名的默认模板已经存在，bootstrap 不会覆盖其提醒规则。
 - 这只影响 `vehicle_default_maintenance_items`，不会直接改已经创建车辆的 `maintenance_items`。
 
 ## 12. 备份导出和恢复

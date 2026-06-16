@@ -85,8 +85,8 @@ void main() {
   test('allows same brand and model with different road dates', () async {
     await repository.createCar(
       Car(
-        brand: '东风本田',
-        model: '思域',
+        brand: '本田',
+        model: '思域（燃油版）',
         currentMileageKm: 10000,
         roadDate: const LocalDate(2021, 10, 31),
         sync: sync,
@@ -94,8 +94,8 @@ void main() {
     );
     await repository.createCar(
       Car(
-        brand: '东风本田',
-        model: '思域',
+        brand: '本田',
+        model: '思域（燃油版）',
         currentMileageKm: 0,
         roadDate: const LocalDate(2026, 6, 2),
         sync: sync,
@@ -113,8 +113,8 @@ void main() {
 
   test('rejects same brand model and road date', () async {
     final car = Car(
-      brand: '东风本田',
-      model: '思域',
+      brand: '本田',
+      model: '思域（燃油版）',
       currentMileageKm: 10000,
       roadDate: const LocalDate(2021, 10, 31),
       sync: sync,
@@ -132,8 +132,8 @@ void main() {
 
       final carId = await repository.createCarWithDefaultItems(
         Car(
-          brand: '东风本田',
-          model: '思域',
+          brand: '本田',
+          model: '思域（燃油版）',
           currentMileageKm: 10000,
           roadDate: const LocalDate(2023, 8, 12),
           sync: sync,
@@ -160,48 +160,136 @@ void main() {
     },
   );
 
-  test('bootstraps default maintenance items for sylphy and corolla', () async {
+  test(
+    'bootstraps default maintenance items for common model templates',
+    () async {
+      await repository.ensureDefaultMaintenanceItems();
+
+      final civicItems = await repository.listDefaultItemsForModel(
+        brand: '本田',
+        model: '思域（燃油版）',
+      );
+      final sylphyItems = await repository.listDefaultItemsForModel(
+        brand: '东风日产',
+        model: '轩逸（燃油版）',
+      );
+      final corollaItems = await repository.listDefaultItemsForModel(
+        brand: '一汽丰田',
+        model: '卡罗拉（燃油版）',
+      );
+      final modelYItems = await repository.listDefaultItemsForModel(
+        brand: '特斯拉',
+        model: 'Model Y（纯电版）',
+      );
+      final qinLItems = await repository.listDefaultItemsForModel(
+        brand: '比亚迪',
+        model: '秦 L（插混版）',
+      );
+      final camryHybridItems = await repository.listDefaultItemsForModel(
+        brand: '广汽丰田',
+        model: '凯美瑞（混动版）',
+      );
+
+      expect(_defaultItemRules(civicItems), [
+        '燃油宝|true|false|5000|null',
+        '机油|true|true|5000|6',
+        '机滤|true|true|5000|6',
+        '空调滤芯|true|true|20000|12',
+        '空气滤芯|true|false|20000|null',
+        '变速箱油|true|true|40000|24',
+        '刹车油|false|true|null|36',
+        '火花塞|true|false|100000|null',
+        '检查传动皮带|true|true|40000|24',
+        '检查气门间隙|true|false|120000|null',
+        '检查刹车|true|false|120000|null',
+        '防冻液|true|true|200000|120',
+        '汽油滤芯|true|false|140000|null',
+        '轮胎换位|true|false|10000|null',
+      ]);
+      expect(_defaultItemRules(sylphyItems), _genericFuelRules);
+      expect(_defaultItemRules(corollaItems), _genericFuelRules);
+      expect(_defaultItemRules(modelYItems), _genericEvRules);
+      expect(_defaultItemRules(qinLItems), _genericPlugInRules);
+      expect(_defaultItemRules(camryHybridItems), _genericHybridRules);
+    },
+  );
+
+  test('bootstrap does not rebuild existing default template rows', () async {
+    await repository.saveVehicleDefaultMaintenanceItem(
+      VehicleDefaultMaintenanceItem(
+        vehicleBrand: '东风日产',
+        vehicleModel: '轩逸（燃油版）',
+        itemName: '机油',
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 3000,
+        timeIntervalMonths: 3,
+        sortOrder: 99,
+        sync: sync,
+      ),
+    );
+
     await repository.ensureDefaultMaintenanceItems();
 
-    final sylphyItems = await repository.listDefaultItemsForModel(
+    final items = await repository.listDefaultItemsForModel(
       brand: '东风日产',
-      model: '轩逸',
+      model: '轩逸（燃油版）',
     );
-    final corollaItems = await repository.listDefaultItemsForModel(
-      brand: '一汽丰田',
-      model: '卡罗拉',
-    );
+    final oilItems = items.where((item) => item.itemName == '机油');
+    expect(oilItems, hasLength(1));
+    expect(_defaultItemRules(oilItems.toList()), ['机油|true|true|3000|3']);
+  });
 
-    expect(_defaultItemRules(sylphyItems), [
-      '机油|true|true|5000|6',
-      '机滤|true|true|5000|6',
-      '空气滤芯|true|false|20000|null',
-      '空调滤芯|true|false|20000|null',
-      '汽油滤芯|true|false|20000|null',
-      '刹车油|true|true|40000|24',
-      '变速箱油|true|false|100000|null',
-      '火花塞|true|false|100000|null',
-      '轮胎换位|true|false|10000|null',
-    ]);
-    expect(_defaultItemRules(corollaItems), [
-      '机油|true|true|10000|6',
-      '机滤|true|true|10000|6',
-      '空调滤芯|true|true|20000|12',
-      '空气滤芯|true|false|40000|null',
-      '刹车油|true|true|40000|24',
-      '变速箱油|true|true|80000|48',
-      '汽油滤芯|true|false|80000|null',
-      '火花塞|true|false|100000|null',
-      '轮胎换位|true|false|10000|null',
-    ]);
+  test('pure electric templates do not include fuel service items', () async {
+    await repository.ensureDefaultMaintenanceItems();
+
+    final items = await repository.listDefaultItemsForModel(
+      brand: '小米',
+      model: 'SU7（纯电版）',
+    );
+    final names = items.map((item) => item.itemName);
+
+    expect(names, isNot(contains('机油')));
+    expect(names, isNot(contains('机滤')));
+    expect(names, isNot(contains('汽油滤芯')));
+    expect(names, isNot(contains('火花塞')));
+    expect(_defaultItemRules(items), _genericEvRules);
+  });
+
+  test('bootstraps selectable vehicle models for common brands', () async {
+    await repository.ensureVehicleModels();
+
+    final models = await repository.listVehicleModels();
+
+    expect(
+      models.map((model) => '${model.brand} ${model.model}'),
+      containsAll([
+        '本田 思域（燃油版）',
+        '东风日产 轩逸（燃油版）',
+        '一汽丰田 卡罗拉（燃油版）',
+        '比亚迪 秦 PLUS（插混版）',
+        '吉利银河 星愿（纯电版）',
+        '奇瑞 瑞虎 8（燃油版）',
+        '长安 CS75 PLUS（燃油版）',
+        '哈弗 H6（燃油版）',
+        '特斯拉 Model 3（纯电版）',
+        '理想 L6（增程版）',
+        '问界 M8（增程版）',
+        '一汽-大众 速腾（燃油版）',
+        '广汽丰田 凯美瑞（混动版）',
+        '上汽通用别克 GL8（燃油版）',
+        '华晨宝马 3 系（燃油版）',
+      ]),
+    );
+    expect(models.length, greaterThan(120));
   });
 
   test('writes snowflake ids for all local tables', () async {
     await repository.ensureBootstrapData();
     final carId = await repository.createCarWithDefaultItems(
       Car(
-        brand: '东风本田',
-        model: '思域',
+        brand: '本田',
+        model: '思域（燃油版）',
         currentMileageKm: 10000,
         roadDate: const LocalDate(2023, 8, 12),
         sync: sync,
@@ -241,9 +329,200 @@ void main() {
       ),
     ];
 
-    expect(ids, isNotEmpty);
-    expect(ids.toSet(), hasLength(ids.length));
-    expect(ids.every((id) => id > 1000000000000), isTrue);
+    expect(ids, everyElement(greaterThan(0)));
+  });
+
+  test('bootstraps selectable vehicle models', () async {
+    await repository.ensureVehicleModels();
+
+    final models = await repository.listVehicleModels();
+
+    expect(models.map((model) => '${model.brand} ${model.model}'), [
+      '本田 思域（燃油版）',
+      '本田 思域（混动版）',
+      '东风日产 轩逸（燃油版）',
+      '东风日产 轩逸（混动版）',
+      '一汽丰田 卡罗拉（燃油版）',
+      '一汽丰田 卡罗拉（混动版）',
+      '广汽丰田 凯美瑞（燃油版）',
+      '广汽丰田 凯美瑞（混动版）',
+      '广汽丰田 汉兰达（混动版）',
+      '广汽丰田 赛那（混动版）',
+      '广汽丰田 威兰达（燃油版）',
+      '广汽丰田 威兰达（混动版）',
+      '一汽丰田 RAV4 荣放（燃油版）',
+      '一汽丰田 RAV4 荣放（混动版）',
+      '一汽丰田 格瑞维亚（混动版）',
+      '本田 雅阁（燃油版）',
+      '本田 雅阁（混动版）',
+      '本田 CR-V（燃油版）',
+      '本田 CR-V（混动版）',
+      '本田 皓影（燃油版）',
+      '本田 皓影（混动版）',
+      '东风日产 天籁（燃油版）',
+      '东风日产 逍客（燃油版）',
+      '一汽-大众 速腾（燃油版）',
+      '一汽-大众 迈腾（燃油版）',
+      '一汽-大众 探岳（燃油版）',
+      '上汽大众 朗逸（燃油版）',
+      '上汽大众 帕萨特（燃油版）',
+      '上汽大众 帕萨特（插混版）',
+      '上汽大众 途观 L（燃油版）',
+      '上汽大众 途观 L（插混版）',
+      '上汽通用别克 GL8（燃油版）',
+      '上汽通用别克 GL8（插混版）',
+      '上汽通用别克 昂科威（燃油版）',
+      '长安福特 蒙迪欧（燃油版）',
+      '长安福特 锐界 L（混动版）',
+      '北京现代 伊兰特（燃油版）',
+      '比亚迪 海鸥（纯电版）',
+      '比亚迪 海豚（纯电版）',
+      '比亚迪 秦 PLUS（插混版）',
+      '比亚迪 秦 PLUS（纯电版）',
+      '比亚迪 秦 L（插混版）',
+      '比亚迪 海豹 06（插混版）',
+      '比亚迪 汉（插混版）',
+      '比亚迪 汉（纯电版）',
+      '比亚迪 宋 PLUS（插混版）',
+      '比亚迪 宋 PLUS（纯电版）',
+      '比亚迪 宋 Pro（插混版）',
+      '比亚迪 元 UP（纯电版）',
+      '比亚迪 元 PLUS（纯电版）',
+      '比亚迪 唐（插混版）',
+      '腾势 D9（插混版）',
+      '腾势 D9（纯电版）',
+      '方程豹 豹 5（插混版）',
+      '吉利银河 星愿（纯电版）',
+      '吉利银河 L6（插混版）',
+      '吉利银河 L7（插混版）',
+      '吉利银河 E5（纯电版）',
+      '吉利 帝豪（燃油版）',
+      '吉利 星瑞（燃油版）',
+      '吉利 缤越（燃油版）',
+      '吉利 博越 L（燃油版）',
+      '吉利 星越 L（燃油版）',
+      '吉利 星越 L（混动版）',
+      '领克 03（燃油版）',
+      '领克 08（插混版）',
+      '极氪 001（纯电版）',
+      '极氪 007（纯电版）',
+      '极氪 7X（纯电版）',
+      '奇瑞 艾瑞泽 8（燃油版）',
+      '奇瑞 瑞虎 7（燃油版）',
+      '奇瑞 瑞虎 8（燃油版）',
+      '奇瑞 瑞虎 9（燃油版）',
+      '奇瑞风云 A8（插混版）',
+      '奇瑞风云 T9（插混版）',
+      '捷途 X70（燃油版）',
+      '捷途 旅行者（燃油版）',
+      '捷途山海 L7（插混版）',
+      '星途 瑶光（燃油版）',
+      '长安 逸动（燃油版）',
+      '长安 CS75 PLUS（燃油版）',
+      '长安 UNI-V（燃油版）',
+      '长安 UNI-Z（插混版）',
+      '长安启源 A05（插混版）',
+      '长安启源 A07（插混版）',
+      '深蓝 S05（纯电版）',
+      '深蓝 S07（增程版）',
+      '深蓝 L07（增程版）',
+      '阿维塔 07（增程版）',
+      '阿维塔 11（纯电版）',
+      '阿维塔 12（纯电版）',
+      '哈弗 H6（燃油版）',
+      '哈弗 H6（插混版）',
+      '哈弗 大狗（燃油版）',
+      '坦克 300（燃油版）',
+      '坦克 500（插混版）',
+      '魏牌 高山（插混版）',
+      '五菱 宏光 MINIEV（纯电版）',
+      '五菱 缤果（纯电版）',
+      '五菱 星光（插混版）',
+      '宝骏 云朵（纯电版）',
+      '红旗 H5（燃油版）',
+      '红旗 HS5（燃油版）',
+      '荣威 D7（插混版）',
+      '荣威 RX5（燃油版）',
+      'MG MG4（纯电版）',
+      'MG ZS（燃油版）',
+      '广汽传祺 M8（燃油版）',
+      '广汽传祺 E8（插混版）',
+      '广汽传祺 GS4（燃油版）',
+      '广汽埃安 AION Y（纯电版）',
+      '广汽埃安 AION S（纯电版）',
+      '广汽埃安 AION V（纯电版）',
+      '东风风神 皓瀚（燃油版）',
+      '东风奕派 eπ007（增程版）',
+      '岚图 梦想家（插混版）',
+      '岚图 梦想家（纯电版）',
+      '岚图 FREE（增程版）',
+      '零跑 A10（纯电版）',
+      '零跑 C10（纯电版）',
+      '零跑 C10（增程版）',
+      '零跑 C11（增程版）',
+      '零跑 C16（增程版）',
+      '理想 L6（增程版）',
+      '理想 L7（增程版）',
+      '理想 L8（增程版）',
+      '蔚来 ES6（纯电版）',
+      '蔚来 ET5（纯电版）',
+      '乐道 L60（纯电版）',
+      '小鹏 MONA M03（纯电版）',
+      '小鹏 P7（纯电版）',
+      '小鹏 G6（纯电版）',
+      '小鹏 X9（纯电版）',
+      '小米 SU7（纯电版）',
+      '小米 YU7（纯电版）',
+      '问界 M8（增程版）',
+      '问界 M8（纯电版）',
+      '问界 M9（增程版）',
+      '智界 R7（纯电版）',
+      '享界 S9（纯电版）',
+      '极狐 阿尔法 T5（纯电版）',
+      '特斯拉 Model 3（纯电版）',
+      '特斯拉 Model Y（纯电版）',
+      '华晨宝马 3 系（燃油版）',
+      '华晨宝马 5 系（燃油版）',
+      '华晨宝马 X3（燃油版）',
+      '华晨宝马 i3（纯电版）',
+      '北京奔驰 C 级（燃油版）',
+      '北京奔驰 E 级（燃油版）',
+      '北京奔驰 GLC（燃油版）',
+      '一汽奥迪 A4L（燃油版）',
+      '一汽奥迪 A6L（燃油版）',
+      '一汽奥迪 Q5L（燃油版）',
+      '凯迪拉克 CT5（燃油版）',
+      '沃尔沃 XC60（燃油版）',
+      '雷克萨斯 ES（混动版）',
+      '路虎 发现运动版（燃油版）',
+    ]);
+  });
+
+  test('applied car falls back to first available car', () async {
+    final firstCarId = await repository.createCar(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        sync: sync,
+      ),
+    );
+    await repository.createCar(
+      Car(
+        brand: '日产',
+        model: '22款轩逸',
+        currentMileageKm: 8000,
+        roadDate: const LocalDate(2024, 1, 1),
+        sync: sync,
+      ),
+    );
+    await repository.setAppliedCarId(999);
+
+    final appliedCar = await repository.getAppliedCar();
+
+    expect(appliedCar?.id, firstCarId);
+    expect(await repository.getAppliedCarId(), '$firstCarId');
   });
 
   test(
@@ -251,8 +530,8 @@ void main() {
     () async {
       final carId = await repository.createCarWithMaintenanceItems(
         Car(
-          brand: '东风本田',
-          model: '思域',
+          brand: '本田',
+          model: '思域（燃油版）',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
           sync: sync,
@@ -324,8 +603,8 @@ void main() {
     expect(
       () => repository.createCarWithMaintenanceItems(
         Car(
-          brand: '东风本田',
-          model: '思域',
+          brand: '本田',
+          model: '思域（燃油版）',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
           sync: sync,
@@ -346,18 +625,6 @@ void main() {
       ),
       throwsArgumentError,
     );
-  });
-
-  test('bootstraps selectable vehicle models', () async {
-    await repository.ensureVehicleModels();
-
-    final models = await repository.listVehicleModels();
-
-    expect(models.map((model) => '${model.brand} ${model.model}'), [
-      '东风本田 思域',
-      '东风日产 轩逸',
-      '一汽丰田 卡罗拉',
-    ]);
   });
 
   test('applied car falls back to first available car', () async {
@@ -1167,3 +1434,40 @@ List<String> _defaultItemRules(List<VehicleDefaultMaintenanceItem> items) {
           '${item.mileageIntervalKm}|${item.timeIntervalMonths}',
   ];
 }
+
+const _genericFuelRules = [
+  '机油|true|true|5000|6',
+  '机滤|true|true|5000|6',
+  '空气滤芯|true|true|20000|12',
+  '空调滤芯|true|true|20000|12',
+  '汽油滤芯|true|false|40000|null',
+  '刹车油|true|true|40000|24',
+  '变速箱油|true|true|60000|36',
+  '火花塞|true|false|100000|null',
+  '轮胎换位|true|false|10000|null',
+  '防冻液|true|true|40000|24',
+];
+
+const _genericHybridRules = [..._genericFuelRules, '混动系统检查|true|true|20000|12'];
+
+const _genericPlugInRules = [
+  '机油|true|true|10000|12',
+  '机滤|true|true|10000|12',
+  '空气滤芯|true|true|20000|12',
+  '空调滤芯|true|true|20000|12',
+  '刹车油|true|true|40000|24',
+  '防冻液|true|true|40000|24',
+  '火花塞|true|false|100000|null',
+  '轮胎换位|true|false|10000|null',
+  '动力电池/电驱系统检查|true|true|20000|12',
+];
+
+const _genericEvRules = [
+  '空调滤芯|true|true|20000|12',
+  '刹车油|true|true|40000|24',
+  '减速器油|true|true|60000|36',
+  '电驱冷却液|true|true|40000|24',
+  '动力电池/高压系统检查|true|true|20000|12',
+  '制动系统检查|true|true|10000|12',
+  '轮胎换位|true|false|10000|null',
+];

@@ -553,7 +553,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
 
-    expect(find.text('东风本田 思域'), findsWidgets);
+    expect(find.text('本田 思域（燃油版）'), findsWidgets);
     expect(
       tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
       '0',
@@ -602,7 +602,7 @@ void main() {
     await createDefaultCar(tester);
 
     expect(find.text('保养提醒'), findsNothing);
-    expect(find.text('东风本田 思域'), findsWidgets);
+    expect(find.text('本田 思域（燃油版）'), findsWidgets);
     expect(find.text('当前'), findsOneWidget);
     expect(find.textContaining('0km'), findsOneWidget);
     expect(find.textContaining('车龄'), findsNothing);
@@ -628,8 +628,8 @@ void main() {
     );
     final carId = await repository.createCarWithDefaultItems(
       Car(
-        brand: '东风本田',
-        model: '思域',
+        brand: '本田',
+        model: '思域（燃油版）',
         currentMileageKm: 0,
         roadDate: const LocalDate(2020, 1, 1),
         sync: sync,
@@ -789,16 +789,16 @@ void main() {
             cars: [
               Car(
                 id: 99,
-                brand: '东风本田',
-                model: '思域',
+                brand: '本田',
+                model: '思域（燃油版）',
                 currentMileageKm: 12000,
                 roadDate: LocalDate.parse(existingCar.roadDate),
                 sync: sync,
               ),
               Car(
                 id: 100,
-                brand: '东风本田',
-                model: '思域',
+                brand: '本田',
+                model: '思域（燃油版）',
                 currentMileageKm: 13000,
                 roadDate: LocalDate.parse(existingCar.roadDate),
                 sync: sync,
@@ -848,12 +848,38 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('东风本田 思域'));
+    await tester.tap(find.text('本田 思域（燃油版）'));
     await tester.pumpAndSettle();
 
     expect(find.text('选择车型'), findsOneWidget);
     expect(find.text('搜索品牌或车型'), findsOneWidget);
-    expect(find.text('东风本田'), findsWidgets);
+    expect(find.text('本田'), findsWidgets);
+  });
+
+  testWidgets('add car wizard keeps selected model after going back', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('本田 思域（燃油版）'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '轩逸');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('轩逸（燃油版）'));
+    await tester.pumpAndSettle();
+    expect(find.text('东风日产 轩逸（燃油版）'), findsOneWidget);
+
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上一步'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('东风日产 轩逸（燃油版）'), findsOneWidget);
+    expect(find.text('本田 思域（燃油版）'), findsNothing);
   });
 
   testWidgets('profile can edit car mileage', (tester) async {
@@ -913,7 +939,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('保养项目'), findsOneWidget);
-    expect(find.text('东风本田 思域'), findsWidgets);
+    expect(find.text('本田 思域（燃油版）'), findsWidgets);
     expect(find.textContaining('项目名称可变'), findsNothing);
     expect(find.textContaining('关闭后不出现在'), findsNothing);
     expect(find.text('提醒：5,000公里/6个月'), findsWidgets);
@@ -1471,7 +1497,8 @@ void main() {
 
       await tester.tap(find.text('通知提醒'));
       await tester.pumpAndSettle();
-      expect(find.text('手机系统通知、应用内通知 · 到期后：每周'), findsOneWidget);
+      expect(find.text('手机系统通知、应用内通知'), findsOneWidget);
+      expect(find.textContaining('到期后：每周'), findsNothing);
       expect(find.text('到期后提醒次数'), findsNothing);
 
       await tester.tap(find.widgetWithText(TextButton, '设置').first);
@@ -1508,7 +1535,8 @@ void main() {
         await repository.getPreferenceValue('maintenanceDueRepeat'),
         'everyTwoWeeks',
       );
-      expect(find.text('手机系统通知、应用内通知 · 到期后：每 2 周'), findsOneWidget);
+      expect(find.text('手机系统通知、应用内通知'), findsOneWidget);
+      expect(find.textContaining('到期后：每 2 周'), findsNothing);
       expect(find.text('通知设置已保存'), findsNothing);
       expect(
         await repository.getPreferenceValue('maintenanceEarlyEnabled'),
@@ -1614,8 +1642,8 @@ void main() {
       );
       final carId = await repository.createCarWithDefaultItems(
         Car(
-          brand: '东风本田',
-          model: '思域',
+          brand: '本田',
+          model: '思域（燃油版）',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
           sync: sync,
@@ -1691,8 +1719,8 @@ void main() {
     );
     final carId = await repository.createCarWithDefaultItems(
       Car(
-        brand: '东风本田',
-        model: '思域',
+        brand: '本田',
+        model: '思域（燃油版）',
         currentMileageKm: 0,
         roadDate: const LocalDate(2026, 5, 19),
         sync: sync,
@@ -1740,8 +1768,8 @@ void main() {
       );
       final carId = await repository.createCarWithDefaultItems(
         Car(
-          brand: '东风本田',
-          model: '思域',
+          brand: '本田',
+          model: '思域（燃油版）',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
           sync: sync,

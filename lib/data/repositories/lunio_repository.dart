@@ -30,38 +30,6 @@ class LunioRepository {
       updatedAt: DateTime.now(),
     );
     final builtInItems = _builtInDefaultItems(sync);
-    for (final entry in _authoritativeDefaultModels.entries) {
-      final items = builtInItems
-          .where(
-            (item) =>
-                item.vehicleBrand == entry.key.$1 &&
-                item.vehicleModel == entry.key.$2,
-          )
-          .toList();
-      if (items.isEmpty) {
-        continue;
-      }
-      final rows =
-          await (database.select(database.vehicleDefaultMaintenanceItems)
-                ..where(
-                  (row) =>
-                      row.vehicleBrand.equals(entry.key.$1) &
-                      row.vehicleModel.equals(entry.key.$2),
-                ))
-              .get();
-      if (!_defaultItemsMatch(rows, items)) {
-        await (database.delete(database.vehicleDefaultMaintenanceItems)..where(
-              (row) =>
-                  row.vehicleBrand.equals(entry.key.$1) &
-                  row.vehicleModel.equals(entry.key.$2),
-            ))
-            .go();
-        for (final item in items) {
-          await saveVehicleDefaultMaintenanceItem(item);
-        }
-      }
-    }
-
     final existing = await database
         .select(database.vehicleDefaultMaintenanceItems)
         .get();
@@ -932,387 +900,24 @@ class LunioRepository {
 
   static int _nextId() => _idGenerator.next();
 
-  static const _authoritativeDefaultModels = {
-    ('东风本田', '思域'): true,
-    ('东风日产', '轩逸'): true,
-    ('一汽丰田', '卡罗拉'): true,
-  };
-
-  bool _defaultItemsMatch(
-    List<VehicleDefaultMaintenanceItemRow> rows,
-    List<domain.VehicleDefaultMaintenanceItem> items,
-  ) {
-    if (rows.length != items.length) {
-      return false;
-    }
-    final rowsByName = {for (final row in rows) row.itemName: row};
-    for (final item in items) {
-      final row = rowsByName[item.itemName];
-      if (row == null ||
-          row.remindByMileage != item.remindByMileage ||
-          row.remindByTime != item.remindByTime ||
-          row.mileageIntervalKm != item.mileageIntervalKm ||
-          row.timeIntervalMonths != item.timeIntervalMonths ||
-          row.notOverdueUpperLimit != item.notOverdueUpperLimit ||
-          row.overdueUpperLimit != item.overdueUpperLimit ||
-          row.sortOrder != item.sortOrder) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   List<domain.VehicleDefaultMaintenanceItem> _builtInDefaultItems(
     SyncMetadata sync,
   ) {
     return [
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '燃油宝',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 5000,
-        sortOrder: 1,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        sortOrder: 2,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '机滤',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        sortOrder: 3,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '空调滤芯',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 20000,
-        timeIntervalMonths: 12,
-        sortOrder: 4,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '空气滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 20000,
-        sortOrder: 5,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '变速箱油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 40000,
-        timeIntervalMonths: 24,
-        sortOrder: 6,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '刹车油',
-        remindByMileage: false,
-        remindByTime: true,
-        timeIntervalMonths: 36,
-        sortOrder: 7,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '火花塞',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 100000,
-        sortOrder: 8,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '检查传动皮带',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 40000,
-        timeIntervalMonths: 24,
-        sortOrder: 9,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '检查气门间隙',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 120000,
-        sortOrder: 10,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '检查刹车',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 120000,
-        sortOrder: 11,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '防冻液',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 200000,
-        timeIntervalMonths: 120,
-        sortOrder: 12,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '汽油滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 140000,
-        sortOrder: 13,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风本田',
-        vehicleModel: '思域',
-        itemName: '轮胎换位',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 10000,
-        sortOrder: 14,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        sortOrder: 1,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '机滤',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        sortOrder: 2,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '空气滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 20000,
-        sortOrder: 3,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '空调滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 20000,
-        sortOrder: 4,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '汽油滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 20000,
-        sortOrder: 5,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '刹车油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 40000,
-        timeIntervalMonths: 24,
-        sortOrder: 6,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '变速箱油',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 100000,
-        sortOrder: 7,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '火花塞',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 100000,
-        sortOrder: 8,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸',
-        itemName: '轮胎换位',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 10000,
-        sortOrder: 9,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 10000,
-        timeIntervalMonths: 6,
-        sortOrder: 1,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '机滤',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 10000,
-        timeIntervalMonths: 6,
-        sortOrder: 2,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '空调滤芯',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 20000,
-        timeIntervalMonths: 12,
-        sortOrder: 3,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '空气滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 40000,
-        sortOrder: 4,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '刹车油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 40000,
-        timeIntervalMonths: 24,
-        sortOrder: 5,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '变速箱油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 80000,
-        timeIntervalMonths: 48,
-        sortOrder: 6,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '汽油滤芯',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 80000,
-        sortOrder: 7,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '火花塞',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 100000,
-        sortOrder: 8,
-        sync: sync,
-      ),
-      domain.VehicleDefaultMaintenanceItem(
-        vehicleBrand: '一汽丰田',
-        vehicleModel: '卡罗拉',
-        itemName: '轮胎换位',
-        remindByMileage: true,
-        remindByTime: false,
-        mileageIntervalKm: 10000,
-        sortOrder: 9,
-        sync: sync,
-      ),
+      for (final seed in _builtInVehicleCatalog)
+        ..._defaultItemsForSeed(seed, sync),
     ];
   }
 
   List<domain.VehicleModel> _builtInVehicleModels(SyncMetadata sync) {
     return [
-      domain.VehicleModel(brand: '东风本田', model: '思域', sortOrder: 1, sync: sync),
-      domain.VehicleModel(brand: '东风日产', model: '轩逸', sortOrder: 2, sync: sync),
-      domain.VehicleModel(
-        brand: '一汽丰田',
-        model: '卡罗拉',
-        sortOrder: 3,
-        sync: sync,
-      ),
+      for (final entry in _indexedBuiltInVehicleCatalog())
+        domain.VehicleModel(
+          brand: entry.seed.brand,
+          model: entry.seed.model,
+          sortOrder: entry.sortOrder,
+          sync: sync,
+        ),
     ];
   }
 
@@ -1719,3 +1324,514 @@ class LunioRepository {
     );
   }
 }
+
+enum _MaintenanceTemplateType { civicFuel, fuel, hybrid, plugIn, ev }
+
+class _VehicleTemplateSeed {
+  const _VehicleTemplateSeed(this.brand, this.model, this.templateType);
+
+  final String brand;
+  final String model;
+  final _MaintenanceTemplateType templateType;
+}
+
+Iterable<({int sortOrder, _VehicleTemplateSeed seed})>
+_indexedBuiltInVehicleCatalog() sync* {
+  var sortOrder = 1;
+  for (final seed in _builtInVehicleCatalog) {
+    yield (sortOrder: sortOrder, seed: seed);
+    sortOrder += 1;
+  }
+}
+
+List<domain.VehicleDefaultMaintenanceItem> _defaultItemsForSeed(
+  _VehicleTemplateSeed seed,
+  SyncMetadata sync,
+) {
+  final specs = switch (seed.templateType) {
+    _MaintenanceTemplateType.civicFuel => _civicFuelTemplate,
+    _MaintenanceTemplateType.fuel => _fuelTemplate,
+    _MaintenanceTemplateType.hybrid => _hybridTemplate,
+    _MaintenanceTemplateType.plugIn => _plugInTemplate,
+    _MaintenanceTemplateType.ev => _evTemplate,
+  };
+  return [
+    for (final entry in specs.indexed)
+      domain.VehicleDefaultMaintenanceItem(
+        vehicleBrand: seed.brand,
+        vehicleModel: seed.model,
+        itemName: entry.$2.name,
+        remindByMileage: entry.$2.remindByMileage,
+        remindByTime: entry.$2.remindByTime,
+        mileageIntervalKm: entry.$2.mileageIntervalKm,
+        timeIntervalMonths: entry.$2.timeIntervalMonths,
+        sortOrder: entry.$1 + 1,
+        sync: sync,
+      ),
+  ];
+}
+
+class _TemplateItemSpec {
+  const _TemplateItemSpec(
+    this.name, {
+    required this.remindByMileage,
+    required this.remindByTime,
+    this.mileageIntervalKm,
+    this.timeIntervalMonths,
+  });
+
+  final String name;
+  final bool remindByMileage;
+  final bool remindByTime;
+  final int? mileageIntervalKm;
+  final int? timeIntervalMonths;
+}
+
+const _civicFuelTemplate = [
+  _TemplateItemSpec(
+    '燃油宝',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 5000,
+  ),
+  _TemplateItemSpec(
+    '机油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 5000,
+    timeIntervalMonths: 6,
+  ),
+  _TemplateItemSpec(
+    '机滤',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 5000,
+    timeIntervalMonths: 6,
+  ),
+  _TemplateItemSpec(
+    '空调滤芯',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '空气滤芯',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 20000,
+  ),
+  _TemplateItemSpec(
+    '变速箱油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '刹车油',
+    remindByMileage: false,
+    remindByTime: true,
+    timeIntervalMonths: 36,
+  ),
+  _TemplateItemSpec(
+    '火花塞',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 100000,
+  ),
+  _TemplateItemSpec(
+    '检查传动皮带',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '检查气门间隙',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 120000,
+  ),
+  _TemplateItemSpec(
+    '检查刹车',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 120000,
+  ),
+  _TemplateItemSpec(
+    '防冻液',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 200000,
+    timeIntervalMonths: 120,
+  ),
+  _TemplateItemSpec(
+    '汽油滤芯',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 140000,
+  ),
+  _TemplateItemSpec(
+    '轮胎换位',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 10000,
+  ),
+];
+
+const _fuelTemplate = [
+  _TemplateItemSpec(
+    '机油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 5000,
+    timeIntervalMonths: 6,
+  ),
+  _TemplateItemSpec(
+    '机滤',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 5000,
+    timeIntervalMonths: 6,
+  ),
+  _TemplateItemSpec(
+    '空气滤芯',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '空调滤芯',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '汽油滤芯',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 40000,
+  ),
+  _TemplateItemSpec(
+    '刹车油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '变速箱油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 60000,
+    timeIntervalMonths: 36,
+  ),
+  _TemplateItemSpec(
+    '火花塞',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 100000,
+  ),
+  _TemplateItemSpec(
+    '轮胎换位',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 10000,
+  ),
+  _TemplateItemSpec(
+    '防冻液',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+];
+
+const _hybridTemplate = [
+  ..._fuelTemplate,
+  _TemplateItemSpec(
+    '混动系统检查',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+];
+
+const _plugInTemplate = [
+  _TemplateItemSpec(
+    '机油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 10000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '机滤',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 10000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '空气滤芯',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '空调滤芯',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '刹车油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '防冻液',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '火花塞',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 100000,
+  ),
+  _TemplateItemSpec(
+    '轮胎换位',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 10000,
+  ),
+  _TemplateItemSpec(
+    '动力电池/电驱系统检查',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+];
+
+const _evTemplate = [
+  _TemplateItemSpec(
+    '空调滤芯',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '刹车油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '减速器油',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 60000,
+    timeIntervalMonths: 36,
+  ),
+  _TemplateItemSpec(
+    '电驱冷却液',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 40000,
+    timeIntervalMonths: 24,
+  ),
+  _TemplateItemSpec(
+    '动力电池/高压系统检查',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 20000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '制动系统检查',
+    remindByMileage: true,
+    remindByTime: true,
+    mileageIntervalKm: 10000,
+    timeIntervalMonths: 12,
+  ),
+  _TemplateItemSpec(
+    '轮胎换位',
+    remindByMileage: true,
+    remindByTime: false,
+    mileageIntervalKm: 10000,
+  ),
+];
+
+const _builtInVehicleCatalog = [
+  _VehicleTemplateSeed('本田', '思域（燃油版）', _MaintenanceTemplateType.civicFuel),
+  _VehicleTemplateSeed('本田', '思域（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('东风日产', '轩逸（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('东风日产', '轩逸（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('一汽丰田', '卡罗拉（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽丰田', '卡罗拉（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('广汽丰田', '凯美瑞（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('广汽丰田', '凯美瑞（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('广汽丰田', '汉兰达（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('广汽丰田', '赛那（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('广汽丰田', '威兰达（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('广汽丰田', '威兰达（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('一汽丰田', 'RAV4 荣放（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽丰田', 'RAV4 荣放（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('一汽丰田', '格瑞维亚（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('本田', '雅阁（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('本田', '雅阁（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('本田', 'CR-V（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('本田', 'CR-V（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('本田', '皓影（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('本田', '皓影（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('东风日产', '天籁（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('东风日产', '逍客（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽-大众', '速腾（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽-大众', '迈腾（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽-大众', '探岳（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('上汽大众', '朗逸（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('上汽大众', '帕萨特（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('上汽大众', '帕萨特（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('上汽大众', '途观 L（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('上汽大众', '途观 L（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('上汽通用别克', 'GL8（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('上汽通用别克', 'GL8（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('上汽通用别克', '昂科威（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('长安福特', '蒙迪欧（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('长安福特', '锐界 L（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('北京现代', '伊兰特（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('比亚迪', '海鸥（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '海豚（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '秦 PLUS（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('比亚迪', '秦 PLUS（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '秦 L（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('比亚迪', '海豹 06（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('比亚迪', '汉（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('比亚迪', '汉（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '宋 PLUS（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('比亚迪', '宋 PLUS（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '宋 Pro（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('比亚迪', '元 UP（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '元 PLUS（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('比亚迪', '唐（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('腾势', 'D9（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('腾势', 'D9（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('方程豹', '豹 5（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('吉利银河', '星愿（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('吉利银河', 'L6（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('吉利银河', 'L7（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('吉利银河', 'E5（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('吉利', '帝豪（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('吉利', '星瑞（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('吉利', '缤越（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('吉利', '博越 L（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('吉利', '星越 L（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('吉利', '星越 L（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('领克', '03（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('领克', '08（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('极氪', '001（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('极氪', '007（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('极氪', '7X（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('奇瑞', '艾瑞泽 8（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('奇瑞', '瑞虎 7（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('奇瑞', '瑞虎 8（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('奇瑞', '瑞虎 9（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('奇瑞风云', 'A8（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('奇瑞风云', 'T9（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('捷途', 'X70（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('捷途', '旅行者（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('捷途山海', 'L7（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('星途', '瑶光（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('长安', '逸动（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('长安', 'CS75 PLUS（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('长安', 'UNI-V（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('长安', 'UNI-Z（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('长安启源', 'A05（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('长安启源', 'A07（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('深蓝', 'S05（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('深蓝', 'S07（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('深蓝', 'L07（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('阿维塔', '07（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('阿维塔', '11（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('阿维塔', '12（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('哈弗', 'H6（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('哈弗', 'H6（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('哈弗', '大狗（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('坦克', '300（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('坦克', '500（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('魏牌', '高山（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('五菱', '宏光 MINIEV（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('五菱', '缤果（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('五菱', '星光（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('宝骏', '云朵（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('红旗', 'H5（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('红旗', 'HS5（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('荣威', 'D7（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('荣威', 'RX5（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('MG', 'MG4（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('MG', 'ZS（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('广汽传祺', 'M8（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('广汽传祺', 'E8（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('广汽传祺', 'GS4（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('广汽埃安', 'AION Y（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('广汽埃安', 'AION S（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('广汽埃安', 'AION V（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('东风风神', '皓瀚（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('东风奕派', 'eπ007（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('岚图', '梦想家（插混版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('岚图', '梦想家（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('岚图', 'FREE（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('零跑', 'A10（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('零跑', 'C10（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('零跑', 'C10（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('零跑', 'C11（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('零跑', 'C16（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('理想', 'L6（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('理想', 'L7（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('理想', 'L8（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('蔚来', 'ES6（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('蔚来', 'ET5（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('乐道', 'L60（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('小鹏', 'MONA M03（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('小鹏', 'P7（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('小鹏', 'G6（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('小鹏', 'X9（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('小米', 'SU7（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('小米', 'YU7（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('问界', 'M8（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('问界', 'M8（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('问界', 'M9（增程版）', _MaintenanceTemplateType.plugIn),
+  _VehicleTemplateSeed('智界', 'R7（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('享界', 'S9（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('极狐', '阿尔法 T5（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('特斯拉', 'Model 3（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('特斯拉', 'Model Y（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('华晨宝马', '3 系（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('华晨宝马', '5 系（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('华晨宝马', 'X3（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('华晨宝马', 'i3（纯电版）', _MaintenanceTemplateType.ev),
+  _VehicleTemplateSeed('北京奔驰', 'C 级（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('北京奔驰', 'E 级（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('北京奔驰', 'GLC（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽奥迪', 'A4L（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽奥迪', 'A6L（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('一汽奥迪', 'Q5L（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('凯迪拉克', 'CT5（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('沃尔沃', 'XC60（燃油版）', _MaintenanceTemplateType.fuel),
+  _VehicleTemplateSeed('雷克萨斯', 'ES（混动版）', _MaintenanceTemplateType.hybrid),
+  _VehicleTemplateSeed('路虎', '发现运动版（燃油版）', _MaintenanceTemplateType.fuel),
+];
