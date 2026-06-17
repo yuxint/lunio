@@ -3157,8 +3157,8 @@ class _AddCarFormState extends State<_AddCarForm> {
       await widget.onSubmit(
         Car(
           id: initialCar?.id,
-          brand: initialCar?.brand ?? selectedBrand,
-          model: initialCar?.model ?? selectedModel,
+          brand: isEditing ? initialCar!.brand : selectedBrand,
+          model: isEditing ? initialCar!.model : selectedModel,
           currentMileageKm: mileage,
           roadDate: roadDate,
           sync: SyncMetadata(
@@ -3209,6 +3209,7 @@ class _AddCarWizardState extends State<_AddCarWizard> {
   List<MaintenanceItem>? itemDrafts;
   List<VehicleDefaultMaintenanceItem>? defaultItemTemplates;
   String? itemModelKey;
+  int loadRequestId = 0;
   bool editingCarDraft = false;
   bool loadingItems = false;
   bool saving = false;
@@ -3248,19 +3249,31 @@ class _AddCarWizardState extends State<_AddCarWizard> {
 
   Future<void> _handleCarDraft(Car car) async {
     final nextKey = '${car.brand}\u0000${car.model}';
+    final shouldLoadItems = itemModelKey != nextKey || itemDrafts == null;
+    final requestId = loadRequestId + 1;
+    loadRequestId = requestId;
     widget.onMaintenanceStepChanged(true);
     setState(() {
       carDraft = car;
       editingCarDraft = false;
-      loadingItems = itemModelKey != nextKey || itemDrafts == null;
+      loadingItems = shouldLoadItems;
       errorText = null;
+      if (shouldLoadItems) {
+        itemDrafts = null;
+        defaultItemTemplates = null;
+      }
     });
-    if (!loadingItems) {
+    if (!shouldLoadItems) {
       return;
     }
     try {
       final defaultItems = await widget.loadDefaultItems(car);
-      if (!mounted) {
+      if (!mounted || loadRequestId != requestId) {
+        return;
+      }
+      final currentCar = carDraft;
+      if (currentCar == null ||
+          '${currentCar.brand}\u0000${currentCar.model}' != nextKey) {
         return;
       }
       setState(() {

@@ -871,15 +871,47 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('轩逸（燃油版）'));
     await tester.pumpAndSettle();
-    expect(find.text('东风日产 轩逸（燃油版）'), findsOneWidget);
+    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
 
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('上一步'));
     await tester.pumpAndSettle();
 
-    expect(find.text('东风日产 轩逸（燃油版）'), findsOneWidget);
+    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
     expect(find.text('本田 思域（燃油版）'), findsNothing);
+  });
+
+  testWidgets('add car wizard reloads maintenance items after model changes', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.text('燃油宝'), findsOneWidget);
+
+    await tester.tap(find.text('上一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('本田 思域（燃油版）'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '轩逸');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('轩逸（燃油版）'));
+    await tester.pumpAndSettle();
+    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
+
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
+    expect(find.text('燃油宝'), findsNothing);
+    expect(find.text('机油'), findsOneWidget);
   });
 
   testWidgets('profile can edit car mileage', (tester) async {
