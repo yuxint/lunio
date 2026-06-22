@@ -206,8 +206,8 @@
 ## 删除和恢复边界
 
 - 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联，并清理指向该车的 `appliedCarId`。
-- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、车辆和车型列表。
-- 清空数据不删除 `vehicle_default_maintenance_items`；bootstrap 会按内置模板补齐车型和默认项目。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目和车辆。
+- 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 模板补齐车型和默认项目。
 - 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。
 
 ## 备份契约边界
@@ -217,7 +217,6 @@
 备份导出包含：
 
 - `cars`
-- `defaultMaintenanceItems`
 - `maintenanceItems`
 - `records`
 

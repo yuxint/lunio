@@ -5,7 +5,6 @@ import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
-import 'package:lunio/domain/entities/vehicle_default_maintenance_item.dart';
 
 void main() {
   test('schemaVersion 2 backup round-trips new data contract', () {
@@ -23,20 +22,6 @@ void main() {
           model: '22款思域',
           currentMileageKm: 38600,
           roadDate: const LocalDate(2023, 8, 12),
-          sync: sync,
-        ),
-      ],
-      defaultMaintenanceItems: [
-        VehicleDefaultMaintenanceItem(
-          id: 1,
-          vehicleBrand: '本田',
-          vehicleModel: '22款思域',
-          itemName: '机油',
-          remindByMileage: true,
-          remindByTime: true,
-          mileageIntervalKm: 5000,
-          timeIntervalMonths: 6,
-          sortOrder: 1,
           sync: sync,
         ),
       ],
@@ -71,10 +56,10 @@ void main() {
     final decoded = codec.decode(encoded);
 
     expect(encoded, isNot(contains('preferences')));
+    expect(encoded, isNot(contains('defaultMaintenanceItems')));
     expect(encoded, isNot(contains('isDefault')));
     expect(decoded.schemaVersion, 2);
     expect(decoded.cars.single.brand, '本田');
-    expect(decoded.defaultMaintenanceItems.single.itemName, '机油');
     expect(decoded.maintenanceItems.single.carsId, 1);
     expect(decoded.records.single.carId, 1);
   });

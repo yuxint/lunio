@@ -21,9 +21,9 @@
 ### 早期备份格式缺少完整语义
 
 - 位置：`lib/data/backup/backup_codec.dart`
-- 历史问题：早期备份只覆盖车辆和记录，不能表达保养项目、记录项关系和默认项目。
+- 历史问题：早期备份只覆盖车辆和记录，不能表达保养项目和记录项关系。
 - 风险：恢复后项目配置和记录项目关系无法自洽。
-- 当前结果：当前备份 JSON 契约为 `schemaVersion = 2`，覆盖 `cars`、`defaultMaintenanceItems`、`maintenanceItems` 和 `records`。
+- 当前结果：当前备份 JSON 契约为 `schemaVersion = 2`，覆盖 `cars`、`maintenanceItems` 和 `records`。
 
 注意：当前 `schemaVersion = 2` 备份仍然刻意不包含 `app_preferences`。当前应用车辆、手动日期、主题、通知设置、提醒抑制状态和停车倒计时不随备份迁移。
 

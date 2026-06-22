@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
+import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
@@ -15,10 +19,26 @@ void main() {
   late AppDatabase database;
   late LunioRepository repository;
   late SyncMetadata sync;
+  late BuiltInVehicleCatalog builtInCatalog;
+
+  setUpAll(() {
+    builtInCatalog = BuiltInVehicleCatalog.fromJson(
+      (jsonDecode(
+                File(
+                  'assets/data/built_in_vehicle_catalog.json',
+                ).readAsStringSync(),
+              )
+              as Map)
+          .cast<String, Object?>(),
+    );
+  });
 
   setUp(() {
     database = AppDatabase.inMemory();
-    repository = LunioRepository(database);
+    repository = LunioRepository(
+      database,
+      loadBuiltInVehicleCatalog: () async => builtInCatalog,
+    );
     sync = SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026));
   });
 
@@ -218,7 +238,7 @@ void main() {
   test('bootstrap does not rebuild existing default template rows', () async {
     await repository.saveVehicleDefaultMaintenanceItem(
       VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
+        vehicleBrand: '日产',
         vehicleModel: '轩逸（燃油版）',
         itemName: '机油',
         remindByMileage: true,
@@ -286,28 +306,11 @@ void main() {
       ]),
     );
     expect(models.length, greaterThan(140));
-    final brands = models.map((model) => model.brand);
-    for (final oldBrand in [
-      '东风日产',
-      '一汽丰田',
-      '广汽丰田',
-      '一汽-大众',
-      '上汽大众',
-      '上汽通用别克',
-      '华晨宝马',
-      '北京奔驰',
-      '一汽奥迪',
-    ]) {
-      expect(brands, isNot(contains(oldBrand)));
-    }
   });
 
-  test('bootstrap canonicalizes old selectable models and templates', () async {
+  test('bootstrap leaves existing brands unchanged', () async {
     await repository.saveVehicleModel(
       VehicleModel(brand: '东风日产', model: '轩逸（燃油版）', sortOrder: 1, sync: sync),
-    );
-    await repository.saveVehicleModel(
-      VehicleModel(brand: '日产', model: '轩逸（燃油版）', sortOrder: 2, sync: sync),
     );
     await repository.saveVehicleDefaultMaintenanceItem(
       VehicleDefaultMaintenanceItem(
@@ -322,19 +325,6 @@ void main() {
         sync: sync,
       ),
     );
-    await repository.saveVehicleDefaultMaintenanceItem(
-      VehicleDefaultMaintenanceItem(
-        vehicleBrand: '日产',
-        vehicleModel: '轩逸（燃油版）',
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        sortOrder: 2,
-        sync: sync,
-      ),
-    );
 
     await repository.ensureBootstrapData();
 
@@ -343,8 +333,8 @@ void main() {
         .where((row) => row.model == '轩逸（燃油版）')
         .map((row) => row.brand)
         .toList();
+    expect(sylphyRows, contains('东风日产'));
     expect(sylphyRows.where((brand) => brand == '日产'), hasLength(1));
-    expect(sylphyRows, isNot(contains('东风日产')));
 
     final templateRows = await database
         .select(database.vehicleDefaultMaintenanceItems)
@@ -352,11 +342,11 @@ void main() {
     final oilRows = templateRows.where(
       (row) => row.vehicleModel == '轩逸（燃油版）' && row.itemName == '机油',
     );
-    expect(oilRows, hasLength(1));
-    expect(oilRows.single.vehicleBrand, '日产');
+    expect(oilRows.map((row) => row.vehicleBrand), contains('东风日产'));
+    expect(oilRows.map((row) => row.vehicleBrand), contains('日产'));
   });
 
-  test('bootstrap canonicalizes existing cars and merges conflicts', () async {
+  test('bootstrap leaves existing car brands unchanged', () async {
     final oldCarId = await repository.createCar(
       Car(
         brand: '东风日产',
@@ -366,7 +356,7 @@ void main() {
         sync: sync,
       ),
     );
-    final newCarId = await repository.createCar(
+    await repository.createCar(
       Car(
         brand: '日产',
         model: '轩逸（燃油版）',
@@ -376,56 +366,13 @@ void main() {
       ),
     );
     await repository.setAppliedCarId(oldCarId);
-    final oldOilId = await saveItem(oldCarId, '机油', 1);
-    final newOilId = await saveItem(newCarId, '机油', 1);
-    final cabinId = await saveItem(newCarId, '空调滤芯', 2);
-    await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
-        carId: oldCarId,
-        date: const LocalDate(2026, 5, 20),
-        itemIds: [oldOilId],
-        costCents: 10000,
-        mileageKm: 16000,
-        note: '旧记录',
-        sync: sync,
-      ),
-    );
-    await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
-        carId: newCarId,
-        date: const LocalDate(2026, 5, 20),
-        itemIds: [newOilId, cabinId],
-        costCents: 20000,
-        mileageKm: 18000,
-        note: '新记录',
-        sync: sync,
-      ),
-    );
 
     await repository.ensureBootstrapData();
 
     final cars = await repository.listCars();
-    expect(cars, hasLength(1));
-    expect(cars.single.id, oldCarId);
-    expect(cars.single.brand, '日产');
-    expect(cars.single.currentMileageKm, 20000);
+    expect(cars, hasLength(2));
+    expect(cars.map((car) => car.brand), containsAll(['东风日产', '日产']));
     expect(await repository.getAppliedCarId(), '$oldCarId');
-
-    final items = await repository.listMaintenanceItemsForCar(oldCarId);
-    expect(items.map((item) => item.name), containsAll(['机油', '空调滤芯']));
-    expect(items.where((item) => item.name == '机油'), hasLength(1));
-
-    final records = await repository.listMaintenanceRecordsForCar(oldCarId);
-    expect(records, hasLength(1));
-    expect(records.single.costCents, 30000);
-    expect(records.single.mileageKm, 18000);
-    expect(records.single.note, contains('旧记录'));
-    expect(records.single.note, contains('新记录'));
-    expect(records.single.itemIds, hasLength(2));
-    expect(
-      await database.select(database.maintenanceRecordItems).get(),
-      hasLength(2),
-    );
   });
 
   test('writes snowflake ids for all local tables', () async {
@@ -1323,17 +1270,24 @@ void main() {
 
     final backup = await repository.exportBackupPayload();
     expect(const BackupCodec().encode(backup), isNot(contains('preferences')));
+    expect(
+      const BackupCodec().encode(backup),
+      isNot(contains('defaultMaintenanceItems')),
+    );
     expect(const BackupCodec().encode(backup), isNot(contains('isDefault')));
     await database.close();
     database = AppDatabase.inMemory();
-    repository = LunioRepository(database);
+    repository = LunioRepository(
+      database,
+      loadBuiltInVehicleCatalog: () async => builtInCatalog,
+    );
 
     await repository.restoreBackupPayload(backup);
 
     expect(await database.select(database.cars).get(), hasLength(1));
     expect(
       await database.select(database.vehicleDefaultMaintenanceItems).get(),
-      hasLength(1),
+      isEmpty,
     );
     expect(
       await database.select(database.maintenanceItems).get(),
@@ -1390,7 +1344,7 @@ void main() {
       expect(await database.select(database.cars).get(), hasLength(1));
       expect(
         await database.select(database.vehicleDefaultMaintenanceItems).get(),
-        hasLength(backup.defaultMaintenanceItems.length),
+        isNotEmpty,
       );
       expect(
         await database.select(database.maintenanceItems).get(),
@@ -1445,7 +1399,7 @@ void main() {
 
     final cars = await database.select(database.cars).get();
     expect(cars, hasLength(1));
-    expect(cars.single.brand, '日产');
+    expect(cars.single.brand, '东风日产');
     expect(cars.single.model, '轩逸（燃油版）');
     expect(
       await database.select(database.maintenanceItems).get(),
@@ -1541,11 +1495,15 @@ void main() {
     final (carId, itemId) = await seedCarAndItem();
     await repository.setAppliedCarId(carId);
     await repository.setPreferenceValue('manualDateEnabled', 'true');
-    await repository.ensureDefaultMaintenanceItems();
+    await repository.ensureBootstrapData();
     final defaultItemsBeforeClear = await database
         .select(database.vehicleDefaultMaintenanceItems)
         .get();
+    final vehicleModelsBeforeClear = await database
+        .select(database.vehicleModels)
+        .get();
     expect(defaultItemsBeforeClear, isNotEmpty);
+    expect(vehicleModelsBeforeClear, isNotEmpty);
     await repository.saveMaintenanceRecord(
       MaintenanceRecord(
         carId: carId,
@@ -1571,7 +1529,10 @@ void main() {
       await database.select(database.vehicleDefaultMaintenanceItems).get(),
       hasLength(defaultItemsBeforeClear.length),
     );
-    expect(await database.select(database.vehicleModels).get(), isEmpty);
+    expect(
+      await database.select(database.vehicleModels).get(),
+      hasLength(vehicleModelsBeforeClear.length),
+    );
   });
 
   test('backup restore rolls back when unique constraints fail', () async {

@@ -92,8 +92,8 @@ final defaultMaintenanceBootstrapProvider = FutureProvider<void>((ref) {
   return ref.watch(lunioRepositoryProvider).ensureBootstrapData();
 });
 
-final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) {
-  ref.watch(defaultMaintenanceBootstrapProvider);
+final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) async {
+  await ref.watch(defaultMaintenanceBootstrapProvider.future);
   return ref.watch(lunioRepositoryProvider).listVehicleModels();
 });
 

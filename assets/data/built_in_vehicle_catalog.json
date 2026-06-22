@@ -1,0 +1,1312 @@
+{
+  "schemaVersion": 1,
+  "templates": {
+    "civicFuel": [
+      {
+        "name": "燃油宝",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 5000
+      },
+      {
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 20000
+      },
+      {
+        "name": "变速箱油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "刹车油",
+        "remindByMileage": false,
+        "remindByTime": true,
+        "timeIntervalMonths": 36
+      },
+      {
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "name": "检查传动皮带",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "检查气门间隙",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 120000
+      },
+      {
+        "name": "检查刹车",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 120000
+      },
+      {
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 200000,
+        "timeIntervalMonths": 120
+      },
+      {
+        "name": "汽油滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 140000
+      },
+      {
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      }
+    ],
+    "fuel": [
+      {
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "汽油滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 40000
+      },
+      {
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "变速箱油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 60000,
+        "timeIntervalMonths": 36
+      },
+      {
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      }
+    ],
+    "plugIn": [
+      {
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "name": "动力电池/电驱系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      }
+    ],
+    "ev": [
+      {
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "减速器油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 60000,
+        "timeIntervalMonths": 36
+      },
+      {
+        "name": "电驱冷却液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "动力电池/高压系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "制动系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      }
+    ],
+    "hybrid": [
+      {
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "name": "汽油滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 40000
+      },
+      {
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "变速箱油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 60000,
+        "timeIntervalMonths": 36
+      },
+      {
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "name": "混动系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      }
+    ]
+  },
+  "vehicles": [
+    {
+      "brand": "本田",
+      "model": "思域（燃油版）",
+      "template": "civicFuel"
+    },
+    {
+      "brand": "本田",
+      "model": "思域（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "本田",
+      "model": "雅阁（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "本田",
+      "model": "雅阁（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "本田",
+      "model": "CR-V（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "本田",
+      "model": "CR-V（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "本田",
+      "model": "皓影（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "本田",
+      "model": "皓影（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "本田",
+      "model": "型格（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "本田",
+      "model": "型格（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "本田",
+      "model": "奥德赛（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "日产",
+      "model": "轩逸（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "日产",
+      "model": "轩逸（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "日产",
+      "model": "天籁（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "日产",
+      "model": "逍客（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "日产",
+      "model": "奇骏（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "丰田",
+      "model": "卡罗拉（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "丰田",
+      "model": "卡罗拉（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "丰田",
+      "model": "凯美瑞（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "丰田",
+      "model": "凯美瑞（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "丰田",
+      "model": "汉兰达（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "丰田",
+      "model": "赛那（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "丰田",
+      "model": "威兰达（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "丰田",
+      "model": "威兰达（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "丰田",
+      "model": "RAV4 荣放（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "丰田",
+      "model": "RAV4 荣放（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "丰田",
+      "model": "格瑞维亚（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "大众",
+      "model": "速腾（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "迈腾（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "探岳（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "朗逸（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "帕萨特（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "帕萨特（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "大众",
+      "model": "途观 L（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "途观 L（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "大众",
+      "model": "途昂（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "大众",
+      "model": "ID.3（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "大众",
+      "model": "ID.4（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "别克",
+      "model": "GL8（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "别克",
+      "model": "GL8（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "别克",
+      "model": "GL8 新能源（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "别克",
+      "model": "昂科威（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "福特",
+      "model": "蒙迪欧（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "福特",
+      "model": "锐界 L（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "现代",
+      "model": "伊兰特（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "起亚",
+      "model": "K3（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "起亚",
+      "model": "狮铂拓界（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "马自达",
+      "model": "昂克赛拉（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "马自达",
+      "model": "CX-5（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "雪佛兰",
+      "model": "科鲁泽（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "海鸥（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "海豚（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "秦 PLUS（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "秦 PLUS（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "秦 L（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "海豹 06（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "汉（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "汉（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "宋 PLUS（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "宋 PLUS（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "宋 Pro（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "元 UP（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "元 PLUS（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "唐（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "海狮 06（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "海狮 06（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "宋 L（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "比亚迪",
+      "model": "海豹 07（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "腾势",
+      "model": "D9（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "腾势",
+      "model": "D9（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "方程豹",
+      "model": "豹 5（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "吉利银河",
+      "model": "星愿（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "吉利银河",
+      "model": "L6（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "吉利银河",
+      "model": "L7（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "吉利银河",
+      "model": "E5（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "吉利",
+      "model": "帝豪（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "吉利",
+      "model": "星瑞（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "吉利",
+      "model": "缤越（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "吉利",
+      "model": "博越 L（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "吉利",
+      "model": "星越 L（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "吉利",
+      "model": "星越 L（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "领克",
+      "model": "03（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "领克",
+      "model": "08（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "极氪",
+      "model": "001（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "极氪",
+      "model": "007（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "极氪",
+      "model": "7X（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "奇瑞",
+      "model": "艾瑞泽 8（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奇瑞",
+      "model": "瑞虎 7（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奇瑞",
+      "model": "瑞虎 8（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奇瑞",
+      "model": "瑞虎 9（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奇瑞风云",
+      "model": "A8（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "奇瑞风云",
+      "model": "T9（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "捷途",
+      "model": "X70（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "捷途",
+      "model": "旅行者（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "捷途山海",
+      "model": "L7（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "星途",
+      "model": "瑶光（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "长安",
+      "model": "逸动（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "长安",
+      "model": "CS75 PLUS（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "长安",
+      "model": "UNI-V（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "长安",
+      "model": "UNI-Z（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "长安启源",
+      "model": "A05（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "长安启源",
+      "model": "A07（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "长安启源",
+      "model": "Q05（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "深蓝",
+      "model": "S05（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "深蓝",
+      "model": "S07（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "深蓝",
+      "model": "L07（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "深蓝",
+      "model": "G318（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "阿维塔",
+      "model": "07（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "阿维塔",
+      "model": "11（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "阿维塔",
+      "model": "12（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "哈弗",
+      "model": "H6（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "哈弗",
+      "model": "H6（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "哈弗",
+      "model": "大狗（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "坦克",
+      "model": "300（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "坦克",
+      "model": "500（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "魏牌",
+      "model": "高山（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "五菱",
+      "model": "宏光 MINIEV（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "五菱",
+      "model": "缤果（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "五菱",
+      "model": "星光（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "五菱",
+      "model": "星光 730（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "宝骏",
+      "model": "云朵（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "欧拉",
+      "model": "好猫（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "红旗",
+      "model": "H5（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "红旗",
+      "model": "HS5（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奔腾",
+      "model": "B70（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奔腾",
+      "model": "T90（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "荣威",
+      "model": "D7（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "荣威",
+      "model": "RX5（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "MG",
+      "model": "MG4（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "MG",
+      "model": "ZS（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "传祺",
+      "model": "M8（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "传祺",
+      "model": "E8（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "传祺",
+      "model": "GS4（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "埃安",
+      "model": "AION Y（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "埃安",
+      "model": "AION S（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "埃安",
+      "model": "AION V（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "风神",
+      "model": "皓瀚（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奕派",
+      "model": "eπ007（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "岚图",
+      "model": "梦想家（插混版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "岚图",
+      "model": "梦想家（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "岚图",
+      "model": "FREE（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "零跑",
+      "model": "A10（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "零跑",
+      "model": "C10（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "零跑",
+      "model": "C10（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "零跑",
+      "model": "C11（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "零跑",
+      "model": "C16（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "理想",
+      "model": "L6（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "理想",
+      "model": "L7（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "理想",
+      "model": "L8（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "理想",
+      "model": "i6（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "蔚来",
+      "model": "ES6（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "蔚来",
+      "model": "ES8（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "蔚来",
+      "model": "ET5（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "乐道",
+      "model": "L60（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "小鹏",
+      "model": "MONA M03（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "小鹏",
+      "model": "P7（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "小鹏",
+      "model": "G6（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "小鹏",
+      "model": "X9（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "小米",
+      "model": "SU7（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "小米",
+      "model": "YU7（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "智己",
+      "model": "L6（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "智己",
+      "model": "LS6（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "问界",
+      "model": "M8（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "问界",
+      "model": "M8（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "问界",
+      "model": "M9（增程版）",
+      "template": "plugIn"
+    },
+    {
+      "brand": "智界",
+      "model": "R7（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "享界",
+      "model": "S9（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "极狐",
+      "model": "阿尔法 T5（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "昊铂",
+      "model": "HT（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "昊铂",
+      "model": "GT（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "iCAR",
+      "model": "03（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "特斯拉",
+      "model": "Model 3（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "特斯拉",
+      "model": "Model Y（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "宝马",
+      "model": "3 系（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "宝马",
+      "model": "5 系（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "宝马",
+      "model": "X3（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "宝马",
+      "model": "i3（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "奔驰",
+      "model": "C 级（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奔驰",
+      "model": "E 级（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奔驰",
+      "model": "GLC（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奥迪",
+      "model": "A4L（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奥迪",
+      "model": "A6L（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "奥迪",
+      "model": "Q5L（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "凯迪拉克",
+      "model": "CT5（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "沃尔沃",
+      "model": "XC60（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "雷克萨斯",
+      "model": "ES（混动版）",
+      "template": "hybrid"
+    },
+    {
+      "brand": "林肯",
+      "model": "航海家（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "MINI",
+      "model": "Cooper（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "保时捷",
+      "model": "Macan（纯电版）",
+      "template": "ev"
+    },
+    {
+      "brand": "保时捷",
+      "model": "Cayenne（燃油版）",
+      "template": "fuel"
+    },
+    {
+      "brand": "路虎",
+      "model": "发现运动版（燃油版）",
+      "template": "fuel"
+    }
+  ]
+}

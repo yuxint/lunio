@@ -647,8 +647,8 @@ App 内通知在壳层根据当前数据即时检查。
 
 内置默认项目逻辑：
 
-- `ensureVehicleModels` 补齐内置车型。
-- `ensureDefaultMaintenanceItems` 补齐内置默认保养项目。
+- `ensureVehicleModels` 按内置 JSON 车型目录补齐内置车型。
+- `ensureDefaultMaintenanceItems` 按内置 JSON 模板补齐内置默认保养项目。
 - 如果同品牌、车型、项目名的默认模板已经存在，bootstrap 不会覆盖其提醒规则。
 - 这只影响 `vehicle_default_maintenance_items`，不会直接改已经创建车辆的 `maintenance_items`。
 
@@ -660,7 +660,6 @@ App 内通知在壳层根据当前数据即时检查。
 
 - `schemaVersion`，当前为 2。
 - `cars`。
-- `defaultMaintenanceItems`。
 - `maintenanceItems`。
 - `records`。
 
@@ -682,9 +681,9 @@ App 内通知在壳层根据当前数据即时检查。
 - 只接受 `schemaVersion=2`。
 - 恢复前先校验引用关系。
 - 整个恢复在一个数据库事务中执行。
-- 事务内先清空当前偏好、车辆、车辆内保养项目、保养记录、记录项目关联和车型列表。
-- 再恢复车辆、默认项目、车辆内保养项目、保养记录和记录项目关联。
-- 默认项目恢复按品牌、车型和项目名查找，存在则更新，不存在则插入。
+- 事务内先清空当前偏好、车辆、车辆内保养项目、保养记录和记录项目关联。
+- 再恢复车辆、车辆内保养项目、保养记录和记录项目关联。
+- 恢复不导入内置车型或默认保养模板。
 - 恢复时不保留源 ID，会重新生成新 ID。
 - 恢复时维护源 car ID 到新 car ID 的映射。
 - 恢复时维护源 item ID 到新 item ID 的映射。
@@ -711,13 +710,12 @@ App 内通知在壳层根据当前数据即时检查。
 - 保养记录。
 - 车辆内保养项目。
 - 车辆。
-- 车型列表。
 
 注意：
 
-- 当前 `_clearAllDataInTransaction` 不删除 `vehicle_default_maintenance_items`。
-- 恢复备份时默认项目不是整表替换，而是按唯一口径 upsert。
-- 修改恢复逻辑时要特别检查默认项目唯一约束和 bootstrap 内置模板是否会互相覆盖。
+- 当前 `_clearAllDataInTransaction` 不删除 `vehicle_models` 和 `vehicle_default_maintenance_items`。
+- 恢复备份不会导入默认车型或默认保养模板。
+- 修改恢复逻辑时要特别检查备份边界，避免把内置初始化数据重新纳入用户备份。
 - 清空后 bootstrap provider 会再次补齐内置车型和默认项目。
 
 ## 13. 偏好 key

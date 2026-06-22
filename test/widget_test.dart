@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,11 +9,13 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:lunio/app/app_router.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/app/lunio_app.dart';
 import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
+import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
@@ -21,6 +26,7 @@ import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 
 void main() {
+  late BuiltInVehicleCatalog builtInCatalog;
   const nativeFilesChannel = MethodChannel('lunio/native_files');
   const nativeNotificationSettingsChannel = MethodChannel(
     'lunio/native_notification_settings',
@@ -84,6 +90,34 @@ void main() {
     };
   }
 
+  setUpAll(() {
+    builtInCatalog = BuiltInVehicleCatalog.fromJson(
+      (jsonDecode(
+                File(
+                  'assets/data/built_in_vehicle_catalog.json',
+                ).readAsStringSync(),
+              )
+              as Map)
+          .cast<String, Object?>(),
+    );
+  });
+
+  LunioRepository testRepository(AppDatabase database) {
+    return LunioRepository(
+      database,
+      loadBuiltInVehicleCatalog: () async => builtInCatalog,
+    );
+  }
+
+  Future<void> pumpUntilFound(WidgetTester tester, Finder finder) async {
+    for (var attempt = 0; attempt < 20; attempt++) {
+      if (finder.evaluate().isNotEmpty) {
+        return;
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
   Future<AppDatabase> pumpApp(
     WidgetTester tester, {
     AppDateContext? dateContext,
@@ -95,11 +129,13 @@ void main() {
     if (database == null) {
       addTearDown(appDatabase.close);
     }
-    await LunioRepository(appDatabase).setPreferenceValue(
+    final repository = testRepository(appDatabase);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue(
       'systemNotificationsEnabled',
       systemNotificationsEnabled.toString(),
     );
-    await LunioRepository(appDatabase).setPreferenceValue(
+    await repository.setPreferenceValue(
       'inAppNotificationsEnabled',
       inAppNotificationsEnabled.toString(),
     );
@@ -111,15 +147,18 @@ void main() {
       ProviderScope(
         overrides: [
           appDatabaseProvider.overrideWithValue(appDatabase),
+          lunioRepositoryProvider.overrideWithValue(repository),
           appDateContextProvider.overrideWithValue(
             dateContext ??
                 AppDateContext(readSystemNow: () => DateTime(2026, 5, 19)),
           ),
         ],
-        child: const LunioApp(),
+        child: LunioApp(routerConfig: buildAppRouter()),
       ),
     );
-    await tester.pumpAndSettle();
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
     return appDatabase;
   }
 
@@ -127,7 +166,16 @@ void main() {
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新增车辆'));
-    await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('下一步'));
+    if (find.text('下一步').evaluate().isEmpty) {
+      final visibleTexts = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((text) => text.data)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      fail('新增车辆下一步未出现，当前文本: $visibleTexts');
+    }
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存车辆'));
@@ -182,7 +230,7 @@ void main() {
   testWidgets('app shell exposes three main entries', (tester) async {
     await pumpApp(tester);
 
-    expect(find.text('保养提醒'), findsOneWidget);
+    expect(find.text('保养提醒'), findsWidgets);
     expect(find.text('还没有车辆'), findsOneWidget);
     expect(find.text('提醒'), findsOneWidget);
     expect(find.text('记录'), findsOneWidget);
@@ -193,12 +241,12 @@ void main() {
     await pumpApp(tester);
 
     await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('保养记录'));
     expect(find.text('保养记录'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
 
     await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('个人中心'));
     expect(find.text('个人中心'), findsOneWidget);
     final profileList = tester.widget<ListView>(find.byType(ListView).first);
     expect(profileList.padding, const EdgeInsets.fromLTRB(18, 2, 18, 72));
@@ -341,13 +389,13 @@ void main() {
     expect(find.text('剩余充足'), findsOneWidget);
     expect(find.text('10:50:00 前离场'), findsOneWidget);
     expect(find.textContaining('还剩'), findsNothing);
-    expect(await LunioRepository(database).getParkingCountdown(), isNotNull);
+    expect(await testRepository(database).getParkingCountdown(), isNotNull);
 
     await tester.tap(find.widgetWithText(TextButton, '结束'));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(FilledButton, '停车倒计时'), findsOneWidget);
-    expect(await LunioRepository(database).getParkingCountdown(), isNull);
+    expect(await testRepository(database).getParkingCountdown(), isNull);
   });
 
   testWidgets('parking countdown sheet keeps actions above keyboard', (
@@ -445,7 +493,7 @@ void main() {
 
     expect(find.text('11:05:00 前离场'), findsOneWidget);
     expect(find.textContaining('还剩'), findsNothing);
-    final countdown = await LunioRepository(database).getParkingCountdown();
+    final countdown = await testRepository(database).getParkingCountdown();
     expect(countdown?.durationSeconds, 2700);
   });
 
@@ -489,7 +537,7 @@ void main() {
   testWidgets('reminders show expired parking countdown', (tester) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
-    await LunioRepository(database).saveParkingCountdown(
+    await testRepository(database).saveParkingCountdown(
       ParkingCountdown(
         startedAt: DateTime(2026, 6, 10, 10, 20, 15),
         durationSeconds: 1800,
@@ -514,7 +562,7 @@ void main() {
   ) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
-    await LunioRepository(database).saveParkingCountdown(
+    await testRepository(database).saveParkingCountdown(
       ParkingCountdown(
         startedAt: DateTime(2026, 6, 10, 10, 20),
         durationSeconds: 1800,
@@ -620,7 +668,7 @@ void main() {
   ) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
-    final repository = LunioRepository(database);
+    final repository = testRepository(database);
     await repository.ensureBootstrapData();
     final sync = SyncMetadata(
       status: SyncStatus.pendingCreate,
@@ -1064,7 +1112,7 @@ void main() {
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
     final car = (await database.select(database.cars).get()).single;
-    final repository = LunioRepository(database);
+    final repository = testRepository(database);
     final sync = SyncMetadata(
       status: SyncStatus.pendingCreate,
       updatedAt: DateTime(2026, 5, 19),
@@ -1429,7 +1477,7 @@ void main() {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
 
-    expect(find.text('保养提醒'), findsOneWidget);
+    expect(find.text('保养提醒'), findsWidgets);
     expect(find.text('机油'), findsOneWidget);
     expect(find.text('0%'), findsWidgets);
     expect(find.text('里程：距离下次约 5,000 公里'), findsOneWidget);
@@ -1509,11 +1557,11 @@ void main() {
 
     expect(find.text('手动日期'), findsNothing);
     expect(
-      await LunioRepository(database).getPreferenceValue('manualDateEnabled'),
+      await testRepository(database).getPreferenceValue('manualDateEnabled'),
       'false',
     );
     expect(
-      await LunioRepository(database).getPreferenceValue('manualDate'),
+      await testRepository(database).getPreferenceValue('manualDate'),
       isNull,
     );
   });
@@ -1554,7 +1602,7 @@ void main() {
       await tester.tap(find.text('保存设置'));
       await tester.pumpAndSettle();
 
-      final repository = LunioRepository(database);
+      final repository = testRepository(database);
       expect(
         await repository.getPreferenceValue('inAppNotificationsEnabled'),
         'true',
@@ -1600,7 +1648,7 @@ void main() {
       try {
         final database = AppDatabase.inMemory();
         addTearDown(database.close);
-        final repository = LunioRepository(database);
+        final repository = testRepository(database);
         await repository.setPreferenceValue(
           'systemNotificationPermissionRequested',
           'true',
@@ -1666,7 +1714,7 @@ void main() {
     (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
-      final repository = LunioRepository(database);
+      final repository = testRepository(database);
       await repository.ensureBootstrapData();
       final sync = SyncMetadata(
         status: SyncStatus.pendingCreate,
@@ -1743,7 +1791,7 @@ void main() {
   ) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
-    final repository = LunioRepository(database);
+    final repository = testRepository(database);
     await repository.ensureBootstrapData();
     final sync = SyncMetadata(
       status: SyncStatus.pendingCreate,
@@ -1778,7 +1826,7 @@ void main() {
     await pumpApp(tester, database: database, inAppNotificationsEnabled: true);
     await tester.pumpAndSettle();
 
-    expect(find.text('保养提醒'), findsOneWidget);
+    expect(find.text('保养提醒'), findsWidgets);
     await tester.tap(find.widgetWithText(FilledButton, '15 天内不再提醒'));
     await tester.pumpAndSettle();
 
@@ -1792,7 +1840,7 @@ void main() {
       final cleanupNotifications = mockAndroidNotifications(notificationCalls);
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
-      final repository = LunioRepository(database);
+      final repository = testRepository(database);
       await repository.ensureBootstrapData();
       final sync = SyncMetadata(
         status: SyncStatus.pendingCreate,

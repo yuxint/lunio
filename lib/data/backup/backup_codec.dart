@@ -5,20 +5,17 @@ import '../../domain/entities/car.dart';
 import '../../domain/entities/maintenance_item.dart';
 import '../../domain/entities/maintenance_record.dart';
 import '../../domain/entities/sync_metadata.dart';
-import '../../domain/entities/vehicle_default_maintenance_item.dart';
 
 class BackupPayload {
   const BackupPayload({
     required this.schemaVersion,
     this.cars = const [],
-    this.defaultMaintenanceItems = const [],
     this.maintenanceItems = const [],
     this.records = const [],
   });
 
   final int schemaVersion;
   final List<Car> cars;
-  final List<VehicleDefaultMaintenanceItem> defaultMaintenanceItems;
   final List<MaintenanceItem> maintenanceItems;
   final List<MaintenanceRecord> records;
 }
@@ -30,9 +27,6 @@ class BackupCodec {
     return jsonEncode({
       'schemaVersion': payload.schemaVersion,
       'cars': payload.cars.map(_carToJson).toList(),
-      'defaultMaintenanceItems': payload.defaultMaintenanceItems
-          .map(_defaultItemToJson)
-          .toList(),
       'maintenanceItems': payload.maintenanceItems.map(_itemToJson).toList(),
       'records': payload.records.map(_recordToJson).toList(),
     });
@@ -50,11 +44,6 @@ class BackupCodec {
           .cast<Map<String, Object?>>()
           .map(_carFromJson)
           .toList(),
-      defaultMaintenanceItems:
-          ((map['defaultMaintenanceItems'] as List?) ?? const [])
-              .cast<Map<String, Object?>>()
-              .map(_defaultItemFromJson)
-              .toList(),
       maintenanceItems: ((map['maintenanceItems'] as List?) ?? const [])
           .cast<Map<String, Object?>>()
           .map(_itemFromJson)
@@ -75,44 +64,6 @@ class BackupCodec {
       'roadDate': car.roadDate.toString(),
       'sync': car.sync.toJson(),
     };
-  }
-
-  Map<String, Object?> _defaultItemToJson(VehicleDefaultMaintenanceItem item) {
-    return {
-      'id': item.id,
-      'vehicleBrand': item.vehicleBrand,
-      'vehicleModel': item.vehicleModel,
-      'itemName': item.itemName,
-      'remindByMileage': item.remindByMileage,
-      'remindByTime': item.remindByTime,
-      'mileageIntervalKm': item.mileageIntervalKm,
-      'timeIntervalMonths': item.timeIntervalMonths,
-      'notOverdueUpperLimit': item.notOverdueUpperLimit,
-      'overdueUpperLimit': item.overdueUpperLimit,
-      'sortOrder': item.sortOrder,
-      'sync': item.sync.toJson(),
-    };
-  }
-
-  VehicleDefaultMaintenanceItem _defaultItemFromJson(
-    Map<String, Object?> json,
-  ) {
-    return VehicleDefaultMaintenanceItem(
-      id: json['id'] as int?,
-      vehicleBrand: json['vehicleBrand'] as String,
-      vehicleModel: json['vehicleModel'] as String,
-      itemName: json['itemName'] as String,
-      remindByMileage: json['remindByMileage'] as bool,
-      remindByTime: json['remindByTime'] as bool,
-      mileageIntervalKm: json['mileageIntervalKm'] as int?,
-      timeIntervalMonths: json['timeIntervalMonths'] as int?,
-      notOverdueUpperLimit: (json['notOverdueUpperLimit'] as num).toDouble(),
-      overdueUpperLimit: (json['overdueUpperLimit'] as num).toDouble(),
-      sortOrder: json['sortOrder'] as int,
-      sync: SyncMetadata.fromJson(
-        (json['sync'] as Map).cast<String, Object?>(),
-      ),
-    );
   }
 
   Map<String, Object?> _itemToJson(MaintenanceItem item) {

@@ -43,6 +43,7 @@
 
 - `vehicle_models` 保存可选品牌/车型。
 - `vehicle_default_maintenance_items` 保存车型默认保养项目模板。
+- 内置车型和默认保养项目模板来自 `assets/data/built_in_vehicle_catalog.json`。
 - `maintenance_items` 保存车辆内实际保养项目。
 - 创建车辆时，会按车型默认模板复制一份车辆内保养项目。
 - 启用状态、提醒方式、里程间隔、时间间隔和阈值都保存在车辆内项目上。
@@ -91,7 +92,7 @@
 ### 备份和恢复
 
 - 导出使用 `BackupPayload(schemaVersion: 2)`。
-- 导出包含车辆、默认保养项目、车辆内保养项目和保养记录。
+- 导出包含车辆、车辆内保养项目和保养记录。
 - 导出不包含 `app_preferences`，因此不迁移当前应用车辆、手动日期、主题、通知设置、提醒抑制状态或停车倒计时。
 - 恢复入口先确认破坏性操作，再选择 JSON 文件。
 - 恢复是 replace-import：在同一事务内先清空当前业务数据，再恢复备份内容。
