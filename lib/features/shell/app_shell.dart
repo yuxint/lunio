@@ -1137,6 +1137,7 @@ class _ParkingCountdownCard extends StatelessWidget {
     final animatedPercent = progress.status == ReminderStatus.danger
         ? 100.0
         : progress.percentRemaining;
+    final elapsedSeconds = now.difference(countdown.startedAt).inSeconds;
     return LunioCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1160,10 +1161,6 @@ class _ParkingCountdownCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-              LunioStatusBadge(
-                label: _parkingStatusText(progress.status),
-                tone: _parkingStatusTone(progress.status),
               ),
             ],
           ),
@@ -1197,7 +1194,7 @@ class _ParkingCountdownCard extends StatelessWidget {
                               fit: BoxFit.scaleDown,
                               child: Text(
                                 progress.status == ReminderStatus.danger
-                                    ? '+${_formatCountdownClock(progress.expiredSeconds)}'
+                                    ? _formatCountdownClock(elapsedSeconds)
                                     : _formatCountdownClock(
                                         progress.remainingSeconds,
                                       ),
@@ -1211,7 +1208,7 @@ class _ParkingCountdownCard extends StatelessWidget {
                             const SizedBox(height: 4),
                             Text(
                               progress.status == ReminderStatus.danger
-                                  ? '已超时'
+                                  ? '停车时长'
                                   : '剩余时间',
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(
@@ -1767,14 +1764,6 @@ String _formatParkingDurationOption(int seconds) {
     3600 => '1 小时',
     7200 => '2 小时',
     _ => _formatCountdownDuration(seconds),
-  };
-}
-
-String _parkingStatusText(ReminderStatus status) {
-  return switch (status) {
-    ReminderStatus.normal => '剩余充足',
-    ReminderStatus.warning => '即将到点',
-    ReminderStatus.danger => '已超时',
   };
 }
 

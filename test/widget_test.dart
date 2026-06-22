@@ -386,7 +386,7 @@ void main() {
     await tester.tap(find.text('开始计时'));
     await tester.pumpAndSettle();
 
-    expect(find.text('剩余充足'), findsOneWidget);
+    expect(find.text('剩余充足'), findsNothing);
     expect(find.text('10:50:00 前离场'), findsOneWidget);
     expect(find.textContaining('还剩'), findsNothing);
     expect(await testRepository(database).getParkingCountdown(), isNotNull);
@@ -552,7 +552,10 @@ void main() {
       ),
     );
 
-    expect(find.text('已超时'), findsWidgets);
+    expect(find.text('已超时'), findsNothing);
+    expect(find.text('停车时长'), findsOneWidget);
+    expect(find.text('42:00'), findsOneWidget);
+    expect(find.text('+12:00'), findsNothing);
     expect(find.textContaining('已超 '), findsNothing);
     expect(find.text('10:50:15 已到点'), findsOneWidget);
   });
