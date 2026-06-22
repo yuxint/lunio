@@ -43,22 +43,44 @@ class LunioRepository {
       updatedAt: DateTime.now(),
     );
     final builtInItems = catalog.defaultMaintenanceItems(sync);
-    final existing = await database
-        .select(database.vehicleDefaultMaintenanceItems)
-        .get();
-    final existingKeys = existing
-        .map(
-          (row) =>
-              '${row.vehicleBrand}\u0000${row.vehicleModel}\u0000${row.itemName}',
-        )
+    final targetCatalogIds = builtInItems
+        .map((item) => item.catalogId!)
         .toSet();
-    for (final item in builtInItems) {
-      final key =
-          '${item.vehicleBrand}\u0000${item.vehicleModel}\u0000${item.itemName}';
-      if (!existingKeys.contains(key)) {
-        await saveVehicleDefaultMaintenanceItem(item);
+    await database.transaction(() async {
+      await (database.delete(database.vehicleDefaultMaintenanceItems)..where(
+            (row) =>
+                row.catalogId.isNotNull() &
+                row.catalogId.isNotIn(targetCatalogIds),
+          ))
+          .go();
+      final existing = await database
+          .select(database.vehicleDefaultMaintenanceItems)
+          .get();
+      final existingByCatalogId = {
+        for (final row in existing)
+          if (row.catalogId != null) row.catalogId!: row,
+      };
+      final existingByLegacyKey = {
+        for (final row in existing)
+          if (row.catalogId == null)
+            _defaultItemKey(row.vehicleBrand, row.vehicleModel, row.itemName):
+                row,
+      };
+      for (final item in builtInItems) {
+        final existingRow =
+            existingByCatalogId[item.catalogId] ??
+            existingByLegacyKey[_defaultItemKey(
+              item.vehicleBrand,
+              item.vehicleModel,
+              item.itemName,
+            )];
+        if (existingRow == null) {
+          await saveVehicleDefaultMaintenanceItem(item);
+        } else if (_defaultItemNeedsUpdate(existingRow, item)) {
+          await _updateVehicleDefaultMaintenanceItem(existingRow.id, item);
+        }
       }
-    }
+    });
   }
 
   Future<void> ensureVehicleModels() async {
@@ -67,20 +89,42 @@ class LunioRepository {
   }
 
   Future<void> _ensureVehicleModels(BuiltInVehicleCatalog catalog) async {
-    final existing = await database.select(database.vehicleModels).get();
-    final existingKeys = existing
-        .map((row) => '${row.brand}\u0000${row.model}')
-        .toSet();
     final sync = SyncMetadata(
       status: SyncStatus.synced,
       updatedAt: DateTime.now(),
     );
-    for (final model in catalog.vehicleModels(sync)) {
-      final key = '${model.brand}\u0000${model.model}';
-      if (!existingKeys.contains(key)) {
-        await saveVehicleModel(model);
+    final builtInModels = catalog.vehicleModels(sync);
+    final targetCatalogIds = builtInModels
+        .map((model) => model.catalogId!)
+        .toSet();
+    await database.transaction(() async {
+      await (database.delete(database.vehicleModels)..where(
+            (row) =>
+                row.catalogId.isNotNull() &
+                row.catalogId.isNotIn(targetCatalogIds),
+          ))
+          .go();
+      final existing = await database.select(database.vehicleModels).get();
+      final existingByCatalogId = {
+        for (final row in existing)
+          if (row.catalogId != null) row.catalogId!: row,
+      };
+      final existingByLegacyKey = {
+        for (final row in existing)
+          if (row.catalogId == null)
+            _vehicleModelKey(row.brand, row.model): row,
+      };
+      for (final model in builtInModels) {
+        final existingRow =
+            existingByCatalogId[model.catalogId] ??
+            existingByLegacyKey[_vehicleModelKey(model.brand, model.model)];
+        if (existingRow == null) {
+          await saveVehicleModel(model);
+        } else if (_vehicleModelNeedsUpdate(existingRow, model)) {
+          await _updateVehicleModel(existingRow.id, model);
+        }
       }
-    }
+    });
   }
 
   Future<void> ensureBootstrapData() async {
@@ -271,6 +315,7 @@ class LunioRepository {
         .insert(
           VehicleDefaultMaintenanceItemsCompanion.insert(
             id: Value(itemId),
+            catalogId: Value(item.catalogId),
             vehicleBrand: item.vehicleBrand,
             vehicleModel: item.vehicleModel,
             itemName: item.itemName,
@@ -296,6 +341,7 @@ class LunioRepository {
         .insert(
           VehicleModelsCompanion.insert(
             id: Value(modelId),
+            catalogId: Value(model.catalogId),
             brand: model.brand,
             model: model.model,
             sortOrder: model.sortOrder,
@@ -305,6 +351,79 @@ class LunioRepository {
           ),
         );
     return modelId;
+  }
+
+  Future<void> _updateVehicleModel(int id, domain.VehicleModel model) async {
+    await (database.update(
+      database.vehicleModels,
+    )..where((row) => row.id.equals(id))).write(
+      VehicleModelsCompanion(
+        catalogId: Value(model.catalogId),
+        brand: Value(model.brand),
+        model: Value(model.model),
+        sortOrder: Value(model.sortOrder),
+        syncStatus: Value(model.sync.status.name),
+        updatedAt: Value(model.sync.updatedAt.toIso8601String()),
+        version: Value(model.sync.version),
+      ),
+    );
+  }
+
+  Future<void> _updateVehicleDefaultMaintenanceItem(
+    int id,
+    domain.VehicleDefaultMaintenanceItem item,
+  ) async {
+    await (database.update(
+      database.vehicleDefaultMaintenanceItems,
+    )..where((row) => row.id.equals(id))).write(
+      VehicleDefaultMaintenanceItemsCompanion(
+        catalogId: Value(item.catalogId),
+        vehicleBrand: Value(item.vehicleBrand),
+        vehicleModel: Value(item.vehicleModel),
+        itemName: Value(item.itemName),
+        remindByMileage: Value(item.remindByMileage),
+        remindByTime: Value(item.remindByTime),
+        mileageIntervalKm: Value(item.mileageIntervalKm),
+        timeIntervalMonths: Value(item.timeIntervalMonths),
+        notOverdueUpperLimit: Value(item.notOverdueUpperLimit),
+        overdueUpperLimit: Value(item.overdueUpperLimit),
+        sortOrder: Value(item.sortOrder),
+        syncStatus: Value(item.sync.status.name),
+        updatedAt: Value(item.sync.updatedAt.toIso8601String()),
+        version: Value(item.sync.version),
+      ),
+    );
+  }
+
+  bool _vehicleModelNeedsUpdate(
+    VehicleModelRow row,
+    domain.VehicleModel model,
+  ) {
+    return row.catalogId != model.catalogId ||
+        row.brand != model.brand ||
+        row.model != model.model ||
+        row.sortOrder != model.sortOrder ||
+        row.syncStatus != model.sync.status.name ||
+        row.version != model.sync.version;
+  }
+
+  bool _defaultItemNeedsUpdate(
+    VehicleDefaultMaintenanceItemRow row,
+    domain.VehicleDefaultMaintenanceItem item,
+  ) {
+    return row.catalogId != item.catalogId ||
+        row.vehicleBrand != item.vehicleBrand ||
+        row.vehicleModel != item.vehicleModel ||
+        row.itemName != item.itemName ||
+        row.remindByMileage != item.remindByMileage ||
+        row.remindByTime != item.remindByTime ||
+        row.mileageIntervalKm != item.mileageIntervalKm ||
+        row.timeIntervalMonths != item.timeIntervalMonths ||
+        row.notOverdueUpperLimit != item.notOverdueUpperLimit ||
+        row.overdueUpperLimit != item.overdueUpperLimit ||
+        row.sortOrder != item.sortOrder ||
+        row.syncStatus != item.sync.status.name ||
+        row.version != item.sync.version;
   }
 
   Future<List<domain.VehicleModel>> listVehicleModels() async {
@@ -929,6 +1048,7 @@ class LunioRepository {
   ) {
     return domain.VehicleDefaultMaintenanceItem(
       id: row.id,
+      catalogId: row.catalogId,
       vehicleBrand: row.vehicleBrand,
       vehicleModel: row.vehicleModel,
       itemName: row.itemName,
@@ -950,6 +1070,7 @@ class LunioRepository {
   domain.VehicleModel _vehicleModelFromRow(VehicleModelRow row) {
     return domain.VehicleModel(
       id: row.id,
+      catalogId: row.catalogId,
       brand: row.brand,
       model: row.model,
       sortOrder: row.sortOrder,
@@ -1258,4 +1379,10 @@ class LunioRepository {
       ),
     );
   }
+}
+
+String _vehicleModelKey(String brand, String model) => '$brand\u0000$model';
+
+String _defaultItemKey(String brand, String model, String itemName) {
+  return '$brand\u0000$model\u0000$itemName';
 }

@@ -30,6 +30,7 @@ class Cars extends Table {
 @DataClassName('VehicleDefaultMaintenanceItemRow')
 class VehicleDefaultMaintenanceItems extends Table {
   IntColumn get id => integer()();
+  TextColumn get catalogId => text().nullable()();
   TextColumn get vehicleBrand => text()();
   TextColumn get vehicleModel => text()();
   TextColumn get itemName => text()();
@@ -50,6 +51,7 @@ class VehicleDefaultMaintenanceItems extends Table {
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
+    {catalogId},
     {vehicleBrand, vehicleModel, itemName},
   ];
 }
@@ -57,6 +59,7 @@ class VehicleDefaultMaintenanceItems extends Table {
 @DataClassName('VehicleModelRow')
 class VehicleModels extends Table {
   IntColumn get id => integer()();
+  TextColumn get catalogId => text().nullable()();
   TextColumn get brand => text()();
   TextColumn get model => text()();
   IntColumn get sortOrder => integer()();
@@ -69,6 +72,7 @@ class VehicleModels extends Table {
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
+    {catalogId},
     {brand, model},
   ];
 }
@@ -173,7 +177,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration {
@@ -190,6 +194,24 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await migrator.alterTable(TableMigration(cars));
+          }
+          if (from < 5) {
+            await migrator.addColumn(vehicleModels, vehicleModels.catalogId);
+            await migrator.addColumn(
+              vehicleDefaultMaintenanceItems,
+              vehicleDefaultMaintenanceItems.catalogId,
+            );
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS '
+              'vehicle_models_catalog_id_unique '
+              'ON vehicle_models (catalog_id) WHERE catalog_id IS NOT NULL',
+            );
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS '
+              'vehicle_default_maintenance_items_catalog_id_unique '
+              'ON vehicle_default_maintenance_items (catalog_id) '
+              'WHERE catalog_id IS NOT NULL',
+            );
           }
         }
       },

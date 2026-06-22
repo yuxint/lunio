@@ -35,13 +35,14 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 
 ## 3. 数据版本和稳定标识
 
-当前数据库 `schemaVersion` 为 4。当前备份 JSON `schemaVersion` 为 2。
+当前数据库 `schemaVersion` 为 5。当前备份 JSON `schemaVersion` 为 2。
 
 稳定标识口径：
 
 - 所有核心业务对象使用 64 位整数 ID。
 - 车辆主键是 `cars.id`。
 - 车型默认保养项目模板主键是 `vehicle_default_maintenance_items.id`。
+- 内置车型和默认保养模板通过 `catalog_id` 保存内置 JSON 稳定标识；它只用于 bootstrap 同步，不进入备份契约。
 - 车辆内实际保养项目主键是 `maintenance_items.id`。
 - 保养记录主键是 `maintenance_records.id`。
 - 保养记录和保养项目通过 `maintenance_record_items` 关联。
@@ -49,7 +50,7 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 注意：
 
 - 不要把展示文案当作稳定主键。
-- 当前代码没有 `catalogKey` 字段。
+- 当前内置目录稳定标识字段名是 `catalog_id`，不是 `catalogKey`。
 - 当前 `maintenance_items` 没有 `isDefault` 字段。
 - 车型默认模板和车辆内实际保养项目是两张表，不要混用。
 
@@ -649,7 +650,8 @@ App 内通知在壳层根据当前数据即时检查。
 
 - `ensureVehicleModels` 按内置 JSON 车型目录补齐内置车型。
 - `ensureDefaultMaintenanceItems` 按内置 JSON 模板补齐内置默认保养项目。
-- 如果同品牌、车型、项目名的默认模板已经存在，bootstrap 不会覆盖其提醒规则。
+- bootstrap 优先按 `catalog_id` 同步内置行；旧数据中没有 `catalog_id` 但品牌、车型、项目名仍匹配的行会被收编。
+- 内置 JSON 是内置表的权威来源：新增会插入，变更会更新，移除会删除已带 `catalog_id` 的内置行。
 - 这只影响 `vehicle_default_maintenance_items`，不会直接改已经创建车辆的 `maintenance_items`。
 
 ## 12. 备份导出和恢复

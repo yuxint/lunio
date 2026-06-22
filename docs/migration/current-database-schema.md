@@ -1,15 +1,16 @@
 # 当前数据库表结构
 
-本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `4`。
+本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `5`。
 
 本文只记录当前代码事实，不定义未来迁移方案。事实源是 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
 ## 版本和迁移策略
 
-- 当前数据库：`schemaVersion = 4`。
+- 当前数据库：`schemaVersion = 5`。
 - schema 1 升级到 2 时，现有表会被删除并重建。
 - schema 2 升级到 3 时，迁移 `maintenance_items`。
 - schema 3 升级到 4 时，迁移 `cars`。
+- schema 4 升级到 5 时，给内置车型和默认保养模板增加 `catalog_id`。
 - 当前代码没有声明数据库外键约束；关联完整性由 Repository 在事务中校验和维护。
 
 ## 类型约定
@@ -29,6 +30,7 @@
 字段：
 
 - `id`：主键。
+- `catalog_id`：内置车型目录稳定标识，可空；用于 bootstrap 按内置 JSON 新增、更新或删除内置行。
 - `brand`：品牌。
 - `model`：车型。
 - `current_mileage_km`：当前里程，单位公里。
@@ -59,6 +61,7 @@
 约束：
 
 - 主键：`id`。
+- 唯一键：`catalog_id`，允许多条空值。
 - 唯一键：`brand + model`。
 
 ### `vehicle_default_maintenance_items`
@@ -68,6 +71,7 @@
 字段：
 
 - `id`：主键。
+- `catalog_id`：内置模板稳定标识，可空；格式为 `<vehicleId>:<templateItemId>`，用于 bootstrap 按内置 JSON 新增、更新或删除内置行。
 - `vehicle_brand`：车辆品牌。
 - `vehicle_model`：车型。
 - `item_name`：项目名称。
@@ -85,6 +89,7 @@
 约束：
 
 - 主键：`id`。
+- 唯一键：`catalog_id`，允许多条空值。
 - 唯一键：`vehicle_brand + vehicle_model + item_name`。
 
 ### `maintenance_items`
@@ -207,7 +212,7 @@
 
 - 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联，并清理指向该车的 `appliedCarId`。
 - 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目和车辆。
-- 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 模板补齐车型和默认项目。
+- 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
 - 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。
 
 ## 备份契约边界

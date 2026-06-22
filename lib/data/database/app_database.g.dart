@@ -523,6 +523,17 @@ class $VehicleDefaultMaintenanceItemsTable
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _catalogIdMeta = const VerificationMeta(
+    'catalogId',
+  );
+  @override
+  late final GeneratedColumn<String> catalogId = GeneratedColumn<String>(
+    'catalog_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _vehicleBrandMeta = const VerificationMeta(
     'vehicleBrand',
   );
@@ -679,6 +690,7 @@ class $VehicleDefaultMaintenanceItemsTable
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    catalogId,
     vehicleBrand,
     vehicleModel,
     itemName,
@@ -707,6 +719,12 @@ class $VehicleDefaultMaintenanceItemsTable
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('catalog_id')) {
+      context.handle(
+        _catalogIdMeta,
+        catalogId.isAcceptableOrUnknown(data['catalog_id']!, _catalogIdMeta),
+      );
     }
     if (data.containsKey('vehicle_brand')) {
       context.handle(
@@ -831,6 +849,7 @@ class $VehicleDefaultMaintenanceItemsTable
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
+    {catalogId},
     {vehicleBrand, vehicleModel, itemName},
   ];
   @override
@@ -844,6 +863,10 @@ class $VehicleDefaultMaintenanceItemsTable
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      catalogId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}catalog_id'],
+      ),
       vehicleBrand: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}vehicle_brand'],
@@ -908,6 +931,7 @@ class $VehicleDefaultMaintenanceItemsTable
 class VehicleDefaultMaintenanceItemRow extends DataClass
     implements Insertable<VehicleDefaultMaintenanceItemRow> {
   final int id;
+  final String? catalogId;
   final String vehicleBrand;
   final String vehicleModel;
   final String itemName;
@@ -923,6 +947,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   final int version;
   const VehicleDefaultMaintenanceItemRow({
     required this.id,
+    this.catalogId,
     required this.vehicleBrand,
     required this.vehicleModel,
     required this.itemName,
@@ -941,6 +966,9 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || catalogId != null) {
+      map['catalog_id'] = Variable<String>(catalogId);
+    }
     map['vehicle_brand'] = Variable<String>(vehicleBrand);
     map['vehicle_model'] = Variable<String>(vehicleModel);
     map['item_name'] = Variable<String>(itemName);
@@ -964,6 +992,9 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   VehicleDefaultMaintenanceItemsCompanion toCompanion(bool nullToAbsent) {
     return VehicleDefaultMaintenanceItemsCompanion(
       id: Value(id),
+      catalogId: catalogId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(catalogId),
       vehicleBrand: Value(vehicleBrand),
       vehicleModel: Value(vehicleModel),
       itemName: Value(itemName),
@@ -991,6 +1022,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return VehicleDefaultMaintenanceItemRow(
       id: serializer.fromJson<int>(json['id']),
+      catalogId: serializer.fromJson<String?>(json['catalogId']),
       vehicleBrand: serializer.fromJson<String>(json['vehicleBrand']),
       vehicleModel: serializer.fromJson<String>(json['vehicleModel']),
       itemName: serializer.fromJson<String>(json['itemName']),
@@ -1013,6 +1045,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'catalogId': serializer.toJson<String?>(catalogId),
       'vehicleBrand': serializer.toJson<String>(vehicleBrand),
       'vehicleModel': serializer.toJson<String>(vehicleModel),
       'itemName': serializer.toJson<String>(itemName),
@@ -1031,6 +1064,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
 
   VehicleDefaultMaintenanceItemRow copyWith({
     int? id,
+    Value<String?> catalogId = const Value.absent(),
     String? vehicleBrand,
     String? vehicleModel,
     String? itemName,
@@ -1046,6 +1080,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     int? version,
   }) => VehicleDefaultMaintenanceItemRow(
     id: id ?? this.id,
+    catalogId: catalogId.present ? catalogId.value : this.catalogId,
     vehicleBrand: vehicleBrand ?? this.vehicleBrand,
     vehicleModel: vehicleModel ?? this.vehicleModel,
     itemName: itemName ?? this.itemName,
@@ -1069,6 +1104,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   ) {
     return VehicleDefaultMaintenanceItemRow(
       id: data.id.present ? data.id.value : this.id,
+      catalogId: data.catalogId.present ? data.catalogId.value : this.catalogId,
       vehicleBrand: data.vehicleBrand.present
           ? data.vehicleBrand.value
           : this.vehicleBrand,
@@ -1107,6 +1143,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   String toString() {
     return (StringBuffer('VehicleDefaultMaintenanceItemRow(')
           ..write('id: $id, ')
+          ..write('catalogId: $catalogId, ')
           ..write('vehicleBrand: $vehicleBrand, ')
           ..write('vehicleModel: $vehicleModel, ')
           ..write('itemName: $itemName, ')
@@ -1127,6 +1164,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   @override
   int get hashCode => Object.hash(
     id,
+    catalogId,
     vehicleBrand,
     vehicleModel,
     itemName,
@@ -1146,6 +1184,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
       identical(this, other) ||
       (other is VehicleDefaultMaintenanceItemRow &&
           other.id == this.id &&
+          other.catalogId == this.catalogId &&
           other.vehicleBrand == this.vehicleBrand &&
           other.vehicleModel == this.vehicleModel &&
           other.itemName == this.itemName &&
@@ -1164,6 +1203,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
 class VehicleDefaultMaintenanceItemsCompanion
     extends UpdateCompanion<VehicleDefaultMaintenanceItemRow> {
   final Value<int> id;
+  final Value<String?> catalogId;
   final Value<String> vehicleBrand;
   final Value<String> vehicleModel;
   final Value<String> itemName;
@@ -1179,6 +1219,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   final Value<int> version;
   const VehicleDefaultMaintenanceItemsCompanion({
     this.id = const Value.absent(),
+    this.catalogId = const Value.absent(),
     this.vehicleBrand = const Value.absent(),
     this.vehicleModel = const Value.absent(),
     this.itemName = const Value.absent(),
@@ -1195,6 +1236,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   });
   VehicleDefaultMaintenanceItemsCompanion.insert({
     this.id = const Value.absent(),
+    this.catalogId = const Value.absent(),
     required String vehicleBrand,
     required String vehicleModel,
     required String itemName,
@@ -1217,6 +1259,7 @@ class VehicleDefaultMaintenanceItemsCompanion
        updatedAt = Value(updatedAt);
   static Insertable<VehicleDefaultMaintenanceItemRow> custom({
     Expression<int>? id,
+    Expression<String>? catalogId,
     Expression<String>? vehicleBrand,
     Expression<String>? vehicleModel,
     Expression<String>? itemName,
@@ -1233,6 +1276,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (catalogId != null) 'catalog_id': catalogId,
       if (vehicleBrand != null) 'vehicle_brand': vehicleBrand,
       if (vehicleModel != null) 'vehicle_model': vehicleModel,
       if (itemName != null) 'item_name': itemName,
@@ -1253,6 +1297,7 @@ class VehicleDefaultMaintenanceItemsCompanion
 
   VehicleDefaultMaintenanceItemsCompanion copyWith({
     Value<int>? id,
+    Value<String?>? catalogId,
     Value<String>? vehicleBrand,
     Value<String>? vehicleModel,
     Value<String>? itemName,
@@ -1269,6 +1314,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   }) {
     return VehicleDefaultMaintenanceItemsCompanion(
       id: id ?? this.id,
+      catalogId: catalogId ?? this.catalogId,
       vehicleBrand: vehicleBrand ?? this.vehicleBrand,
       vehicleModel: vehicleModel ?? this.vehicleModel,
       itemName: itemName ?? this.itemName,
@@ -1290,6 +1336,9 @@ class VehicleDefaultMaintenanceItemsCompanion
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (catalogId.present) {
+      map['catalog_id'] = Variable<String>(catalogId.value);
     }
     if (vehicleBrand.present) {
       map['vehicle_brand'] = Variable<String>(vehicleBrand.value);
@@ -1339,6 +1388,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   String toString() {
     return (StringBuffer('VehicleDefaultMaintenanceItemsCompanion(')
           ..write('id: $id, ')
+          ..write('catalogId: $catalogId, ')
           ..write('vehicleBrand: $vehicleBrand, ')
           ..write('vehicleModel: $vehicleModel, ')
           ..write('itemName: $itemName, ')
@@ -1370,6 +1420,17 @@ class $VehicleModelsTable extends VehicleModels
     aliasedName,
     false,
     type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _catalogIdMeta = const VerificationMeta(
+    'catalogId',
+  );
+  @override
+  late final GeneratedColumn<String> catalogId = GeneratedColumn<String>(
+    'catalog_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _brandMeta = const VerificationMeta('brand');
@@ -1439,6 +1500,7 @@ class $VehicleModelsTable extends VehicleModels
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    catalogId,
     brand,
     model,
     sortOrder,
@@ -1460,6 +1522,12 @@ class $VehicleModelsTable extends VehicleModels
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('catalog_id')) {
+      context.handle(
+        _catalogIdMeta,
+        catalogId.isAcceptableOrUnknown(data['catalog_id']!, _catalogIdMeta),
+      );
     }
     if (data.containsKey('brand')) {
       context.handle(
@@ -1512,6 +1580,7 @@ class $VehicleModelsTable extends VehicleModels
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
+    {catalogId},
     {brand, model},
   ];
   @override
@@ -1522,6 +1591,10 @@ class $VehicleModelsTable extends VehicleModels
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      catalogId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}catalog_id'],
+      ),
       brand: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}brand'],
@@ -1557,6 +1630,7 @@ class $VehicleModelsTable extends VehicleModels
 
 class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   final int id;
+  final String? catalogId;
   final String brand;
   final String model;
   final int sortOrder;
@@ -1565,6 +1639,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   final int version;
   const VehicleModelRow({
     required this.id,
+    this.catalogId,
     required this.brand,
     required this.model,
     required this.sortOrder,
@@ -1576,6 +1651,9 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || catalogId != null) {
+      map['catalog_id'] = Variable<String>(catalogId);
+    }
     map['brand'] = Variable<String>(brand);
     map['model'] = Variable<String>(model);
     map['sort_order'] = Variable<int>(sortOrder);
@@ -1588,6 +1666,9 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   VehicleModelsCompanion toCompanion(bool nullToAbsent) {
     return VehicleModelsCompanion(
       id: Value(id),
+      catalogId: catalogId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(catalogId),
       brand: Value(brand),
       model: Value(model),
       sortOrder: Value(sortOrder),
@@ -1604,6 +1685,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return VehicleModelRow(
       id: serializer.fromJson<int>(json['id']),
+      catalogId: serializer.fromJson<String?>(json['catalogId']),
       brand: serializer.fromJson<String>(json['brand']),
       model: serializer.fromJson<String>(json['model']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
@@ -1617,6 +1699,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'catalogId': serializer.toJson<String?>(catalogId),
       'brand': serializer.toJson<String>(brand),
       'model': serializer.toJson<String>(model),
       'sortOrder': serializer.toJson<int>(sortOrder),
@@ -1628,6 +1711,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
 
   VehicleModelRow copyWith({
     int? id,
+    Value<String?> catalogId = const Value.absent(),
     String? brand,
     String? model,
     int? sortOrder,
@@ -1636,6 +1720,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     int? version,
   }) => VehicleModelRow(
     id: id ?? this.id,
+    catalogId: catalogId.present ? catalogId.value : this.catalogId,
     brand: brand ?? this.brand,
     model: model ?? this.model,
     sortOrder: sortOrder ?? this.sortOrder,
@@ -1646,6 +1731,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   VehicleModelRow copyWithCompanion(VehicleModelsCompanion data) {
     return VehicleModelRow(
       id: data.id.present ? data.id.value : this.id,
+      catalogId: data.catalogId.present ? data.catalogId.value : this.catalogId,
       brand: data.brand.present ? data.brand.value : this.brand,
       model: data.model.present ? data.model.value : this.model,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
@@ -1661,6 +1747,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   String toString() {
     return (StringBuffer('VehicleModelRow(')
           ..write('id: $id, ')
+          ..write('catalogId: $catalogId, ')
           ..write('brand: $brand, ')
           ..write('model: $model, ')
           ..write('sortOrder: $sortOrder, ')
@@ -1672,13 +1759,22 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, brand, model, sortOrder, syncStatus, updatedAt, version);
+  int get hashCode => Object.hash(
+    id,
+    catalogId,
+    brand,
+    model,
+    sortOrder,
+    syncStatus,
+    updatedAt,
+    version,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is VehicleModelRow &&
           other.id == this.id &&
+          other.catalogId == this.catalogId &&
           other.brand == this.brand &&
           other.model == this.model &&
           other.sortOrder == this.sortOrder &&
@@ -1689,6 +1785,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
 
 class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   final Value<int> id;
+  final Value<String?> catalogId;
   final Value<String> brand;
   final Value<String> model;
   final Value<int> sortOrder;
@@ -1697,6 +1794,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   final Value<int> version;
   const VehicleModelsCompanion({
     this.id = const Value.absent(),
+    this.catalogId = const Value.absent(),
     this.brand = const Value.absent(),
     this.model = const Value.absent(),
     this.sortOrder = const Value.absent(),
@@ -1706,6 +1804,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   });
   VehicleModelsCompanion.insert({
     this.id = const Value.absent(),
+    this.catalogId = const Value.absent(),
     required String brand,
     required String model,
     required int sortOrder,
@@ -1718,6 +1817,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
        updatedAt = Value(updatedAt);
   static Insertable<VehicleModelRow> custom({
     Expression<int>? id,
+    Expression<String>? catalogId,
     Expression<String>? brand,
     Expression<String>? model,
     Expression<int>? sortOrder,
@@ -1727,6 +1827,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (catalogId != null) 'catalog_id': catalogId,
       if (brand != null) 'brand': brand,
       if (model != null) 'model': model,
       if (sortOrder != null) 'sort_order': sortOrder,
@@ -1738,6 +1839,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
 
   VehicleModelsCompanion copyWith({
     Value<int>? id,
+    Value<String?>? catalogId,
     Value<String>? brand,
     Value<String>? model,
     Value<int>? sortOrder,
@@ -1747,6 +1849,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   }) {
     return VehicleModelsCompanion(
       id: id ?? this.id,
+      catalogId: catalogId ?? this.catalogId,
       brand: brand ?? this.brand,
       model: model ?? this.model,
       sortOrder: sortOrder ?? this.sortOrder,
@@ -1761,6 +1864,9 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (catalogId.present) {
+      map['catalog_id'] = Variable<String>(catalogId.value);
     }
     if (brand.present) {
       map['brand'] = Variable<String>(brand.value);
@@ -1787,6 +1893,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   String toString() {
     return (StringBuffer('VehicleModelsCompanion(')
           ..write('id: $id, ')
+          ..write('catalogId: $catalogId, ')
           ..write('brand: $brand, ')
           ..write('model: $model, ')
           ..write('sortOrder: $sortOrder, ')
@@ -4207,6 +4314,7 @@ typedef $$CarsTableProcessedTableManager =
 typedef $$VehicleDefaultMaintenanceItemsTableCreateCompanionBuilder =
     VehicleDefaultMaintenanceItemsCompanion Function({
       Value<int> id,
+      Value<String?> catalogId,
       required String vehicleBrand,
       required String vehicleModel,
       required String itemName,
@@ -4224,6 +4332,7 @@ typedef $$VehicleDefaultMaintenanceItemsTableCreateCompanionBuilder =
 typedef $$VehicleDefaultMaintenanceItemsTableUpdateCompanionBuilder =
     VehicleDefaultMaintenanceItemsCompanion Function({
       Value<int> id,
+      Value<String?> catalogId,
       Value<String> vehicleBrand,
       Value<String> vehicleModel,
       Value<String> itemName,
@@ -4250,6 +4359,11 @@ class $$VehicleDefaultMaintenanceItemsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get catalogId => $composableBuilder(
+    column: $table.catalogId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4333,6 +4447,11 @@ class $$VehicleDefaultMaintenanceItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get catalogId => $composableBuilder(
+    column: $table.catalogId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get vehicleBrand => $composableBuilder(
     column: $table.vehicleBrand,
     builder: (column) => ColumnOrderings(column),
@@ -4410,6 +4529,9 @@ class $$VehicleDefaultMaintenanceItemsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get catalogId =>
+      $composableBuilder(column: $table.catalogId, builder: (column) => column);
 
   GeneratedColumn<String> get vehicleBrand => $composableBuilder(
     column: $table.vehicleBrand,
@@ -4516,6 +4638,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> catalogId = const Value.absent(),
                 Value<String> vehicleBrand = const Value.absent(),
                 Value<String> vehicleModel = const Value.absent(),
                 Value<String> itemName = const Value.absent(),
@@ -4531,6 +4654,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
                 Value<int> version = const Value.absent(),
               }) => VehicleDefaultMaintenanceItemsCompanion(
                 id: id,
+                catalogId: catalogId,
                 vehicleBrand: vehicleBrand,
                 vehicleModel: vehicleModel,
                 itemName: itemName,
@@ -4548,6 +4672,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> catalogId = const Value.absent(),
                 required String vehicleBrand,
                 required String vehicleModel,
                 required String itemName,
@@ -4563,6 +4688,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
                 Value<int> version = const Value.absent(),
               }) => VehicleDefaultMaintenanceItemsCompanion.insert(
                 id: id,
+                catalogId: catalogId,
                 vehicleBrand: vehicleBrand,
                 vehicleModel: vehicleModel,
                 itemName: itemName,
@@ -4609,6 +4735,7 @@ typedef $$VehicleDefaultMaintenanceItemsTableProcessedTableManager =
 typedef $$VehicleModelsTableCreateCompanionBuilder =
     VehicleModelsCompanion Function({
       Value<int> id,
+      Value<String?> catalogId,
       required String brand,
       required String model,
       required int sortOrder,
@@ -4619,6 +4746,7 @@ typedef $$VehicleModelsTableCreateCompanionBuilder =
 typedef $$VehicleModelsTableUpdateCompanionBuilder =
     VehicleModelsCompanion Function({
       Value<int> id,
+      Value<String?> catalogId,
       Value<String> brand,
       Value<String> model,
       Value<int> sortOrder,
@@ -4638,6 +4766,11 @@ class $$VehicleModelsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get catalogId => $composableBuilder(
+    column: $table.catalogId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4686,6 +4819,11 @@ class $$VehicleModelsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get catalogId => $composableBuilder(
+    column: $table.catalogId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get brand => $composableBuilder(
     column: $table.brand,
     builder: (column) => ColumnOrderings(column),
@@ -4728,6 +4866,9 @@ class $$VehicleModelsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get catalogId =>
+      $composableBuilder(column: $table.catalogId, builder: (column) => column);
 
   GeneratedColumn<String> get brand =>
       $composableBuilder(column: $table.brand, builder: (column) => column);
@@ -4782,6 +4923,7 @@ class $$VehicleModelsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> catalogId = const Value.absent(),
                 Value<String> brand = const Value.absent(),
                 Value<String> model = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
@@ -4790,6 +4932,7 @@ class $$VehicleModelsTableTableManager
                 Value<int> version = const Value.absent(),
               }) => VehicleModelsCompanion(
                 id: id,
+                catalogId: catalogId,
                 brand: brand,
                 model: model,
                 sortOrder: sortOrder,
@@ -4800,6 +4943,7 @@ class $$VehicleModelsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> catalogId = const Value.absent(),
                 required String brand,
                 required String model,
                 required int sortOrder,
@@ -4808,6 +4952,7 @@ class $$VehicleModelsTableTableManager
                 Value<int> version = const Value.absent(),
               }) => VehicleModelsCompanion.insert(
                 id: id,
+                catalogId: catalogId,
                 brand: brand,
                 model: model,
                 sortOrder: sortOrder,

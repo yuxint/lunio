@@ -28,19 +28,22 @@ class BuiltInVehicleCatalog {
 
   factory BuiltInVehicleCatalog.fromJson(Map<String, Object?> json) {
     final schemaVersion = json['schemaVersion'];
-    if (schemaVersion != 1) {
+    if (schemaVersion != 2) {
       throw ArgumentError('Unsupported vehicle catalog schemaVersion');
     }
     final templatesJson = (json['templates'] as Map).cast<String, Object?>();
     final templates = templatesJson.map((key, value) {
       final templateKey = _nonEmptyString(key, 'template key');
-      return MapEntry(
+      final items = (value as List)
+          .cast<Map<String, Object?>>()
+          .map(BuiltInMaintenanceItemSpec.fromJson)
+          .toList();
+      _validateUniqueIds(
+        items.map((item) => item.id),
+        'maintenance item',
         templateKey,
-        (value as List)
-            .cast<Map<String, Object?>>()
-            .map(BuiltInMaintenanceItemSpec.fromJson)
-            .toList(),
       );
+      return MapEntry(templateKey, items);
     });
     for (final entry in templates.entries) {
       if (entry.value.isEmpty) {
@@ -51,6 +54,7 @@ class BuiltInVehicleCatalog {
         .cast<Map<String, Object?>>()
         .map(BuiltInVehicleSeed.fromJson)
         .toList();
+    _validateUniqueIds(vehicles.map((vehicle) => vehicle.id), 'vehicle');
     for (final vehicle in vehicles) {
       if (!templates.containsKey(vehicle.template)) {
         throw ArgumentError('Unknown vehicle template: ${vehicle.template}');
@@ -63,6 +67,7 @@ class BuiltInVehicleCatalog {
     return [
       for (final entry in vehicles.indexed)
         VehicleModel(
+          catalogId: entry.$2.id,
           brand: entry.$2.brand,
           model: entry.$2.model,
           sortOrder: entry.$1 + 1,
@@ -78,6 +83,7 @@ class BuiltInVehicleCatalog {
       for (final vehicle in vehicles)
         for (final entry in templates[vehicle.template]!.indexed)
           VehicleDefaultMaintenanceItem(
+            catalogId: '${vehicle.id}:${entry.$2.id}',
             vehicleBrand: vehicle.brand,
             vehicleModel: vehicle.model,
             itemName: entry.$2.name,
@@ -94,17 +100,20 @@ class BuiltInVehicleCatalog {
 
 class BuiltInVehicleSeed {
   const BuiltInVehicleSeed({
+    required this.id,
     required this.brand,
     required this.model,
     required this.template,
   });
 
+  final String id;
   final String brand;
   final String model;
   final String template;
 
   factory BuiltInVehicleSeed.fromJson(Map<String, Object?> json) {
     return BuiltInVehicleSeed(
+      id: _nonEmptyString(json['id'], 'vehicle id'),
       brand: _nonEmptyString(json['brand'], 'vehicle brand'),
       model: _nonEmptyString(json['model'], 'vehicle model'),
       template: _nonEmptyString(json['template'], 'vehicle template'),
@@ -114,6 +123,7 @@ class BuiltInVehicleSeed {
 
 class BuiltInMaintenanceItemSpec {
   const BuiltInMaintenanceItemSpec({
+    required this.id,
     required this.name,
     required this.remindByMileage,
     required this.remindByTime,
@@ -121,6 +131,7 @@ class BuiltInMaintenanceItemSpec {
     this.timeIntervalMonths,
   });
 
+  final String id;
   final String name;
   final bool remindByMileage;
   final bool remindByTime;
@@ -144,6 +155,7 @@ class BuiltInMaintenanceItemSpec {
       throw ArgumentError('Time reminder requires a positive interval');
     }
     return BuiltInMaintenanceItemSpec(
+      id: _nonEmptyString(json['id'], 'maintenance item id'),
       name: _nonEmptyString(json['name'], 'maintenance item name'),
       remindByMileage: remindByMileage,
       remindByTime: remindByTime,
@@ -158,4 +170,14 @@ String _nonEmptyString(Object? value, String fieldName) {
     throw ArgumentError('Invalid $fieldName');
   }
   return value;
+}
+
+void _validateUniqueIds(Iterable<String> ids, String label, [String? scope]) {
+  final seen = <String>{};
+  for (final id in ids) {
+    if (!seen.add(id)) {
+      final suffix = scope == null ? '' : ' in $scope';
+      throw ArgumentError('Duplicate $label id$suffix: $id');
+    }
+  }
 }

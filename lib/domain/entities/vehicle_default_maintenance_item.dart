@@ -3,6 +3,7 @@ import 'sync_metadata.dart';
 class VehicleDefaultMaintenanceItem {
   const VehicleDefaultMaintenanceItem({
     this.id,
+    this.catalogId,
     required this.vehicleBrand,
     required this.vehicleModel,
     required this.itemName,
@@ -17,6 +18,7 @@ class VehicleDefaultMaintenanceItem {
   });
 
   final int? id;
+  final String? catalogId;
   final String vehicleBrand;
   final String vehicleModel;
   final String itemName;
