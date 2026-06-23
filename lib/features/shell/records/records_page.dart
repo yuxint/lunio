@@ -12,7 +12,7 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
-import '../profile/profile_page.dart';
+import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 
 class RecordsPreviewPage extends ConsumerStatefulWidget {

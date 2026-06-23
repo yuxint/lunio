@@ -27,6 +27,13 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案和小型 UI 组件。
+  - `reminders/parking_countdown.dart`：停车倒计时卡片、表单、时间选择器、保存和清除逻辑。
+  - `reminders/reminder_list.dart`：保养提醒列表、提醒行、记录详情 sheet 和进度环。
+  - `reminders/reminder_notifications.dart`、`reminders/reminder_dialogs.dart`：提醒 view data、系统通知调度 helper、snooze/ack key、应用内提醒弹窗。
+  - `profile/vehicles.dart`：车辆列表、车辆卡片、添加/编辑车辆、车型选择和车辆切换。
+  - `profile/maintenance_items.dart`：保养项目 sheet、列表、卡片、项目表单和恢复默认草稿。
+  - `profile/settings_data.dart`：备份导入导出、清空数据、通知设置、手动日期和个人中心设置行。
+  - `shared/shell_shared.dart`：shell shared barrel；具体实现分别在 `shared_widgets.dart`、`date_picker.dart`、`modal_feedback.dart`、`formatters.dart`、`shell_actions.dart`。
 - `lib/core/theme/lunio_tokens.dart`、`lib/core/theme/lunio_theme.dart`：全局视觉 token 和 ThemeData。做全局视觉调整优先改这里。
 - `DESIGN.md`：设计 token 与产品 UI 原则。改视觉、颜色、间距、反馈模式时要同步检查，必要时同步更新。
 
