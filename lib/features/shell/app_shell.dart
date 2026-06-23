@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import '../../core/date/local_date.dart';
 import '../../core/notifications/lunio_notification_service.dart';
 import '../../core/platform/native_files.dart';
 import '../../core/platform/native_notification_settings.dart';
+import '../../core/platform/native_system_ui.dart';
 import '../../core/theme/lunio_tokens.dart';
 import '../../core/widgets/lunio_components.dart';
 import '../../data/backup/backup_codec.dart';
@@ -46,11 +48,14 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _syncingSystemNotifications = false;
   bool _checkingInAppNotifications = false;
   bool _checkingInitialSystemPermission = false;
+  double _androidThreeButtonNavigationInset = 0.0;
+  int _systemNavigationRequestId = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _refreshAndroidSystemNavigationInset();
   }
 
   @override
@@ -63,10 +68,16 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _inAppNotificationSignature = null;
+      _refreshAndroidSystemNavigationInset();
       if (mounted) {
         setState(() {});
       }
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    _refreshAndroidSystemNavigationInset();
   }
 
   @override
@@ -96,7 +107,12 @@ class _AppShellState extends ConsumerState<AppShell>
       backgroundColor: tokens.background,
       body: SafeArea(child: pages[widget.selectedIndex]),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+        padding: EdgeInsets.fromLTRB(
+          14,
+          0,
+          14,
+          12 + _androidThreeButtonNavigationInset,
+        ),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: tokens.surface.withValues(alpha: 0.88),
@@ -152,6 +168,33 @@ class _AppShellState extends ConsumerState<AppShell>
         ),
       ),
     );
+  }
+
+  Future<void> _refreshAndroidSystemNavigationInset() async {
+    final requestId = ++_systemNavigationRequestId;
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      _updateAndroidSystemNavigationInset(0.0, requestId);
+      return;
+    }
+
+    final info = await NativeSystemUi.getSystemNavigationInfo();
+    if (!mounted || requestId != _systemNavigationRequestId) {
+      return;
+    }
+    final nextInset = info?.usesThreeButtonNavigation == true
+        ? info!.navigationBarHeight
+        : 0.0;
+    _updateAndroidSystemNavigationInset(nextInset, requestId);
+  }
+
+  void _updateAndroidSystemNavigationInset(double nextInset, int requestId) {
+    if (!mounted || requestId != _systemNavigationRequestId) {
+      return;
+    }
+    if (_androidThreeButtonNavigationInset == nextInset) {
+      return;
+    }
+    setState(() => _androidThreeButtonNavigationInset = nextInset);
   }
 
   void _syncReminderNotifications({

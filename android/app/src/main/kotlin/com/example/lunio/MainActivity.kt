@@ -3,7 +3,9 @@ package com.example.lunio
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import android.view.WindowInsets
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -38,6 +40,46 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "lunio/native_system_ui",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getSystemNavigationInfo" -> getSystemNavigationInfo(result)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun getSystemNavigationInfo(result: MethodChannel.Result) {
+        val navigationMode = try {
+            Settings.Secure.getInt(contentResolver, "navigation_mode")
+        } catch (error: Settings.SettingNotFoundException) {
+            -1
+        }
+        result.success(
+            mapOf(
+                "navigationMode" to navigationMode,
+                "navigationBarHeight" to navigationBarHeightDp(),
+            ),
+        )
+    }
+
+    private fun navigationBarHeightDp(): Double {
+        return navigationBarHeightPx() / resources.displayMetrics.density.toDouble()
+    }
+
+    private fun navigationBarHeightPx(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bottomInset = window.decorView.rootWindowInsets
+                ?.getInsets(WindowInsets.Type.navigationBars())
+                ?.bottom ?: 0
+            if (bottomInset > 0) {
+                return bottomInset
+            }
+        }
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else 0
     }
 
     private fun openNotificationSettings(result: MethodChannel.Result) {

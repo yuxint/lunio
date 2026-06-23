@@ -31,6 +31,7 @@ void main() {
   const nativeNotificationSettingsChannel = MethodChannel(
     'lunio/native_notification_settings',
   );
+  const nativeSystemUiChannel = MethodChannel('lunio/native_system_ui');
   const notificationsChannel = MethodChannel(
     'dexterous.com/flutter/local_notifications',
   );
@@ -54,6 +55,38 @@ void main() {
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativeNotificationSettingsChannel, null),
     );
+  }
+
+  void mockNativeSystemUi({
+    required int navigationMode,
+    required double navigationBarHeight,
+  }) {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativeSystemUiChannel, (call) async {
+          if (call.method == 'getSystemNavigationInfo') {
+            return {
+              'navigationMode': navigationMode,
+              'navigationBarHeight': navigationBarHeight,
+            };
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativeSystemUiChannel, null),
+    );
+  }
+
+  EdgeInsets bottomNavigationShellPadding(WidgetTester tester) {
+    final paddingFinder = find.byWidgetPredicate((widget) {
+      if (widget is! Padding || widget.padding is! EdgeInsets) {
+        return false;
+      }
+      final padding = widget.padding as EdgeInsets;
+      return padding.left == 14 && padding.top == 0 && padding.right == 14;
+    });
+    expect(paddingFinder, findsOneWidget);
+    return tester.widget<Padding>(paddingFinder).padding as EdgeInsets;
   }
 
   VoidCallback mockAndroidNotifications(
@@ -235,6 +268,72 @@ void main() {
     expect(find.text('提醒'), findsOneWidget);
     expect(find.text('记录'), findsOneWidget);
     expect(find.text('我的'), findsOneWidget);
+  });
+
+  testWidgets('bottom navigation clears Android three-button inset', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      const systemNavigationHeight = 48.0;
+      mockNativeSystemUi(
+        navigationMode: 0,
+        navigationBarHeight: systemNavigationHeight,
+      );
+
+      await pumpApp(tester);
+
+      expect(
+        bottomNavigationShellPadding(tester).bottom,
+        12 + systemNavigationHeight,
+      );
+      final screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final systemNavigationTop = screenHeight - systemNavigationHeight;
+
+      expect(
+        tester.getBottomLeft(find.text('我的')).dy,
+        lessThanOrEqualTo(systemNavigationTop),
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('bottom navigation stays put for Android gesture navigation', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      mockNativeSystemUi(navigationMode: 2, navigationBarHeight: 24);
+      await pumpApp(tester);
+
+      expect(bottomNavigationShellPadding(tester).bottom, 12);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('bottom navigation stays put for iOS bottom safe area', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    var invokedNativeSystemUi = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativeSystemUiChannel, (call) async {
+          invokedNativeSystemUi = true;
+          return null;
+        });
+    try {
+      await pumpApp(tester);
+
+      expect(bottomNavigationShellPadding(tester).bottom, 12);
+      expect(invokedNativeSystemUi, isFalse);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativeSystemUiChannel, null);
+    }
   });
 
   testWidgets('bottom navigation switches primary tabs', (tester) async {
