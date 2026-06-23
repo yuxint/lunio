@@ -22,7 +22,11 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/app/lunio_app.dart`：`MaterialApp.router`、主题模式和路由挂载。
 - `lib/app/app_router.dart`：GoRouter 配置。`appRouter` 是稳定单例，主题切换时不要重建路由导致跳页。
 - `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、Repository、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好等。
-- `lib/features/shell/app_shell.dart`：当前主要 UI 与交互集中点，包含三大页面、底部导航、车辆/记录/设置相关 sheet、toast、备份操作。
+- `lib/features/shell/app_shell.dart`：主壳层入口，保留三入口页面挂载、底部导航、生命周期监听和提醒通知同步触发。
+- `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒通知 view data 与调度 helper。
+- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。
+- `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
+- `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案和小型 UI 组件。
 - `lib/core/theme/lunio_tokens.dart`、`lib/core/theme/lunio_theme.dart`：全局视觉 token 和 ThemeData。做全局视觉调整优先改这里。
 - `DESIGN.md`：设计 token 与产品 UI 原则。改视觉、颜色、间距、反馈模式时要同步检查，必要时同步更新。
 
@@ -30,7 +34,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - `lib/domain/entities/`：领域实体，保持纯 Dart 数据结构与基础校验。
 - `lib/domain/rules/`：业务规则，例如保养进度、记录校验、当前应用车辆回退规则。优先把可测试的业务判断放这里。
-- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 4。
+- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 5。
 - `lib/data/database/app_database.g.dart`：Drift 生成文件。改表结构后用 build_runner 生成，不要手写。
 - `lib/data/repositories/lunio_repository.dart`：数据库读写、事务、默认数据、备份导入导出恢复。
 - `lib/data/backup/backup_codec.dart`：`schemaVersion: 2` JSON 备份契约编码/解码。
@@ -47,7 +51,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 ## 数据与契约注意点
 
 - 当前产品/文档口径是正式 v1；这不是数据库或备份契约版本。
-- 当前数据库 `schemaVersion` 是 4，备份 JSON `schemaVersion` 是 2。
+- 当前数据库 `schemaVersion` 是 5，备份 JSON `schemaVersion` 是 2。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同时考虑迁移、兼容、测试和文档。
 - 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueEnabled`、`maintenanceDueRepeat`、`parkingCountdown`。不要把展示文案当作稳定标识。
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用 `LunioRepository` 与 `providers.dart` 里的现有模式。
@@ -57,7 +61,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 ## UI 与交互约定
 
-- 主交互集中在 `AppShell`，改 UI 前先读相关局部代码，避免跨区域重构。
+- 主交互按 shell 子目录拆分；改 UI 前先从 `app_shell.dart` 定位入口，再读 `reminders/`、`records/`、`profile/` 或 `shared/` 的相关局部代码，避免跨区域重构。
 - 视觉改动优先走 `LunioTokens` 和 `buildLunioTheme`，不要在页面里散落新的硬编码颜色。
 - 改全局视觉、产品原则或 token 时，同步检查 `DESIGN.md`。
 - 瞬时成功反馈使用页面内容区内的轻量 toast 风格；不要轻易改回系统底部 `SnackBar`，也不要贴近系统状态栏。
