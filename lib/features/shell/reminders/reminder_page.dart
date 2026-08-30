@@ -1,3 +1,15 @@
+// 提醒页（/reminders，默认首页）。
+//
+// 页面结构（自上而下）：
+//   1. LoadingPage / ErrorPage：应用车辆加载中/失败；
+//   2. 无车 → EmptyVehicleCard（"还没有车辆"+ 新增入口）；
+//      有车 → LunioHeroCard 大渐变卡（品牌车型 + 当前里程 + 到期概览）；
+//   3. ReminderActionRow：新增保养记录 / 停车倒计时 两个按钮；
+//   4. 停车倒计时进行中 → ParkingCountdownCard（进度环 + 结束按钮）；
+//   5. ReminderList：待关注项目列表（进度环 + 状态徽章）。
+//
+// ⚠ 性能：250ms Timer.periodic 对整页 setState（停车倒计时刷新需要秒级
+// 重新计算，但重建范围是整页，且无倒计时时也在空转，见审查报告 R11）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'dart:async';
@@ -14,11 +26,15 @@ import 'parking_countdown.dart';
 import 'reminder_list.dart';
 import 'reminder_notifications.dart';
 
+// 17-20 行的 re-export：把 parking_countdown / reminder_dialogs /
+// reminder_notifications 的符号从本文件再导出。实际调用方都直接 import
+// 源文件，这里的 barrel 无消费者（R30）。
 export 'parking_countdown.dart'
     show clearParkingCountdown, showParkingCountdownSheet;
 export 'reminder_dialogs.dart';
 export 'reminder_notifications.dart';
 
+/// 提醒页组件。
 class ReminderPreviewPage extends ConsumerStatefulWidget {
   const ReminderPreviewPage();
 
@@ -28,6 +44,9 @@ class ReminderPreviewPage extends ConsumerStatefulWidget {
 }
 
 class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
+  /// 250ms 周期定时器：驱动停车倒计时的秒级刷新。
+  /// 每次触发 setState 重建整页（Timer 在 dispose 正确取消，无泄漏，
+  /// 但重建范围过大是已知性能问题 R11）。
   Timer? _ticker;
 
   @override
@@ -46,6 +65,9 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
     super.dispose();
   }
 
+  /// build：watch 全部数据 → 按加载态/空态/正常态渲染。
+  /// now 用系统真实时间（停车倒计时不受手动日期影响）。
+  /// canSwitchCar：多于一辆车时右上角显示"切换车辆"按钮。
   @override
   Widget build(BuildContext context) {
     final appliedCar = ref.watch(appliedCarProvider);
@@ -145,6 +167,8 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
   }
 }
 
+/// 两个主操作按钮的行：新增保养记录（打开记录表单 sheet）+
+/// 停车倒计时（倒计时进行中时禁用——必须先结束当前倒计时）。
 class ReminderActionRow extends StatelessWidget {
   const ReminderActionRow({
     required this.onAddRecord,

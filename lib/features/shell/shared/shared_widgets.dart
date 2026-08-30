@@ -1,3 +1,12 @@
+// shell 内部共享 UI 组件（带一定业务形态的小组件，比 core/widgets 更上层）。
+//
+// 复用度统计（引用次数，含定义处）：
+//  - SmallActionButton 18 处 / PrototypeSheetFrame 11 处 —— 高复用，核心组件
+//  - FilterBar、ChoiceChipButton、LoadingPage、ErrorPage —— 各只有记录页/
+//    提醒页单一调用点，属"放错位置的组件"（过度提取，见审查报告 §复用）
+//
+// PrototypeSheetFrame：自绘 sheet 骨架（drag handle + 标题 + 滚动内容），
+// 与 modal_feedback 的 _LunioDefaultSheetSurface 是两套并存实现。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -6,6 +15,8 @@ import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import 'formatters.dart';
 
+/// 横向可滚动的多选筛选条（chip 选中态 + 右下角小对勾）。
+/// 目前只有记录页的年份/项目筛选在用。
 class FilterBar extends StatelessWidget {
   const FilterBar({
     required this.labels,
@@ -93,6 +104,8 @@ class FilterBar extends StatelessWidget {
   }
 }
 
+/// 项目名 pill 组：按手写装箱算法分行（见 _packedPillRows），
+/// 保证每行尽量塞满。用于记录卡/项目卡的项目标签展示。
 class ItemPills extends StatelessWidget {
   const ItemPills({required this.labels});
 
@@ -146,6 +159,7 @@ class ItemPills extends StatelessWidget {
   }
 }
 
+/// 单个项目名 pill（小圆角胶囊）。
 class ItemPill extends StatelessWidget {
   const ItemPill({required this.label, required this.style});
 
@@ -182,6 +196,8 @@ class _PackedPill {
   final double width;
 }
 
+/// pill 装箱布局算法：贪心塞行（宽度按文本实测 + padding + 余量，
+/// 下限 58px；放不下就换行）。⚠ Flutter 自带 Wrap 组件即可实现等价布局。
 List<List<_PackedPill>> _packedPillRows({
   required List<String> labels,
   required double maxWidth,
@@ -241,6 +257,8 @@ List<List<_PackedPill>> _packedPillRows({
   return rows;
 }
 
+/// 用 TextPainter 量文本宽度。
+/// ⚠ painter 未调用 dispose()（Flutter 3.16+ 建议，debug 会提示泄漏，R22）。
 double _measureTextWidth(String text, TextStyle? style, TextScaler textScaler) {
   final painter = TextPainter(
     text: TextSpan(text: text, style: style),
@@ -251,6 +269,9 @@ double _measureTextWidth(String text, TextStyle? style, TextScaler textScaler) {
   return painter.width;
 }
 
+/// 小尺寸动作按钮（全项目最高频复用组件）：
+/// danger/primary/secondary/muted 四种语义色 + 可选 tooltip；
+/// onPressed 为 null 时自动置灰。
 class SmallActionButton extends StatelessWidget {
   const SmallActionButton({
     required this.label,
@@ -314,6 +335,8 @@ class SmallActionButton extends StatelessWidget {
   }
 }
 
+/// 表单类 sheet 的统一骨架：drag handle + 标题/副标题 + 可滚动内容 +
+/// bottomInset（预留给键盘）。配合 showLunioModalSheet(transparent) 使用。
 class PrototypeSheetFrame extends StatelessWidget {
   const PrototypeSheetFrame({
     required this.title,
@@ -390,6 +413,8 @@ class PrototypeSheetFrame extends StatelessWidget {
   }
 }
 
+/// 可多选的项目 chip（记录表单选保养项目用；enabled=false 展示
+/// "已停用但历史上被选过"的项目）。
 class ChoiceChipButton extends StatelessWidget {
   const ChoiceChipButton({
     required this.label,
@@ -432,6 +457,7 @@ class ChoiceChipButton extends StatelessWidget {
   }
 }
 
+/// 页面级加载占位（目前仅提醒页使用；记录/我的页各自手写 loading 分支）。
 class LoadingPage extends StatelessWidget {
   const LoadingPage({required this.title});
 
@@ -446,6 +472,7 @@ class LoadingPage extends StatelessWidget {
   }
 }
 
+/// 页面级错误占位（目前仅提醒页使用）。
 class ErrorPage extends StatelessWidget {
   const ErrorPage({required this.title, required this.error});
 

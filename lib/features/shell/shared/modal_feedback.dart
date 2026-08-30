@@ -1,3 +1,15 @@
+// 弹层与瞬时反馈工具（≈ 前端项目的 Modal/Toast 封装）。
+//
+// 提供四类原语，全部页面统一走这里：
+//  - showLunioModalSheet：底部 sheet（全屏路由式对话框 + 毛玻璃底 + 淡入）
+//  - showLunioDialog / showConfirmDialog / showMessageDialog：居中对话框
+//    （确认框返回 bool?，点取消 false、点确认 true、点遮罩关闭 null）
+//  - showStatusOverlay：页面内容区轻量 toast（Overlay 实现，1.6s 自动消失；
+//    这是产品约定的瞬时成功反馈，替代系统 SnackBar）
+//  - dismissTransientUi：切 tab 时统一收起键盘/toast/snackbar
+//
+// 实现：自绘 showGeneralDialog + BackdropFilter 毛玻璃（不是系统
+// showModalBottomSheet），保证三端观感一致。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'dart:async';
@@ -8,6 +20,9 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 
+/// 底部 sheet：全屏对话框 + 底部对齐内容。
+/// backgroundColor 传 transparent 时不再包默认白底（自绘 sheet 用）。
+/// ⚠ isScrollControlled 参数声明了但未使用（恒全屏），具误导性（R30）。
 Future<T?> showLunioModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -47,6 +62,7 @@ Future<T?> showLunioModalSheet<T>({
   );
 }
 
+/// 居中对话框：缩放+淡入动画。
 Future<T?> showLunioDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -78,6 +94,8 @@ Future<T?> showLunioDialog<T>({
   );
 }
 
+/// 毛玻璃背景层：模糊 scrim + 点击空白处关闭（barrierDismissible 时）。
+/// useSafeArea 决定是否避开刘海/状态栏（居中对话框要避开，sheet 不用）。
 class _LunioModalBackdrop extends StatelessWidget {
   const _LunioModalBackdrop({
     required this.alignment,
@@ -126,6 +144,8 @@ class _LunioModalBackdrop extends StatelessWidget {
   }
 }
 
+/// 内容对齐容器：空 GestureDetector 挡住点击事件，
+/// 防止点内容区触发底层的"点击空白关闭"。
 class _LunioModalContent extends StatelessWidget {
   const _LunioModalContent({required this.alignment, required this.child});
 
@@ -141,6 +161,8 @@ class _LunioModalContent extends StatelessWidget {
   }
 }
 
+/// 默认 sheet 白底：顶部大圆角 + 可选 drag handle + 上投影。
+/// （与 shared_widgets.dart 的 PrototypeSheetFrame 是两套并存的 sheet 骨架）
 class _LunioDefaultSheetSurface extends StatelessWidget {
   const _LunioDefaultSheetSurface({
     required this.showDragHandle,
@@ -189,6 +211,9 @@ class _LunioDefaultSheetSurface extends StatelessWidget {
   }
 }
 
+/// 通用确认框：取消/确认双按钮，destructive=true 时确认键为危险红。
+/// 返回 true（确认）/false（取消）/null（点遮罩关闭）。
+/// 删除记录、删车、清空数据、恢复备份等危险操作都用它。
 Future<bool?> showConfirmDialog({
   required BuildContext context,
   required String title,
@@ -263,6 +288,7 @@ Future<bool?> showConfirmDialog({
   );
 }
 
+/// 单键信息对话框（带语义色图标），如备份恢复冲突提示。
 Future<void> showMessageDialog({
   required BuildContext context,
   required String title,
@@ -335,21 +361,28 @@ Future<void> showMessageDialog({
   );
 }
 
+/// 收起所有瞬时 UI（键盘焦点、状态 toast、SnackBar）。
+/// 底部导航切 tab 时调用，避免残留弹层盖住新页面。
 void dismissTransientUi(BuildContext context) {
   FocusManager.instance.primaryFocus?.unfocus();
   hideStatusOverlay();
   ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
 }
 
+/// toast 语义色枚举。
 enum StatusOverlayTone { success, error, info }
 
+/// 当前显示的 toast（全局单例：新 toast 会先顶掉旧的）。
 OverlayEntry? _statusOverlayEntry;
 
+/// 立即隐藏 toast。
 void hideStatusOverlay() {
   _statusOverlayEntry?.remove();
   _statusOverlayEntry = null;
 }
 
+/// 在页面内容区中央显示轻量 toast（1.6 秒自动消失，点击不拦截）。
+/// 成功/失败反馈统一走它，不要用系统 SnackBar。
 void showStatusOverlay(
   BuildContext context,
   String message,
@@ -380,6 +413,7 @@ void showStatusOverlay(
   overlay.insert(entry);
 }
 
+/// toast 卡片本体（1.6s 定时器触发 onDismiss 移除 Overlay）。
 class _StatusOverlay extends StatefulWidget {
   const _StatusOverlay({
     required this.message,
@@ -455,6 +489,7 @@ class _StatusOverlayState extends State<_StatusOverlay> {
   }
 }
 
+/// toast 语义色映射。
 Color statusToneColor(LunioTokens tokens, StatusOverlayTone tone) {
   return switch (tone) {
     StatusOverlayTone.success => tokens.success,
@@ -463,6 +498,7 @@ Color statusToneColor(LunioTokens tokens, StatusOverlayTone tone) {
   };
 }
 
+/// toast 图标映射。
 IconData statusToneIcon(StatusOverlayTone tone) {
   return switch (tone) {
     StatusOverlayTone.success => Icons.check_circle_outline,

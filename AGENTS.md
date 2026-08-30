@@ -52,6 +52,8 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `test/domain/`：领域规则测试。
 - `test/data/`：数据库、Repository、备份测试。
 - `test/widget_test.dart`：主 UI smoke 与关键交互测试。
+- `docs/code-review-report.md`：代码审查报告（已知问题 R1-R38 清单与修复建议）。
+- `docs/operations-manual.md`：UI 操作 ↔ 代码对照手册（改流程须同步维护）。
 - `docs/migration/`：迁移与数据库设计资料。
 - `docs/prototypes/`：历史原型，只在需要对照产品交互时参考，不要当运行时代码改。
 
@@ -85,8 +87,22 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 保持现有目录结构、命名、文案语言和交互方式。
 - 不随意重命名文件、类型、方法、字段。
 - 不覆盖、回退、删除用户未明确要求处理的改动。
-- 注释只写必要信息，避免解释显而易见的代码。
 - 搜索优先使用 `rg`。
+
+## 注释约定
+
+- 本仓库注释面向 Java Web 背景读者，使用中文详细注释（用户明确要求，优先级高于"少写注释"的通用习惯）。
+- 文件头：`//` 注释块，说明职责、在 App 中的位置、与 Java 概念的类比。
+- 类与公开方法：`///` 文档注释，说明职责、参数、返回值、副作用（写库、失效 provider、调度通知）。
+- 关键业务逻辑加行内注释；纯 UI 布局代码（间距/颜色等）不逐行注释。
+- 文件头不要用 `///`（会触发 dangling_library_doc_comments 告警）。
+- 已知问题在注释中以"⚠"标注并引用报告编号（R1-R38，见 `docs/code-review-report.md`）；修复问题时同步删掉对应标注。
+
+## 文档维护义务
+
+- 改动 UI 流程、数据写点、通知行为或 Provider 依赖关系时，必须同步维护 `docs/operations-manual.md` 对应章节（维护规则见该手册第 8 节）。
+- 修复 `docs/code-review-report.md` 中记录的问题后，把对应条目标记为已修复并注明日期。
+- 视觉/token 改动同步 `DESIGN.md`；数据库结构改动同步 `docs/migration/current-database-schema.md`。
 
 ## 常用命令
 

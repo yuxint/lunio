@@ -1,3 +1,20 @@
+// 唯一 Repository（≈ Java 的 Service + DAO 合体）：全部数据库读写的出口。
+//
+// 职责：
+//  - 行(Row) ↔ 领域实体(Entity) 映射（Row 是 Drift 生成类，Entity 是 domain/entities）；
+//  - 事务编排（database.transaction ≈ Spring 的 @Transactional，闭包抛异常自动回滚）；
+//  - 写前业务校验（调 RecordRules / 实体 validate / 内部 _ensureXxx）；
+//  - bootstrap：把 asset 目录灌入两张内置表（幂等对账）；
+//  - 偏好 KV 读写（app_preferences 表）、停车倒计时的存取；
+//  - 备份导出/导入恢复（配合 backup_codec.dart）。
+//
+// 重要约定：
+//  1. fail-fast：校验失败抛 ArgumentError / StateError，不吞异常；
+//     部分面向用户的中文文案直接从这里抛出（见 _ensureRecordIsUnique）。
+//  2. 本类**不做缓存失效**——写库后刷新 UI 缓存（invalidateXxxProviders）
+//     是调用方（UI 层）的责任。
+//  3. import as domain：给同名实体加命名空间，避免与 Drift 生成的 Row 类
+//     同名冲突（≈ Java 里两个同名类用全限定名区分）。
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -18,23 +35,33 @@ import '../bootstrap/built_in_vehicle_catalog.dart';
 import '../database/app_database.dart';
 
 class LunioRepository {
+  /// 构造时注入数据库连接；目录加载器可选注入（测试可换成内存版本）。
   LunioRepository(
     this.database, {
     BuiltInVehicleCatalogLoader? loadBuiltInVehicleCatalog,
   }) : _loadBuiltInVehicleCatalog =
            loadBuiltInVehicleCatalog ?? loadBuiltInVehicleCatalogAsset;
 
+  /// 停车倒计时在偏好表里的 key。
   static const _parkingCountdownPreferenceKey = 'parkingCountdown';
+
+  /// 雪花 id 生成器（static：进程内唯一，保证所有表 id 不重复）。
   static final SnowflakeIdGenerator _idGenerator = SnowflakeIdGenerator();
 
   final AppDatabase database;
   final BuiltInVehicleCatalogLoader _loadBuiltInVehicleCatalog;
 
+  /// 确保默认保养项目模板已入库（单独暴露给测试/特殊调用，一般走 ensureBootstrapData）。
   Future<void> ensureDefaultMaintenanceItems() async {
     final catalog = await _loadBuiltInVehicleCatalog();
     await _ensureDefaultMaintenanceItems(catalog);
   }
 
+  /// 模板表幂等对账（事务内三步）：
+  ///  1. 删除"目录里已不存在"的行（catalogId 不在目标集合）；
+  ///  2. 逐条比对：没有则插入、字段有变化则更新（_defaultItemNeedsUpdate）；
+  ///  3. 兼容老数据：catalogId 为 null 的旧行按"品牌+车型+项目名"匹配。
+  /// 结果：库里的模板表与 asset 目录完全一致（升级 App 更新目录后自动同步）。
   Future<void> _ensureDefaultMaintenanceItems(
     BuiltInVehicleCatalog catalog,
   ) async {
@@ -83,11 +110,13 @@ class LunioRepository {
     });
   }
 
+  /// 确保车型目录已入库（同上，单独暴露）。
   Future<void> ensureVehicleModels() async {
     final catalog = await _loadBuiltInVehicleCatalog();
     await _ensureVehicleModels(catalog);
   }
 
+  /// 车型表幂等对账，逻辑与 _ensureDefaultMaintenanceItems 同构。
   Future<void> _ensureVehicleModels(BuiltInVehicleCatalog catalog) async {
     final sync = SyncMetadata(
       status: SyncStatus.synced,
@@ -127,12 +156,17 @@ class LunioRepository {
     });
   }
 
+  /// 首启/升级引导总入口：车型目录 + 默认项目模板两张表各做一次幂等对账。
+  /// 由 defaultMaintenanceBootstrapProvider（providers.dart）在 AppShell 首帧触发。
+  /// 注意：目录 asset 会被加载 3 次（本方法 1 次 + 两个 ensure 各 1 次，无缓存）。
   Future<void> ensureBootstrapData() async {
     final catalog = await _loadBuiltInVehicleCatalog();
     await _ensureVehicleModels(catalog);
     await _ensureDefaultMaintenanceItems(catalog);
   }
 
+  /// 单条插入车辆（无事务、无项目）。⚠ 近乎遗留 API：UI 实际都走
+  /// createCarWithMaintenanceItems；测试在用。业务上不建议直接调用。
   Future<int> createCar(domain.Car car) async {
     final carId = _nextId();
     await database
@@ -152,6 +186,8 @@ class LunioRepository {
     return carId;
   }
 
+  /// 用所选车型的默认模板创建车辆（模板 → 车辆级项目实例）。
+  /// UI 不直接调用它（向导需要先让用户编辑草稿），主要供测试使用。
   Future<int> createCarWithDefaultItems(domain.Car car) async {
     final defaultItems = await listDefaultItemsForModel(
       brand: car.brand,
@@ -179,6 +215,12 @@ class LunioRepository {
     );
   }
 
+  /// 创建车辆 + 一批保养项目（添加车辆向导"完成"按钮的落库入口）。
+  ///
+  /// 校验：至少一个启用项目；每个项目过实体 validate。
+  /// 事务内：插车辆 → 逐条插项目 → 若当前无应用车辆（appliedCarId 为空）
+  /// 则把新车设为应用车辆（首辆车自动成为当前车）。
+  /// 任意一步失败整体回滚。返回新车辆 id。
   Future<int> createCarWithMaintenanceItems(
     domain.Car car,
     List<domain.MaintenanceItem> items,
@@ -238,11 +280,14 @@ class LunioRepository {
     });
   }
 
+  /// 全部车辆列表（无排序约束，全表扫描）。
   Future<List<domain.Car>> listCars() async {
     final rows = await database.select(database.cars).get();
     return rows.map(_carFromRow).toList();
   }
 
+  /// 编辑车辆（只允许改里程/上路日期/sync；品牌型号是身份字段不可改，
+  /// 因此 UI 的编辑表单不提供品牌车型输入）。id 为空抛错。
   Future<void> updateCar(domain.Car car) {
     final carId = car.id;
     if (carId == null) {
@@ -261,6 +306,11 @@ class LunioRepository {
     );
   }
 
+  /// 读取当前应用车辆（提醒页/记录页展示的车）。
+  ///
+  /// 副作用方法（读路径里夹带写）：按 AppliedCarRules 解析后，如果结果与
+  /// 偏好里存的不一致（如应用车辆被删除），会把修正值写回偏好。
+  /// 无车时清空 appliedCarId 并返回 null。
   Future<domain.Car?> getAppliedCar() async {
     final cars = await listCars();
     final storedCarId = int.tryParse(await getAppliedCarId() ?? '');
@@ -278,6 +328,9 @@ class LunioRepository {
     return cars.firstWhere((car) => car.id == appliedCarId);
   }
 
+  /// 删除车辆（事务级联删，无外键所以手工按序删）：
+  /// 记录关联表 → 记录表 → 项目表 → appliedCarId 偏好（仅当指向本车）→ 车辆本身。
+  /// 删完把应用车辆指向剩余第一辆；没有剩余则清空。
   Future<void> deleteCar(int carId) {
     return database.transaction(() async {
       await (database.delete(
@@ -306,6 +359,7 @@ class LunioRepository {
     });
   }
 
+  /// 单条插入默认项目模板（bootstrap 对账用；生成的 id 自增雪花）。
   Future<int> saveVehicleDefaultMaintenanceItem(
     domain.VehicleDefaultMaintenanceItem item,
   ) async {
@@ -334,6 +388,7 @@ class LunioRepository {
     return itemId;
   }
 
+  /// 单条插入车型（bootstrap 用）。
   Future<int> saveVehicleModel(domain.VehicleModel model) async {
     final modelId = _nextId();
     await database
@@ -353,6 +408,7 @@ class LunioRepository {
     return modelId;
   }
 
+  /// 按新实体全量更新车型行（bootstrap 对账用）。
   Future<void> _updateVehicleModel(int id, domain.VehicleModel model) async {
     await (database.update(
       database.vehicleModels,
@@ -369,6 +425,7 @@ class LunioRepository {
     );
   }
 
+  /// 按新实体全量更新模板行（bootstrap 对账用）。
   Future<void> _updateVehicleDefaultMaintenanceItem(
     int id,
     domain.VehicleDefaultMaintenanceItem item,
@@ -395,6 +452,8 @@ class LunioRepository {
     );
   }
 
+  /// 行与目标实体逐字段比对，决定 bootstrap 是否需要 update
+  /// （updatedAt 故意不比，避免每次启动都写库）。
   bool _vehicleModelNeedsUpdate(
     VehicleModelRow row,
     domain.VehicleModel model,
@@ -407,6 +466,7 @@ class LunioRepository {
         row.version != model.sync.version;
   }
 
+  /// 同上，模板表版本。
   bool _defaultItemNeedsUpdate(
     VehicleDefaultMaintenanceItemRow row,
     domain.VehicleDefaultMaintenanceItem item,
@@ -426,6 +486,7 @@ class LunioRepository {
         row.version != item.sync.version;
   }
 
+  /// 车型目录列表（按 sortOrder 升序），添加车辆向导的选择器数据源。
   Future<List<domain.VehicleModel>> listVehicleModels() async {
     final rows = await (database.select(
       database.vehicleModels,
@@ -433,6 +494,7 @@ class LunioRepository {
     return rows.map(_vehicleModelFromRow).toList();
   }
 
+  /// 某品牌+车型的默认保养项目模板（添加车辆向导第二步的初始草稿）。
   Future<List<domain.VehicleDefaultMaintenanceItem>> listDefaultItemsForModel({
     required String brand,
     required String model,
@@ -449,6 +511,8 @@ class LunioRepository {
     return rows.map(_defaultItemFromRow).toList();
   }
 
+  /// 新增保养项目（先过实体 validate；无事务——单条插入）。
+  /// 记录表单里"行内新增项目"和项目 sheet 的新建都走这里。
   Future<int> saveMaintenanceItem(domain.MaintenanceItem item) async {
     item.validate();
     final itemId = _nextId();
@@ -475,6 +539,7 @@ class LunioRepository {
     return itemId;
   }
 
+  /// 某辆车的全部保养项目（按 sortOrder 升序）。
   Future<List<domain.MaintenanceItem>> listMaintenanceItemsForCar(
     int carId,
   ) async {
@@ -486,6 +551,8 @@ class LunioRepository {
     return rows.map(_maintenanceItemFromRow).toList();
   }
 
+  /// 编辑保养项目。若结果为停用，先校验"至少保留一个启用项"。
+  /// ⚠ 校验和更新不在同一事务（check-then-act），单 isolate 下窗口极小。
   Future<void> updateMaintenanceItem(domain.MaintenanceItem item) async {
     item.validate();
     final itemId = item.id;
@@ -518,6 +585,8 @@ class LunioRepository {
     );
   }
 
+  /// 只切换项目启用/停用（项目卡片上的开关）。
+  /// 停用同样受"至少保留一个启用项"约束。
   Future<void> setMaintenanceItemEnabled({
     required int itemId,
     required bool enabled,
@@ -542,6 +611,8 @@ class LunioRepository {
     );
   }
 
+  /// 项目是否有历史记录（出现在任何记录的关联表里）。
+  /// ⚠ 实现为 select().get() 拉全行判空，数据量大时不如 count/limit(1)。
   Future<bool> maintenanceItemHasHistory(int itemId) async {
     final count = await (database.select(
       database.maintenanceRecordItems,
@@ -549,6 +620,9 @@ class LunioRepository {
     return count.isNotEmpty;
   }
 
+  /// 删除保养项目。三道约束：项目必须存在；有历史记录则拒绝
+  /// （防止破坏既有记录的引用）；删的是启用项时至少保留一个启用项。
+  /// ⚠ 查历史与删除之间无事务包裹。
   Future<void> deleteMaintenanceItem(int itemId) async {
     final item = await _getMaintenanceItemById(itemId);
     if (await maintenanceItemHasHistory(itemId)) {
@@ -565,6 +639,9 @@ class LunioRepository {
     )..where((row) => row.id.equals(itemId))).go();
   }
 
+  /// 新增保养记录（基础版，不带项目间隔更新）。UI 走 WithItemUpdates 版。
+  ///
+  /// 事务内三步：校验项目归属 → 校验同日唯一 → 插记录+关联+同步车辆里程。
   Future<int> saveMaintenanceRecord(domain.MaintenanceRecord record) {
     RecordRules.validateRecord(record);
     final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
@@ -584,6 +661,9 @@ class LunioRepository {
     });
   }
 
+  /// 新增保养记录 + 顺带更新所选项目的提醒间隔（记录表单两步提交的落库入口）。
+  /// itemUpdates 只允许包含"本次记录选中的、属于本车的"项目
+  /// （_updateMaintenanceItemIntervalsInTransaction 强校验）。
   Future<int> saveMaintenanceRecordWithItemUpdates({
     required domain.MaintenanceRecord record,
     required List<domain.MaintenanceItem> itemUpdates,
@@ -612,6 +692,7 @@ class LunioRepository {
     });
   }
 
+  /// 编辑保养记录（基础版）。excludingRecordId 让唯一校验跳过自己。
   Future<void> updateMaintenanceRecord(domain.MaintenanceRecord record) {
     final recordId = record.id;
     if (recordId == null) {
@@ -636,6 +717,7 @@ class LunioRepository {
     });
   }
 
+  /// 编辑保养记录 + 顺带更新项目间隔（UI 实际使用的编辑入口）。
   Future<void> updateMaintenanceRecordWithItemUpdates({
     required domain.MaintenanceRecord record,
     required List<domain.MaintenanceItem> itemUpdates,
@@ -668,6 +750,9 @@ class LunioRepository {
     });
   }
 
+  /// 某车辆全部记录（日期倒序）。两次查询组装：主表 + 关联表按
+  /// maintenanceRecordId 分组拼 itemIds，避免 N+1。
+  /// 无分页——记录页全量载入内存过滤。
   Future<List<domain.MaintenanceRecord>> listMaintenanceRecordsForCar(
     int carId,
   ) async {
@@ -695,6 +780,7 @@ class LunioRepository {
         .toList();
   }
 
+  /// 删除整条记录（事务：先删关联行再删主行）。
   Future<void> deleteMaintenanceRecord(int recordId) {
     return database.transaction(() async {
       await (database.delete(
@@ -706,6 +792,13 @@ class LunioRepository {
     });
   }
 
+  /// 从记录里移除单个项目（按项目视图删除按钮）。
+  ///
+  /// 返回值表示"记录是否被整体删除了"：
+  ///  - 记录只剩这一个项目 → 连记录一起删，返回 true（因为表约束
+  ///    {carId,date} 一天一条，空记录没有存在意义）；
+  ///  - 否则只删关联行，主记录标记 pendingUpdate，返回 false。
+  /// 记录或关联不存在直接抛 ArgumentError。
   Future<bool> removeMaintenanceRecordItem({
     required int recordId,
     required int itemId,
@@ -754,6 +847,8 @@ class LunioRepository {
     });
   }
 
+  /// 导出备份：4 张业务表全量读取（顺序两次查询拼 itemIds，无 N+1），
+  /// 组装 BackupPayload（schemaVersion 固定 2）。不含偏好/停车倒计时/目录。
   Future<BackupPayload> exportBackupPayload() async {
     final cars = (await database.select(database.cars).get())
         .map(_carFromRow)
@@ -782,6 +877,16 @@ class LunioRepository {
     );
   }
 
+  /// 恢复备份（导入）。流程：
+  ///  1. 版本校验（必须 2）；
+  ///  2. 事务外先做引用完整性预校验（_validateBackupReferences），
+  ///     失败直接抛，不碰库；
+  ///  3. 单一大事务：清空全部数据（⚠ _clearAllDataInTransaction 连偏好
+  ///     一起删，主题/通知设置等会丢，见审查报告 R2）→ 按 cars→items→
+  ///     records 顺序逐行插入，id 全部换成新雪花 id（旧→新映射表），
+  ///     任何一行违反约束抛错则整体回滚（UI 提示"未写入任何数据"）；
+  ///  4. 应用车辆指向恢复出的第一辆车。
+  /// 注意：恢复走裸 insert，不执行 RecordRules 业务校验（R35）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
     if (payload.schemaVersion != 2) {
       throw UnsupportedError(
@@ -903,6 +1008,7 @@ class LunioRepository {
     });
   }
 
+  /// 读偏好 key `appliedCarId` 的原始字符串值。
   Future<String?> getAppliedCarId() async {
     final row = await (database.select(
       database.appPreferences,
@@ -910,10 +1016,13 @@ class LunioRepository {
     return row?.value;
   }
 
+  /// 写应用车辆 id（null = 清除）。切换车辆按钮走这里。
   Future<void> setAppliedCarId(int? carId) async {
     return _writeAppliedCarId(carId);
   }
 
+  /// 通用偏好读：按 key 取 value（不存在返回 null）。
+  /// 所有偏好 key 清单见 AGENTS.md。
   Future<String?> getPreferenceValue(String key) async {
     final row = await (database.select(
       database.appPreferences,
@@ -921,10 +1030,13 @@ class LunioRepository {
     return row?.value;
   }
 
+  /// 通用偏好写（value 为 null 等价删除该 key）。
   Future<void> setPreferenceValue(String key, String? value) async {
     return _writePreferenceValue(key, value);
   }
 
+  /// 读停车倒计时（偏好里的 JSON）。
+  /// ⚠ JSON 损坏时 catch(_) 静默返回 null——坏数据留在库里无提示（R14）。
   Future<domain.ParkingCountdown?> getParkingCountdown() async {
     final value = await getPreferenceValue(_parkingCountdownPreferenceKey);
     if (value == null) {
@@ -938,6 +1050,8 @@ class LunioRepository {
     }
   }
 
+  /// 保存停车倒计时（序列化为 JSON 存偏好）。只写库——
+  /// 系统通知的调度/取消由 UI 层（parking_countdown.dart）负责。
   Future<void> saveParkingCountdown(domain.ParkingCountdown countdown) {
     return setPreferenceValue(
       _parkingCountdownPreferenceKey,
@@ -945,16 +1059,23 @@ class LunioRepository {
     );
   }
 
+  /// 清除停车倒计时（写 null 删 key）。系统通知取消同样由 UI 层负责。
   Future<void> clearParkingCountdown() {
     return setPreferenceValue(_parkingCountdownPreferenceKey, null);
   }
 
+  /// 清空数据（"我的"页入口）：事务内删 5 张表。
+  /// ⚠ 连 app_preferences 一起删：主题、通知设置、手动日期、开发者模式、
+  /// 全部 snooze/ack 记录都会丢（备份契约本就不含偏好，属刻意设计，
+  /// 但用户预期需要靠 UI 文案对齐，见审查报告 R2）。
+  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录。
   Future<void> clearAllData() {
     return database.transaction(() async {
       await _clearAllDataInTransaction();
     });
   }
 
+  /// 清库实现（须在事务内调用；restoreBackupPayload 也复用它）。
   Future<void> _clearAllDataInTransaction() async {
     await database.delete(database.appPreferences).go();
     await database.delete(database.maintenanceRecordItems).go();
@@ -963,6 +1084,7 @@ class LunioRepository {
     await database.delete(database.cars).go();
   }
 
+  /// 事务内读应用车辆偏好（与 getAppliedCarId 相同但用于事务上下文）。
   Future<String?> _getAppliedCarIdInTransaction() async {
     final row = await (database.select(
       database.appPreferences,
@@ -970,10 +1092,13 @@ class LunioRepository {
     return row?.value;
   }
 
+  /// 写应用车辆偏好。
   Future<void> _writeAppliedCarId(int? carId) async {
     return _writePreferenceValue('appliedCarId', carId?.toString());
   }
 
+  /// 事务内保证应用车辆有效（AppliedCarRules 内联版）：
+  /// 无车清空；偏好指向不存在的车则回退第一辆。恢复备份收尾时调用。
   Future<void> _ensureAppliedCarInTransaction() async {
     final cars = await database.select(database.cars).get();
     if (cars.isEmpty) {
@@ -989,6 +1114,8 @@ class LunioRepository {
     await _writeAppliedCarId(cars.first.id);
   }
 
+  /// 偏好 upsert：null 删行；无则插入、有则更新（syncStatus 记 pendingUpdate，
+  /// updatedAt 刷新）。⚠ select-then-insert 非原子（单 isolate 下窗口极小）。
   Future<void> _writePreferenceValue(String key, String? value) async {
     if (value == null) {
       await (database.delete(
@@ -1026,8 +1153,14 @@ class LunioRepository {
     );
   }
 
+  /// 生成下一个雪花 id（static 生成器，进程内唯一）。
   static int _nextId() => _idGenerator.next();
 
+  // ---------------- 行(Row) → 实体(Entity) 映射器 ----------------
+  // Row 是 Drift 生成的表行类（≈ MyBatis 的 ResultMap），
+  // Entity 是 domain/entities 里的纯业务对象。字段一一对应。
+
+  /// cars 表行 → Car 实体。
   domain.Car _carFromRow(CarRow row) {
     return domain.Car(
       id: row.id,
@@ -1043,6 +1176,7 @@ class LunioRepository {
     );
   }
 
+  /// 模板表行 → 实体。
   domain.VehicleDefaultMaintenanceItem _defaultItemFromRow(
     VehicleDefaultMaintenanceItemRow row,
   ) {
@@ -1067,6 +1201,7 @@ class LunioRepository {
     );
   }
 
+  /// 车型表行 → 实体。
   domain.VehicleModel _vehicleModelFromRow(VehicleModelRow row) {
     return domain.VehicleModel(
       id: row.id,
@@ -1082,6 +1217,13 @@ class LunioRepository {
     );
   }
 
+  /// 同日唯一性校验（业务层规则，先于数据库约束给出友好文案）：
+  ///  - 同车同日已有记录且包含本次任一项目 → "当天已保存过相同保养项目"；
+  ///  - 同车同日已有记录但项目不重叠 → "当天已有保养记录，请编辑原记录"。
+  /// ⚠ 第二条意味着业务层只允许"同日多条不重叠记录"，但表级唯一约束
+  ///    {carId,date} 实际只允许一天一条——不重叠的第二条会插主表时撞
+  ///    SqliteException（由 UI 层翻译成通用文案），两层口径不一致（R4）。
+  /// excludingRecordId：编辑场景跳过自身。
   Future<void> _ensureRecordIsUnique({
     required int carId,
     required LocalDate date,
@@ -1115,6 +1257,8 @@ class LunioRepository {
     throw StateError('这辆车当天已有保养记录，请编辑原记录');
   }
 
+  /// 事务内更新记录：主表 write → 删掉全部关联行 → 按新 itemIds 重插
+  /// （全量重建关联，不做 diff）→ 里程只增同步。
   Future<void> _updateMaintenanceRecordInTransaction({
     required domain.MaintenanceRecord record,
     required List<int> uniqueItemIds,
@@ -1158,6 +1302,7 @@ class LunioRepository {
     );
   }
 
+  /// 事务内插入新记录：主表 + 逐条关联行 + 里程只增同步。返回新记录 id。
   Future<int> _insertMaintenanceRecordInTransaction({
     required domain.MaintenanceRecord record,
     required List<int> uniqueItemIds,
@@ -1200,6 +1345,9 @@ class LunioRepository {
     return recordId;
   }
 
+  /// 事务内更新项目提醒间隔（记录表单第二步提交的间隔修改）。
+  /// 强校验：每个 itemUpdate 必须属于本车且在本次选中项目集合内，
+  /// 否则抛错回滚整个记录保存。
   Future<void> _updateMaintenanceItemIntervalsInTransaction({
     required int carId,
     required List<int> selectedItemIds,
@@ -1231,6 +1379,8 @@ class LunioRepository {
     }
   }
 
+  /// 事务内同步车辆里程：max(当前, 记录里程)，有变化才写
+  /// （避免无谓写库；写时把车辆标记 pendingUpdate + 刷新 updatedAt）。
   Future<void> _syncCarMileageInTransaction({
     required int carId,
     required int recordMileageKm,
@@ -1256,6 +1406,7 @@ class LunioRepository {
     }
   }
 
+  /// 校验记录引用的项目：全部存在（数量一致）且都属于本车。
   Future<void> _validateRecordItems({
     required int carId,
     required List<int> itemIds,
@@ -1272,6 +1423,7 @@ class LunioRepository {
     }
   }
 
+  /// 按 id 取项目，不存在抛错。
   Future<domain.MaintenanceItem> _getMaintenanceItemById(int itemId) async {
     final row = await (database.select(
       database.maintenanceItems,
@@ -1282,6 +1434,7 @@ class LunioRepository {
     return _maintenanceItemFromRow(row);
   }
 
+  /// 校验"除本项目外该车至少还有一个启用项目"——停用/删除启用项目前调用。
   Future<void> _ensureCanDisableMaintenanceItem({
     required int carId,
     required int itemId,
@@ -1299,6 +1452,10 @@ class LunioRepository {
     }
   }
 
+  /// 备份引用完整性校验（恢复前、事务外执行）：
+  /// cars/items 的 id 齐全且不重复；每个 item 的 carsId 存在；
+  /// 每条 record 的 carId 存在、每个 itemId 存在且与 record 同车
+  /// （跨车引用的备份直接拒绝）。不校验业务规则（R35）。
   void _validateBackupReferences(BackupPayload payload) {
     final carIds = payload.cars.map((car) => car.id).whereType<int>().toSet();
     final itemCarIds = <int, int>{};
@@ -1339,6 +1496,7 @@ class LunioRepository {
     }
   }
 
+  /// 项目表行 → 实体。
   domain.MaintenanceItem _maintenanceItemFromRow(MaintenanceItemRow row) {
     return domain.MaintenanceItem(
       id: row.id,
@@ -1360,6 +1518,7 @@ class LunioRepository {
     );
   }
 
+  /// 记录表行 + 关联 itemIds → 实体。
   domain.MaintenanceRecord _recordFromRow(
     MaintenanceRecordRow row,
     List<int> itemIds,
@@ -1381,6 +1540,7 @@ class LunioRepository {
   }
 }
 
+// bootstrap 对账用的"旧数据兜底键"：\u0000 作分隔符保证组合不歧义。
 String _vehicleModelKey(String brand, String model) => '$brand\u0000$model';
 
 String _defaultItemKey(String brand, String model, String itemName) {

@@ -1,7 +1,23 @@
+// 全局基础 UI 组件库（跨 feature 通用，≈ 项目自己的组件规范）。
+//
+// 与 features/shell/shared/ 的区别：这里的组件不依赖任何业务数据，
+// 纯展示/布局原语，任何页面都可以用。包括：
+//  - LunioPage / LunioTopBar：页面骨架（标题栏 + 滚动内容）
+//  - LunioCard / LunioSection / LunioSheetScaffold：卡片、分组、sheet 头
+//  - LunioInlineMessage / LunioStatusBadge / LunioStatusTone：三态提示
+//  - LunioPickerTile：可点击的"日期选择"样式输入行
+//  - LunioHeroCard：提醒页顶部大渐变卡片（车辆信息）
+//  - LunioSegmentedControl：分段选择器（自定义实现，非 Material 的）
+//  - LunioPrimaryButton / Secondary / IconButton：三套按钮
+//
+// 组件一律 StatelessWidget（无状态，数据从构造参数进），颜色全部从
+// Theme 的 LunioTokens 取，保证浅深色主题自动适配。
 import 'package:flutter/material.dart';
 
 import '../theme/lunio_tokens.dart';
 
+/// 标准页面骨架：ListView + 标题栏 + 子内容。
+/// bottomPadding 预留底部导航栏高度，避免内容被遮住。
 class LunioPage extends StatelessWidget {
   const LunioPage({
     super.key,
@@ -31,6 +47,7 @@ class LunioPage extends StatelessWidget {
   }
 }
 
+/// 页面顶部标题栏（大标题 + 可选副标题 + 右侧动作区）。
 class LunioTopBar extends StatelessWidget {
   const LunioTopBar({
     super.key,
@@ -67,6 +84,7 @@ class LunioTopBar extends StatelessWidget {
   }
 }
 
+/// 通用卡片容器：token 圆角 + 细边框 + 柔和投影。
 class LunioCard extends StatelessWidget {
   const LunioCard({
     super.key,
@@ -102,6 +120,9 @@ class LunioCard extends StatelessWidget {
   }
 }
 
+/// 底部 sheet 内容骨架：标题 + 副标题 + 可滚动内容
+/// （注意与 shared/modal_feedback.dart 的 _LunioDefaultSheetSurface、
+/// shared_widgets.dart 的 PrototypeSheetFrame 是三套并存的 sheet 骨架）。
 class LunioSheetScaffold extends StatelessWidget {
   const LunioSheetScaffold({
     super.key,
@@ -135,6 +156,7 @@ class LunioSheetScaffold extends StatelessWidget {
   }
 }
 
+/// 内容分组：小节标题（+ 可选右侧动作）+ 子项列表。
 class LunioSection extends StatelessWidget {
   const LunioSection({
     super.key,
@@ -172,6 +194,7 @@ class LunioSection extends StatelessWidget {
   }
 }
 
+/// 行内提示条（表单错误/警告），带图标 + 语义色底。
 class LunioInlineMessage extends StatelessWidget {
   const LunioInlineMessage({
     super.key,
@@ -212,6 +235,7 @@ class LunioInlineMessage extends StatelessWidget {
   }
 }
 
+/// "点击弹出选择器"样式的只读输入行（日期选择等用）。
 class LunioPickerTile extends StatelessWidget {
   const LunioPickerTile({
     super.key,
@@ -253,6 +277,8 @@ class LunioPickerTile extends StatelessWidget {
   }
 }
 
+/// 大渐变英雄卡：提醒页顶部的当前车辆卡片
+/// （主色渐变底 + 装饰圆环 + 指标格子）。
 class LunioHeroCard extends StatelessWidget {
   const LunioHeroCard({
     super.key,
@@ -376,6 +402,7 @@ class LunioHeroCard extends StatelessWidget {
   }
 }
 
+/// 英雄卡指标格的数据（label + value，如"当前里程 / 12,345"）。
 class LunioMetric {
   const LunioMetric({required this.label, required this.value});
 
@@ -432,6 +459,7 @@ class _HeroMetric extends StatelessWidget {
   }
 }
 
+/// 状态徽章（"正常/到期/超期"小标签），配 LunioStatusTone 语义色。
 class LunioStatusBadge extends StatelessWidget {
   const LunioStatusBadge({super.key, required this.label, required this.tone});
 
@@ -461,6 +489,8 @@ class LunioStatusBadge extends StatelessWidget {
   }
 }
 
+/// 三态语义枚举：与提醒的 normal/warning/danger 一一对应，
+/// 这里集中定义"语义 → 颜色/图标"的映射（extension 给枚举加方法）。
 enum LunioStatusTone { normal, warning, danger }
 
 extension LunioStatusTonePalette on LunioStatusTone {
@@ -483,6 +513,8 @@ extension LunioStatusTonePalette on LunioStatusTone {
   }
 }
 
+/// 自绘分段选择器（选中项白底主色字）。通知频率、记录筛选等用。
+/// onSelected 只在点"非当前项"时触发。
 class LunioSegmentedControl extends StatelessWidget {
   const LunioSegmentedControl({
     super.key,
@@ -566,6 +598,7 @@ class _SegmentButton extends StatelessWidget {
   }
 }
 
+/// 主按钮（FilledButton 换肤）。
 class LunioPrimaryButton extends StatelessWidget {
   const LunioPrimaryButton({
     super.key,
@@ -582,6 +615,7 @@ class LunioPrimaryButton extends StatelessWidget {
   }
 }
 
+/// 次按钮（灰底，常作"取消"）。
 class LunioSecondaryButton extends StatelessWidget {
   const LunioSecondaryButton({
     super.key,
@@ -606,6 +640,7 @@ class LunioSecondaryButton extends StatelessWidget {
   }
 }
 
+/// 方形图标按钮（提醒页右上角"切换车辆"）。
 class LunioIconButton extends StatelessWidget {
   const LunioIconButton({
     super.key,

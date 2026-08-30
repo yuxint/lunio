@@ -1,3 +1,13 @@
+// 自绘日期选择器（底部 sheet 形态，不是系统 DatePickerDialog）。
+//
+// 三级模式原地切换（符合产品"避免把下方内容挤出视野"的约定）：
+//   日历网格（day） ⇄ 12 个月网格（month） ⇄ 12 年一页的年份网格（year）
+// 顶部"xxxx年/xx月"文字可点击直接跳对应模式；左右箭头翻页；
+// "今天"快捷按钮（仅当 today 在可选范围内显示）。
+//
+// 使用方：记录表单日期、车辆上路日期、手动日期设置
+// （入口 showSimpleDatePicker，返回 null 表示取消）。
+// 范围约束 firstDate~lastDate 之外的格子置灰不可选。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -7,6 +17,7 @@ import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import 'modal_feedback.dart';
 
+/// 日期选择入口：弹出 sheet，确定返回所选日期，取消/关闭返回 null。
 Future<LocalDate?> showSimpleDatePicker(
   BuildContext context, {
   required LocalDate initialDate,
@@ -35,6 +46,8 @@ Future<LocalDate?> showSimpleDatePicker(
   );
 }
 
+/// 选择器主体（StatefulWidget：持有选中日期与当前浏览的年/月/模式）。
+/// 状态：selectedDate（结果）+ visibleYear/Month（正在浏览哪页）+ mode。
 class SimpleDatePicker extends StatefulWidget {
   const SimpleDatePicker({
     required this.initialDate,
@@ -140,6 +153,9 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
+  // ---- 三个网格的构建 ----
+
+  /// 日历网格：周一开头的 7 列表；月前置空、越界格子空 SizedBox 占位。
   Widget _buildDayGrid(BuildContext context) {
     final firstWeekday = DateTime(visibleYear, visibleMonth, 1).weekday;
     final daysInMonth = DateTime(visibleYear, visibleMonth + 1, 0).day;
@@ -210,6 +226,7 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
+/// 月份网格（3 列 × 4 行）。
   Widget _buildMonthGrid(BuildContext context) {
     return DateOptionTable(
       key: const ValueKey(_DatePickerMode.month),
@@ -226,6 +243,7 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
+/// 年份网格（12 年一页）。
   Widget _buildYearGrid(BuildContext context) {
     return DateOptionTable(
       key: const ValueKey(_DatePickerMode.year),
@@ -241,6 +259,10 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
+// ---- 翻页与边界处理：所有方法都保证 visibleYear/Month 不越出
+// firstDate~lastDate 范围，selectedDate 钳到合法日期 ----
+
+  /// 能否向前翻（按模式判断是否已到下限）。
   bool _canGoPrevious() {
     return switch (mode) {
       _DatePickerMode.day =>
@@ -293,6 +315,7 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     });
   }
 
+  /// 跨年进退月份。
   void _moveMonth(int delta) {
     visibleMonth += delta;
     if (visibleMonth < 1) {
@@ -344,6 +367,8 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     visibleMonth = visibleMonth.clamp(firstMonth, lastMonth);
   }
 
+  /// 把选中日钳到"当前浏览月"的合法日期（如 3.31 切到 2 月 → 2.28/29，
+  /// 再整体钳到 first/last 范围），并同步 visible 年月。
   LocalDate _dateForVisibleMonth(int preferredDay) {
     final daysInMonth = DateTime(visibleYear, visibleMonth + 1, 0).day;
     var date = LocalDate(
@@ -384,8 +409,10 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
   }
 }
 
+/// 三级模式枚举。
 enum _DatePickerMode { day, month, year }
 
+/// 3 列选项网格（月/年模式共用；不足 3 的倍数补空位）。
 class DateOptionTable extends StatelessWidget {
   const DateOptionTable({super.key, required this.children});
 
@@ -421,6 +448,7 @@ class DateOptionTable extends StatelessWidget {
   }
 }
 
+/// 顶部导航条：左右翻页箭头（到边界禁用）+ 可点击的年/月标题。
 class DatePickerHeader extends StatelessWidget {
   const DatePickerHeader({
     required this.mode,
@@ -528,6 +556,7 @@ class DatePickerHeader extends StatelessWidget {
   }
 }
 
+/// 月/年格子。
 class DateOptionCell extends StatelessWidget {
   const DateOptionCell({
     required this.label,
@@ -569,6 +598,7 @@ class DateOptionCell extends StatelessWidget {
   }
 }
 
+/// 日历日期格（选中=主色底白字；范围外置灰不可点）。
 class DateCell extends StatelessWidget {
   const DateCell({
     required this.date,

@@ -1,3 +1,10 @@
+// 我的页（/me）：个人中心。
+//
+// 结构：我的车辆（车辆列表 + 添加入口）/ 数据与工具（通知提醒、备份、
+// 恢复、清空数据、手动日期[开发者模式专属]、主题切换）/ 版本 footer。
+// 各行的实际逻辑都在 vehicles.dart / maintenance_items.dart / settings_data.dart。
+//
+// 开发者模式彩蛋：版本号连点 5 次开关（关闭时连带清掉手动日期偏好）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -11,6 +18,7 @@ import 'maintenance_items.dart';
 import 'settings_data.dart';
 import 'vehicles.dart';
 
+/// 我的页主组件。
 class ProfilePreviewPage extends ConsumerStatefulWidget {
   const ProfilePreviewPage();
 
@@ -19,6 +27,7 @@ class ProfilePreviewPage extends ConsumerStatefulWidget {
 }
 
 class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
+  /// 版本号连点计数（开发者模式彩蛋）。
   int versionTapCount = 0;
 
   @override
@@ -140,6 +149,10 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
     );
   }
 
+  /// 版本号连点 5 次 → 切换开发者模式：
+  /// 开 → 写 developerModeEnabled=true（"手动日期"设置行出现）；
+  /// 关 → 同时清 manualDateEnabled / manualDate（回到系统日期）。
+  /// 每次写库后 invalidate 偏好 provider 刷新 UI + toast 反馈。
   Future<void> _handleVersionTap(BuildContext context) async {
     versionTapCount += 1;
     if (versionTapCount < 5) {

@@ -1,3 +1,18 @@
+// 备份 JSON 的编解码器（≈ Java 里的 Jackson 手写 Serializer/Deserializer）。
+//
+// 备份契约（schemaVersion = 2，与数据库 schemaVersion=5 是两套独立版本号）：
+// {
+//   "schemaVersion": 2,
+//   "cars": [ { id, brand, model, currentMileageKm, roadDate, sync } ],
+//   "maintenanceItems": [ { id, carsId, name, ..., sync } ],
+//   "records": [ { id, carId, date, itemIds[], costCents, mileageKm, note, sync } ]
+// }
+//
+// ⚠ 契约边界（改字段前必读）：
+//  - 不包含偏好（主题/应用车辆/通知设置/snooze 等）；
+//  - 不包含停车倒计时（临时状态）；
+//  - 不包含车型目录/默认项目模板（恢复后由 bootstrap 幂等重建）。
+// 导出在 Repository.exportBackupPayload，导入在 restoreBackupPayload。
 import 'dart:convert';
 
 import '../../core/date/local_date.dart';
@@ -6,6 +21,7 @@ import '../../domain/entities/maintenance_item.dart';
 import '../../domain/entities/maintenance_record.dart';
 import '../../domain/entities/sync_metadata.dart';
 
+/// 备份载荷对象：待编码/已解码的全量业务数据。
 class BackupPayload {
   const BackupPayload({
     required this.schemaVersion,
@@ -14,15 +30,18 @@ class BackupPayload {
     this.records = const [],
   });
 
+  /// 备份契约版本，当前恒为 2（写入时由 Repository 指定）。
   final int schemaVersion;
   final List<Car> cars;
   final List<MaintenanceItem> maintenanceItems;
   final List<MaintenanceRecord> records;
 }
 
+/// 编解码器。无状态，UI 层（settings_data.dart）直接实例化使用。
 class BackupCodec {
   const BackupCodec();
 
+  /// 编码为 JSON 字符串（导出文件内容）。
   String encode(BackupPayload payload) {
     return jsonEncode({
       'schemaVersion': payload.schemaVersion,
@@ -32,6 +51,11 @@ class BackupCodec {
     });
   }
 
+  /// 从 JSON 字符串解码（导入文件内容）。
+  ///
+  /// 只校验 schemaVersion；引用完整性由 Repository._validateBackupReferences
+  /// 负责，业务规则（金额/里程非负等）恢复时不校验（审查报告 R35）。
+  /// 版本不匹配抛 UnsupportedError，UI 提示"不支持的备份文件"。
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;

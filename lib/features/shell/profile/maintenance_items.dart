@@ -1,3 +1,14 @@
+// 保养项目管理：添加车辆向导第二步 + 已保存车辆的项目管理 sheet +
+// 项目表单/启停/删除动作。
+//
+// 两处使用场景：
+//  1. AddCarMaintenanceItemsStep：向导草稿模式（纯内存列表，未落库，
+//     编辑走 showDraftMaintenanceItemFormSheet，仅替换内存草稿）；
+//  2. showMaintenanceItemsSheet：已保存车辆的项目 sheet（自管加载状态，
+//     编辑/启停/删除直接写库后 invalidate + 内部重载）。
+//
+// 业务约束（UI 侧前置拦截，Repository 侧兜底）：
+// 至少保留一个启用项目；有历史记录的项目不能删除。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'dart:async';
@@ -15,6 +26,8 @@ import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/entities/vehicle_default_maintenance_item.dart';
 import '../shared/shell_shared.dart';
 
+/// 向导第二步：车型 pill + 新增/恢复按钮 + 项目列表（限高滚动）+
+/// 上一步/保存车辆。所有修改通过 onChanged 回调交给向导 State。
 class AddCarMaintenanceItemsStep extends StatelessWidget {
   const AddCarMaintenanceItemsStep({
     required this.car,
@@ -89,6 +102,7 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
     );
   }
 
+  /// 编辑草稿：弹草稿表单，按对象身份（identical）替换列表里的那一条。
   void _editItem(BuildContext context, MaintenanceItem item) {
     showDraftMaintenanceItemFormSheet(
       context,
@@ -102,6 +116,7 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
     );
   }
 
+  /// 启停草稿：停用最后一个启用项时静默拦截（按钮看起来没反应）。
   void _toggleItem(MaintenanceItem item) {
     final nextEnabled = !item.enabled;
     if (!nextEnabled &&
@@ -119,6 +134,7 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
     ]);
   }
 
+  /// 删除草稿：删完没有启用项时静默拦截。
   void _deleteItem(MaintenanceItem item) {
     final nextItems = items
         .where((current) => !identical(current, item))
@@ -130,6 +146,7 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
   }
 }
 
+/// "恢复默认项目"sheet 入口：返回勾选的模板列表（取消/无选择返回 null）。
 Future<List<VehicleDefaultMaintenanceItem>?> showRestoreDefaultItemsSheet(
   BuildContext context, {
   required List<VehicleDefaultMaintenanceItem> defaultItems,
@@ -153,6 +170,8 @@ Future<List<VehicleDefaultMaintenanceItem>?> showRestoreDefaultItemsSheet(
   );
 }
 
+/// 恢复默认 sheet 内容：全部默认项目可勾选，"草稿里已存在同名"的置灰
+/// （同名不重复恢复，按 normalizeItemName 归一化比对）。
 class RestoreDefaultItemsSheet extends StatefulWidget {
   const RestoreDefaultItemsSheet({
     required this.defaultItems,
@@ -272,6 +291,7 @@ class RestoreDefaultItemsSheetState extends State<RestoreDefaultItemsSheet> {
   }
 }
 
+/// 恢复 sheet 的单行（checkbox + 项目名 + 规则文案 + "已存在"标记）。
 class RestoreDefaultItemRow extends StatelessWidget {
   const RestoreDefaultItemRow({
     required this.item,
@@ -340,6 +360,7 @@ class RestoreDefaultItemRow extends StatelessWidget {
   }
 }
 
+/// ★ 项目管理 sheet 入口（车辆卡"项目"按钮）。car 为空时管当前应用车辆。
 void showMaintenanceItemsSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -354,6 +375,8 @@ void showMaintenanceItemsSheet(
   );
 }
 
+/// sheet 路由壳：持有 refreshListenable（ValueNotifier≈可监听的信号量），
+/// 内部子表单保存成功后 value+1 通知本层重载列表。
 class MaintenanceItemsSheetRoute extends StatefulWidget {
   const MaintenanceItemsSheetRoute({required this.car});
 
@@ -386,6 +409,9 @@ class MaintenanceItemsSheetRouteState
   }
 }
 
+/// 项目 sheet 主体：自管 loading/error/items 状态（不走全局 provider，
+/// 直接 Repository 读），带代数防乱序 + 外部刷新监听。
+/// 与其他页面"provider + invalidate"模式不同，这里是手写局部状态机。
 class MaintenanceItemsSheetContent extends ConsumerStatefulWidget {
   const MaintenanceItemsSheetContent({
     required this.initialCar,
@@ -407,6 +433,7 @@ class MaintenanceItemsSheetContentState
   bool itemsLoading = false;
   String? itemsError;
   int? loadedCarId;
+  /// 加载代数：只接受最新一次加载的结果（防快速切换车辆时旧结果覆盖）。
   int loadGeneration = 0;
 
   @override
@@ -522,6 +549,7 @@ class MaintenanceItemsSheetContentState
     );
   }
 
+  /// 首次加载守卫（build 里调用，同车且已加载/加载中则跳过）。
   void _ensureItemsLoaded(int carId) {
     if (loadedCarId == carId && (items != null || itemsLoading)) {
       return;
@@ -533,6 +561,7 @@ class MaintenanceItemsSheetContentState
     _loadItems(carId, resetScroll: true);
   }
 
+  /// 操作后重载列表。
   Future<void> _reload(int carId) async {
     if (!mounted) {
       return;
@@ -545,6 +574,7 @@ class MaintenanceItemsSheetContentState
     await _loadItems(carId);
   }
 
+  /// 外部刷新信号（子表单保存成功）→ 重载当前车项目。
   void _handleExternalRefresh() {
     final carId = loadedCarId;
     if (carId == null) {
@@ -553,6 +583,7 @@ class MaintenanceItemsSheetContentState
     unawaited(_reload(carId));
   }
 
+  /// 拉取项目列表（代数 + mounted + 车辆一致性三重校验后 setState）。
   Future<void> _loadItems(int carId, {bool resetScroll = false}) async {
     final generation = ++loadGeneration;
     try {
@@ -582,6 +613,7 @@ class MaintenanceItemsSheetContentState
   }
 }
 
+/// 项目列表（草稿模式和落库模式共用）。
 class MaintenanceItemList extends StatelessWidget {
   const MaintenanceItemList({
     required this.items,
@@ -619,6 +651,7 @@ class MaintenanceItemList extends StatelessWidget {
   }
 }
 
+/// 单个项目卡：名称 + 规则文案 + 编辑/启停/删除按钮。
 class MaintenanceItemCard extends StatelessWidget {
   const MaintenanceItemCard({
     required this.item,
@@ -690,6 +723,8 @@ class MaintenanceItemCard extends StatelessWidget {
   }
 }
 
+/// 项目表单（新增/编辑/草稿三态复用）：名称 + 里程/时间两个开关行 +
+/// 校验（名称非空、至少一种提醒、开启的间隔为正整数）。
 class MaintenanceItemForm extends StatefulWidget {
   const MaintenanceItemForm({
     required this.carId,
@@ -798,6 +833,8 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
     );
   }
 
+  /// 提交校验 + 构造实体 → onSubmit → 失败表单内展示中文错误。
+  /// 新项目 sortOrder 默认 999（排在默认项之后）。
   Future<void> _submit() async {
     final name = nameController.text.trim();
     final mileageInterval = int.tryParse(mileageController.text);
@@ -857,6 +894,8 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
   }
 }
 
+/// 提醒规则输入行（开关 + 116px 数字输入 + 单位）。
+/// ⚠ 与 records_page.dart 的 RecordIntervalInputRow 几乎逐行重复（R32）。
 class ReminderRuleInputRow extends StatelessWidget {
   const ReminderRuleInputRow({
     required this.title,
@@ -924,6 +963,9 @@ class ReminderRuleInputRow extends StatelessWidget {
   }
 }
 
+/// ★ 落库版项目表单 sheet（项目 sheet / 记录表单行内新增用）：
+/// 新增走 saveMaintenanceItem、编辑走 updateMaintenanceItem →
+/// invalidate → pop(true)（true=已保存，调用方据此刷新）。
 Future<bool?> showMaintenanceItemFormSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -960,6 +1002,8 @@ Future<bool?> showMaintenanceItemFormSheet(
   );
 }
 
+/// 草稿版项目表单 sheet（添加车辆向导内用）：不落库，确认后回调
+/// onSubmit 把结果交还向导的内存草稿列表。
 Future<bool?> showDraftMaintenanceItemFormSheet(
   BuildContext context, {
   required MaintenanceItem item,
@@ -989,6 +1033,8 @@ Future<bool?> showDraftMaintenanceItemFormSheet(
   );
 }
 
+/// 启停项目（项目卡按钮）：setMaintenanceItemEnabled → invalidate；
+/// 失败（如停用最后一个启用项）toast 展示中文错误。
 Future<void> toggleMaintenanceItem(
   BuildContext context,
   WidgetRef ref,
@@ -1014,6 +1060,8 @@ Future<void> toggleMaintenanceItem(
   }
 }
 
+/// 删除项目（项目卡按钮）：确认框 → deleteMaintenanceItem（有历史记录
+/// 会抛错）→ invalidate；失败 toast。
 Future<void> deleteMaintenanceItem(
   BuildContext context,
   WidgetRef ref,

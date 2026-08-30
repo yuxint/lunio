@@ -1,3 +1,13 @@
+// 提醒业务的 view-data 层：领域计算结果 → UI/通知 展示模型的转换
+// + 系统通知的内容组装 + snooze/ack 偏好机制。
+//
+// 被三处消费（同一套计算保证口径一致）：
+//  1. 提醒列表 ReminderList（buildReminderRows）；
+//  2. 英雄卡"到期概览"文案（dueOverviewText）；
+//  3. 系统通知内容（buildScheduledNotifications，AppShell 调用）。
+//
+// ⚠ 本文件是 UI 目录却直接 import data 层的 LunioRepository
+// （isSnoozed/isAcknowledgedToday 直连数据库读偏好），跨层依赖点。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +26,8 @@ import '../../../domain/entities/reminder.dart';
 import '../../../domain/rules/maintenance_rules.dart';
 import '../shared/shell_shared.dart';
 
+/// 单个保养项目的提醒展示模型（≈ 前端 ViewModel）：
+/// 项目 + 进度 + 最近记录，附展示用 getter（百分比/徽章文案/语义色/详情行）。
 class ReminderViewData {
   const ReminderViewData({
     required this.item,
@@ -68,6 +80,8 @@ class ReminderViewData {
   }
 }
 
+/// 构建提醒列表行：只取启用且有 id 的项目 → 逐项算进度 → 排序。
+/// 排序规则：状态越差越靠前（超期>到期>正常）→ 百分比降序 → sortOrder。
 List<ReminderViewData> buildReminderRows({
   required Car car,
   required List<MaintenanceItem> items,
@@ -110,6 +124,11 @@ List<ReminderViewData> buildReminderRows({
   return rows;
 }
 
+/// 组装系统通知清单（AppShell 重排时调用）：
+///  - 到期项目 ≥1（snooze 过滤后）→ 一条汇总通知 id 8000"保养提醒"
+///    （正文=最紧急项 + 到期数量）；
+///  - 里程更新到期（且没 snooze）→ id 8900"更新车辆里程"（9:05 错峰）。
+/// 无到期项返回空列表（重排等于全部取消）。
 Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   required WidgetRef ref,
   required LunioNotificationSettings settings,
@@ -176,6 +195,7 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   return notifications;
 }
 
+/// 停车到点时刻（保养/里程通知调度时要避让的时间槽）。
 List<DateTime> reservedNotificationDateTimes(
   ParkingCountdown? parkingCountdown,
 ) {
@@ -185,6 +205,7 @@ List<DateTime> reservedNotificationDateTimes(
   return [parkingCountdown.endsAt];
 }
 
+/// 停车倒计时的签名片段（进系统通知总签名：倒计时变了要重排）。
 String parkingCountdownReminderSignature(ParkingCountdown? parkingCountdown) {
   if (parkingCountdown == null) {
     return 'parking:none';
@@ -192,6 +213,9 @@ String parkingCountdownReminderSignature(ParkingCountdown? parkingCountdown) {
   return 'parking:${parkingCountdown.endsAt.toIso8601String()}';
 }
 
+/// ★ 全量数据签名：把车辆/项目/记录的全部影响提醒的字段拼成一个大字符串。
+/// AppShell 每帧 build 调用，签名变了才重排系统通知。
+/// ⚠ 长列表下每帧 O(n) 字符串拼接，是性能热点之一（R11/R12 关联）。
 String reminderNotificationDataSignature({
   required Car car,
   required List<MaintenanceItem> items,
@@ -239,6 +263,8 @@ String reminderNotificationDataSignature({
   ].join(';');
 }
 
+/// 里程更新提醒是否到期：上次里程更新日（= car.sync.updatedAt 的日期）
+/// + 按记录频率推断的间隔 ≤ 今天。
 bool mileageUpdateReminderDue({
   required Car car,
   required List<MaintenanceRecord> records,
@@ -252,6 +278,8 @@ bool mileageUpdateReminderDue({
   );
 }
 
+/// 保养通知的重复频率：直接取用户设置（car/items/records/today 参数
+/// 全部未用，属于预留签名，R30）。
 ReminderRepeatFrequency maintenanceRepeatFrequency({
   required LunioNotificationSettings settings,
   required Car car,
@@ -262,6 +290,7 @@ ReminderRepeatFrequency maintenanceRepeatFrequency({
   return settings.dueRepeatFrequency;
 }
 
+/// 系统通知正文：品牌车型 + 到期数量 + 最紧急项目及其到期原因。
 String maintenanceNoticeSummaryForRows(
   Car car,
   List<ReminderViewData> notices,
@@ -271,6 +300,7 @@ String maintenanceNoticeSummaryForRows(
       '最紧急：${first.title}，${dueReasonText(first)}';
 }
 
+/// 到期原因短文案（通知用）。
 String dueReasonText(ReminderViewData row) {
   final mileageDue =
       row.item.remindByMileage &&
@@ -292,6 +322,7 @@ String dueReasonText(ReminderViewData row) {
   return '到期';
 }
 
+/// 到期详情长文案（应用内弹窗用，含超期量）。
 String dueNoticeText(ReminderViewData row) {
   final details = <String>[];
   final daysRemaining = row.progress.daysRemaining;
@@ -318,28 +349,38 @@ String dueNoticeText(ReminderViewData row) {
   return details.join(' · ');
 }
 
+// ---- snooze / ack 偏好 key 与判定 ----
+// snooze（15 天内不再提醒）：同时静默系统通知 + 应用内弹窗；
+// ack（知道了）：只静默当天的应用内弹窗，系统通知照发。
+
+/// 里程更新 snooze key（按车辆）。
 String mileageUpdateSnoozeKey(int carId) {
   return 'mileageUpdateSnoozedUntil:$carId';
 }
 
+/// 里程更新当日 ack key。
 String mileageUpdateInAppAcknowledgedKey(int carId) {
   return 'mileageUpdateInAppAcknowledgedOn:$carId';
 }
 
+/// 保养项 snooze key（按项目）。
 String maintenanceReminderSnoozeKey(int itemId) {
   return 'maintenanceReminderSnoozedUntil:$itemId';
 }
 
+/// 保养项当日 ack key。
 String maintenanceInAppReminderAcknowledgedKey(int itemId) {
   return 'maintenanceInAppReminderAcknowledgedOn:$itemId';
 }
 
+/// snooze 截止日 = 今天 + 15 天（⚠ 跨 DST 时区天数会漂移，R34）。
 LocalDate snoozeUntilDate(LocalDate today) {
   return LocalDate.fromDateTime(
     today.toDateTime().add(const Duration(days: 15)),
   );
 }
 
+/// 是否处于 snooze 期（截止日 ≥ 今天）。
 Future<bool> isSnoozed(
   LunioRepository repository,
   String key,
@@ -356,6 +397,7 @@ Future<bool> isSnoozed(
   return until.compareTo(today) >= 0;
 }
 
+/// 今天是否已 ack 过。
 Future<bool> isAcknowledgedToday(
   LunioRepository repository,
   String key,
@@ -372,6 +414,9 @@ Future<bool> isAcknowledgedToday(
   return acknowledgedOn == today;
 }
 
+/// 到期项目清单（应用内弹窗与系统通知共用）。
+/// 注意：没有任何记录时直接返回空——产品约定"没记录就不产生提醒"
+/// （新车主不会被无历史基线的假超期轰炸）。
 List<ReminderViewData> maintenanceNotices({
   required LunioNotificationSettings settings,
   required Car car,
@@ -397,6 +442,7 @@ List<ReminderViewData> maintenanceNotices({
   return notices;
 }
 
+/// 单项是否到期（保养到期开关开着 且 状态为 warning/danger）。
 bool noticeDueForRow(LunioNotificationSettings settings, ReminderViewData row) {
   if (!settings.maintenanceDueEnabled) {
     return false;
@@ -405,6 +451,7 @@ bool noticeDueForRow(LunioNotificationSettings settings, ReminderViewData row) {
       row.progress.status == ReminderStatus.danger;
 }
 
+/// 某项目最近一次记录：先比日期，同日比里程（取更大者作基线）。
 MaintenanceRecord? latestRecordForItem(
   List<MaintenanceRecord> records,
   int itemId,
@@ -423,6 +470,7 @@ MaintenanceRecord? latestRecordForItem(
   return latest;
 }
 
+/// 状态排序权重（越大越紧急）。
 int reminderStatusRank(ReminderStatus status) {
   return switch (status) {
     ReminderStatus.normal => 0,
@@ -431,6 +479,8 @@ int reminderStatusRank(ReminderStatus status) {
   };
 }
 
+/// 英雄卡"到期概览"文案：如"超期 1 / 到期 2"、"全部正常"、"暂无"。
+/// ⚠ 每次调用都全量重算提醒行（250ms ticker 下高频执行，R11）。
 String dueOverviewText(
   AsyncValue<List<MaintenanceItem>> items,
   AsyncValue<List<MaintenanceRecord>> records,

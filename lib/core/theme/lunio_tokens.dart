@@ -1,5 +1,15 @@
+// 全局视觉 token（设计变量表）：颜色、圆角的唯一定义处。
+//
+// ThemeExtension 是 Flutter 的"自定义主题扩展点"——把 Material 主题
+// 没有的自定义颜色（surface2/soft 系列等）挂进 ThemeData，页面里通过
+// `Theme.of(context).extension<LunioTokens>()!` 取用。
+// Java 对照：≈ 一个 @ConfigurationProperties 绑定的全局配置 Bean。
+//
+// 改视觉优先改这里 + DESIGN.md，不要在页面里散落硬编码颜色。
+// 浅色/深色两套常量（light/dark），深色主题的主色换成了青色系。
 import 'package:flutter/material.dart';
 
+/// 不可变 token 集。lerp 支持浅深色切换时的颜色渐变动画。
 @immutable
 class LunioTokens extends ThemeExtension<LunioTokens> {
   const LunioTokens({
@@ -28,30 +38,40 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     required this.radiusXl,
   });
 
-  final Color background;
-  final Color surface;
-  final Color surface2;
-  final Color surface3;
-  final Color ink;
-  final Color muted;
-  final Color subtle;
-  final Color line;
-  final Color primary;
-  final Color primaryStrong;
-  final Color primarySoft;
-  final Color success;
-  final Color successSoft;
-  final Color secondary;
-  final Color secondarySoft;
-  final Color warning;
-  final Color warningSoft;
-  final Color danger;
-  final Color dangerSoft;
-  final double radiusSmall;
-  final double radiusMedium;
-  final double radiusLarge;
-  final double radiusXl;
+  // ---- 背景与表面（由远及近的层级灰阶）----
+  final Color background; // 页面底色
+  final Color surface; // 卡片表面
+  final Color surface2; // 输入框/次级表面
+  final Color surface3; // 更深一档（开关轨道等）
 
+  // ---- 文本三级 ----
+  final Color ink; // 主文本
+  final Color muted; // 次要文本
+  final Color subtle; // 占位/禁用文本
+
+  /// 分割线。
+  final Color line;
+
+  // ---- 语义色（正常/到期/超期提醒共用 success/warning/danger 三态）----
+  final Color primary; // 主操作色（浅色=蓝，深色=青）
+  final Color primaryStrong; // 主色按压/强调态
+  final Color primarySoft; // 主色弱底（chip、软背景）
+  final Color success; // 正常（绿）
+  final Color successSoft;
+  final Color secondary; // 次强调色（深色主题下是浅蓝）
+  final Color secondarySoft;
+  final Color warning; // 到期提醒（黄）
+  final Color warningSoft;
+  final Color danger; // 超期/删除（红）
+  final Color dangerSoft;
+
+  // ---- 圆角（逻辑像素）----
+  final double radiusSmall; // 10
+  final double radiusMedium; // 14
+  final double radiusLarge; // 20
+  final double radiusXl; // 28（底部 sheet 顶部圆角）
+
+  /// 浅色主题 token。
   static const light = LunioTokens(
     background: Color(0xfff6f7f9),
     surface: Color(0xffffffff),
@@ -78,6 +98,7 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     radiusXl: 28,
   );
 
+  /// 深色主题 token（primary 换青色系，保证深底上的对比度）。
   static const dark = LunioTokens(
     background: Color(0xff111417),
     surface: Color(0xff1a1f25),
@@ -104,6 +125,7 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     radiusXl: 28,
   );
 
+  /// 复制并替换部分 token（ThemeExtension 协议要求）。
   @override
   LunioTokens copyWith({
     Color? background,
@@ -157,6 +179,7 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     );
   }
 
+  /// 线性插值：浅深色主题切换动画时 Flutter 逐帧调用。
   @override
   LunioTokens lerp(ThemeExtension<LunioTokens>? other, double t) {
     if (other is! LunioTokens) {
@@ -190,4 +213,5 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
   }
 }
 
+/// double 插值（Color.lerp 的数值版）。
 double lerpDouble(double a, double b, double t) => a + (b - a) * t;

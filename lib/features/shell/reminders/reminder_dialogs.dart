@@ -1,3 +1,10 @@
+// 应用内提醒弹窗（AppShell 检测到到期项时弹出）：保养提醒 + 里程更新两类。
+//
+// 两个动作的语义（返回值由 AppShell 处理副作用）：
+//  - acknowledged（"知道了"）：当天不再弹（AppShell 写当日 ack 偏好）；
+//  - snoozed（"15 天内不再提醒"）：这里直接写 snooze 偏好
+//    （系统通知和应用内弹窗一起静默 15 天）。
+// 点遮罩关闭返回 null（什么都不写，下次签名变化/resume 还会弹）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -11,8 +18,11 @@ import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
 import 'reminder_notifications.dart';
 
+/// 弹窗动作结果枚举。
 enum ReminderDialogAction { acknowledged, snoozed }
 
+/// 保养提醒弹窗：一次列出全部到期项（每项一段）。
+/// "15 天内不再提醒"逐项写 snooze 偏好后返回 snoozed。
 Future<ReminderDialogAction?> showMaintenanceReminderDialog({
   required BuildContext context,
   required WidgetRef ref,
@@ -46,6 +56,7 @@ Future<ReminderDialogAction?> showMaintenanceReminderDialog({
   );
 }
 
+/// 里程更新提醒弹窗（按车 snooze）。
 Future<ReminderDialogAction?> showMileageUpdateReminderDialog({
   required BuildContext context,
   required WidgetRef ref,
@@ -75,6 +86,7 @@ Future<ReminderDialogAction?> showMileageUpdateReminderDialog({
   );
 }
 
+/// 保养提醒弹窗内容（可滚动，防到期项太多溢出）。
 class _MaintenanceReminderDialog extends StatefulWidget {
   const _MaintenanceReminderDialog({
     required this.car,
@@ -173,6 +185,7 @@ class _MaintenanceReminderDialogState
   }
 }
 
+/// 里程更新弹窗内容。
 class _MileageUpdateReminderDialog extends StatefulWidget {
   const _MileageUpdateReminderDialog({
     required this.car,
@@ -260,6 +273,7 @@ class _MileageUpdateReminderDialogState
   }
 }
 
+/// 弹窗里单个到期项的分段卡（项目名 + 到期详情）。
 class ReminderNotificationSegment extends StatelessWidget {
   const ReminderNotificationSegment({required this.title, required this.body});
 

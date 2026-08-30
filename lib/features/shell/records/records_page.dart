@@ -1,3 +1,17 @@
+// 记录页（/records）：保养记录的列表、筛选、两步表单和删除。
+//
+// 页面结构：
+//   1. 模式切换（按周期/按项目）；
+//   2. 两条 FilterBar（年份多选 + 项目多选，第一格"全部"= 清空筛选）；
+//   3. 记录列表：按周期 = 每条记录一张卡；按项目 = 记录×项目展开成行；
+//   4. 卡片上的编辑/删除按钮。
+//
+// 新增/编辑表单是两步流：第一步填日期/里程/费用/备注/选项目（可行内
+// 新增项目并自动勾选）→ 第二步确认所选项目的提醒间隔（可改，保存时
+// 一并更新项目）。入口在提醒页按钮和记录卡"编辑"。
+//
+// ⚠ 空态文案"点击右下角 + 新增"与实际不符——App 没有 FAB，
+// 新增入口只在提醒页（R33 相关）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -15,6 +29,7 @@ import '../../../domain/entities/sync_metadata.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 
+/// 记录页主组件。
 class RecordsPreviewPage extends ConsumerStatefulWidget {
   const RecordsPreviewPage();
 
@@ -23,10 +38,16 @@ class RecordsPreviewPage extends ConsumerStatefulWidget {
 }
 
 class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
+  /// 0 = 按周期视图，1 = 按项目视图。
   int selectedMode = 0;
+
+  /// 年份/项目筛选的已选集合（空 = 全部）。
   final selectedYears = <int>{};
   final selectedItemIds = <int>{};
 
+  /// build 里的 maybeWhen 分支会对上面两个集合 removeWhere 清掉
+  /// "已不存在的年份/项目"——build 期间修改 state 属副作用写法（R21），
+  /// 但只做清理不触发重建，实际可运行。
   @override
   Widget build(BuildContext context) {
     final car = ref
@@ -159,6 +180,8 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
   }
 }
 
+/// 按周期视图：一条记录一张卡（日期+金额 / 里程+备注 / 项目 pills /
+/// 编辑+删除）。⚠ record != records.last 用实体 == 比较而非下标（R24）。
 class RecordCycleList extends StatelessWidget {
   const RecordCycleList({
     required this.records,
@@ -257,6 +280,8 @@ class RecordCycleList extends StatelessWidget {
   }
 }
 
+/// 按项目视图：记录×项目展开成行（每行一个项目卡，可单独删该项）。
+/// 行的编辑/删除按钮都带 itemId；编辑打开整条记录的表单。
 class RecordItemList extends StatelessWidget {
   const RecordItemList({
     required this.records,
@@ -341,12 +366,14 @@ class RecordItemList extends StatelessWidget {
   }
 }
 
+/// 提取记录里出现过的年份（倒序去重）。
 List<int> _recordYears(List<MaintenanceRecord> records) {
   final years = records.map((record) => record.date.year).toSet().toList()
     ..sort((left, right) => right.compareTo(left));
   return years;
 }
 
+/// 双条件过滤（年份 + 项目，各自"空集=不过滤"）。
 List<MaintenanceRecord> _filterRecords({
   required List<MaintenanceRecord> records,
   required Set<int> years,
@@ -364,6 +391,8 @@ List<MaintenanceRecord> _filterRecords({
   }).toList();
 }
 
+/// 把"已选值集合"映射成 FilterBar 的选中下标集合
+/// （第 0 格是"全部"，没选中任何值时高亮第 0 格）。
 Set<int> _selectedFilterIndexes({
   required List<int> values,
   required Set<int> selectedValues,
@@ -380,12 +409,17 @@ Set<int> _selectedFilterIndexes({
   return indexes.isEmpty ? {0} : indexes;
 }
 
+/// 点同一个值：未选中则选中，已选中则取消（toggle）。
 void _toggleSelection(Set<int> values, int value) {
   if (!values.add(value)) {
     values.remove(value);
   }
 }
 
+/// 新增/编辑记录的两步表单。
+/// record == null 为新增（默认日期=生效今天、里程=车辆当前里程、费用 0）；
+/// 非 null 为编辑（回填原值；已禁用但曾被选中的项目仍展示可选）。
+/// reloadItems：行内新增项目保存后从库重拉项目列表并自动勾选新项。
 class MaintenanceRecordForm extends ConsumerStatefulWidget {
   const MaintenanceRecordForm({
     required this.car,
@@ -415,13 +449,22 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
 }
 
 class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
+  // ---- 第一步的字段 ----
   late LocalDate recordDate;
   late final TextEditingController mileageController;
   late final TextEditingController costController;
   late final TextEditingController noteController;
+
+  /// 已勾选的项目 id。
   late final Set<int> selectedItemIds;
+
+  /// 表单当前可见的项目列表（行内新增后会刷新）。
   late List<MaintenanceItem> formItems;
+
+  /// 第二步的记录草稿（非 null 表示已进入第二步）。
   MaintenanceRecord? recordDraft;
+
+  /// 第二步每个项目的间隔输入草稿（含各自的 controller）。
   final intervalDrafts = <RecordIntervalDraft>[];
   bool saving = false;
   String? errorText;
@@ -585,6 +628,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     );
   }
 
+  /// 第一步校验 + 构造记录草稿：里程非负整数、费用非负数字、
+  /// 至少选一个项目。费用元→分四舍五入。失败返回 null 并设置错误文案。
   MaintenanceRecord? _buildRecordDraft() {
     final mileage = int.tryParse(mileageController.text);
     final cost = double.tryParse(costController.text);
@@ -618,6 +663,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     );
   }
 
+  /// "下一步"：校验通过后为每个选中项目建间隔输入草稿，进入第二步。
   void _goToIntervalStep() {
     final draft = _buildRecordDraft();
     if (draft == null) {
@@ -640,6 +686,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     });
   }
 
+  /// 第二步 UI：逐项目展示"按里程/按时间"间隔输入行（预填当前间隔，
+  /// 缺省 5000km / 1 个月），可返回上一步。
   Widget _buildIntervalStep(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -708,6 +756,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     );
   }
 
+  /// 第二步提交：间隔校验（正整数）→ 有变化的项目生成 update 列表 →
+  /// onSubmit（入库）→ 成功由外层关 sheet；失败展示中文错误。
   Future<void> _submit() async {
     final draft = recordDraft;
     if (draft == null) {
@@ -735,6 +785,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     }
   }
 
+  /// 把第二步的间隔输入整理成"待更新的项目实体"列表：
+  /// 间隔没变的项目跳过（不生成 update）；非法值返回 null + 错误文案。
   List<MaintenanceItem>? _buildItemUpdates() {
     final updates = <MaintenanceItem>[];
     for (final draft in intervalDrafts) {
@@ -782,6 +834,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     return updates;
   }
 
+  /// 行内"新增"项目：打开项目表单 sheet → 保存成功后重拉项目列表 →
+  /// diff 出新项目 id 自动勾选（用户不用再找）。
   Future<void> _addMaintenanceItem() async {
     final beforeIds = formItems.map((item) => item.id).whereType<int>().toSet();
     final saved = await showMaintenanceItemFormSheet(
@@ -811,12 +865,14 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     });
   }
 
+  /// 点输入框时清掉占位的 "0"/"0.00"，方便直接输入。
   void _clearZero(TextEditingController controller) {
     if (controller.text == '0' || controller.text == '0.00') {
       controller.clear();
     }
   }
 
+  /// 释放第二步所有间隔草稿的 controller。
   void _disposeIntervalDrafts() {
     for (final draft in intervalDrafts) {
       draft.dispose();
@@ -824,6 +880,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     intervalDrafts.clear();
   }
 
+  /// 选记录日期：范围 = 车辆上路日期 ~ 生效今天+365（允许未来日期，R36）。
   Future<void> _pickRecordDate() async {
     final picked = await showSimpleDatePicker(
       context,
@@ -841,6 +898,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
   }
 }
 
+/// 第二步单个项目的间隔输入草稿（项目 + 两个 controller，
+/// 缺省值 5000km / 1 个月）。dispose 释放 controller。
 class RecordIntervalDraft {
   RecordIntervalDraft({required this.item})
     : mileageController = TextEditingController(
@@ -864,6 +923,8 @@ class RecordIntervalDraft {
   }
 }
 
+/// 间隔输入行（标题 + 116px 数字输入框 + 单位后缀）。
+/// ⚠ 与 maintenance_items.dart 的 ReminderRuleInputRow 几乎逐行重复（R32）。
 class RecordIntervalInputRow extends StatelessWidget {
   const RecordIntervalInputRow({
     required this.title,
@@ -927,6 +988,12 @@ class RecordIntervalInputRow extends StatelessWidget {
   }
 }
 
+/// ★ 记录表单入口（提醒页按钮 / 记录卡"编辑"）：
+/// 先 await 三个 provider（车/项目/生效今天）→ 无车或无可用项目时
+/// toast 拦截 → 弹两步表单 sheet。
+/// onSubmit：新增走 saveMaintenanceRecordWithItemUpdates、编辑走
+/// updateMaintenanceRecordWithItemUpdates（Repository 事务）→
+/// invalidateVehicleProviders → 关 sheet。
 Future<void> showMaintenanceRecordFormSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -993,6 +1060,7 @@ Future<void> showMaintenanceRecordFormSheet(
   );
 }
 
+/// 删除整条记录（按周期视图）：确认框 → 事务删记录+关联 → invalidate。
 Future<void> deleteMaintenanceRecord(
   BuildContext context,
   WidgetRef ref,
@@ -1011,6 +1079,8 @@ Future<void> deleteMaintenanceRecord(
   invalidateVehicleProviders(ref);
 }
 
+/// 从记录删除单个项目（按项目视图）：确认框（带项目名）→
+/// removeMaintenanceRecordItem（只剩一项时连记录一起删）→ invalidate。
 Future<void> deleteMaintenanceRecordItem(
   BuildContext context,
   WidgetRef ref,

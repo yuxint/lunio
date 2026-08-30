@@ -1,3 +1,15 @@
+// 停车倒计时：卡片展示 + 开始/结束表单 + 时间选择器 + 保存/清除动作。
+//
+// 用户流程：
+//   提醒页点"停车倒计时" → showParkingCountdownSheet（表单：入场时间 +
+//   免费时长[快捷 0.5/1/2 小时]）→ saveParkingCountdown（写偏好 +
+//   调系统通知：Android 常驻 chronometer 通知 + 到点闹钟）；
+//   卡片实时显示剩余（250ms ticker 驱动）；点"结束" → clearParkingCountdown
+//   （删偏好 + 取消两条系统通知）。
+//
+// 状态颜色复用保养提醒三态：剩余 >20% 绿 / ≤20% 黄 / 到期红（改计正时长）。
+// 注意：倒计时用系统真实时间，不受开发者模式手动日期影响；
+// 到期后不会自动清除（偏好里一直留着，须手动"结束"才能开始新的，R9）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/cupertino.dart';
@@ -15,6 +27,9 @@ import '../../../domain/rules/parking_countdown_rules.dart';
 import '../shared/shell_shared.dart';
 import 'reminder_list.dart';
 
+/// 倒计时进行中的展示卡片（提醒页内嵌）：入场信息 + 进度环 +
+/// 剩余/超时时长 + 到点时刻 + "结束"按钮。
+/// now 由外部（提醒页 ticker）传入，每 250ms 变一次。
 class ParkingCountdownCard extends StatelessWidget {
   const ParkingCountdownCard({
     required this.countdown,
@@ -171,6 +186,10 @@ class _ParkingIcon extends StatelessWidget {
   }
 }
 
+/// 倒计时开始表单：入场时间（点开时间轮选择器）+ 免费时长输入框
+/// + 快捷时长 chip + 校验 + 开始按钮。
+/// ⚠ initial（编辑已有倒计时）分支不可达：唯一调用点在倒计时为 null 时
+/// 才能打开表单（按钮禁用逻辑），编辑代码路径是死代码（R30）。
 class ParkingCountdownForm extends StatefulWidget {
   const ParkingCountdownForm({
     required this.now,
@@ -282,6 +301,8 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
     );
   }
 
+  /// 点"入场时间"打开时:分:秒三轮滚轮选择器（日期固定为 initial 的日期，
+  /// 不可跨天——入场时间只能选当天）。
   Future<void> _pickEntryTime() async {
     final selected = await showParkingEntryTimePicker(
       context,
@@ -307,6 +328,8 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
     });
   }
 
+  /// 提交：校验免费时长为正整数 → 构造 ParkingCountdown（分钟→秒）→
+  /// onSubmit（保存+通知）→ 成功关 sheet；失败在表单内展示中文错误。
   Future<void> _submit() async {
     final durationMinutes = _durationMinutes;
     if (durationMinutes == null || durationMinutes <= 0) {
@@ -339,6 +362,7 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
   }
 }
 
+/// 时/分/秒三个滚轮（CupertinoPicker，iOS 风格的 picker 在两端通用）。
 class ParkingEntryTimePicker extends StatefulWidget {
   const ParkingEntryTimePicker({required this.initial});
 
@@ -508,6 +532,7 @@ class _TimePartWheelState extends State<_TimePartWheel> {
   }
 }
 
+/// 时间选择器入口（sheet 弹出），返回所选 DateTime 或 null。
 Future<DateTime?> showParkingEntryTimePicker(
   BuildContext context, {
   required DateTime initial,
@@ -520,6 +545,7 @@ Future<DateTime?> showParkingEntryTimePicker(
   );
 }
 
+/// 快捷时长 chip（0.5/1/2 小时）。
 class ParkingDurationChip extends StatelessWidget {
   const ParkingDurationChip({
     required this.label,
@@ -548,6 +574,8 @@ class ParkingDurationChip extends StatelessWidget {
   }
 }
 
+/// 停车计时 sheet 入口（提醒页"停车倒计时"按钮）。
+/// bottomInset 跟随键盘高度，键盘弹起时把内容顶上去。
 Future<void> showParkingCountdownSheet(
   BuildContext context,
   WidgetRef ref, {
@@ -576,6 +604,13 @@ Future<void> showParkingCountdownSheet(
   );
 }
 
+/// ★ 保存倒计时的完整动作链：
+///  1. 写偏好 parkingCountdown + 失效 provider（卡片立即出现）；
+///  2. 系统通知开关关着 → 到此为止（只保留应用内倒计时）；
+///  3. 开着 → 请求通知权限（顺手把"已请求过"写库）→ 授权了再申请
+///     Android 精确闹钟 → scheduleParkingCountdownNotification
+///     （Android 常驻通知 + 到点闹钟）；被拒 → 回写"系统通知关闭"并失效。
+/// ⚠ 多个 await 后继续用 ref（sheet 可能已关），存在销毁后使用窗口（R13）。
 Future<void> saveParkingCountdown(
   WidgetRef ref,
   ParkingCountdown countdown,
@@ -607,6 +642,8 @@ Future<void> saveParkingCountdown(
   }
 }
 
+/// ★ 结束倒计时：删偏好 + 失效 provider + 取消 9001/9002 两条系统通知
+/// （仅在系统通知开着时；关着时本来就没人调度过）。
 Future<void> clearParkingCountdown(WidgetRef ref) async {
   await ref.read(lunioRepositoryProvider).clearParkingCountdown();
   ref.invalidate(parkingCountdownProvider);
@@ -617,6 +654,10 @@ Future<void> clearParkingCountdown(WidgetRef ref) async {
   }
 }
 
+// ---- 私有格式化函数 ----
+// _formatClock 与通知服务里的同名实现重复（R32）；其余为倒计时专用格式化。
+
+/// HH:mm:ss。
 String _formatClock(DateTime dateTime) {
   final hour = dateTime.hour.toString().padLeft(2, '0');
   final minute = dateTime.minute.toString().padLeft(2, '0');
@@ -624,6 +665,7 @@ String _formatClock(DateTime dateTime) {
   return '$hour:$minute:$second';
 }
 
+/// 倒计时数字：≥1 小时显示 HH:mm:ss，否则 mm:ss。
 String _formatCountdownClock(int seconds) {
   final safeSeconds = seconds < 0 ? 0 : seconds;
   final hours = safeSeconds ~/ 3600;
@@ -642,6 +684,7 @@ String _formatCountdownClock(int seconds) {
   ].join(':');
 }
 
+/// 中文时长（"1小时 30分钟"）。
 String _formatCountdownDuration(int seconds) {
   if (seconds <= 0) {
     return '0秒';
@@ -657,6 +700,7 @@ String _formatCountdownDuration(int seconds) {
   return parts.join(' ');
 }
 
+/// 卡片副标题的免费时长文案（三个快捷档显示友好文案，其余走通用格式化）。
 String _formatParkingDurationOption(int seconds) {
   return switch (seconds) {
     1800 => '0.5 小时',
@@ -666,6 +710,7 @@ String _formatParkingDurationOption(int seconds) {
   };
 }
 
+/// 提醒三态 → UI 语义色枚举（停车与保养共用一套颜色语义）。
 LunioStatusTone _parkingStatusTone(ReminderStatus status) {
   return switch (status) {
     ReminderStatus.normal => LunioStatusTone.normal,
@@ -674,6 +719,7 @@ LunioStatusTone _parkingStatusTone(ReminderStatus status) {
   };
 }
 
+/// 提醒三态 → token 颜色。
 Color _parkingStatusColor(LunioTokens tokens, ReminderStatus status) {
   return _parkingStatusTone(status).statusForeground(tokens);
 }

@@ -1,3 +1,14 @@
+// 车辆管理：车辆列表/卡片、添加车辆两步向导、编辑车辆、切换应用车辆。
+//
+// 添加车辆向导（showAddCarSheet → AddCarWizard）：
+//   第一步 AddCarForm：选品牌车型（车型选择 sheet：搜索 + 品牌/车型双列）
+//   + 当前里程 + 上路日期；
+//   第二步 AddCarMaintenanceItemsStep（在 maintenance_items.dart）：
+//   该车型的默认保养项目草稿（可编辑/启停/删除/新增/恢复），点保存 →
+//   Repository.createCarWithMaintenanceItems 事务落库（首辆车自动设为应用车辆）。
+//
+// 编辑车辆（showEditCarSheet）：品牌车型锁定（身份字段不可改），只改
+// 里程与上路日期。⚠ 里程可任意改小，无回退校验（R36）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -16,6 +27,8 @@ import '../../../domain/entities/vehicle_model.dart';
 import '../shared/shell_shared.dart';
 import 'maintenance_items.dart';
 
+/// 我的页车辆列表：空列表显示 EmptyVehicleCard；否则逐车渲染卡片
+/// （当前应用车辆高亮 + "当前"徽章），操作按钮：应用/编辑/项目/删除。
 class VehicleList extends StatelessWidget {
   const VehicleList({
     required this.cars,
@@ -130,6 +143,7 @@ class VehicleList extends StatelessWidget {
   }
 }
 
+/// 自绘小汽车插画（Canvas 画的车身/车窗/车轮）。
 class CarVisual extends StatelessWidget {
   const CarVisual({this.selected = false});
 
@@ -150,6 +164,7 @@ class CarVisual extends StatelessWidget {
   }
 }
 
+/// 小汽车画笔（渐变车身 + 车窗 + 两个车轮）。
 class CarVisualPainter extends CustomPainter {
   const CarVisualPainter({
     required this.bodyStart,
@@ -201,6 +216,7 @@ class CarVisualPainter extends CustomPainter {
   }
 }
 
+/// 无车空卡片（"还没有车辆" + 新增按钮），提醒页和我的页共用。
 class EmptyVehicleCard extends StatelessWidget {
   const EmptyVehicleCard({required this.onAdd});
 
@@ -224,6 +240,9 @@ class EmptyVehicleCard extends StatelessWidget {
   }
 }
 
+/// 车辆基础信息表单（向导第一步 + 编辑车辆复用）：
+/// 新增模式可选品牌车型、填里程/上路日期；编辑模式品牌车型只读回显。
+/// initialCar != null 且有 id → 编辑模式。
 class AddCarForm extends StatefulWidget {
   const AddCarForm({
     required this.vehicleModels,
@@ -361,6 +380,7 @@ class AddCarFormState extends State<AddCarForm> {
     }
   }
 
+  /// 选上路日期：1990-01-01 ~ 生效今天+365。
   Future<void> _pickRoadDate() async {
     final picked = await showSimpleDatePicker(
       context,
@@ -377,6 +397,8 @@ class AddCarFormState extends State<AddCarForm> {
     setState(() => roadDate = picked);
   }
 
+  /// 提交车辆草稿：里程非负校验 → 构造 Car（编辑保留原品牌车型与 id）
+  /// → onSubmit → 成功不关 sheet（由外层向导控制）；失败表单内展示错误。
   Future<void> _submit() async {
     final mileage = int.tryParse(mileageController.text);
     if (mileage == null || mileage < 0) {
@@ -419,6 +441,8 @@ class AddCarFormState extends State<AddCarForm> {
   }
 }
 
+/// 添加车辆两步向导（第一步车辆信息 → 第二步保养项目草稿）。
+/// onMaintenanceStepChanged 通知外层 sheet 切标题。
 class AddCarWizard extends StatefulWidget {
   const AddCarWizard({
     required this.vehicleModels,
@@ -440,11 +464,23 @@ class AddCarWizard extends StatefulWidget {
 }
 
 class AddCarWizardState extends State<AddCarWizard> {
+  /// 第一步的车辆草稿（非 null 且 !editingCarDraft 时进入第二步）。
   Car? carDraft;
+
+  /// 第二步的项目草稿列表（null = 正在加载默认模板）。
   List<MaintenanceItem>? itemDrafts;
+
+  /// 当前车型对应的默认模板（"恢复"功能用）。
   List<VehicleDefaultMaintenanceItem>? defaultItemTemplates;
+
+  /// 已加载模板的车型标识（brand\u0000model）：返回第一步没换车型时
+  /// 不重新加载，保留用户已做的草稿修改。
   String? itemModelKey;
+
+  /// 加载防串号：只接受最新一次请求的结果（写法正确）。
   int loadRequestId = 0;
+
+  /// "上一步"标记：true 时显示第一步表单（复用 carDraft 作初始值）。
   bool editingCarDraft = false;
   bool loadingItems = false;
   bool saving = false;
@@ -482,6 +518,9 @@ class AddCarWizardState extends State<AddCarWizard> {
     );
   }
 
+  /// 第一步"下一步"：记住车辆草稿；车型变了才异步加载默认模板
+  /// （loadDefaultItems：ensureBootstrapData + listDefaultItemsForModel），
+  /// 模板转成项目草稿；同车型返回上一步则跳过加载。
   Future<void> _handleCarDraft(Car car) async {
     final nextKey = '${car.brand}\u0000${car.model}';
     final shouldLoadItems = itemModelKey != nextKey || itemDrafts == null;
@@ -533,11 +572,14 @@ class AddCarWizardState extends State<AddCarWizard> {
     }
   }
 
+  /// 第二步"上一步"：置 editingCarDraft=true 重新显示第一步表单。
   void _returnToCarStep() {
     widget.onMaintenanceStepChanged(false);
     setState(() => editingCarDraft = true);
   }
 
+  /// 最终提交：至少一个启用项目 → onSubmit（外层走 Repository 事务）
+  /// → 成功关 sheet；失败错误展示在第二步。
   Future<void> _submit() async {
     final car = carDraft;
     final items = itemDrafts;
@@ -565,6 +607,8 @@ class AddCarWizardState extends State<AddCarWizard> {
     }
   }
 
+  /// 草稿列表"新增"：弹草稿项目表单（showDraftMaintenanceItemFormSheet，
+  /// 在 maintenance_items.dart），确认后追加进草稿。
   void _addItem() {
     final sync = SyncMetadata(
       status: SyncStatus.pendingCreate,
@@ -590,6 +634,7 @@ class AddCarWizardState extends State<AddCarWizard> {
     );
   }
 
+  /// 草稿列表"恢复"：勾选式补回被删的默认项目。
   Future<void> _restoreDefaultItems(
     Car car,
     List<MaintenanceItem> items,
@@ -615,6 +660,7 @@ class AddCarWizardState extends State<AddCarWizard> {
   }
 }
 
+/// 品牌车型选择 tile（点击弹出选择 sheet，返回 (brand, model) 元组）。
 class VehicleModelPicker extends StatelessWidget {
   const VehicleModelPicker({
     required this.vehicleModels,
@@ -675,6 +721,8 @@ Future<(String, String)?> _showVehicleModelPickerSheet(
   );
 }
 
+/// 车型选择 sheet：搜索框（品牌+车型名包含匹配）+ 左品牌右车型双列。
+/// 点车型行即确认返回。
 class VehicleModelPickerSheet extends StatefulWidget {
   const VehicleModelPickerSheet({
     required this.vehicleModels,
@@ -809,6 +857,7 @@ class VehicleModelPickerSheetState extends State<VehicleModelPickerSheet> {
   }
 }
 
+/// 双列选择器的单行选项。
 class PickerOption extends StatelessWidget {
   const PickerOption({
     required this.label,
@@ -850,6 +899,11 @@ class PickerOption extends StatelessWidget {
   }
 }
 
+/// ★ 添加车辆 sheet 入口（我的页"添加"/空卡片"新增车辆"/提醒页空卡片）。
+/// StatefulBuilder 持有"当前是否第二步"以切换 sheet 标题；
+/// watch 车型目录与生效今天，加载失败给出行内提示；
+/// 向导提交 → createCarWithMaintenanceItems（事务：车+项目+首车设应用车辆）
+/// → invalidateVehicleProviders → 关 sheet。
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
   showLunioModalSheet<void>(
     context: context,
@@ -928,6 +982,9 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
   );
 }
 
+/// ★ 编辑车辆 sheet：AddCarForm 编辑模式（品牌车型只读）→
+/// updateCar（只写里程/日期）→ invalidate → 关 sheet。
+/// 车型目录为空时兜底用当前车拼一个假选项（只是为了让表单不炸）。
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   showLunioModalSheet<void>(
     context: context,
@@ -988,6 +1045,10 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   );
 }
 
+/// ★ 提醒页右上角"切换车辆"sheet：列出全部车，点非当前车 →
+/// applyCar（写偏好 + invalidate）→ 关 sheet。
+/// ⚠ 这里用 read 同步读 provider：loading 期 cars 为空列表会误报
+/// "请先新增车辆"（R23）。
 void showVehicleSwitcher(BuildContext context, WidgetRef ref) {
   final cars = ref
       .read(carsProvider)
@@ -1037,6 +1098,7 @@ void showVehicleSwitcher(BuildContext context, WidgetRef ref) {
   );
 }
 
+/// 切换 sheet 里的单辆车卡片（当前车高亮不可点）。
 class SwitchCarCard extends StatelessWidget {
   const SwitchCarCard({
     required this.car,

@@ -1,3 +1,9 @@
+// 提醒列表：待关注项目卡片列表 + 单行卡片 + 点击详情 sheet + 进度环画笔。
+//
+// 空态处理（按优先级）：加载中 → 项目/记录加载失败 → 无任何记录
+// （"记录首保后再生成提醒"）→ 无启用项目 → 正常列表。
+// ⚠ 无记录时不显示提醒行（新车主不轰炸），产品口径见 maintenanceNotices。
+// 列表用 Column 直排非懒加载（列表项有限，可接受）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -12,6 +18,7 @@ import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
 import 'reminder_notifications.dart';
 
+/// 提醒列表容器：处理各种空态/错误态后渲染 ReminderRow 列表。
 class ReminderList extends StatelessWidget {
   const ReminderList({
     required this.car,
@@ -71,6 +78,8 @@ class ReminderList extends StatelessWidget {
   }
 }
 
+/// 单条提醒卡片：进度环（百分比）+ 项目名 + 状态徽章 + 剩余里程/时间文案。
+/// 整行可点 → 弹出上次保养详情 sheet。
 class ReminderRow extends StatelessWidget {
   const ReminderRow({required this.row});
 
@@ -161,6 +170,7 @@ class ReminderRow extends StatelessWidget {
   }
 }
 
+/// 点击提醒行弹出的详情 sheet：上次保养日期/里程（无记录显示占位卡）。
 void showReminderRecordDetail(BuildContext context, ReminderViewData row) {
   final record = row.latestRecord;
   showLunioModalSheet<void>(
@@ -218,6 +228,7 @@ void showReminderRecordDetail(BuildContext context, ReminderViewData row) {
   );
 }
 
+/// 详情 sheet 里的指标格（标签 + 值）。
 class ReminderRecordMetric extends StatelessWidget {
   const ReminderRecordMetric({required this.label, required this.value});
 
@@ -257,6 +268,8 @@ class ReminderRecordMetric extends StatelessWidget {
   }
 }
 
+/// 进度环画笔（CustomPainter ≈ 自定义 Canvas 绘制）：
+/// 背景圆 + 从 12 点方向顺时针的进度弧。提醒列表与停车倒计时共用。
 class ReminderProgressRingPainter extends CustomPainter {
   const ReminderProgressRingPainter({
     required this.percent,

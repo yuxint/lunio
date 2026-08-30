@@ -1,3 +1,8 @@
+// 我的页"数据与工具"区：备份导出/导入、清空数据、通知设置 sheet、
+// 手动日期 sheet，以及设置行/主题行/版本 footer 等静态组件。
+//
+// ⚠ 跨层依赖：本文件直接 import data 层的 BackupCodec 做 JSON 编解码
+// （绕过 Repository/Service，审查报告 §3）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -14,10 +19,12 @@ import '../../../data/backup/backup_codec.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../shared/shell_shared.dart';
 
+/// 通知设置行的副标题（参数未用，固定文案，R30）。
 String notificationSettingsSubtitle(LunioNotificationSettings settings) {
   return '手机系统通知、应用内通知';
 }
 
+/// 版本 footer（连点 5 次触发开发者模式切换；开启后文案带"开发者模式"）。
 class VersionFooter extends StatelessWidget {
   const VersionFooter({
     required this.developerModeEnabled,
@@ -49,6 +56,7 @@ class VersionFooter extends StatelessWidget {
   }
 }
 
+/// 通用设置行（标题+副标题+右侧动作按钮，整行不可点只有按钮可点）。
 class ProfileSettingRow extends StatelessWidget {
   const ProfileSettingRow({
     required this.title,
@@ -108,6 +116,8 @@ class ProfileSettingRow extends StatelessWidget {
   }
 }
 
+/// 主题模式三段选择（跟随系统/浅色/深色）→ onChanged → 写偏好 →
+/// themeModePreferenceProvider 刷新 → MaterialApp.themeMode 生效。
 class ThemeModeSettingRow extends StatelessWidget {
   const ThemeModeSettingRow({required this.mode, required this.onChanged});
 
@@ -154,6 +164,9 @@ class ThemeModeSettingRow extends StatelessWidget {
   }
 }
 
+/// ★ 备份导出：Repository 全量读表 → BackupCodec 编码 JSON →
+/// 原生文件桥弹系统保存框（文件名 lunio-backup-yyyyMMdd-HHmmss.json）→
+/// toast 反馈。失败 toast 带原始错误（含异常栈字符串）。
 Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
   try {
     final payload = await ref
@@ -175,6 +188,14 @@ Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
   }
 }
 
+/// ★ 恢复备份：确认框（明示"先清空"）→ 原生文件桥选文件 →
+/// 解码（版本不符抛 UnsupportedError）→ notificationSyncGeneration++
+/// （作废 AppShell 在途通知任务）→ restoreBackupPayload 事务恢复 →
+/// invalidateAllAppDataProviders 全量刷新。
+/// 失败分支：唯一约束冲突 → 弹"未写入任何数据"对话框（事务已回滚）；
+/// 其他错误 → toast。
+/// ⚠ 已知问题：清空连偏好一起删（主题/通知设置丢失，R2）；
+/// 停车倒计时系统闹钟残留未取消（R1）。
 Future<void> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
@@ -214,6 +235,7 @@ Future<void> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   }
 }
 
+/// 备份文件名：lunio-backup-20260825-143025.json。
 String _backupFilename(DateTime dateTime) {
   String twoDigits(int value) => value.toString().padLeft(2, '0');
   return 'lunio-backup-'
@@ -225,6 +247,10 @@ String _backupFilename(DateTime dateTime) {
       '${twoDigits(dateTime.second)}.json';
 }
 
+/// ★ 清空数据：确认框 → generation++（作废在途通知任务）→
+/// clearAllData（事务删 5 张表，含偏好）→ invalidate 全量刷新
+/// （bootstrap provider 失效后车型目录会自动重灌）。
+/// ⚠ 同样存在停车闹钟残留问题（R1）。
 Future<void> clearAllData(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
@@ -240,6 +266,10 @@ Future<void> clearAllData(BuildContext context, WidgetRef ref) async {
   invalidateAllAppDataProviders(ref);
 }
 
+/// ★ 通知设置 sheet 入口：先同步读当前偏好（⚠ provider 还在 loading 时
+/// maybeWhen 回退全默认值，用户直接保存会覆盖真实设置，R6）→
+/// refreshSystemNotificationPreference 向系统查询真实开关回写 →
+/// 弹表单（系统状态行 + 应用内通知开关 + 重复频率三段）。
 Future<void> showNotificationSettingsSheet(
   BuildContext context,
   WidgetRef ref,
@@ -307,6 +337,8 @@ Future<void> showNotificationSettingsSheet(
   );
 }
 
+/// 查询系统真实通知开关并回写偏好（用户可能在系统设置里改过）。
+/// 查询失败静默回退"偏好当前值"（吞异常，R14）。
 Future<bool> refreshSystemNotificationPreference(WidgetRef ref) async {
   final repository = ref.read(lunioRepositoryProvider);
   final currentValue = await repository.getPreferenceValue(
@@ -328,6 +360,9 @@ Future<bool> refreshSystemNotificationPreference(WidgetRef ref) async {
   }
 }
 
+/// 保存通知设置：串行写 4 个偏好 key。
+/// ⚠ 表单里没有"保养到期提醒"开关，maintenanceDueEnabled 由表单硬编码
+/// true 传入（用户无法关闭到期提醒，R5）；四次写不在一个事务。
 Future<void> saveNotificationSettings(
   WidgetRef ref,
   LunioNotificationSettings settings,
@@ -351,6 +386,9 @@ Future<void> saveNotificationSettings(
   );
 }
 
+/// 通知表单：状态行 + 应用内通知开关 + 到期重复频率三段（每周/每 2 周/
+/// 每月）。提交构造 LunioNotificationSettings（⚠ maintenanceDueEnabled
+/// 硬编码 true，见 saveNotificationSettings 注释）。
 class NotificationSettingsForm extends StatefulWidget {
   const NotificationSettingsForm({
     required this.initialSettings,
@@ -448,6 +486,7 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
     );
   }
 
+  /// 提交：saving 态防重复点击 → onSubmit（外层保存偏好+关 sheet）。
   Future<void> _submit() async {
     setState(() => saving = true);
     try {
@@ -468,6 +507,7 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
   }
 }
 
+/// 系统通知状态行（只读展示 + "系统设置"跳转原生设置页）。
 class SystemNotificationStatusRow extends StatelessWidget {
   const SystemNotificationStatusRow({
     required this.enabled,
@@ -521,6 +561,10 @@ class SystemNotificationStatusRow extends StatelessWidget {
   }
 }
 
+/// ★ 手动日期 sheet（开发者模式专属）：开关 + 日期选择。
+/// 关闭/清空 → 写 manualDateEnabled=false + manualDate=null；
+/// 开启 → 写两个偏好；invalidate 后 effectiveTodayProvider 重算，
+/// 提醒进度全部按新"今天"计算。
 void showManualDateSheet(BuildContext context, WidgetRef ref) {
   final initialDate = ref
       .read(manualDatePreferenceProvider)
@@ -569,6 +613,7 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
   );
 }
 
+/// 手动日期表单（开关 + 日期选择，可选范围 1990 ~ 今天+10 年）。
 class ManualDateForm extends StatefulWidget {
   const ManualDateForm({
     required this.initialDate,
@@ -654,6 +699,7 @@ class ManualDateFormState extends State<ManualDateForm> {
     );
   }
 
+  /// 提交：开关关 = null（清除），开 = 所选日期。
   Future<void> _submit() async {
     final date = enabled ? selectedDate : null;
     setState(() {

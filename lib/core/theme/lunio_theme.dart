@@ -1,11 +1,22 @@
+// ThemeData 构建（≈ 全局 CSS/主题配置文件）。
+//
+// 按亮度取 LunioTokens（浅/深两套），组装 Material 3 的
+// ColorScheme + 全组件默认样式（文本、卡片、输入框、开关、底部 sheet、
+// 对话框、按钮、底部导航、SnackBar）。挂载点在 lunio_app.dart：
+// theme（浅）/darkTheme（深）/themeMode（用户偏好）。
+//
+// 页面几乎不需要直接 import 本文件——样式通过 Theme.of(context) 继承；
+// 自定义 token 通过 `Theme.of(context).extension<LunioTokens>()!` 获取。
 import 'package:flutter/material.dart';
 
 import 'lunio_tokens.dart';
 
+/// 构建一套 ThemeData。brightness 决定用浅色还是深色 token。
 ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
   final tokens = brightness == Brightness.dark
       ? LunioTokens.dark
       : LunioTokens.light;
+  // Material 3 色彩方案：把 token 映射进框架标准槽位。
   final colorScheme = brightness == Brightness.dark
       ? ColorScheme.dark(
           primary: tokens.primary,
@@ -28,6 +39,7 @@ ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
     useMaterial3: true,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: tokens.background,
+    // 字体 fallback 链：西文 Inter → 苹方/雅黑（中文）。
     fontFamilyFallback: const [
       'Inter',
       'SF Pro Text',
@@ -35,7 +47,9 @@ ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
       'Microsoft YaHei',
       'sans-serif',
     ],
+    // 把自定义 token 挂进主题，供 Theme.of(context).extension<LunioTokens>() 取用。
     extensions: [tokens],
+    // ---- 文本样式（页面里 Text(..., style: Theme.of(context).textTheme.xxx)）----
     textTheme: TextTheme(
       headlineLarge: TextStyle(
         color: tokens.ink,
@@ -80,6 +94,7 @@ ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
         height: 1.35,
       ),
     ),
+    // ---- 组件级默认样式：卡片 / 输入框 / 开关 / sheet / 对话框 / 按钮 / 底部导航 / SnackBar ----
     cardTheme: CardThemeData(
       color: tokens.surface,
       elevation: 0,
