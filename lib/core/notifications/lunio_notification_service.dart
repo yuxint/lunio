@@ -1,8 +1,9 @@
 // 系统通知服务：对 flutter_local_notifications 插件的封装（单例）。
 //
 // 负责三类通知的调度与取消：
-//  1. 保养到期/里程更新提醒 —— 由 AppShell 的签名比对触发重排（见
-//     features/shell/app_shell.dart 的 _applySystemNotificationSchedule），
+//  1. 保养到期/里程更新提醒 —— 由通知同步控制器的签名比对触发重排
+//     （见 features/shell/reminders/notification_sync_controller.dart 的
+//     _applySystemNotificationSchedule），
 //     id 段 8000~8999（8000 系保养、8900 系里程，每个通知排 8 次）；
 //  2. 停车到点闹钟 —— id 9001（channel lunio_parking_due_heads_up）；
 //  3. Android 停车进行中常驻通知 —— id 9002（low priority +
@@ -24,6 +25,10 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../domain/entities/notification_settings.dart';
 import '../../domain/entities/parking_countdown.dart';
+// ⚠ 跨层依赖：core 服务引用 features 层的 formatClock（§5.3.3 合并
+// HH:mm:ss 双实现后的取舍——两端共用一份，方向问题记录在案）。
+// ignore: always_use_package_imports
+import '../../features/shell/shared/formatters.dart' show formatClock;
 
 /// 一条"待调度的提醒通知"的描述（由 reminder_notifications.dart 组装）。
 class LunioScheduledNotification {
@@ -71,37 +76,65 @@ class LunioNotificationService {
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
+  /// 服务是否可用（false = 初始化失败后的降级态）。降级后：
+  /// 权限/开关查询一律返回 false，调度/取消全部安全 no-op，
+  /// 保证通知子系统故障不拖垮 App 主流程（R15）。
+  bool _available = true;
+
   /// 初始化（幂等）：时区数据库 + 本地时区 + 插件初始化。
   /// main() 里 runApp 之前 await 一次。
   /// iOS 初始化不弹权限框（requestXxxPermission 全 false）——
   /// 权限统一由 [requestNotificationPermission] 在合适时机请求。
+  /// 初始化抛异常（插件缺失/原生未注册等）时不外抛：标记服务不可用，
+  /// 通知能力整体降级为 no-op，App 照常启动（R15）。
   Future<void> initialize() async {
-    if (_initialized) {
+    if (_initialized || !_available) {
       return;
     }
-    tz_data.initializeTimeZones();
-    await _configureLocalTimezone();
-    const initializationSettings = InitializationSettings(
-      android: AndroidInitializationSettings(_androidNotificationIcon),
-      iOS: DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
-        defaultPresentAlert: true,
-        defaultPresentBadge: true,
-        defaultPresentSound: true,
-        defaultPresentBanner: true,
-        defaultPresentList: true,
-      ),
-    );
-    await _plugin.initialize(settings: initializationSettings);
-    _initialized = true;
+    try {
+      tz_data.initializeTimeZones();
+      await _configureLocalTimezone();
+      const initializationSettings = InitializationSettings(
+        android: AndroidInitializationSettings(_androidNotificationIcon),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+          defaultPresentAlert: true,
+          defaultPresentBadge: true,
+          defaultPresentSound: true,
+          defaultPresentBanner: true,
+          defaultPresentList: true,
+        ),
+      );
+      await _plugin.initialize(settings: initializationSettings);
+      _initialized = true;
+    } catch (error) {
+      _available = false;
+      debugPrint('LunioNotificationService 初始化失败，通知能力降级：$error');
+    }
+  }
+
+  /// 显式标记服务不可用（main.dart 对 initialize 兜底 try/catch 时调用）。
+  void markInitializationFailed() {
+    _available = false;
+  }
+
+  /// 仅测试用：单例状态跨测试用例共享，widget 测试每个用例开头重置，
+  /// 避免上一个用例的初始化结果污染下一个用例。
+  @visibleForTesting
+  void resetForTest() {
+    _initialized = false;
+    _available = true;
   }
 
   /// 请求通知权限（iOS 弹系统对话框；Android 13+ 运行时权限）。
-  /// 返回是否获得授权。
+  /// 返回是否获得授权。服务不可用时返回 false。
   Future<bool> requestNotificationPermission() async {
     await initialize();
+    if (!_available) {
+      return false;
+    }
     final iosPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin
@@ -125,9 +158,12 @@ class LunioNotificationService {
   }
 
   /// 查询系统层通知开关（用户可能在系统设置里关掉）。
-  /// 通知设置 sheet 打开时用它回写真实状态。
+  /// 通知设置 sheet 打开时用它回写真实状态。服务不可用时返回 false。
   Future<bool> notificationsEnabled() async {
     await initialize();
+    if (!_available) {
+      return false;
+    }
     final iosPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin
@@ -147,8 +183,12 @@ class LunioNotificationService {
 
   /// Android 精确闹钟权限（SCHEDULE_EXACT_ALARM）：到点提醒走精确调度。
   /// 已授权直接返回；未授权发起请求；非 Android 平台视为已授权。
+  /// 服务不可用时返回 false（走非精确调度也排不出通知，等价拒绝）。
   Future<bool> requestExactAlarmPermission() async {
     await initialize();
+    if (!_available) {
+      return false;
+    }
     final androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -177,6 +217,9 @@ class LunioNotificationService {
     List<DateTime> reservedDateTimes = const [],
   }) async {
     await initialize();
+    if (!_available) {
+      return;
+    }
     await cancelLunioNotifications();
     final occupiedScheduleSlots = reservedDateTimes
         .map(_scheduleSlotKey)
@@ -227,8 +270,12 @@ class LunioNotificationService {
 
   /// 取消全部保养/里程提醒：⚠ 按段循环 cancel 8000~8999（1000 次串行
   /// platform channel 调用）。不碰 9001/9002（停车通知单独取消）。
+  /// 服务不可用时安全 no-op。
   Future<void> cancelLunioNotifications() async {
     await initialize();
+    if (!_available) {
+      return;
+    }
     for (var id = 8000; id < 9000; id++) {
       await _plugin.cancel(id: id);
     }
@@ -245,6 +292,9 @@ class LunioNotificationService {
     bool exactAlarm = true,
   }) async {
     await initialize();
+    if (!_available) {
+      return;
+    }
     await cancelParkingCountdownNotification();
     final scheduledDate = tz.TZDateTime.from(countdown.endsAt, tz.local);
     if (!scheduledDate.isAfter(tz.TZDateTime.now(tz.local))) {
@@ -280,10 +330,13 @@ class LunioNotificationService {
     );
   }
 
-  /// 成对取消停车通知（9001 闹钟 + 9002 常驻）。
-  /// 结束倒计时、以及理论上恢复备份/清空数据时都应调用（后者当前缺失，R1）。
+  /// 成对取消停车通知（9001 闹钟 + 9002 常驻）。服务不可用时安全 no-op。
+  /// 结束倒计时、恢复备份/清空数据时都会调用。
   Future<void> cancelParkingCountdownNotification() async {
     await initialize();
+    if (!_available) {
+      return;
+    }
     await _plugin.cancel(id: _parkingCountdownNotificationId);
     await _plugin.cancel(id: _parkingCountdownOngoingNotificationId);
   }
@@ -307,7 +360,7 @@ class LunioNotificationService {
     await _plugin.show(
       id: _parkingCountdownOngoingNotificationId,
       title: '停车倒计时',
-      body: '免费离场时间 ${_formatClock(countdown.endsAt)}',
+      body: '免费离场时间 ${formatClock(countdown.endsAt)}',
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           'lunio_parking_ongoing',
@@ -330,15 +383,6 @@ class LunioNotificationService {
       ),
       payload: 'lunio:parkingCountdown',
     );
-  }
-
-  /// 时刻格式化 HH:mm:ss。
-  /// ⚠ 与 parking_countdown.dart 里的 _formatClock 重复实现（R32）。
-  String _formatClock(DateTime dateTime) {
-    final hour = dateTime.hour.toString().padLeft(2, '0');
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final second = dateTime.second.toString().padLeft(2, '0');
-    return '$hour:$minute:$second';
   }
 
   /// 把 tz.local 设为设备实际时区；失败回退 UTC（⚠ 无日志，
@@ -380,8 +424,9 @@ class LunioNotificationService {
   }
 
   /// 按频率步进到下一次重复时刻。
-  /// ⚠ monthly 分支用 TZDateTime(y, month+1, day) 无月末钳制：
-  /// 1.31 排的月度提醒会漂到 3.3（与 LocalDate.addMonths 行为不一致，R18）。
+  /// monthly 分支做月末钳制：1 月 31 日排的月度提醒，下月没有 31 日就
+  /// 钳到当月最后一天（2 月 28/29 日），与 LocalDate.addMonths 行为
+  /// 一致（否则 TZDateTime(y, m+1, 31) 会溢出进位漂到 3 月初，R18）。
   /// 日/周步进用 Duration 相加，跨 DST 时区的小时会漂（目标市场无 DST）。
   tz.TZDateTime _nextOccurrence(
     tz.TZDateTime date,
@@ -396,15 +441,29 @@ class LunioNotificationService {
       ReminderRepeatFrequency.everyThreeWeeks => date.add(
         const Duration(days: 21),
       ),
-      ReminderRepeatFrequency.monthly => tz.TZDateTime(
-        tz.local,
-        date.year,
-        date.month + 1,
-        date.day,
-        date.hour,
-        date.minute,
-      ),
+      ReminderRepeatFrequency.monthly => nextMonthlyOccurrence(date),
     };
+  }
+
+  /// 月度步进 + 月末钳制：目标年月进位后，day 超过目标月天数时钳到
+  /// 当月最后一天（如 1 月 31 日 → 2 月 28/29 日、12 月 31 日 → 次年
+  /// 1 月 31 日）。static + visibleForTesting 便于直接单测锁定该行为。
+  @visibleForTesting
+  static tz.TZDateTime nextMonthlyOccurrence(tz.TZDateTime date) {
+    // month 从 0 计，12 月 +1 自然进位到次年 1 月。
+    final targetYear = date.month == 12 ? date.year + 1 : date.year;
+    final targetMonth = date.month == 12 ? 1 : date.month + 1;
+    // DateTime(y, m+1, 0).day 是"当月最后一天"的惯用取法。
+    final lastDayOfMonth = DateTime(targetYear, targetMonth + 1, 0).day;
+    final clampedDay = date.day < lastDayOfMonth ? date.day : lastDayOfMonth;
+    return tz.TZDateTime(
+      tz.local,
+      targetYear,
+      targetMonth,
+      clampedDay,
+      date.hour,
+      date.minute,
+    );
   }
 
   /// 错峰算法：候选时刻若被停车到点时刻占用，以 5 分钟步长后移，

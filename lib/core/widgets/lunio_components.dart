@@ -16,8 +16,13 @@ import 'package:flutter/material.dart';
 
 import '../theme/lunio_tokens.dart';
 
-/// 标准页面骨架：ListView + 标题栏 + 子内容。
+/// 标准页面骨架：滚动视图 + 标题栏 + 子内容。
 /// bottomPadding 预留底部导航栏高度，避免内容被遮住。
+///
+/// 两种用法（R25）：
+///  - 默认构造 children：整块内容放进一个 Column（普通页面）；
+///  - LunioPage.slivers：直接传 slivers（长列表页面用 SliverList.builder
+///    懒加载，如记录页）。标题栏始终是首个 SliverToBoxAdapter。
 class LunioPage extends StatelessWidget {
   const LunioPage({
     super.key,
@@ -26,22 +31,58 @@ class LunioPage extends StatelessWidget {
     this.trailing,
     this.bottomPadding = 102,
     required this.children,
-  });
+  }) : slivers = null;
+
+  /// slivers 版构造：children 与 slivers 互斥（slivers 优先）。
+  const LunioPage.slivers({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.bottomPadding = 102,
+    required this.slivers,
+  }) : children = const [];
 
   final String title;
   final String? subtitle;
   final Widget? trailing;
   final double bottomPadding;
   final List<Widget> children;
+  final List<Widget>? slivers;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPadding),
-      children: [
-        LunioTopBar(title: title, subtitle: subtitle, trailing: trailing),
-        const SizedBox(height: 12),
-        ...children,
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPadding),
+          sliver: SliverMainAxisGroup(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LunioTopBar(
+                      title: title,
+                      subtitle: subtitle,
+                      trailing: trailing,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+              if (slivers != null)
+                ...slivers!
+              else
+                SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: children,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }

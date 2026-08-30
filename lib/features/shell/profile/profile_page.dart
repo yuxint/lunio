@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/widgets/lunio_components.dart';
+import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
 import 'maintenance_items.dart';
 import 'settings_data.dart';
@@ -33,6 +34,17 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   @override
   Widget build(BuildContext context) {
     final cars = ref.watch(carsProvider);
+    // 三页统一 loading/error 形态（§5.2）：主数据（车辆列表）就绪前
+    // 整页占位，与提醒页/记录页同构。其余偏好 provider 在内容区内部
+    // 各自带"读取中/读取失败"文案。
+    return cars.when(
+      loading: () => const LoadingPage(title: '个人中心'),
+      error: (error, stackTrace) => ErrorPage(title: '个人中心', error: error),
+      data: (cars) => _buildContent(context, cars),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, List<Car> cars) {
     final developerMode = ref.watch(developerModeProvider);
     final manualDate = ref.watch(manualDatePreferenceProvider);
     final notificationSettings = ref.watch(notificationSettingsProvider);
@@ -46,10 +58,7 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
     final appliedCar = ref
         .watch(appliedCarProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
-    final hasCars = cars.maybeWhen(
-      data: (value) => value.isNotEmpty,
-      orElse: () => false,
-    );
+    final hasCars = cars.isNotEmpty;
     return LunioPage(
       title: '个人中心',
       bottomPadding: 72,
@@ -63,21 +72,16 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
                 )
               : null,
           children: [
-            cars.when(
-              loading: () => const LunioCard(child: Text('车辆加载中...')),
-              error: (error, stackTrace) =>
-                  LunioCard(child: Text('车辆加载失败：${friendlyError(error)}')),
-              data: (items) => VehicleList(
-                cars: items,
-                appliedCarId: appliedCar?.id,
-                today: today,
-                onAdd: () => showAddCarSheet(context, ref),
-                onEdit: (car) => showEditCarSheet(context, ref, car),
-                onManageItems: (car) =>
-                    showMaintenanceItemsSheet(context, ref, car: car),
-                onApply: (carId) => applyCar(context, ref, carId),
-                onDelete: (car) => deleteCar(context, ref, car),
-              ),
+            VehicleList(
+              cars: cars,
+              appliedCarId: appliedCar?.id,
+              today: today,
+              onAdd: () => showAddCarSheet(context, ref),
+              onEdit: (car) => showEditCarSheet(context, ref, car),
+              onManageItems: (car) =>
+                  showMaintenanceItemsSheet(context, ref, car: car),
+              onApply: (carId) => applyCar(context, ref, carId),
+              onDelete: (car) => deleteCar(context, ref, car),
             ),
           ],
         ),

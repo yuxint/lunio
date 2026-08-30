@@ -18,20 +18,6 @@ import '../entities/reminder.dart';
 class MaintenanceRules {
   const MaintenanceRules._();
 
-  /// 按固定阈值（100% 到期 / 125% 超期）判状态。
-  ///
-  /// 注意：生产代码走的是 [_statusForItem]（用项目自定义阈值），
-  /// 本方法目前只有测试在用，属于双轨遗留（审查报告 R30）。
-  static ReminderStatus statusForPercent(double percent) {
-    if (percent >= 125) {
-      return ReminderStatus.danger;
-    }
-    if (percent >= 100) {
-      return ReminderStatus.warning;
-    }
-    return ReminderStatus.normal;
-  }
-
   /// 根据历史记录推断里程更新提醒频率。
   ///
   /// 算法：记录日期去重 → 倒序取最近 5 个 → 相邻两两求间隔天数 →
@@ -114,9 +100,10 @@ class MaintenanceRules {
   ///  - [currentMileageKm] 车辆当前里程
   ///  - [noHistoryBaselineDate] 无历史记录时的时间基线（= 车辆上路日期）
   ///  - [today]            生效今天
-  ///  - [noHistoryBaselineMileageKm] 无历史时的里程基线，默认 0
-  ///    （注意：生产调用从不传该参数，二手高里程车会立刻算出超高进度，
-  ///     属设计口径——按"从现在开始记录"理解，见审查报告 R37）
+  ///
+  /// 无历史记录时里程基线固定按 0：二手高里程车首条记录前会算出
+  /// 超高进度，属 PRD 设计口径——"从现在开始记录"（原可传的
+  /// noHistoryBaselineMileageKm 参数生产从不传，已收缩，R37）。
   ///
   /// 结果：里程/时间两维分别算百分比，取较大者作为展示进度；
   /// 但剩余公里/剩余天数分别来自各自维度（可能一正一负）。
@@ -127,7 +114,6 @@ class MaintenanceRules {
     required int currentMileageKm,
     required LocalDate noHistoryBaselineDate,
     required LocalDate today,
-    int noHistoryBaselineMileageKm = 0,
   }) {
     // 先跑实体自校验（非法项目直接抛 ArgumentError，fail-fast）。
     item.validate();
@@ -136,7 +122,6 @@ class MaintenanceRules {
       item: item,
       latestRecord: latestRecord,
       currentMileageKm: currentMileageKm,
-      noHistoryBaselineMileageKm: noHistoryBaselineMileageKm,
     );
     final timeProgress = _timeProgress(
       item: item,
@@ -177,13 +162,12 @@ class MaintenanceRules {
     required MaintenanceItem item,
     required MaintenanceRecord? latestRecord,
     required int currentMileageKm,
-    required int noHistoryBaselineMileageKm,
   }) {
     if (!item.remindByMileage || item.mileageIntervalKm == null) {
       return const _Progress(0, 'mileage-disabled');
     }
-    final baselineMileageKm =
-        latestRecord?.mileageKm ?? noHistoryBaselineMileageKm;
+    // 无历史记录时里程基线按 0（PRD 口径，见 progressForItem 注释）。
+    final baselineMileageKm = latestRecord?.mileageKm ?? 0;
     final usedKm = currentMileageKm - baselineMileageKm;
     final percent = usedKm <= 0 ? 0 : usedKm / item.mileageIntervalKm! * 100;
     final remaining = item.mileageIntervalKm! - (usedKm <= 0 ? 0 : usedKm);

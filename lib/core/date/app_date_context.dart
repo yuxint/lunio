@@ -10,7 +10,8 @@
 //
 // ⚠ 生产环境 appDateContextProvider 只用 system()（manualDate 恒为 null）；
 // 手动日期实际走 manualDatePreferenceProvider → effectiveTodayProvider
-// （providers.dart），本类的 manualDate 字段目前是预留位（R30）。
+// （providers.dart），本类的 manualDate 字段是测试注入用（widget 测试传
+// 固定日期），原 with/withoutManualDate 复制方法无消费者已删（R26）。
 import 'local_date.dart';
 
 typedef DateTimeReader = DateTime Function();
@@ -33,13 +34,4 @@ class AppDateContext {
     return manualDate ?? LocalDate.fromDateTime(readSystemNow());
   }
 
-  /// 返回带手动日期的副本（测试/预留用）。
-  AppDateContext withManualDate(LocalDate date) {
-    return AppDateContext(readSystemNow: readSystemNow, manualDate: date);
-  }
-
-  /// 返回去掉手动日期的副本。
-  AppDateContext withoutManualDate() {
-    return AppDateContext(readSystemNow: readSystemNow);
-  }
 }

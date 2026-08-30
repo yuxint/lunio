@@ -28,7 +28,6 @@ import '../../domain/entities/parking_countdown.dart' as domain;
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart' as domain;
 import '../../domain/entities/vehicle_model.dart' as domain;
-import '../../domain/rules/applied_car_rules.dart';
 import '../../domain/rules/record_rules.dart';
 import '../backup/backup_codec.dart';
 import '../bootstrap/built_in_vehicle_catalog.dart';
@@ -45,15 +44,54 @@ class LunioRepository {
   /// 停车倒计时在偏好表里的 key。
   static const _parkingCountdownPreferenceKey = 'parkingCountdown';
 
+  // ---- 提醒抑制类偏好 key 前缀（单一事实来源）----
+  // reminder_notifications.dart 里的 key 构造函数引用这些常量拼 key，
+  // 恢复备份时按这些前缀 like 删除抑制记录。两处共用同一常量，
+  // 避免"写入的 key"与"清除的前缀"各自维护一份魔法字符串后漂移。
+
+  /// 保养项 snooze 截止日前缀（按项目 id 区分）。
+  static const maintenanceReminderSnoozedUntilPrefix =
+      'maintenanceReminderSnoozedUntil:';
+
+  /// 里程更新 snooze 截止日前缀（按车辆 id 区分）。
+  static const mileageUpdateSnoozedUntilPrefix =
+      'mileageUpdateSnoozedUntil:';
+
+  /// 保养项应用内提醒当日 ack 前缀（按项目 id 区分）。
+  static const maintenanceInAppReminderAcknowledgedOnPrefix =
+      'maintenanceInAppReminderAcknowledgedOn:';
+
+  /// 里程更新应用内提醒当日 ack 前缀（按车辆 id 区分）。
+  static const mileageUpdateInAppAcknowledgedOnPrefix =
+      'mileageUpdateInAppAcknowledgedOn:';
+
+  /// 上面四个前缀的清单（恢复备份时逐前缀 like 删除）。
+  static const reminderSuppressionKeyPrefixes = [
+    maintenanceReminderSnoozedUntilPrefix,
+    mileageUpdateSnoozedUntilPrefix,
+    maintenanceInAppReminderAcknowledgedOnPrefix,
+    mileageUpdateInAppAcknowledgedOnPrefix,
+  ];
+
   /// 雪花 id 生成器（static：进程内唯一，保证所有表 id 不重复）。
   static final SnowflakeIdGenerator _idGenerator = SnowflakeIdGenerator();
 
   final AppDatabase database;
   final BuiltInVehicleCatalogLoader _loadBuiltInVehicleCatalog;
 
+  /// 目录解析 Future 的 memoize（R28）：实例内 asset 只解析一次，
+  /// ensureBootstrapData / ensureVehicleModels / ensureDefaultMaintenanceItems
+  /// 三个入口共用（≈ Spring 的 @Cacheable）。
+  Future<BuiltInVehicleCatalog>? _catalogFuture;
+
+  /// 取（并缓存）内置目录。
+  Future<BuiltInVehicleCatalog> _loadCatalog() {
+    return _catalogFuture ??= _loadBuiltInVehicleCatalog();
+  }
+
   /// 确保默认保养项目模板已入库（单独暴露给测试/特殊调用，一般走 ensureBootstrapData）。
   Future<void> ensureDefaultMaintenanceItems() async {
-    final catalog = await _loadBuiltInVehicleCatalog();
+    final catalog = await _loadCatalog();
     await _ensureDefaultMaintenanceItems(catalog);
   }
 
@@ -112,7 +150,7 @@ class LunioRepository {
 
   /// 确保车型目录已入库（同上，单独暴露）。
   Future<void> ensureVehicleModels() async {
-    final catalog = await _loadBuiltInVehicleCatalog();
+    final catalog = await _loadCatalog();
     await _ensureVehicleModels(catalog);
   }
 
@@ -157,62 +195,12 @@ class LunioRepository {
   }
 
   /// 首启/升级引导总入口：车型目录 + 默认项目模板两张表各做一次幂等对账。
-  /// 由 defaultMaintenanceBootstrapProvider（providers.dart）在 AppShell 首帧触发。
-  /// 注意：目录 asset 会被加载 3 次（本方法 1 次 + 两个 ensure 各 1 次，无缓存）。
+  /// 由 defaultMaintenanceBootstrapProvider（providers.dart）在 AppShell 触发。
+  /// 目录 asset 经 _loadCatalog memoize，本方法与两个 ensure 共用一次解析。
   Future<void> ensureBootstrapData() async {
-    final catalog = await _loadBuiltInVehicleCatalog();
+    final catalog = await _loadCatalog();
     await _ensureVehicleModels(catalog);
     await _ensureDefaultMaintenanceItems(catalog);
-  }
-
-  /// 单条插入车辆（无事务、无项目）。⚠ 近乎遗留 API：UI 实际都走
-  /// createCarWithMaintenanceItems；测试在用。业务上不建议直接调用。
-  Future<int> createCar(domain.Car car) async {
-    final carId = _nextId();
-    await database
-        .into(database.cars)
-        .insert(
-          CarsCompanion.insert(
-            id: Value(carId),
-            brand: car.brand,
-            model: car.model,
-            currentMileageKm: car.currentMileageKm,
-            roadDate: car.roadDate.toString(),
-            syncStatus: Value(car.sync.status.name),
-            updatedAt: car.sync.updatedAt.toIso8601String(),
-            version: Value(car.sync.version),
-          ),
-        );
-    return carId;
-  }
-
-  /// 用所选车型的默认模板创建车辆（模板 → 车辆级项目实例）。
-  /// UI 不直接调用它（向导需要先让用户编辑草稿），主要供测试使用。
-  Future<int> createCarWithDefaultItems(domain.Car car) async {
-    final defaultItems = await listDefaultItemsForModel(
-      brand: car.brand,
-      model: car.model,
-    );
-    return createCarWithMaintenanceItems(
-      car,
-      defaultItems
-          .map(
-            (item) => domain.MaintenanceItem(
-              carsId: 0,
-              name: item.itemName,
-              enabled: true,
-              remindByMileage: item.remindByMileage,
-              remindByTime: item.remindByTime,
-              mileageIntervalKm: item.mileageIntervalKm,
-              timeIntervalMonths: item.timeIntervalMonths,
-              notOverdueUpperLimit: item.notOverdueUpperLimit,
-              overdueUpperLimit: item.overdueUpperLimit,
-              sortOrder: item.sortOrder,
-              sync: car.sync,
-            ),
-          )
-          .toList(),
-    );
   }
 
   /// 创建车辆 + 一批保养项目（添加车辆向导"完成"按钮的落库入口）。
@@ -221,6 +209,10 @@ class LunioRepository {
   /// 事务内：插车辆 → 逐条插项目 → 若当前无应用车辆（appliedCarId 为空）
   /// 则把新车设为应用车辆（首辆车自动成为当前车）。
   /// 任意一步失败整体回滚。返回新车辆 id。
+  ///
+  /// （原 createCar / createCarWithDefaultItems 两个遗留入口已删，R26：
+  /// 前者等价 createCarWithMaintenanceItems(car, const [])，后者等价
+  /// ensureBootstrapData + listDefaultItemsForModel + 模板转实体的组合。）
   Future<int> createCarWithMaintenanceItems(
     domain.Car car,
     List<domain.MaintenanceItem> items,
@@ -308,29 +300,39 @@ class LunioRepository {
 
   /// 读取当前应用车辆（提醒页/记录页展示的车）。
   ///
-  /// 副作用方法（读路径里夹带写）：按 AppliedCarRules 解析后，如果结果与
-  /// 偏好里存的不一致（如应用车辆被删除），会把修正值写回偏好。
-  /// 无车时清空 appliedCarId 并返回 null。
+  /// 实现为点查（R31）：先按偏好 id 点查该车，命中直接用；
+  /// 未命中回退"id 最小的车"（= 原 listCars 全表扫描的自然顺序首位，
+  /// INTEGER 主键下 rowid 顺序即 id 升序，语义等价）。
+  /// 副作用方法（读路径里夹带写）：解析结果与偏好不一致时把修正值写回
+  /// 偏好（与 AppliedCarRules 规则一致：无车清空、失效回退第一辆）。
   Future<domain.Car?> getAppliedCar() async {
-    final cars = await listCars();
     final storedCarId = int.tryParse(await getAppliedCarId() ?? '');
-    final appliedCarId = AppliedCarRules.resolveAppliedCarId(
-      cars: cars,
-      storedCarId: storedCarId,
-    );
-    if (appliedCarId == null) {
+    if (storedCarId != null) {
+      final storedRow = await (database.select(
+        database.cars,
+      )..where((row) => row.id.equals(storedCarId)))
+          .getSingleOrNull();
+      if (storedRow != null) {
+        return _carFromRow(storedRow);
+      }
+    }
+    final firstRows = await (database.select(
+      database.cars,
+    )..orderBy([(row) => OrderingTerm.asc(row.id)]))
+        .get();
+    final firstRow = firstRows.firstOrNull;
+    if (firstRow == null) {
       await setAppliedCarId(null);
       return null;
     }
-    if (appliedCarId != storedCarId) {
-      await setAppliedCarId(appliedCarId);
-    }
-    return cars.firstWhere((car) => car.id == appliedCarId);
+    await setAppliedCarId(firstRow.id);
+    return _carFromRow(firstRow);
   }
 
   /// 删除车辆（事务级联删，无外键所以手工按序删）：
   /// 记录关联表 → 记录表 → 项目表 → appliedCarId 偏好（仅当指向本车）→ 车辆本身。
-  /// 删完把应用车辆指向剩余第一辆；没有剩余则清空。
+  /// 删完把应用车辆指向剩余 id 最小的车（原"剩余第一辆"的点查版，R31）；
+  /// 没有剩余则清空。
   Future<void> deleteCar(int carId) {
     return database.transaction(() async {
       await (database.delete(
@@ -350,11 +352,15 @@ class LunioRepository {
       await (database.delete(
         database.cars,
       )..where((row) => row.id.equals(carId))).go();
-      final remainingCars = await database.select(database.cars).get();
-      if (remainingCars.isEmpty) {
+      final remainingRows = await (database.select(
+        database.cars,
+      )..orderBy([(row) => OrderingTerm.asc(row.id)]))
+          .get();
+      final remainingFirstRow = remainingRows.firstOrNull;
+      if (remainingFirstRow == null) {
         await _writeAppliedCarId(null);
       } else {
-        await _writeAppliedCarId(remainingCars.first.id);
+        await _writeAppliedCarId(remainingFirstRow.id);
       }
     });
   }
@@ -612,12 +618,15 @@ class LunioRepository {
   }
 
   /// 项目是否有历史记录（出现在任何记录的关联表里）。
-  /// ⚠ 实现为 select().get() 拉全行判空，数据量大时不如 count/limit(1)。
+  /// limit(1) 点查：只判存在性，不拉全行（R31）。
   Future<bool> maintenanceItemHasHistory(int itemId) async {
-    final count = await (database.select(
+    final rows = await (database.select(
       database.maintenanceRecordItems,
-    )..where((row) => row.itemId.equals(itemId))).get();
-    return count.isNotEmpty;
+    )
+          ..where((row) => row.itemId.equals(itemId))
+          ..limit(1))
+        .get();
+    return rows.isNotEmpty;
   }
 
   /// 删除保养项目。三道约束：项目必须存在；有历史记录则拒绝
@@ -879,14 +888,17 @@ class LunioRepository {
 
   /// 恢复备份（导入）。流程：
   ///  1. 版本校验（必须 2）；
-  ///  2. 事务外先做引用完整性预校验（_validateBackupReferences），
-  ///     失败直接抛，不碰库；
-  ///  3. 单一大事务：清空全部数据（⚠ _clearAllDataInTransaction 连偏好
-  ///     一起删，主题/通知设置等会丢，见审查报告 R2）→ 按 cars→items→
-  ///     records 顺序逐行插入，id 全部换成新雪花 id（旧→新映射表），
-  ///     任何一行违反约束抛错则整体回滚（UI 提示"未写入任何数据"）；
+  ///  2. 事务外先做两层预校验，失败直接抛、不碰库：
+  ///     a. 引用完整性（_validateBackupReferences）；
+  ///     b. 业务规则——每个项目过实体 validate、每条记录过
+  ///        RecordRules.validateRecord（与手工录入同一套规则，
+  ///        拒绝篡改过的备份：负金额/负里程/空项目/非法间隔，R35）；
+  ///  3. 单一大事务：_clearRestorableDataInTransaction 只清 4 张业务表
+  ///     （偏好表保留——主题/通知设置/手动日期/停车倒计时不受影响，
+  ///     仅按前缀清掉提醒抑制键，R2）→ 按 cars→items→records 顺序
+  ///     逐行插入，id 全部换成新雪花 id（旧→新映射表），任何一行违反
+  ///     约束抛错则整体回滚（UI 提示"未写入任何数据"）；
   ///  4. 应用车辆指向恢复出的第一辆车。
-  /// 注意：恢复走裸 insert，不执行 RecordRules 业务校验（R35）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
     if (payload.schemaVersion != 2) {
       throw UnsupportedError(
@@ -894,9 +906,10 @@ class LunioRepository {
       );
     }
     _validateBackupReferences(payload);
+    _validateBackupBusinessRules(payload);
 
     return database.transaction(() async {
-      await _clearAllDataInTransaction();
+      await _clearRestorableDataInTransaction();
       final carIdMap = <int, int>{};
       final itemIdMap = <int, int>{};
       int? firstRestoredCarId;
@@ -1030,9 +1043,32 @@ class LunioRepository {
     return row?.value;
   }
 
+  /// 批量偏好读：单条 IN 查询一次取回多个 key（R27）。
+  /// 返回 Map：存在的 key → value（value 可为 null，等价"已存但值为空"）；
+  /// 不存在的 key 不出现在返回值里（用 containsKey 区分"没存过"）。
+  Future<Map<String, String?>> getPreferenceValues(List<String> keys) async {
+    if (keys.isEmpty) {
+      return const {};
+    }
+    final rows =
+        await (database.select(
+          database.appPreferences,
+        )..where((pref) => pref.key.isIn(keys))).get();
+    return {for (final row in rows) row.key: row.value};
+  }
+
   /// 通用偏好写（value 为 null 等价删除该 key）。
   Future<void> setPreferenceValue(String key, String? value) async {
     return _writePreferenceValue(key, value);
+  }
+
+  /// 批量偏好写：一个事务内逐 key upsert（R27），全成功或全回滚。
+  Future<void> updatePreferenceValues(Map<String, String?> values) {
+    return database.transaction(() async {
+      for (final entry in values.entries) {
+        await _writePreferenceValue(entry.key, entry.value);
+      }
+    });
   }
 
   /// 读停车倒计时（偏好里的 JSON）。
@@ -1064,24 +1100,42 @@ class LunioRepository {
     return setPreferenceValue(_parkingCountdownPreferenceKey, null);
   }
 
-  /// 清空数据（"我的"页入口）：事务内删 5 张表。
-  /// ⚠ 连 app_preferences 一起删：主题、通知设置、手动日期、开发者模式、
-  /// 全部 snooze/ack 记录都会丢（备份契约本就不含偏好，属刻意设计，
-  /// 但用户预期需要靠 UI 文案对齐，见审查报告 R2）。
-  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录。
+  /// 清空数据（"我的"页入口）：事务内删 5 张表（4 张业务表 + 偏好表）。
+  /// 语义（用户确认过的口径）：清空车辆、保养项目、保养记录和全部偏好
+  /// 设置（主题、通知、手动日期、开发者模式、停车倒计时、snooze/ack）；
+  /// 默认车辆模型与默认保养项目两张目录表不动。
+  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录；
+  /// 系统通知的取消由 UI 层（settings_data.dart）在清空成功后负责。
   Future<void> clearAllData() {
     return database.transaction(() async {
       await _clearAllDataInTransaction();
     });
   }
 
-  /// 清库实现（须在事务内调用；restoreBackupPayload 也复用它）。
+  /// 清库实现（须在事务内调用）。删 5 张表：偏好表 + 4 张业务表。
   Future<void> _clearAllDataInTransaction() async {
     await database.delete(database.appPreferences).go();
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();
     await database.delete(database.maintenanceItems).go();
     await database.delete(database.cars).go();
+  }
+
+  /// 恢复备份专用的清库实现（须在事务内调用）：只删 4 张业务表，
+  /// 偏好表整体保留（主题、通知设置、手动日期、停车倒计时等不受影响，
+  /// R2 修复口径："恢复只替换三类业务数据，偏好保留"）；但按前缀删掉
+  /// 提醒抑制键——恢复出来的车/项目拿的是全新雪花 id，旧 snooze/ack
+  /// 与新数据在语义上已无关联，不该继续生效。
+  Future<void> _clearRestorableDataInTransaction() async {
+    await database.delete(database.maintenanceRecordItems).go();
+    await database.delete(database.maintenanceRecords).go();
+    await database.delete(database.maintenanceItems).go();
+    await database.delete(database.cars).go();
+    for (final prefix in reminderSuppressionKeyPrefixes) {
+      await (database.delete(database.appPreferences)
+            ..where((pref) => pref.key.like('$prefix%')))
+          .go();
+    }
   }
 
   /// 事务内读应用车辆偏好（与 getAppliedCarId 相同但用于事务上下文）。
@@ -1097,21 +1151,32 @@ class LunioRepository {
     return _writePreferenceValue('appliedCarId', carId?.toString());
   }
 
-  /// 事务内保证应用车辆有效（AppliedCarRules 内联版）：
-  /// 无车清空；偏好指向不存在的车则回退第一辆。恢复备份收尾时调用。
+  /// 事务内保证应用车辆有效（AppliedCarRules 的点查内联版，R31）：
+  /// 无车清空；偏好指向的车不存在则回退 id 最小的车。
+  /// 恢复备份收尾时调用。
   Future<void> _ensureAppliedCarInTransaction() async {
-    final cars = await database.select(database.cars).get();
-    if (cars.isEmpty) {
+    final firstRows = await (database.select(
+      database.cars,
+    )..orderBy([(row) => OrderingTerm.asc(row.id)]))
+        .get();
+    final firstRow = firstRows.firstOrNull;
+    if (firstRow == null) {
       await _writeAppliedCarId(null);
       return;
     }
     final appliedCarId = int.tryParse(
       await _getAppliedCarIdInTransaction() ?? '',
     );
-    if (appliedCarId != null && cars.any((car) => car.id == appliedCarId)) {
-      return;
+    if (appliedCarId != null) {
+      final storedRow = await (database.select(
+        database.cars,
+      )..where((row) => row.id.equals(appliedCarId)))
+          .getSingleOrNull();
+      if (storedRow != null) {
+        return;
+      }
     }
-    await _writeAppliedCarId(cars.first.id);
+    await _writeAppliedCarId(firstRow.id);
   }
 
   /// 偏好 upsert：null 删行；无则插入、有则更新（syncStatus 记 pendingUpdate，
@@ -1455,7 +1520,7 @@ class LunioRepository {
   /// 备份引用完整性校验（恢复前、事务外执行）：
   /// cars/items 的 id 齐全且不重复；每个 item 的 carsId 存在；
   /// 每条 record 的 carId 存在、每个 itemId 存在且与 record 同车
-  /// （跨车引用的备份直接拒绝）。不校验业务规则（R35）。
+  /// （跨车引用的备份直接拒绝）。
   void _validateBackupReferences(BackupPayload payload) {
     final carIds = payload.cars.map((car) => car.id).whereType<int>().toSet();
     final itemCarIds = <int, int>{};
@@ -1492,6 +1557,31 @@ class LunioRepository {
             'Backup maintenance record references item from another car',
           );
         }
+      }
+    }
+  }
+
+  /// 备份业务规则校验（恢复前、事务外执行，R35）：
+  /// 项目过实体 validate、记录过 RecordRules.validateRecord——
+  /// 与手工录入走同一套规则，篡改过的备份（负金额/负里程/空项目/
+  /// 非法间隔）在开事务前就被拒绝，保证"失败时未写入任何数据"。
+  /// 校验失败统一包装成中文 ArgumentError（UI 直接展示给用户）。
+  void _validateBackupBusinessRules(BackupPayload payload) {
+    for (final item in payload.maintenanceItems) {
+      try {
+        item.validate();
+      } on ArgumentError catch (error) {
+        throw ArgumentError('备份文件中存在无效数据（保养项目「${item.name}」）：'
+            '${error.message}');
+      }
+    }
+    for (final record in payload.records) {
+      try {
+        RecordRules.validateRecord(record);
+      } on ArgumentError catch (error) {
+        throw ArgumentError(
+          '备份文件中存在无效数据（保养记录 ${record.date}）：${error.message}',
+        );
       }
     }
   }

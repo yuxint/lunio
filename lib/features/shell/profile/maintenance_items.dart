@@ -14,7 +14,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
@@ -154,7 +153,6 @@ Future<List<VehicleDefaultMaintenanceItem>?> showRestoreDefaultItemsSheet(
 }) {
   return showLunioModalSheet<List<VehicleDefaultMaintenanceItem>>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
@@ -194,12 +192,12 @@ class RestoreDefaultItemsSheetState extends State<RestoreDefaultItemsSheet> {
   void initState() {
     super.initState();
     existingNames = widget.itemDrafts
-        .map((item) => normalizeItemName(item.name))
+        .map((item) => _normalizeItemName(item.name))
         .toSet();
     selectedNames = {
       for (final item in widget.defaultItems)
-        if (!existingNames.contains(normalizeItemName(item.itemName)))
-          normalizeItemName(item.itemName),
+        if (!existingNames.contains(_normalizeItemName(item.itemName)))
+          _normalizeItemName(item.itemName),
     };
   }
 
@@ -208,7 +206,7 @@ class RestoreDefaultItemsSheetState extends State<RestoreDefaultItemsSheet> {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final recoverableCount = widget.defaultItems
         .where(
-          (item) => !existingNames.contains(normalizeItemName(item.itemName)),
+          (item) => !existingNames.contains(_normalizeItemName(item.itemName)),
         )
         .length;
     final maxListHeight = MediaQuery.sizeOf(context).height * 0.42;
@@ -222,27 +220,32 @@ class RestoreDefaultItemsSheetState extends State<RestoreDefaultItemsSheet> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final item in widget.defaultItems) ...[
-                  RestoreDefaultItemRow(
-                    item: item,
-                    selected: selectedNames.contains(
-                      normalizeItemName(item.itemName),
+                // 下标循环：行距判断用 index 而非实体 ==（重复实体时
+                // == 比较会让多个"最后一项"都丢行距，R24）。
+                for (var index = 0; index < widget.defaultItems.length; index++)
+                  ...[
+                    RestoreDefaultItemRow(
+                      item: widget.defaultItems[index],
+                      selected: selectedNames.contains(
+                        _normalizeItemName(widget.defaultItems[index].itemName),
+                      ),
+                      enabled: !existingNames.contains(
+                        _normalizeItemName(widget.defaultItems[index].itemName),
+                      ),
+                      onChanged: (selected) => setState(() {
+                        final key = _normalizeItemName(
+                          widget.defaultItems[index].itemName,
+                        );
+                        if (selected) {
+                          selectedNames.add(key);
+                        } else {
+                          selectedNames.remove(key);
+                        }
+                      }),
                     ),
-                    enabled: !existingNames.contains(
-                      normalizeItemName(item.itemName),
-                    ),
-                    onChanged: (selected) => setState(() {
-                      final key = normalizeItemName(item.itemName);
-                      if (selected) {
-                        selectedNames.add(key);
-                      } else {
-                        selectedNames.remove(key);
-                      }
-                    }),
-                  ),
-                  if (item != widget.defaultItems.last)
-                    const SizedBox(height: 8),
-                ],
+                    if (index != widget.defaultItems.length - 1)
+                      const SizedBox(height: 8),
+                  ],
               ],
             ),
           ),
@@ -270,7 +273,7 @@ class RestoreDefaultItemsSheetState extends State<RestoreDefaultItemsSheet> {
                         Navigator.of(context).pop([
                           for (final item in widget.defaultItems)
                             if (selectedNames.contains(
-                              normalizeItemName(item.itemName),
+                              _normalizeItemName(item.itemName),
                             ))
                               item,
                         ]);
@@ -337,7 +340,12 @@ class RestoreDefaultItemRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    defaultItemRuleText(item),
+                    _itemRuleText(
+                      remindByMileage: item.remindByMileage,
+                      remindByTime: item.remindByTime,
+                      mileageIntervalKm: item.mileageIntervalKm,
+                      timeIntervalMonths: item.timeIntervalMonths,
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: enabled ? tokens.muted : tokens.subtle,
                     ),
@@ -368,7 +376,6 @@ void showMaintenanceItemsSheet(
 }) {
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) => MaintenanceItemsSheetRoute(car: car),
@@ -637,14 +644,15 @@ class MaintenanceItemList extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final item in items) ...[
+        // 下标循环：行距判断用 index 而非实体 ==（R24）。
+        for (var index = 0; index < items.length; index++) ...[
           MaintenanceItemCard(
-            item: item,
-            onEdit: () => onEdit(item),
-            onToggle: () => onToggle(item),
-            onDelete: () => onDelete(item),
+            item: items[index],
+            onEdit: () => onEdit(items[index]),
+            onToggle: () => onToggle(items[index]),
+            onDelete: () => onDelete(items[index]),
           ),
-          if (item != items.last) const SizedBox(height: 10),
+          if (index != items.length - 1) const SizedBox(height: 10),
         ],
       ],
     );
@@ -710,7 +718,12 @@ class MaintenanceItemCard extends StatelessWidget {
           Text(item.name, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 5),
           Text(
-            itemRuleText(item),
+            _itemRuleText(
+              remindByMileage: item.remindByMileage,
+              remindByTime: item.remindByTime,
+              mileageIntervalKm: item.mileageIntervalKm,
+              timeIntervalMonths: item.timeIntervalMonths,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
@@ -788,22 +801,22 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
           decoration: const InputDecoration(labelText: '项目名称'),
         ),
         const SizedBox(height: 10),
-        ReminderRuleInputRow(
+        IntervalNumberInputRow(
           title: '按里程提醒',
-          value: remindByMileage,
           controller: mileageController,
           unit: 'km',
-          onChanged: saving
+          switchValue: remindByMileage,
+          onSwitchChanged: saving
               ? null
               : (value) => setState(() => remindByMileage = value),
         ),
         const SizedBox(height: 10),
-        ReminderRuleInputRow(
+        IntervalNumberInputRow(
           title: '按时间提醒',
-          value: remindByTime,
           controller: monthsController,
           unit: '月',
-          onChanged: saving
+          switchValue: remindByTime,
+          onSwitchChanged: saving
               ? null
               : (value) => setState(() => remindByTime = value),
         ),
@@ -894,74 +907,6 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
   }
 }
 
-/// 提醒规则输入行（开关 + 116px 数字输入 + 单位）。
-/// ⚠ 与 records_page.dart 的 RecordIntervalInputRow 几乎逐行重复（R32）。
-class ReminderRuleInputRow extends StatelessWidget {
-  const ReminderRuleInputRow({
-    required this.title,
-    required this.value,
-    required this.controller,
-    required this.unit,
-    required this.onChanged,
-  });
-
-  final String title;
-  final bool value;
-  final TextEditingController controller;
-  final String unit;
-  final ValueChanged<bool>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 52),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: tokens.surface2,
-        borderRadius: BorderRadius.circular(tokens.radiusMedium),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: onChanged == null ? tokens.subtle : tokens.ink,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 116,
-            child: TextField(
-              controller: controller,
-              enabled: value && onChanged != null,
-              keyboardType: TextInputType.text,
-              textInputAction: TextInputAction.done,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              onSubmitted: (_) => FocusScope.of(context).unfocus(),
-              textAlign: TextAlign.center,
-              decoration: numberInputDecoration(suffixText: unit).copyWith(
-                fillColor: value
-                    ? tokens.surface
-                    : tokens.surface3.withValues(alpha: 0.55),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                constraints: const BoxConstraints(minHeight: 46),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Switch(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-}
 
 /// ★ 落库版项目表单 sheet（项目 sheet / 记录表单行内新增用）：
 /// 新增走 saveMaintenanceItem、编辑走 updateMaintenanceItem →
@@ -974,7 +919,6 @@ Future<bool?> showMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
@@ -1011,7 +955,6 @@ Future<bool?> showDraftMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
@@ -1084,4 +1027,53 @@ Future<void> deleteMaintenanceItem(
       showStatusOverlay(context, friendlyError(error), StatusOverlayTone.error);
     }
   }
+}
+
+// ---- 文件内私有格式化（§5.2 回收：仅本文件消费的函数不留公共面）----
+
+/// 项目名规范化（去首尾空白）：表单保存与"恢复默认项目"的重复比对
+/// 都走它。
+String _normalizeItemName(String value) => value.trim();
+
+/// 项目规则文案："提醒：5,000公里/6个月"（车辆级项目与默认模板共用，
+/// 由调用方传字段——合并原 itemRuleText/defaultItemRuleText 双实现）。
+String _itemRuleText({
+  required bool remindByMileage,
+  required bool remindByTime,
+  required int? mileageIntervalKm,
+  required int? timeIntervalMonths,
+}) {
+  final rules = <String>[];
+  if (remindByMileage) {
+    rules.add(_formatCompactMileageText(mileageIntervalKm ?? 0));
+  }
+  if (remindByTime) {
+    rules.add(_formatCompactTimeText(timeIntervalMonths ?? 0));
+  }
+  return rules.isEmpty ? '提醒：未设置' : '提醒：${rules.join('/')}';
+}
+
+/// 紧凑里程文案：≥1万 显示"1.2万公里"。
+String _formatCompactMileageText(int value) {
+  if (value >= 10000) {
+    final wan = value / 10000;
+    final text = wan == wan.roundToDouble()
+        ? wan.toStringAsFixed(0)
+        : wan.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+    return '$text万公里';
+  }
+  return '${formatNumber(value)}公里';
+}
+
+/// 紧凑时长文案：18 → "18个月"、24 → "2年"、30 → "2.5年"。
+String _formatCompactTimeText(int months) {
+  if (months < 12) {
+    return '$months个月';
+  }
+  if (months % 12 == 0) {
+    return '${months ~/ 12}年';
+  }
+  final years = months / 12;
+  final text = years.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+  return '$text年';
 }

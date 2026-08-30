@@ -705,7 +705,6 @@ Future<(String, String)?> _showVehicleModelPickerSheet(
 }) {
   return showLunioModalSheet<(String, String)>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) => PrototypeSheetFrame(
@@ -899,6 +898,25 @@ class PickerOption extends StatelessWidget {
   }
 }
 
+/// 添加/编辑车辆 sheet 共用的数据前置检查（R32 提取，替代两份重复的
+/// "车型/日期加载失败"检查块）：任一数据在加载中显示加载圈、任一出错
+/// 给对应行内提示。返回 null 表示数据就绪，调用方继续渲染表单。
+Widget? carFormLoadGuard(
+  AsyncValue<List<VehicleModel>> vehicleModels,
+  AsyncValue<LocalDate> today,
+) {
+  if (vehicleModels.isLoading || today.isLoading) {
+    return const Center(child: CircularProgressIndicator());
+  }
+  if (vehicleModels.hasError) {
+    return const LunioInlineMessage(message: '车型加载失败，请稍后重试');
+  }
+  if (today.hasError) {
+    return const LunioInlineMessage(message: '日期加载失败，请稍后重试');
+  }
+  return null;
+}
+
 /// ★ 添加车辆 sheet 入口（我的页"添加"/空卡片"新增车辆"/提醒页空卡片）。
 /// StatefulBuilder 持有"当前是否第二步"以切换 sheet 标题；
 /// watch 车型目录与生效今天，加载失败给出行内提示；
@@ -907,7 +925,6 @@ class PickerOption extends StatelessWidget {
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
@@ -922,14 +939,9 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
               builder: (context, ref, child) {
                 final vehicleModels = ref.watch(vehicleModelsProvider);
                 final today = ref.watch(effectiveTodayProvider);
-                if (vehicleModels.isLoading || today.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (vehicleModels.hasError) {
-                  return LunioInlineMessage(message: '车型加载失败，请稍后重试');
-                }
-                if (today.hasError) {
-                  return LunioInlineMessage(message: '日期加载失败，请稍后重试');
+                final guard = carFormLoadGuard(vehicleModels, today);
+                if (guard != null) {
+                  return guard;
                 }
                 return vehicleModels.when(
                   loading: () =>
@@ -988,7 +1000,6 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
@@ -1000,14 +1011,9 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
           builder: (context, ref, child) {
             final vehicleModels = ref.watch(vehicleModelsProvider);
             final today = ref.watch(effectiveTodayProvider);
-            if (vehicleModels.isLoading || today.isLoading) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (vehicleModels.hasError) {
-              return LunioInlineMessage(message: '车型加载失败，请稍后重试');
-            }
-            if (today.hasError) {
-              return LunioInlineMessage(message: '日期加载失败，请稍后重试');
+            final guard = carFormLoadGuard(vehicleModels, today);
+            if (guard != null) {
+              return guard;
             }
             return vehicleModels.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -1047,15 +1053,25 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
 
 /// ★ 提醒页右上角"切换车辆"sheet：列出全部车，点非当前车 →
 /// applyCar（写偏好 + invalidate）→ 关 sheet。
-/// ⚠ 这里用 read 同步读 provider：loading 期 cars 为空列表会误报
-/// "请先新增车辆"（R23）。
-void showVehicleSwitcher(BuildContext context, WidgetRef ref) {
-  final cars = ref
-      .read(carsProvider)
-      .maybeWhen(data: (value) => value, orElse: () => const <Car>[]);
-  final appliedCarId = ref
-      .read(appliedCarProvider)
-      .maybeWhen(data: (value) => value?.id, orElse: () => null);
+/// 切换应用车辆 sheet（提醒页右上角入口）。
+/// 先 await 车辆列表与应用车辆（R23：loading 期 read 会拿到空列表，
+/// 误报"请先新增车辆"）；加载失败 toast 返回；单辆车提示后返回。
+/// 弹出后的选中卡片点击 → applyCar 写偏好 → 关 sheet。
+Future<void> showVehicleSwitcher(BuildContext context, WidgetRef ref) async {
+  final List<Car> cars;
+  final int? appliedCarId;
+  try {
+    cars = await ref.read(carsProvider.future);
+    appliedCarId = (await ref.read(appliedCarProvider.future))?.id;
+  } catch (_) {
+    if (context.mounted) {
+      showStatusOverlay(context, '车辆加载失败', StatusOverlayTone.error);
+    }
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
   if (cars.length <= 1) {
     showStatusOverlay(
       context,
@@ -1066,10 +1082,9 @@ void showVehicleSwitcher(BuildContext context, WidgetRef ref) {
   }
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
-    builder: (context) {
+    builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '选择应用车辆',
         subtitle: '提醒、记录和新增保养记录会跟随当前车辆',
@@ -1083,9 +1098,9 @@ void showVehicleSwitcher(BuildContext context, WidgetRef ref) {
                 onTap: car.id == null
                     ? null
                     : () async {
-                        await applyCar(context, ref, car.id!);
-                        if (context.mounted) {
-                          Navigator.of(context).pop();
+                        await applyCar(sheetContext, ref, car.id!);
+                        if (sheetContext.mounted) {
+                          Navigator.of(sheetContext).pop();
                         }
                       },
               ),

@@ -4,13 +4,16 @@
 //   提醒页点"停车倒计时" → showParkingCountdownSheet（表单：入场时间 +
 //   免费时长[快捷 0.5/1/2 小时]）→ saveParkingCountdown（写偏好 +
 //   调系统通知：Android 常驻 chronometer 通知 + 到点闹钟）；
-//   卡片实时显示剩余（250ms ticker 驱动）；点"结束" → clearParkingCountdown
-//   （删偏好 + 取消两条系统通知）。
+//   卡片内部 1s Timer 自刷新剩余时间（R11：不再由整页 250ms ticker
+//   驱动重建）；点"结束" → clearParkingCountdown（删偏好 + 取消两条
+//   系统通知）。
 //
 // 状态颜色复用保养提醒三态：剩余 >20% 绿 / ≤20% 黄 / 到期红（改计正时长）。
 // 注意：倒计时用系统真实时间，不受开发者模式手动日期影响；
 // 到期后不会自动清除（偏好里一直留着，须手动"结束"才能开始新的，R9）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
+
+import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -29,8 +32,12 @@ import 'reminder_list.dart';
 
 /// 倒计时进行中的展示卡片（提醒页内嵌）：入场信息 + 进度环 +
 /// 剩余/超时时长 + 到点时刻 + "结束"按钮。
-/// now 由外部（提醒页 ticker）传入，每 250ms 变一次。
-class ParkingCountdownCard extends StatelessWidget {
+///
+/// R11 后卡片自驱动刷新：内部 1s Timer 每秒从 appDateContext 读系统
+/// 真实时间并 setState——重建范围只有这张卡，提醒页其余部分不再跟随
+/// 秒级重建（原实现是页面级 250ms ticker 整页 setState）。
+/// now 参数是首次构建的基准时间（页面 watch 时传入），之后由 Timer 接管。
+class ParkingCountdownCard extends ConsumerStatefulWidget {
   const ParkingCountdownCard({
     required this.countdown,
     required this.now,
@@ -42,17 +49,48 @@ class ParkingCountdownCard extends StatelessWidget {
   final VoidCallback onEnd;
 
   @override
+  ConsumerState<ParkingCountdownCard> createState() =>
+      _ParkingCountdownCardState();
+}
+
+class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
+  Timer? _ticker;
+
+  /// 卡片当前使用的"现在"（每秒刷新；倒计时存在即计时，
+  /// 到点后继续正计"停车时长"）。
+  late DateTime _now;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = widget.now;
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _now = ref.read(appDateContextProvider).readSystemNow());
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final countdown = widget.countdown;
     final progress = ParkingCountdownRules.progress(
       countdown: countdown,
-      now: now,
+      now: _now,
     );
     final color = _parkingStatusColor(tokens, progress.status);
     final animatedPercent = progress.status == ReminderStatus.danger
         ? 100.0
         : progress.percentRemaining;
-    final elapsedSeconds = now.difference(countdown.startedAt).inSeconds;
+    final elapsedSeconds = _now.difference(countdown.startedAt).inSeconds;
     return LunioCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -71,7 +109,7 @@ class ParkingCountdownCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${_formatClock(countdown.startedAt)} 入场 · 免费 ${_formatParkingDurationOption(countdown.durationSeconds)}',
+                      '${formatClock(countdown.startedAt)} 入场 · 免费 ${_formatParkingDurationOption(countdown.durationSeconds)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -146,8 +184,8 @@ class ParkingCountdownCard extends StatelessWidget {
               children: [
                 Text(
                   progress.status == ReminderStatus.danger
-                      ? '${_formatClock(countdown.endsAt)} 已到点'
-                      : '${_formatClock(countdown.endsAt)} 前离场',
+                      ? '${formatClock(countdown.endsAt)} 已到点'
+                      : '${formatClock(countdown.endsAt)} 前离场',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -160,7 +198,7 @@ class ParkingCountdownCard extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: SmallActionButton(
               label: '结束',
-              onPressed: onEnd,
+              onPressed: widget.onEnd,
               secondary: true,
             ),
           ),
@@ -187,18 +225,15 @@ class _ParkingIcon extends StatelessWidget {
 }
 
 /// 倒计时开始表单：入场时间（点开时间轮选择器）+ 免费时长输入框
-/// + 快捷时长 chip + 校验 + 开始按钮。
-/// ⚠ initial（编辑已有倒计时）分支不可达：唯一调用点在倒计时为 null 时
-/// 才能打开表单（按钮禁用逻辑），编辑代码路径是死代码（R30）。
+/// + 快捷时长 chip + 校验 + 开始按钮。入口仅在无倒计时且按钮可用，
+/// 无编辑分支（原 initial 死分支已删，R26）。
 class ParkingCountdownForm extends StatefulWidget {
   const ParkingCountdownForm({
     required this.now,
-    required this.initial,
     required this.onSubmit,
   });
 
   final DateTime now;
-  final ParkingCountdown? initial;
   final Future<void> Function(ParkingCountdown countdown) onSubmit;
 
   @override
@@ -214,11 +249,8 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
   @override
   void initState() {
     super.initState();
-    final initial = widget.initial;
-    entryTime = initial?.startedAt ?? widget.now;
-    durationMinutesController = TextEditingController(
-      text: ((initial?.durationSeconds ?? 1800) ~/ 60).toString(),
-    );
+    entryTime = widget.now;
+    durationMinutesController = TextEditingController(text: '30');
   }
 
   @override
@@ -235,7 +267,7 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
       children: [
         LunioPickerTile(
           label: '入场时间',
-          value: _formatClock(entryTime),
+          value: formatClock(entryTime),
           enabled: !saving,
           onTap: saving ? null : _pickEntryTime,
         ),
@@ -539,7 +571,6 @@ Future<DateTime?> showParkingEntryTimePicker(
 }) {
   return showLunioModalSheet<DateTime>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: true,
     builder: (context) => ParkingEntryTimePicker(initial: initial),
   );
@@ -576,18 +607,18 @@ class ParkingDurationChip extends StatelessWidget {
 
 /// 停车计时 sheet 入口（提醒页"停车倒计时"按钮）。
 /// bottomInset 跟随键盘高度，键盘弹起时把内容顶上去。
+/// context 是页面级 context：传给 saveParkingCountdown 做"页面仍在
+/// 挂载"的检查（sheet 可能先一步关闭）。
 Future<void> showParkingCountdownSheet(
   BuildContext context,
   WidgetRef ref, {
   required DateTime now,
-  ParkingCountdown? initial,
 }) {
   return showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) {
-      final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    builder: (sheetContext) {
+      final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
       return Padding(
         padding: EdgeInsets.fromLTRB(18, 0, 18, bottomInset + 16),
         child: LunioSheetScaffold(
@@ -595,8 +626,8 @@ Future<void> showParkingCountdownSheet(
           subtitle: '设置入场时间和免费停车时长。',
           child: ParkingCountdownForm(
             now: now,
-            initial: initial,
-            onSubmit: (countdown) => saveParkingCountdown(ref, countdown),
+            onSubmit: (countdown) =>
+                saveParkingCountdown(context, ref, countdown),
           ),
         ),
       );
@@ -610,25 +641,48 @@ Future<void> showParkingCountdownSheet(
 ///  3. 开着 → 请求通知权限（顺手把"已请求过"写库）→ 授权了再申请
 ///     Android 精确闹钟 → scheduleParkingCountdownNotification
 ///     （Android 常驻通知 + 到点闹钟）；被拒 → 回写"系统通知关闭"并失效。
-/// ⚠ 多个 await 后继续用 ref（sheet 可能已关），存在销毁后使用窗口（R13）。
+/// 每个 await 后检查页面 context 仍挂载（R13）；调度通知前比对通知同步
+/// 代数，保存期间发生恢复备份/清空数据就放弃（R8）。
 Future<void> saveParkingCountdown(
+  BuildContext context,
   WidgetRef ref,
   ParkingCountdown countdown,
 ) async {
+  final syncGeneration = ref.read(notificationSyncGenerationProvider);
   await ref.read(lunioRepositoryProvider).saveParkingCountdown(countdown);
+  if (!context.mounted) {
+    return;
+  }
   ref.invalidate(parkingCountdownProvider);
   final settings = await ref.read(notificationSettingsProvider.future);
+  if (!context.mounted) {
+    return;
+  }
   if (!settings.systemNotificationsEnabled) {
     return;
   }
   final granted = await LunioNotificationService.instance
       .requestNotificationPermission();
+  if (!context.mounted) {
+    return;
+  }
   await ref
       .read(lunioRepositoryProvider)
       .setPreferenceValue('systemNotificationPermissionRequested', 'true');
+  if (!context.mounted) {
+    return;
+  }
   if (granted) {
+    // 调度前比对代数：保存链路期间发生恢复/清空（数据已被整体替换），
+    // 本次倒计时的通知就不再调度，避免排入一条指向已删除状态的通知。
+    if (ref.read(notificationSyncGenerationProvider) != syncGeneration) {
+      return;
+    }
     final exactAlarmGranted = await LunioNotificationService.instance
         .requestExactAlarmPermission();
+    if (!context.mounted) {
+      return;
+    }
     await LunioNotificationService.instance
         .scheduleParkingCountdownNotification(
           countdown,
@@ -638,16 +692,26 @@ Future<void> saveParkingCountdown(
     await ref
         .read(lunioRepositoryProvider)
         .setPreferenceValue('systemNotificationsEnabled', 'false');
+    if (!context.mounted) {
+      return;
+    }
     invalidatePreferenceProviders(ref);
   }
 }
 
 /// ★ 结束倒计时：删偏好 + 失效 provider + 取消 9001/9002 两条系统通知
 /// （仅在系统通知开着时；关着时本来就没人调度过）。
-Future<void> clearParkingCountdown(WidgetRef ref) async {
+/// await 后检查页面 context 仍挂载（R13）。
+Future<void> clearParkingCountdown(BuildContext context, WidgetRef ref) async {
   await ref.read(lunioRepositoryProvider).clearParkingCountdown();
+  if (!context.mounted) {
+    return;
+  }
   ref.invalidate(parkingCountdownProvider);
   final settings = await ref.read(notificationSettingsProvider.future);
+  if (!context.mounted) {
+    return;
+  }
   if (settings.systemNotificationsEnabled) {
     await LunioNotificationService.instance
         .cancelParkingCountdownNotification();
@@ -655,15 +719,8 @@ Future<void> clearParkingCountdown(WidgetRef ref) async {
 }
 
 // ---- 私有格式化函数 ----
-// _formatClock 与通知服务里的同名实现重复（R32）；其余为倒计时专用格式化。
-
-/// HH:mm:ss。
-String _formatClock(DateTime dateTime) {
-  final hour = dateTime.hour.toString().padLeft(2, '0');
-  final minute = dateTime.minute.toString().padLeft(2, '0');
-  final second = dateTime.second.toString().padLeft(2, '0');
-  return '$hour:$minute:$second';
-}
+// HH:mm:ss 的 formatClock 已合并到 shared/formatters.dart（§5.3.3，
+// 与通知服务共用同一实现）；其余为倒计时专用格式化。
 
 /// 倒计时数字：≥1 小时显示 HH:mm:ss，否则 mm:ss。
 String _formatCountdownClock(int seconds) {

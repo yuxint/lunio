@@ -27,7 +27,6 @@ Future<LocalDate?> showSimpleDatePicker(
 }) {
   return showLunioModalSheet<LocalDate>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: true,
     builder: (context) => ConstrainedBox(
       constraints: BoxConstraints(

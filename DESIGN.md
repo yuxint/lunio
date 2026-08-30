@@ -368,7 +368,7 @@ Parking countdown is a temporary but high-priority reminder-screen utility. It s
 
 ### Records
 
-Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color.
+Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color. Record cards lazily build as the user scrolls (sliver lists with stable per-record keys). Item name pills inside a card flow with a 6px gap via `Wrap`; they wrap naturally without forced row packing. While the backing data is loading, the whole page shows the shared centered loading placeholder, and load failures show the shared error card — all three main pages use the same loading/error treatment.
 
 ### Bottom Navigation
 

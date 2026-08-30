@@ -41,7 +41,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - `lib/domain/entities/`：领域实体，保持纯 Dart 数据结构与基础校验。
 - `lib/domain/rules/`：业务规则，例如保养进度、记录校验、当前应用车辆回退规则。优先把可测试的业务判断放这里。
-- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 5。
+- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 6。
 - `lib/data/database/app_database.g.dart`：Drift 生成文件。改表结构后用 build_runner 生成，不要手写。
 - `lib/data/repositories/lunio_repository.dart`：数据库读写、事务、默认数据、备份导入导出恢复。
 - `lib/data/backup/backup_codec.dart`：`schemaVersion: 2` JSON 备份契约编码/解码。
@@ -60,7 +60,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 ## 数据与契约注意点
 
 - 当前产品/文档口径是正式 v1；这不是数据库或备份契约版本。
-- 当前数据库 `schemaVersion` 是 5，备份 JSON `schemaVersion` 是 2。
+- 当前数据库 `schemaVersion` 是 6，备份 JSON `schemaVersion` 是 2。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同时考虑迁移、兼容、测试和文档。
 - 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueEnabled`、`maintenanceDueRepeat`、`parkingCountdown`。不要把展示文案当作稳定标识。
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用 `LunioRepository` 与 `providers.dart` 里的现有模式。

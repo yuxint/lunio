@@ -1,17 +1,15 @@
 // 记录页（/records）：保养记录的列表、筛选、两步表单和删除。
 //
-// 页面结构：
-//   1. 模式切换（按周期/按项目）；
-//   2. 两条 FilterBar（年份多选 + 项目多选，第一格"全部"= 清空筛选）；
-//   3. 记录列表：按周期 = 每条记录一张卡；按项目 = 记录×项目展开成行；
-//   4. 卡片上的编辑/删除按钮。
+// 页面结构（CustomScrollView + slivers，R25）：
+//   1. 模式切换（按周期/按项目）+ 两条 FilterBar（年份多选 + 项目多选，
+//      第一格"全部"= 清空筛选）——固定头部 sliver；
+//   2. 记录列表：SliverList.builder 懒加载（每项 ValueKey）；
+//      按周期 = 每条记录一张卡；按项目 = 记录×项目展开成行；
+//   3. 卡片上的编辑/删除按钮。
 //
 // 新增/编辑表单是两步流：第一步填日期/里程/费用/备注/选项目（可行内
 // 新增项目并自动勾选）→ 第二步确认所选项目的提醒间隔（可改，保存时
 // 一并更新项目）。入口在提醒页按钮和记录卡"编辑"。
-//
-// ⚠ 空态文案"点击右下角 + 新增"与实际不符——App 没有 FAB，
-// 新增入口只在提醒页（R33 相关）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -42,12 +40,14 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
   int selectedMode = 0;
 
   /// 年份/项目筛选的已选集合（空 = 全部）。
+  /// 只由用户点击变更；数据变化导致的"失效选中"在 build 里用派生集合
+  /// 过滤（validSelectedXxx），不再回写 state（R21）。
   final selectedYears = <int>{};
   final selectedItemIds = <int>{};
 
-  /// build 里的 maybeWhen 分支会对上面两个集合 removeWhere 清掉
-  /// "已不存在的年份/项目"——build 期间修改 state 属副作用写法（R21），
-  /// 但只做清理不触发重建，实际可运行。
+  /// build：watch 数据 → 标题栏/筛选条为固定头部 sliver，记录列表用
+  /// SliverList.builder 懒加载（R25；长列表只构建可视区，每项带
+  /// ValueKey 便于 diff）。
   @override
   Widget build(BuildContext context) {
     final car = ref
@@ -60,250 +60,161 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           data: (value) => value,
           orElse: () => const <MaintenanceItem>[],
         );
-    return LunioPage(
-      title: '保养记录',
-      children: [
-        LunioSegmentedControl(
-          values: const ['按周期', '按项目'],
-          selectedIndex: selectedMode,
-          onSelected: (index) => setState(() => selectedMode = index),
-        ),
-        const SizedBox(height: 14),
-        records.maybeWhen(
-          data: (value) {
-            final years = _recordYears(value);
-            selectedYears.removeWhere((year) => !years.contains(year));
-            final itemIds = items
-                .map((item) => item.id)
-                .whereType<int>()
-                .toSet();
-            selectedItemIds.removeWhere((itemId) => !itemIds.contains(itemId));
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FilterBar(
-                  labels: ['全部年份', for (final year in years) '$year年'],
-                  selectedIndexes: _selectedFilterIndexes(
-                    values: years,
-                    selectedValues: selectedYears,
-                  ),
-                  onSelected: (index) => setState(() {
-                    if (index == 0) {
-                      selectedYears.clear();
-                      return;
-                    }
-                    _toggleSelection(selectedYears, years[index - 1]);
-                  }),
-                ),
-                const SizedBox(height: 8),
-                FilterBar(
-                  labels: ['全部项目', for (final item in items) item.name],
-                  selectedIndexes: _selectedFilterIndexes(
-                    values: items
-                        .map((item) => item.id)
-                        .whereType<int>()
-                        .toList(),
-                    selectedValues: selectedItemIds,
-                  ),
-                  onSelected: (index) => setState(() {
-                    if (index == 0) {
-                      selectedItemIds.clear();
-                      return;
-                    }
-                    final itemId = items[index - 1].id;
-                    if (itemId != null) {
-                      _toggleSelection(selectedItemIds, itemId);
-                    }
-                  }),
-                ),
-              ],
-            );
-          },
-          orElse: () => const SizedBox.shrink(),
-        ),
-        const SizedBox(height: 14),
-        records.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stackTrace) =>
-              LunioCard(child: Text('记录加载失败：${friendlyError(error)}')),
-          data: (value) {
-            if (car == null) {
-              return const LunioCard(child: Text('请先新增车辆'));
-            }
-            if (value.isEmpty) {
-              return LunioCard(
-                child: Text(
-                  '暂无保养记录，点击右下角 + 新增。',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              );
-            }
-            final filteredRecords = _filterRecords(
-              records: value,
-              years: selectedYears,
-              itemIds: selectedItemIds,
-            );
-            if (filteredRecords.isEmpty) {
-              return LunioCard(
-                child: Text(
-                  '没有符合筛选条件的记录',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              );
-            }
-            if (selectedMode == 0) {
-              return RecordCycleList(
-                records: filteredRecords,
-                items: items,
-                onEdit: (record) => showMaintenanceRecordFormSheet(
-                  context,
-                  ref,
-                  record: record,
-                ),
-                onDelete: (record) =>
-                    deleteMaintenanceRecord(context, ref, record),
-              );
-            }
-            return RecordItemList(
-              records: filteredRecords,
-              items: items,
-              selectedItemIds: selectedItemIds,
-              onEdit: (record, itemId) =>
-                  showMaintenanceRecordFormSheet(context, ref, record: record),
-              onDelete: (record, itemId) =>
-                  deleteMaintenanceRecordItem(context, ref, record, itemId),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-/// 按周期视图：一条记录一张卡（日期+金额 / 里程+备注 / 项目 pills /
-/// 编辑+删除）。⚠ record != records.last 用实体 == 比较而非下标（R24）。
-class RecordCycleList extends StatelessWidget {
-  const RecordCycleList({
-    required this.records,
-    required this.items,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final List<MaintenanceRecord> records;
-  final List<MaintenanceItem> items;
-  final ValueChanged<MaintenanceRecord> onEdit;
-  final ValueChanged<MaintenanceRecord> onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Column(
-      children: [
-        for (final record in records) ...[
-          LunioCard(
+    // 三页统一 loading/error 形态（§5.2）：与提醒页同构，
+    // 记录 provider 就绪前整页占位。
+    return records.when(
+      loading: () => const LoadingPage(title: '保养记录'),
+      error: (error, stackTrace) => ErrorPage(title: '保养记录', error: error),
+      data: (value) => LunioPage.slivers(
+        title: '保养记录',
+        slivers: [
+          SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      record.date.toString(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const Spacer(),
-                    const SizedBox(width: 10),
-                    Text(
-                      formatMoney(record.costCents),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: tokens.primary,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+                LunioSegmentedControl(
+                  values: const ['按周期', '按项目'],
+                  selectedIndex: selectedMode,
+                  onSelected: (index) => setState(() => selectedMode = index),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text(
-                            '${formatNumber(record.mileageKm)} km',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if ((record.note ?? '').trim().isNotEmpty) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                record.note!.trim(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SmallActionButton(
-                          label: '编辑',
-                          onPressed: () => onEdit(record),
-                        ),
-                        const SizedBox(width: 8),
-                        SmallActionButton(
-                          label: '删除',
-                          danger: true,
-                          onPressed: () => onDelete(record),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ItemPills(labels: recordItemNameList(record, items)),
+                const SizedBox(height: 14),
+                _buildFilterBars(value, items),
+                const SizedBox(height: 14),
               ],
             ),
           ),
-          if (record != records.last) const SizedBox(height: 12),
+          _buildRecordListSliver(car, value, items),
         ],
+      ),
+    );
+  }
+
+  /// 派生集合：把 state 里的选中值过滤成"当前数据下仍有效"的视图集合，
+  /// 渲染与过滤都用它，不改 state（R21）。
+  ({Set<int> years, Set<int> itemIds}) _validSelections(
+    List<MaintenanceRecord> records,
+    List<MaintenanceItem> items,
+  ) {
+    final years = _recordYears(records);
+    final itemIds = items.map((item) => item.id).whereType<int>().toSet();
+    return (
+      years: selectedYears.where(years.contains).toSet(),
+      itemIds: selectedItemIds.where(itemIds.contains).toSet(),
+    );
+  }
+
+  /// 两条筛选条（年份多选 + 项目多选，第一格"全部"= 清空筛选）。
+  Widget _buildFilterBars(
+    List<MaintenanceRecord> records,
+    List<MaintenanceItem> items,
+  ) {
+    final years = _recordYears(records);
+    final selections = _validSelections(records, items);
+    final itemIds = items.map((item) => item.id).whereType<int>().toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _FilterBar(
+          labels: ['全部年份', for (final year in years) '$year年'],
+          selectedIndexes: _selectedFilterIndexes(
+            values: years,
+            selectedValues: selections.years,
+          ),
+          onSelected: (index) => setState(() {
+            if (index == 0) {
+              selectedYears.clear();
+              return;
+            }
+            _toggleSelection(selectedYears, years[index - 1]);
+          }),
+        ),
+        const SizedBox(height: 8),
+        _FilterBar(
+          labels: ['全部项目', for (final item in items) item.name],
+          selectedIndexes: _selectedFilterIndexes(
+            values: itemIds,
+            selectedValues: selections.itemIds,
+          ),
+          onSelected: (index) => setState(() {
+            if (index == 0) {
+              selectedItemIds.clear();
+              return;
+            }
+            final itemId = items[index - 1].id;
+            if (itemId != null) {
+              _toggleSelection(selectedItemIds, itemId);
+            }
+          }),
+        ),
       ],
     );
   }
-}
 
-/// 按项目视图：记录×项目展开成行（每行一个项目卡，可单独删该项）。
-/// 行的编辑/删除按钮都带 itemId；编辑打开整条记录的表单。
-class RecordItemList extends StatelessWidget {
-  const RecordItemList({
-    required this.records,
-    required this.items,
-    required this.selectedItemIds,
-    required this.onEdit,
-    required this.onDelete,
-  });
+  /// 记录列表区：空态/过滤空态是固定卡片，正常态按当前模式返回
+  /// SliverList.builder（每项 ValueKey('record-记录id')，R25）。
+  Widget _buildRecordListSliver(
+    Car? car,
+    List<MaintenanceRecord> records,
+    List<MaintenanceItem> items,
+  ) {
+    if (car == null) {
+      return const SliverToBoxAdapter(
+        child: LunioCard(child: Text('请先新增车辆')),
+      );
+    }
+    if (records.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: LunioCard(child: Text('暂无保养记录，可在提醒页点「新增保养记录」。')),
+      );
+    }
+    final selections = _validSelections(records, items);
+    final filteredRecords = _filterRecords(
+      records: records,
+      years: selections.years,
+      itemIds: selections.itemIds,
+    );
+    if (filteredRecords.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: LunioCard(child: Text('没有符合筛选条件的记录')),
+      );
+    }
+    if (selectedMode == 0) {
+      return SliverList.builder(
+        itemCount: filteredRecords.length,
+        itemBuilder: (context, index) {
+          final record = filteredRecords[index];
+          return Padding(
+            key: ValueKey('record-${record.id}'),
+            padding: EdgeInsets.only(
+              bottom: index == filteredRecords.length - 1 ? 0 : 12,
+            ),
+            child: RecordCycleCard(
+              record: record,
+              items: items,
+              onEdit: (record) =>
+                  showMaintenanceRecordFormSheet(context, ref, record: record),
+              onDelete: (record) =>
+                  deleteMaintenanceRecord(context, ref, record),
+            ),
+          );
+        },
+      );
+    }
+    return _buildItemRowsSliver(filteredRecords, items, selections.itemIds);
+  }
 
-  final List<MaintenanceRecord> records;
-  final List<MaintenanceItem> items;
-  final Set<int> selectedItemIds;
-  final void Function(MaintenanceRecord record, int itemId) onEdit;
-  final void Function(MaintenanceRecord record, int itemId) onDelete;
-
-  @override
-  Widget build(BuildContext context) {
+  /// 按项目视图：记录×项目展开成行，同样走 SliverList.builder。
+  Widget _buildItemRowsSliver(
+    List<MaintenanceRecord> records,
+    List<MaintenanceItem> items,
+    Set<int> validSelectedItemIds,
+  ) {
     final rows =
         <({MaintenanceRecord record, int itemId, MaintenanceItem? item})>[];
     for (final record in records) {
       for (final itemId in record.itemIds) {
-        if (selectedItemIds.isNotEmpty && !selectedItemIds.contains(itemId)) {
+        if (validSelectedItemIds.isNotEmpty &&
+            !validSelectedItemIds.contains(itemId)) {
           continue;
         }
         rows.add((
@@ -314,54 +225,179 @@ class RecordItemList extends StatelessWidget {
       }
     }
     if (rows.isEmpty) {
-      return LunioCard(
-        child: Text(
-          '没有符合筛选条件的记录',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
+      return const SliverToBoxAdapter(
+        child: LunioCard(child: Text('没有符合筛选条件的记录')),
       );
     }
-    return Column(
-      children: [
-        for (final row in rows) ...[
-          LunioCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  row.item?.name ?? '未知项目',
-                  style: Theme.of(context).textTheme.titleMedium,
+    return SliverList.builder(
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final row = rows[index];
+        return Padding(
+          key: ValueKey('record-${row.record.id}-item-${row.itemId}'),
+          padding: EdgeInsets.only(bottom: index == rows.length - 1 ? 0 : 12),
+          child: RecordItemRowCard(
+            record: row.record,
+            itemId: row.itemId,
+            item: row.item,
+            onEdit: (record, itemId) =>
+                showMaintenanceRecordFormSheet(context, ref, record: record),
+            onDelete: (record, itemId) =>
+                deleteMaintenanceRecordItem(context, ref, record, itemId),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 按周期视图的单张记录卡（日期+金额 / 里程+备注 / 项目 pills /
+/// 编辑+删除）。由页面的 SliverList.builder 逐条构建（R24/R25 后不再
+/// 有列表容器组件，行距由 builder 的 Padding 控制）。
+class RecordCycleCard extends StatelessWidget {
+  const RecordCycleCard({
+    required this.record,
+    required this.items,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final MaintenanceRecord record;
+  final List<MaintenanceItem> items;
+  final ValueChanged<MaintenanceRecord> onEdit;
+  final ValueChanged<MaintenanceRecord> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return LunioCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                record.date.toString(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const Spacer(),
+              const SizedBox(width: 10),
+              Text(
+                _formatMoney(record.costCents),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: tokens.primary,
+                  fontWeight: FontWeight.w800,
                 ),
-                const SizedBox(height: 8),
-                Row(
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        '${row.record.date} · ${formatNumber(row.record.mileageKm)} km',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
+                    Text(
+                      '${formatNumber(record.mileageKm)} km',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if ((record.note ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          record.note!.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    SmallActionButton(
-                      label: '编辑',
-                      onPressed: () => onEdit(row.record, row.itemId),
-                    ),
-                    const SizedBox(width: 8),
-                    SmallActionButton(
-                      label: '删除',
-                      danger: true,
-                      onPressed: () => onDelete(row.record, row.itemId),
-                    ),
+                    ],
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SmallActionButton(
+                    label: '编辑',
+                    onPressed: () => onEdit(record),
+                  ),
+                  const SizedBox(width: 8),
+                  SmallActionButton(
+                    label: '删除',
+                    danger: true,
+                    onPressed: () => onDelete(record),
+                  ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 12),
+          ItemPills(labels: recordItemNameList(record, items)),
         ],
-      ],
+      ),
+    );
+  }
+}
+
+/// 按项目视图的单行卡（记录×项目展开后一行一个项目，可单独删该项）。
+/// 编辑按钮打开整条记录的表单，删除只删该记录里的这个项目。
+class RecordItemRowCard extends StatelessWidget {
+  const RecordItemRowCard({
+    required this.record,
+    required this.itemId,
+    required this.item,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final MaintenanceRecord record;
+  final int itemId;
+  final MaintenanceItem? item;
+  final void Function(MaintenanceRecord record, int itemId) onEdit;
+  final void Function(MaintenanceRecord record, int itemId) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return LunioCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item?.name ?? '未知项目',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${record.date} · ${formatNumber(record.mileageKm)} km',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: 10),
+              SmallActionButton(
+                label: '编辑',
+                onPressed: () => onEdit(record, itemId),
+              ),
+              const SizedBox(width: 8),
+              SmallActionButton(
+                label: '删除',
+                danger: true,
+                onPressed: () => onDelete(record, itemId),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -586,7 +622,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           runSpacing: 8,
           children: [
             for (final item in availableItems)
-              ChoiceChipButton(
+              _ChoiceChipButton(
                 label: item.enabled ? item.name : '${item.name}（已禁用）',
                 selected: item.id != null && selectedItemIds.contains(item.id),
                 enabled: !saving && item.id != null,
@@ -704,7 +740,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           Text(draft.item.name, style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 8),
           if (draft.item.remindByMileage) ...[
-            RecordIntervalInputRow(
+            IntervalNumberInputRow(
               title: '按里程提醒',
               controller: draft.mileageController,
               unit: 'km',
@@ -713,7 +749,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
             const SizedBox(height: 10),
           ],
           if (draft.item.remindByTime) ...[
-            RecordIntervalInputRow(
+            IntervalNumberInputRow(
               title: '按时间提醒',
               controller: draft.monthsController,
               unit: '月',
@@ -923,70 +959,6 @@ class RecordIntervalDraft {
   }
 }
 
-/// 间隔输入行（标题 + 116px 数字输入框 + 单位后缀）。
-/// ⚠ 与 maintenance_items.dart 的 ReminderRuleInputRow 几乎逐行重复（R32）。
-class RecordIntervalInputRow extends StatelessWidget {
-  const RecordIntervalInputRow({
-    required this.title,
-    required this.controller,
-    required this.unit,
-    required this.enabled,
-  });
-
-  final String title;
-  final TextEditingController controller;
-  final String unit;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 52),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: tokens.surface2,
-        borderRadius: BorderRadius.circular(tokens.radiusMedium),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: enabled ? tokens.ink : tokens.subtle,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 116,
-            child: TextField(
-              controller: controller,
-              enabled: enabled,
-              keyboardType: TextInputType.text,
-              textInputAction: TextInputAction.done,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              onSubmitted: (_) => FocusScope.of(context).unfocus(),
-              textAlign: TextAlign.center,
-              decoration: numberInputDecoration(suffixText: unit).copyWith(
-                fillColor: enabled
-                    ? tokens.surface
-                    : tokens.surface3.withValues(alpha: 0.55),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                constraints: const BoxConstraints(minHeight: 46),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// ★ 记录表单入口（提醒页按钮 / 记录卡"编辑"）：
 /// 先 await 三个 provider（车/项目/生效今天）→ 无车或无可用项目时
@@ -1019,7 +991,6 @@ Future<void> showMaintenanceRecordFormSheet(
   }
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: false,
     backgroundColor: Colors.transparent,
     builder: (context) {
@@ -1106,4 +1077,146 @@ Future<void> deleteMaintenanceRecordItem(
       .read(lunioRepositoryProvider)
       .removeMaintenanceRecordItem(recordId: record.id!, itemId: itemId);
   invalidateVehicleProviders(ref);
+}
+
+// ---- 文件内私有组件与格式化（§5.2 回收：仅本页消费的不进共享层）----
+
+/// 金额（分 → ¥xx.xx）。仅记录列表使用。
+String _formatMoney(int costCents) {
+  return '¥${(costCents / 100).toStringAsFixed(2)}';
+}
+
+/// 横向可滚动的多选筛选条（chip 选中态 + 右下角小对勾）。
+/// 年份/项目两条筛选在用（原 shared_widgets 公共组件，仅本页消费，
+/// §5.2 回收为私有）。
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.labels,
+    required this.selectedIndexes,
+    required this.onSelected,
+  });
+
+  final List<String> labels;
+  final Set<int> selectedIndexes;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var index = 0; index < labels.length; index++) ...[
+            Builder(
+              builder: (context) {
+                final selected = selectedIndexes.contains(index);
+                return InkWell(
+                  onTap: () => onSelected(index),
+                  borderRadius: BorderRadius.circular(12),
+                  overlayColor: WidgetStateProperty.all(Colors.transparent),
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selected ? tokens.primarySoft : tokens.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected
+                                ? tokens.primary.withValues(alpha: 0.34)
+                                : tokens.line,
+                          ),
+                        ),
+                        child: Text(
+                          labels[index],
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: selected ? tokens.primary : tokens.ink,
+                              ),
+                        ),
+                      ),
+                      if (selected)
+                        Positioned(
+                          right: 2,
+                          bottom: 2,
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: tokens.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: tokens.surface,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.check,
+                              size: 9,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            if (index != labels.length - 1) const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 可多选的项目 chip（记录表单选保养项目用；enabled=false 展示
+/// "已停用但历史上被选过"的项目；原 shared_widgets 公共组件，
+/// 仅本页消费，§5.2 回收为私有）。
+class _ChoiceChipButton extends StatelessWidget {
+  const _ChoiceChipButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 36),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? tokens.primarySoft : tokens.surface2,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? tokens.primary.withValues(alpha: 0.3)
+                : tokens.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: selected ? tokens.primary : tokens.ink,
+          ),
+        ),
+      ),
+    );
+  }
 }

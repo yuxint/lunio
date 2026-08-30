@@ -1,11 +1,13 @@
 // 格式化与文案工具集（≈ Java 的 FormatUtil / MessageUtil）。
 //
 // 两类内容：
-//  1. 纯格式化：数字千分位、金额（分→元）、里程、车龄、剩余天数等；
+//  1. 纯格式化：数字千分位、里程、车龄、剩余天数、时刻 HH:mm:ss 等；
 //  2. 业务文案：错误翻译 friendlyError（把 Repository 抛的英文异常
-//     翻成中文）、提醒规则文案、唯一约束识别。
+//     翻成中文）、唯一约束识别。
 //
-// 全部是无状态顶层函数（≈ static 工具方法），被所有表单/列表复用。
+// 只保留"多文件复用"的函数（§5.2 回收口径）：单文件消费的格式化
+// （金额、项目规则文案、提醒详情文案、项目名归一化等）已移回各自的
+// 消费文件，避免这里的公共面无限膨胀。
 import 'package:flutter/material.dart';
 
 import '../../../core/date/local_date.dart';
@@ -19,55 +21,10 @@ InputDecoration numberInputDecoration({String? labelText, String? suffixText}) {
   return InputDecoration(labelText: labelText, suffixText: suffixText);
 }
 
-/// 进度环显示百分比的四舍五入钳制：真实进度没到阈值时，
-/// 显示值不允许"看起来已到阈值"（如 99.6% 显示 99% 而不是 100%）。
-int displayPercentForThresholds({
-  required double percent,
-  required double notOverdueUpperLimit,
-  required double overdueUpperLimit,
-}) {
-  var display = percent.round();
-  if (percent < notOverdueUpperLimit &&
-      display >= notOverdueUpperLimit.ceil()) {
-    display = notOverdueUpperLimit.ceil() - 1;
-  }
-  if (percent < overdueUpperLimit && display >= overdueUpperLimit.ceil()) {
-    display = overdueUpperLimit.ceil() - 1;
-  }
-  return display;
-}
-
 /// 百分比文案（封顶 999%+，防止超期太多时撑爆 UI）。
 String formatPercent(int percent) {
   return percent > 999 ? '999%+' : '$percent%';
 }
-
-/// 保养项目的规则文案："提醒：5000公里/6个月"（当前仅一处使用）。
-String itemRuleText(MaintenanceItem item) {
-  final rules = <String>[];
-  if (item.remindByMileage) {
-    rules.add(formatCompactMileageText(item.mileageIntervalKm ?? 0));
-  }
-  if (item.remindByTime) {
-    rules.add(formatCompactTimeText(item.timeIntervalMonths ?? 0));
-  }
-  return rules.isEmpty ? '提醒：未设置' : '提醒：${rules.join('/')}';
-}
-
-/// 默认模板的规则文案（与 itemRuleText 逻辑重复，仅一处使用，R30/R32）。
-String defaultItemRuleText(VehicleDefaultMaintenanceItem item) {
-  final rules = <String>[];
-  if (item.remindByMileage) {
-    rules.add(formatCompactMileageText(item.mileageIntervalKm ?? 0));
-  }
-  if (item.remindByTime) {
-    rules.add(formatCompactTimeText(item.timeIntervalMonths ?? 0));
-  }
-  return rules.isEmpty ? '提醒：未设置' : '提醒：${rules.join('/')}';
-}
-
-/// 项目名规范化（去首尾空白），项目表单保存前统一走它。
-String normalizeItemName(String value) => value.trim();
 
 /// 默认模板 → 车辆级项目实体（添加车辆向导草稿转换）。
 /// carsId 填 0 占位，入库时由 Repository 换成真实车辆 id。
@@ -110,11 +67,6 @@ MaintenanceItem? itemById(List<MaintenanceItem> items, int itemId) {
   return null;
 }
 
-/// 金额（分 → ¥xx.xx）。记录列表使用。
-String formatMoney(int costCents) {
-  return '¥${(costCents / 100).toStringAsFixed(2)}';
-}
-
 /// 里程 + 单位。
 String formatMileageKm(int value) {
   return '${formatNumber(value)}km';
@@ -126,42 +78,6 @@ String formatCarAge(LocalDate roadDate, LocalDate today) {
   final years = months / 12;
   final text = years.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
   return '$text年';
-}
-
-/// 紧凑里程文案：≥1万 显示"1.2万公里"。
-String formatCompactMileageText(int value) {
-  if (value >= 10000) {
-    final wan = value / 10000;
-    final text = wan == wan.roundToDouble()
-        ? wan.toStringAsFixed(0)
-        : wan.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
-    return '$text万公里';
-  }
-  return '${formatNumber(value)}公里';
-}
-
-/// 紧凑时长文案：18 → "18个月"、24 → "2年"、30 → "2.5年"。
-String formatCompactTimeText(int months) {
-  if (months < 12) {
-    return '$months个月';
-  }
-  if (months % 12 == 0) {
-    return '${months ~/ 12}年';
-  }
-  final years = months / 12;
-  final text = years.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
-  return '$text年';
-}
-
-/// 里程维剩余文案（提醒详情用）。
-String mileageReminderText(int remainingKm) {
-  if (remainingKm > 0) {
-    return '里程：距离下次约 ${formatNumber(remainingKm)} 公里';
-  }
-  if (remainingKm == 0) {
-    return '里程：已到期';
-  }
-  return '里程：已超 ${formatNumber(remainingKm.abs())} 公里';
 }
 
 /// 时间维剩余文案（提醒详情用）。
@@ -226,6 +142,14 @@ String friendlyError(Object error) {
     return '保养项目不属于当前车辆，请重新选择';
   }
   return '操作失败，请稍后重试';
+}
+
+/// 时刻格式化 HH:mm:ss（停车倒计时卡片/表单与常驻通知共用）。
+String formatClock(DateTime dateTime) {
+  final hour = dateTime.hour.toString().padLeft(2, '0');
+  final minute = dateTime.minute.toString().padLeft(2, '0');
+  final second = dateTime.second.toString().padLeft(2, '0');
+  return '$hour:$minute:$second';
 }
 
 /// 日期的中文展示："2026年8月25日"。

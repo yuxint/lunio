@@ -29,8 +29,14 @@ Future<void> main() async {
   // 通知服务是单例（instance），这里完成两件事：
   //  1) 初始化时区数据库（通知按本地时区的"明早 9:00"这种墙钟时间调度）；
   //  2) 初始化 flutter_local_notifications 插件。
-  // 注意：这里没有 try/catch，若插件初始化抛异常，App 会直接起不来（白屏）。
-  await LunioNotificationService.instance.initialize();
+  // 初始化失败（原生插件异常等）不能让 App 起不来（白屏）：捕获后把
+  // 服务标记为不可用——通知能力整体降级为 no-op，数据与 UI 照常运行。
+  try {
+    await LunioNotificationService.instance.initialize();
+  } catch (error) {
+    LunioNotificationService.instance.markInitializationFailed();
+    debugPrint('通知服务初始化失败，App 以无通知模式启动：$error');
+  }
 
   // ProviderScope 是 Riverpod 的根容器：包裹整个组件树后，
   // 所有子组件才能通过 ref.read / ref.watch 获取 Provider。

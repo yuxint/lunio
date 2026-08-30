@@ -1,16 +1,21 @@
 # 当前数据库表结构
 
-本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `5`。
+本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `6`。
 
 本文只记录当前代码事实，不定义未来迁移方案。事实源是 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
 ## 版本和迁移策略
 
-- 当前数据库：`schemaVersion = 5`。
+- 当前数据库：`schemaVersion = 6`。
 - schema 1 升级到 2 时，现有表会被删除并重建。
 - schema 2 升级到 3 时，迁移 `maintenance_items`。
 - schema 3 升级到 4 时，迁移 `cars`。
 - schema 4 升级到 5 时，给内置车型和默认保养模板增加 `catalog_id`。
+- schema 5 升级到 6 时，三张业务表补普通索引（R16）：`maintenance_items(cars_id)`、
+  `maintenance_records(car_id)`、`maintenance_record_items(maintenance_record_id)`。
+- v6 索引的两种等价形态（R19）：全新安装走建表（`CREATE TABLE` 后随建表语句创建
+  `@TableIndex` 声明的索引）；升级库走 `migrator.createIndex(...)` 生成独立的
+  `CREATE INDEX IF NOT EXISTS`。两者最终在 SQLite 里产生同名同列的索引对象，语义等价。
 - 当前代码没有声明数据库外键约束；关联完整性由 Repository 在事务中校验和维护。
 
 ## 类型约定
@@ -117,6 +122,7 @@
 
 - 主键：`id`。
 - 唯一键：`cars_id + name`。
+- 普通索引：`cars_id`（`idx_maintenance_items_cars_id`，v6 新增，按车查项目）。
 
 业务注意：
 
@@ -144,6 +150,7 @@
 
 - 主键：`id`。
 - 唯一键：`car_id + date`。
+- 普通索引：`car_id`（`idx_maintenance_records_car_id`，v6 新增，按车拉记录）。
 
 业务注意：
 
@@ -166,6 +173,8 @@
 
 - 主键：`id`。
 - 唯一键：`car_id + date + item_id`。
+- 普通索引：`maintenance_record_id`（`idx_maintenance_record_items_record_id`，
+  v6 新增，组装记录项目列表时按记录 id 批量查）。
 
 业务注意：
 

@@ -14,6 +14,7 @@ import 'package:lunio/app/providers.dart';
 import 'package:lunio/app/lunio_app.dart';
 import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/core/date/local_date.dart';
+import 'package:lunio/core/notifications/lunio_notification_service.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
 import 'package:lunio/data/database/app_database.dart';
@@ -24,6 +25,7 @@ import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
+import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
 
 void main() {
   late BuiltInVehicleCatalog builtInCatalog;
@@ -158,6 +160,9 @@ void main() {
     bool systemNotificationsEnabled = false,
     bool inAppNotificationsEnabled = false,
   }) async {
+    // 通知服务是进程级单例：重置初始化状态，避免上一个用例的
+    // 初始化结果（可用/不可用）影响本用例的 mock 行为。
+    LunioNotificationService.instance.resetForTest();
     final appDatabase = database ?? AppDatabase.inMemory();
     if (database == null) {
       addTearDown(appDatabase.close);
@@ -193,6 +198,23 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     return appDatabase;
+  }
+
+  /// 测试替身：等价已删除的 createCarWithDefaultItems（R26 清理）——
+  /// 查当前库里的模板 → 转车辆级项目实体 → 建车。
+  /// 注意不主动 bootstrap：目录由调用方按需灌入。
+  Future<int> createCarWithDefaultItems(
+    LunioRepository repository,
+    Car car,
+  ) async {
+    final defaults = await repository.listDefaultItemsForModel(
+      brand: car.brand,
+      model: car.model,
+    );
+    return repository.createCarWithMaintenanceItems(
+      car,
+      [for (final item in defaults) maintenanceItemFromDefault(item, car.sync)],
+    );
   }
 
   Future<void> createDefaultCar(WidgetTester tester) async {
@@ -347,8 +369,12 @@ void main() {
     await tester.tap(find.text('我的'));
     await pumpUntilFound(tester, find.text('个人中心'));
     expect(find.text('个人中心'), findsOneWidget);
-    final profileList = tester.widget<ListView>(find.byType(ListView).first);
-    expect(profileList.padding, const EdgeInsets.fromLTRB(18, 2, 18, 72));
+    // LunioPage 现为 CustomScrollView + SliverPadding（R25），页面级
+    // padding 断言改查 SliverPadding。
+    final profilePadding = tester.widget<SliverPadding>(
+      find.byType(SliverPadding).first,
+    );
+    expect(profilePadding.padding, const EdgeInsets.fromLTRB(18, 2, 18, 72));
   });
 
   testWidgets('theme switch stays on profile without success feedback', (
@@ -776,7 +802,7 @@ void main() {
       status: SyncStatus.pendingCreate,
       updatedAt: DateTime(2026, 5, 19),
     );
-    final carId = await repository.createCarWithDefaultItems(
+    final carId = await createCarWithDefaultItems(repository, 
       Car(
         brand: '本田',
         model: '思域（燃油版）',
@@ -851,6 +877,10 @@ void main() {
   });
 
   testWidgets('profile restore confirms before picking a file', (tester) async {
+    // 恢复成功后会显式取消系统通知；未 mock 的通道在测试里永不回包，
+    // 会让流程挂起，所以这里要挂上通知/时区 mock。
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
     mockNativeFiles((call) async {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
@@ -859,24 +889,30 @@ void main() {
       }
       return null;
     });
-    final database = await pumpApp(tester);
-    await createDefaultCar(tester);
+    try {
+      final database = await pumpApp(tester);
+      await createDefaultCar(tester);
 
-    await tester.tap(find.text('恢复').first);
-    await tester.pumpAndSettle();
-    expect(find.text('恢复数据'), findsNothing);
+      await tester.tap(find.text('恢复').first);
+      await tester.pumpAndSettle();
+      expect(find.text('恢复数据'), findsNothing);
 
-    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
-    await tester.pumpAndSettle();
-    expect(find.text('恢复数据'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, '恢复').first);
+      await tester.pumpAndSettle();
+      expect(find.text('恢复数据'), findsOneWidget);
+      // 恢复语义文案：明示只清业务数据、偏好保留（R2 口径）。
+      expect(find.textContaining('偏好设置会保留'), findsOneWidget);
 
-    await tester.tap(find.text('恢复').last);
-    await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(find.text('恢复').last);
+      await tester.pump(const Duration(milliseconds: 250));
 
-    expect(await database.select(database.cars).get(), isEmpty);
-    expect(find.text('恢复完成'), findsOneWidget);
-    expect(find.text('数据恢复'), findsNothing);
-    expect(find.text('备份 JSON'), findsNothing);
+      expect(await database.select(database.cars).get(), isEmpty);
+      expect(find.text('恢复完成'), findsOneWidget);
+      expect(find.text('数据恢复'), findsNothing);
+      expect(find.text('备份 JSON'), findsNothing);
+    } finally {
+      cleanupNotifications();
+    }
   });
 
   testWidgets('profile restore confirm cancel keeps current data', (
@@ -970,6 +1006,80 @@ void main() {
     expect(find.text('确认'), findsOneWidget);
     expect(find.text('取消'), findsNothing);
   });
+
+  testWidgets(
+    'clearing data cancels parking and reminder notifications and keeps catalog',
+    (tester) async {
+      final notificationCalls = <MethodCall>[];
+      final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+      try {
+        final database = await pumpApp(
+          tester,
+          dateContext: AppDateContext(readSystemNow: () => DateTime.now()),
+          systemNotificationsEnabled: true,
+        );
+        await createDefaultCar(tester);
+
+        // 先启动停车倒计时，制造 9001/9002 系统通知。
+        await tester.tap(find.text('提醒'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('开始计时'));
+        await tester.pumpAndSettle();
+        expect(
+          notificationCalls.map((call) => call.method),
+          containsAll(<String>['show', 'zonedSchedule']),
+        );
+        notificationCalls.clear();
+
+        await tester.tap(find.text('我的'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(TextButton, '清空'));
+        await tester.pumpAndSettle();
+        // 清空确认文案明示目录表保留。
+        expect(find.textContaining('默认车辆模型与默认保养项目目录会保留'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, '清空'));
+        await tester.pumpAndSettle();
+
+        final cancelledIds = notificationCalls
+            .where((call) => call.method == 'cancel')
+            .map((call) => (call.arguments as Map<Object?, Object?>)['id'])
+            .whereType<int>()
+            .toSet();
+        expect(cancelledIds, containsAll([9001, 9002]));
+        expect(
+          cancelledIds.where((id) => id >= 8000 && id < 9000),
+          isNotEmpty,
+        );
+        expect(find.text('已清空数据'), findsOneWidget);
+        expect(await database.select(database.cars).get(), isEmpty);
+        expect(
+          await database.select(database.maintenanceItems).get(),
+          isEmpty,
+        );
+        // 注意：appPreferences 不恒为空——清空后同步引擎按首启语义
+        // 重新初始化通知权限，会立刻写回 systemNotificationPermission*
+        // 两个 key。这里只断言业务偏好确实被清掉。
+        expect(
+          await testRepository(database).getParkingCountdown(),
+          isNull,
+        );
+        expect(
+          await testRepository(database).getPreferenceValue('themeMode'),
+          isNull,
+        );
+        // 默认目录表保留（清空语义）。
+        expect(
+          await database.select(database.vehicleDefaultMaintenanceItems).get(),
+          isNotEmpty,
+        );
+        expect(await database.select(database.vehicleModels).get(), isNotEmpty);
+      } finally {
+        cleanupNotifications();
+      }
+    },
+  );
 
   testWidgets('add car first step does not persist data', (tester) async {
     final database = await pumpApp(tester);
@@ -1822,7 +1932,7 @@ void main() {
         status: SyncStatus.pendingCreate,
         updatedAt: DateTime(2026, 4, 1),
       );
-      final carId = await repository.createCarWithDefaultItems(
+      final carId = await createCarWithDefaultItems(repository, 
         Car(
           brand: '本田',
           model: '思域（燃油版）',
@@ -1899,7 +2009,7 @@ void main() {
       status: SyncStatus.pendingCreate,
       updatedAt: DateTime(2026, 5),
     );
-    final carId = await repository.createCarWithDefaultItems(
+    final carId = await createCarWithDefaultItems(repository, 
       Car(
         brand: '本田',
         model: '思域（燃油版）',
@@ -1948,7 +2058,7 @@ void main() {
         status: SyncStatus.pendingCreate,
         updatedAt: DateTime(2026, 4, 1),
       );
-      final carId = await repository.createCarWithDefaultItems(
+      final carId = await createCarWithDefaultItems(repository, 
         Car(
           brand: '本田',
           model: '思域（燃油版）',

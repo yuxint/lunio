@@ -93,24 +93,26 @@ final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) async {
   };
 });
 
-/// 通知设置：4 个偏好 key 串行读取（systemNotificationsEnabled /
-/// inAppNotificationsEnabled / maintenanceDueEnabled / maintenanceDueRepeat）。
+/// 通知设置：4 个偏好 key 批量读取（单条 IN 查询，R27）。
 /// 取值约定：`!= 'false'` ——即从未设置过时默认开启。
 final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
   ref,
 ) async {
   final repository = ref.watch(lunioRepositoryProvider);
+  final values = await repository.getPreferenceValues([
+    'systemNotificationsEnabled',
+    'inAppNotificationsEnabled',
+    'maintenanceDueEnabled',
+    'maintenanceDueRepeat',
+  ]);
   return LunioNotificationSettings(
     systemNotificationsEnabled:
-        await repository.getPreferenceValue('systemNotificationsEnabled') !=
-        'false',
+        values['systemNotificationsEnabled'] != 'false',
     inAppNotificationsEnabled:
-        await repository.getPreferenceValue('inAppNotificationsEnabled') !=
-        'false',
-    maintenanceDueEnabled:
-        await repository.getPreferenceValue('maintenanceDueEnabled') != 'false',
+        values['inAppNotificationsEnabled'] != 'false',
+    maintenanceDueEnabled: values['maintenanceDueEnabled'] != 'false',
     dueRepeatFrequency: ReminderRepeatFrequencyCodec.parse(
-      await repository.getPreferenceValue('maintenanceDueRepeat'),
+      values['maintenanceDueRepeat'],
     ),
   );
 });
@@ -158,20 +160,20 @@ final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) async {
   return ref.watch(lunioRepositoryProvider).listVehicleModels();
 });
 
-/// 当前用户所有车辆列表。这里对 bootstrap 只 watch 不 await：
+/// 当前用户所有车辆列表。显式 await bootstrap 完成（依赖显式化，R29）：
 /// bootstrap 只写车型目录/默认模板两张内置表、不写 cars 表，
-/// 因此 cars 查询与 bootstrap 并行执行是安全的（只借用它的失效信号）。
-final carsProvider = FutureProvider<List<Car>>((ref) {
-  ref.watch(defaultMaintenanceBootstrapProvider);
+/// 行为与原先"只借用失效信号"等价，但依赖关系在代码里一目了然。
+final carsProvider = FutureProvider<List<Car>>((ref) async {
+  await ref.watch(defaultMaintenanceBootstrapProvider.future);
   return ref.watch(lunioRepositoryProvider).listCars();
 });
 
 /// 当前"应用车辆"（正在被提醒页/记录页展示的车）。
-/// watch carsProvider 只是为了借用它的失效信号（cars 变 → 重算本 provider）；
-/// 实际取值走 repository.getAppliedCar()，其内部按 AppliedCarRules 回退：
+/// 显式 await carsProvider（依赖显式化，R29）；实际取值走
+/// repository.getAppliedCar()，其内部按 AppliedCarRules 回退：
 /// 偏好里的 appliedCarId 存在且有效则用它，否则回退第一辆车，无车返回 null。
-final appliedCarProvider = FutureProvider<Car?>((ref) {
-  ref.watch(carsProvider);
+final appliedCarProvider = FutureProvider<Car?>((ref) async {
+  await ref.watch(carsProvider.future);
   return ref.watch(lunioRepositoryProvider).getAppliedCar();
 });
 
@@ -199,6 +201,25 @@ final appliedCarRecordsProvider = FutureProvider<List<MaintenanceRecord>>((
       .watch(lunioRepositoryProvider)
       .listMaintenanceRecordsForCar(car!.id!);
 });
+
+/// 通知同步代数（≈ 乐观锁的版本号）：恢复备份/清空数据时 bump()，
+/// 通知同步控制器（notification_sync_controller.dart）在途任务执行前
+/// 比对快照代数，不一致即放弃——用于作废"用旧数据排通知"的竞态。
+/// parking_countdown 的保存链路同样用它防错排。用 provider 而非全局
+/// 变量，保证所有读取方走同一容器（R8）。
+final notificationSyncGenerationProvider =
+    NotifierProvider<NotificationSyncGeneration, int>(
+      NotificationSyncGeneration.new,
+    );
+
+/// 代数 Notifier：state 从 0 起，bump() 自增。
+class NotificationSyncGeneration extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// 代数 +1（作废全部在途通知同步任务）。
+  void bump() => state = state + 1;
+}
 
 /// 车辆/项目/记录相关缓存整体失效（写库后由 UI 调用）。
 /// 逐出的顺序无关紧要，Riverpod 会在下一帧统一重算被 watch 的 provider。

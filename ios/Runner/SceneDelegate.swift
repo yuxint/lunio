@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var documentPickerResult: FlutterResult?
   private var documentPickerMode: DocumentPickerMode?
+  private var nativeFilesChannel: FlutterMethodChannel?
   private var nativeNotificationSettingsChannel: FlutterMethodChannel?
 
   private enum DocumentPickerMode {
@@ -18,18 +19,23 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     options connectionOptions: UIScene.ConnectionOptions
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
-    configureNativeFilesChannel()
+    configureNativeFilesChannelIfNeeded()
     DispatchQueue.main.async { [weak self] in
+      self?.configureNativeFilesChannelIfNeeded()
       self?.configureNativeNotificationSettingsChannelIfNeeded()
     }
   }
 
   override func sceneDidBecomeActive(_ scene: UIScene) {
     super.sceneDidBecomeActive(scene)
+    configureNativeFilesChannelIfNeeded()
     configureNativeNotificationSettingsChannelIfNeeded()
   }
 
-  private func configureNativeFilesChannel() {
+  private func configureNativeFilesChannelIfNeeded() {
+    guard nativeFilesChannel == nil else {
+      return
+    }
     guard let controller = window?.rootViewController as? FlutterViewController else {
       return
     }
@@ -47,6 +53,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
         result(FlutterMethodNotImplemented)
       }
     }
+    nativeFilesChannel = channel
   }
 
   private func configureNativeNotificationSettingsChannelIfNeeded() {

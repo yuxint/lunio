@@ -8,11 +8,9 @@
 //   4. 停车倒计时进行中 → ParkingCountdownCard（进度环 + 结束按钮）；
 //   5. ReminderList：待关注项目列表（进度环 + 状态徽章）。
 //
-// ⚠ 性能：250ms Timer.periodic 对整页 setState（停车倒计时刷新需要秒级
-// 重新计算，但重建范围是整页，且无倒计时时也在空转，见审查报告 R11）。
+// 性能（R11 修复后）：停车倒计时卡片内部 1s Timer 自刷新，
+// 页面本身不再有周期性重建；英雄卡"到期概览"只在数据变化时重算。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
-
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,14 +24,6 @@ import 'parking_countdown.dart';
 import 'reminder_list.dart';
 import 'reminder_notifications.dart';
 
-// 17-20 行的 re-export：把 parking_countdown / reminder_dialogs /
-// reminder_notifications 的符号从本文件再导出。实际调用方都直接 import
-// 源文件，这里的 barrel 无消费者（R30）。
-export 'parking_countdown.dart'
-    show clearParkingCountdown, showParkingCountdownSheet;
-export 'reminder_dialogs.dart';
-export 'reminder_notifications.dart';
-
 /// 提醒页组件。
 class ReminderPreviewPage extends ConsumerStatefulWidget {
   const ReminderPreviewPage();
@@ -44,29 +34,10 @@ class ReminderPreviewPage extends ConsumerStatefulWidget {
 }
 
 class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
-  /// 250ms 周期定时器：驱动停车倒计时的秒级刷新。
-  /// 每次触发 setState 重建整页（Timer 在 dispose 正确取消，无泄漏，
-  /// 但重建范围过大是已知性能问题 R11）。
-  Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
   /// build：watch 全部数据 → 按加载态/空态/正常态渲染。
-  /// now 用系统真实时间（停车倒计时不受手动日期影响）。
+  /// 停车倒计时卡自刷新秒级进度（卡片内部 Timer），页面无周期重建。
+  /// now 用系统真实时间（停车倒计时不受手动日期影响），
+  /// 作为倒计时表单的初始入场时间和卡片首帧基准。
   /// canSwitchCar：多于一辆车时右上角显示"切换车辆"按钮。
   @override
   Widget build(BuildContext context) {
@@ -125,12 +96,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
             ReminderActionRow(
               onAddRecord: () => showMaintenanceRecordFormSheet(context, ref),
               onParkingCountdown: currentParkingCountdown == null
-                  ? () => showParkingCountdownSheet(
-                      context,
-                      ref,
-                      now: now,
-                      initial: currentParkingCountdown,
-                    )
+                  ? () => showParkingCountdownSheet(context, ref, now: now)
                   : null,
             ),
           ],
@@ -139,7 +105,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
             ParkingCountdownCard(
               countdown: currentParkingCountdown,
               now: now,
-              onEnd: () => clearParkingCountdown(ref),
+              onEnd: () => clearParkingCountdown(context, ref),
             ),
             const SizedBox(height: 22),
           ],

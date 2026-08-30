@@ -4049,6 +4049,18 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MaintenanceRecordItemsTable maintenanceRecordItems =
       $MaintenanceRecordItemsTable(this);
   late final $AppPreferencesTable appPreferences = $AppPreferencesTable(this);
+  late final Index idxMaintenanceItemsCarsId = Index(
+    'idx_maintenance_items_cars_id',
+    'CREATE INDEX idx_maintenance_items_cars_id ON maintenance_items (cars_id)',
+  );
+  late final Index idxMaintenanceRecordsCarId = Index(
+    'idx_maintenance_records_car_id',
+    'CREATE INDEX idx_maintenance_records_car_id ON maintenance_records (car_id)',
+  );
+  late final Index idxMaintenanceRecordItemsRecordId = Index(
+    'idx_maintenance_record_items_record_id',
+    'CREATE INDEX idx_maintenance_record_items_record_id ON maintenance_record_items (maintenance_record_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4061,6 +4073,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     maintenanceRecords,
     maintenanceRecordItems,
     appPreferences,
+    idxMaintenanceItemsCarsId,
+    idxMaintenanceRecordsCarId,
+    idxMaintenanceRecordItemsRecordId,
   ];
 }
 

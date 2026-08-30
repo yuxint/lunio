@@ -188,19 +188,21 @@ Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// ★ 恢复备份：确认框（明示"先清空"）→ 原生文件桥选文件 →
-/// 解码（版本不符抛 UnsupportedError）→ notificationSyncGeneration++
-/// （作废 AppShell 在途通知任务）→ restoreBackupPayload 事务恢复 →
+/// ★ 恢复备份：确认框（明示"先清空业务数据、偏好保留"）→
+/// 原生文件桥选文件 → 解码（版本不符抛 UnsupportedError）→
+/// bump 通知同步代数（作废同步控制器在途任务）→
+/// restoreBackupPayload 事务恢复（偏好保留，抑制键清除）→
+/// 显式取消 8000/8900 系旧数据残留通知（空备份时同步引擎不会重排，
+/// 显式取消兜底；停车 9001/9002 不动——停车倒计时偏好保留且仍有效）→
 /// invalidateAllAppDataProviders 全量刷新。
 /// 失败分支：唯一约束冲突 → 弹"未写入任何数据"对话框（事务已回滚）；
 /// 其他错误 → toast。
-/// ⚠ 已知问题：清空连偏好一起删（主题/通知设置丢失，R2）；
-/// 停车倒计时系统闹钟残留未取消（R1）。
 Future<void> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
     title: '恢复数据',
-    message: '恢复会先清空本地车辆、保养项目、保养记录和偏好，再写入备份文件中的数据。该操作不可撤销。',
+    message: '恢复会先清空本地车辆、保养项目、保养记录，再写入备份文件中的数据。'
+        '主题、通知等偏好设置会保留。该操作不可撤销。',
     confirmLabel: '恢复',
   );
   if (confirmed != true) {
@@ -213,8 +215,9 @@ Future<void> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
     }
     const codec = BackupCodec();
     final payload = codec.decode(json);
-    notificationSyncGeneration++;
+    ref.read(notificationSyncGenerationProvider.notifier).bump();
     await ref.read(lunioRepositoryProvider).restoreBackupPayload(payload);
+    await LunioNotificationService.instance.cancelLunioNotifications();
     invalidateAllAppDataProviders(ref);
     if (context.mounted) {
       showStatusOverlay(context, '恢复完成', StatusOverlayTone.success);
@@ -247,39 +250,57 @@ String _backupFilename(DateTime dateTime) {
       '${twoDigits(dateTime.second)}.json';
 }
 
-/// ★ 清空数据：确认框 → generation++（作废在途通知任务）→
-/// clearAllData（事务删 5 张表，含偏好）→ invalidate 全量刷新
-/// （bootstrap provider 失效后车型目录会自动重灌）。
-/// ⚠ 同样存在停车闹钟残留问题（R1）。
+/// ★ 清空数据：确认框（明示目录表保留）→ bump 通知同步代数（作废在途通知
+/// 任务）→ clearAllData（事务删 5 张表：业务 4 张 + 偏好）→ 取消停车
+/// 9001/9002 与保养/里程 8000/8900 系系统通知（偏好已删，倒计时偏好
+/// 和通知开关都不复存在，残留通知必须显式取消）→ invalidate 全量刷新
+/// （bootstrap provider 失效后车型目录会自动重灌）→ 成功 overlay。
 Future<void> clearAllData(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
     title: '清空数据',
-    message: '确定清空本地车辆、保养项目、保养记录和偏好？该操作不可撤销。',
+    message: '确定清空本地车辆、保养项目、保养记录和偏好设置？'
+        '默认车辆模型与默认保养项目目录会保留。该操作不可撤销。',
     confirmLabel: '清空',
   );
   if (confirmed != true) {
     return;
   }
-  notificationSyncGeneration++;
-  await ref.read(lunioRepositoryProvider).clearAllData();
-  invalidateAllAppDataProviders(ref);
+  try {
+    ref.read(notificationSyncGenerationProvider.notifier).bump();
+    await ref.read(lunioRepositoryProvider).clearAllData();
+    await LunioNotificationService.instance
+        .cancelParkingCountdownNotification();
+    await LunioNotificationService.instance.cancelLunioNotifications();
+    invalidateAllAppDataProviders(ref);
+    if (context.mounted) {
+      showStatusOverlay(context, '已清空数据', StatusOverlayTone.success);
+    }
+  } catch (error) {
+    if (context.mounted) {
+      showStatusOverlay(context, '清空失败：$error', StatusOverlayTone.error);
+    }
+  }
 }
 
-/// ★ 通知设置 sheet 入口：先同步读当前偏好（⚠ provider 还在 loading 时
-/// maybeWhen 回退全默认值，用户直接保存会覆盖真实设置，R6）→
+/// ★ 通知设置 sheet 入口：先 await 偏好 provider 拿到真实设置
+/// （加载失败 toast 返回，杜绝 loading 期默认值覆盖真实设置，R6）→
 /// refreshSystemNotificationPreference 向系统查询真实开关回写 →
 /// 弹表单（系统状态行 + 应用内通知开关 + 重复频率三段）。
 Future<void> showNotificationSettingsSheet(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  var initialSettings = ref
-      .read(notificationSettingsProvider)
-      .maybeWhen(
-        data: (value) => value,
-        orElse: () => const LunioNotificationSettings(),
-      );
+  final LunioNotificationSettings loadedSettings;
+  try {
+    loadedSettings = await ref.read(notificationSettingsProvider.future);
+  } catch (error) {
+    if (context.mounted) {
+      showStatusOverlay(context, '设置加载失败', StatusOverlayTone.error);
+    }
+    return;
+  }
+  var initialSettings = loadedSettings;
   final systemNotificationsEnabled = await refreshSystemNotificationPreference(
     ref,
   );
@@ -291,7 +312,6 @@ Future<void> showNotificationSettingsSheet(
   );
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: true,
     builder: (sheetContext) {
       return Padding(
@@ -360,30 +380,19 @@ Future<bool> refreshSystemNotificationPreference(WidgetRef ref) async {
   }
 }
 
-/// 保存通知设置：串行写 4 个偏好 key。
+/// 保存通知设置：一个事务内批量写 4 个偏好 key（R27）。
 /// ⚠ 表单里没有"保养到期提醒"开关，maintenanceDueEnabled 由表单硬编码
-/// true 传入（用户无法关闭到期提醒，R5）；四次写不在一个事务。
+/// true 传入（用户无法关闭到期提醒，R5）。
 Future<void> saveNotificationSettings(
   WidgetRef ref,
   LunioNotificationSettings settings,
 ) async {
-  final repository = ref.read(lunioRepositoryProvider);
-  await repository.setPreferenceValue(
-    'systemNotificationsEnabled',
-    settings.systemNotificationsEnabled.toString(),
-  );
-  await repository.setPreferenceValue(
-    'inAppNotificationsEnabled',
-    settings.inAppNotificationsEnabled.toString(),
-  );
-  await repository.setPreferenceValue(
-    'maintenanceDueEnabled',
-    settings.maintenanceDueEnabled.toString(),
-  );
-  await repository.setPreferenceValue(
-    'maintenanceDueRepeat',
-    settings.dueRepeatFrequency.value,
-  );
+  await ref.read(lunioRepositoryProvider).updatePreferenceValues({
+    'systemNotificationsEnabled': settings.systemNotificationsEnabled.toString(),
+    'inAppNotificationsEnabled': settings.inAppNotificationsEnabled.toString(),
+    'maintenanceDueEnabled': settings.maintenanceDueEnabled.toString(),
+    'maintenanceDueRepeat': settings.dueRepeatFrequency.value,
+  });
 }
 
 /// 通知表单：状态行 + 应用内通知开关 + 到期重复频率三段（每周/每 2 周/
@@ -577,7 +586,6 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
       );
   showLunioModalSheet<void>(
     context: context,
-    isScrollControlled: true,
     showDragHandle: true,
     builder: (context) {
       return Padding(

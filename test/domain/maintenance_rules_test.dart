@@ -47,13 +47,6 @@ void main() {
     );
   }
 
-  test('status threshold uses normal warning and danger boundaries', () {
-    expect(MaintenanceRules.statusForPercent(99.9), ReminderStatus.normal);
-    expect(MaintenanceRules.statusForPercent(100), ReminderStatus.warning);
-    expect(MaintenanceRules.statusForPercent(124.9), ReminderStatus.warning);
-    expect(MaintenanceRules.statusForPercent(125), ReminderStatus.danger);
-  });
-
   test('uses the higher progress between mileage and time', () {
     final progress = MaintenanceRules.progressForItem(
       item: item(),

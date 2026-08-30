@@ -104,6 +104,8 @@ class VehicleModels extends Table {
 }
 
 /// 车辆保养项目表（每辆车一套，从模板复制而来，用户可编辑）。
+/// carsId 普通索引：提醒页/记录页按车查项目是高频路径（原全表扫描，R16）。
+@TableIndex(name: 'idx_maintenance_items_cars_id', columns: {#carsId})
 @DataClassName('MaintenanceItemRow')
 class MaintenanceItems extends Table {
   IntColumn get id => integer()();
@@ -132,6 +134,8 @@ class MaintenanceItems extends Table {
 }
 
 /// 保养记录主表。
+/// carId 普通索引：记录页按车全量拉取记录走它（原全表扫描，R16）。
+@TableIndex(name: 'idx_maintenance_records_car_id', columns: {#carId})
 /// ⚠ 唯一约束 {carId, date}：一辆车一天只有一条记录；
 /// "同日不同项目想存多条"会撞约束抛 SqliteException（业务层另有
 /// "同日同项目不可重复"校验，两层口径不同，见审查报告 R4）。
@@ -158,6 +162,12 @@ class MaintenanceRecords extends Table {
 
 /// 记录-项目关联表（一条记录可挂多个项目）。
 /// 冗余存了 carId/date（与主表同值），方便按车按天查询。
+/// maintenanceRecordId 普通索引：组装记录 itemIds 时按记录 id 批量查
+/// （原全表扫描，R16）。
+@TableIndex(
+  name: 'idx_maintenance_record_items_record_id',
+  columns: {#maintenanceRecordId},
+)
 @DataClassName('MaintenanceRecordItemRow')
 class MaintenanceRecordItems extends Table {
   IntColumn get id => integer()();
@@ -221,7 +231,7 @@ class AppDatabase extends _$AppDatabase {
   /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion=2，两者独立演进）。
   /// 改表结构必须 +1 并补 onUpgrade 分支，再跑 build_runner。
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   /// 迁移策略：老库升级到当前版本的路径（全新安装走 createAll，不经过这里）。
   ///
@@ -232,6 +242,9 @@ class AppDatabase extends _$AppDatabase {
   /// v4→v5：两张目录表加 catalogId 列，并补建"部分唯一索引"
   ///        （WHERE catalog_id IS NOT NULL——SQLite 里可空列的 UNIQUE
   ///        约束允许多个 NULL，部分索引与建表约束语义等价）。
+  /// v5→v6：三张业务表（items/records/recordItems）补普通索引，
+  ///        升级库用 createIndex 建独立索引对象，与全新安装时
+  ///        建表附带的表内索引两种形态语义等价（R19）。
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
@@ -265,6 +278,13 @@ class AppDatabase extends _$AppDatabase {
               'ON vehicle_default_maintenance_items (catalog_id) '
               'WHERE catalog_id IS NOT NULL',
             );
+          }
+          if (from < 6) {
+            // v5→v6：三张业务表补普通索引（R16）。drift 会为 @TableIndex
+            // 生成同名 getter，建表约束与迁移索引两种形态等价（R19）。
+            await migrator.createIndex(idxMaintenanceItemsCarsId);
+            await migrator.createIndex(idxMaintenanceRecordsCarId);
+            await migrator.createIndex(idxMaintenanceRecordItemsRecordId);
           }
         }
       },

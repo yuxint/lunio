@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
@@ -14,6 +15,7 @@ import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/domain/entities/vehicle_default_maintenance_item.dart';
 import 'package:lunio/domain/entities/vehicle_model.dart';
+import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
 
 void main() {
   late AppDatabase database;
@@ -132,8 +134,51 @@ void main() {
     );
   });
 
+  /// 测试序号（测试替身生成车辆 id 用）。
+  int testCarSeq = 0;
+
+  /// 测试替身：等价已删除的 createCar（裸插车辆、无项目，R26 清理）。
+  /// 直接走 database 插入——原 API 允许零项目，需绕开
+  /// createCarWithMaintenanceItems 的"至少一个启用项目"业务校验。
+  /// id 用自增序列（唯一正整数即可，与雪花 id 不冲突）。
+  Future<int> createCar(LunioRepository repository, Car car) async {
+    final carId = 900000 + ++testCarSeq;
+    await database
+        .into(database.cars)
+        .insert(
+          CarsCompanion.insert(
+            id: Value(carId),
+            brand: car.brand,
+            model: car.model,
+            currentMileageKm: car.currentMileageKm,
+            roadDate: car.roadDate.toString(),
+            syncStatus: Value(car.sync.status.name),
+            updatedAt: car.sync.updatedAt.toIso8601String(),
+            version: Value(car.sync.version),
+          ),
+        );
+    return carId;
+  }
+
+  /// 测试替身：等价已删除的 createCarWithDefaultItems（按默认模板建车，
+  /// R26 清理）——查当前库里的模板 → 转车辆级项目实体 → 建车。
+  /// 注意不主动 bootstrap：目录由调用方按需灌入（有的用例用自定义目录）。
+  Future<int> createCarWithDefaultItems(
+    LunioRepository repository,
+    Car car,
+  ) async {
+    final defaults = await repository.listDefaultItemsForModel(
+      brand: car.brand,
+      model: car.model,
+    );
+    return repository.createCarWithMaintenanceItems(
+      car,
+      [for (final item in defaults) maintenanceItemFromDefault(item, car.sync)],
+    );
+  }
+
   Future<(int, int)> seedCarAndItem() async {
-    final carId = await repository.createCar(
+    final carId = await createCar(repository, 
       Car(
         brand: '本田',
         model: '22款思域',
@@ -189,8 +234,23 @@ void main() {
     expect(cars.single.model, '22款思域');
   });
 
+  test('v6 schema creates business table indexes', () async {
+    // 全新安装路径：建表时随 @TableIndex 创建三个普通索引（R16）。
+    final indexRows = await database.customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'index' "
+      "AND name IN ('idx_maintenance_items_cars_id', "
+      "'idx_maintenance_records_car_id', "
+      "'idx_maintenance_record_items_record_id')",
+    ).get();
+    expect(indexRows.map((row) => row.read<String>('name')), {
+      'idx_maintenance_items_cars_id',
+      'idx_maintenance_records_car_id',
+      'idx_maintenance_record_items_record_id',
+    });
+  });
+
   test('allows same brand and model with different road dates', () async {
-    await repository.createCar(
+    await createCar(repository, 
       Car(
         brand: '本田',
         model: '思域（燃油版）',
@@ -199,7 +259,7 @@ void main() {
         sync: sync,
       ),
     );
-    await repository.createCar(
+    await createCar(repository, 
       Car(
         brand: '本田',
         model: '思域（燃油版）',
@@ -227,9 +287,9 @@ void main() {
       sync: sync,
     );
 
-    await repository.createCar(car);
+    await createCar(repository, car);
 
-    expect(repository.createCar(car), throwsA(isA<Object>()));
+    expect(createCar(repository, car), throwsA(isA<Object>()));
   });
 
   test(
@@ -237,7 +297,7 @@ void main() {
     () async {
       await repository.ensureDefaultMaintenanceItems();
 
-      final carId = await repository.createCarWithDefaultItems(
+      final carId = await createCarWithDefaultItems(repository, 
         Car(
           brand: '本田',
           model: '思域（燃油版）',
@@ -496,7 +556,7 @@ void main() {
           sync: sync,
         ),
       );
-      final carId = await repository.createCarWithDefaultItems(
+      final carId = await createCarWithDefaultItems(repository, 
         Car(
           brand: '日产',
           model: '轩逸（燃油版）',
@@ -628,7 +688,7 @@ void main() {
   });
 
   test('bootstrap leaves existing car brands unchanged', () async {
-    final oldCarId = await repository.createCar(
+    final oldCarId = await createCar(repository, 
       Car(
         brand: '东风日产',
         model: '轩逸（燃油版）',
@@ -637,7 +697,7 @@ void main() {
         sync: sync,
       ),
     );
-    await repository.createCar(
+    await createCar(repository, 
       Car(
         brand: '日产',
         model: '轩逸（燃油版）',
@@ -658,7 +718,7 @@ void main() {
 
   test('writes snowflake ids for all local tables', () async {
     await repository.ensureBootstrapData();
-    final carId = await repository.createCarWithDefaultItems(
+    final carId = await createCarWithDefaultItems(repository, 
       Car(
         brand: '本田',
         model: '思域（燃油版）',
@@ -913,7 +973,7 @@ void main() {
   });
 
   test('applied car falls back to first available car', () async {
-    final firstCarId = await repository.createCar(
+    final firstCarId = await createCar(repository, 
       Car(
         brand: '本田',
         model: '22款思域',
@@ -922,7 +982,7 @@ void main() {
         sync: sync,
       ),
     );
-    await repository.createCar(
+    await createCar(repository, 
       Car(
         brand: '日产',
         model: '22款轩逸',
@@ -1042,7 +1102,7 @@ void main() {
   });
 
   test('applied car falls back to first available car', () async {
-    final firstCarId = await repository.createCar(
+    final firstCarId = await createCar(repository, 
       Car(
         brand: '本田',
         model: '22款思域',
@@ -1051,7 +1111,7 @@ void main() {
         sync: sync,
       ),
     );
-    await repository.createCar(
+    await createCar(repository, 
       Car(
         brand: '日产',
         model: '22款轩逸',
@@ -1069,7 +1129,7 @@ void main() {
   });
 
   test('updates car mileage and road date', () async {
-    final carId = await repository.createCar(
+    final carId = await createCar(repository, 
       Car(
         brand: '本田',
         model: '22款思域',
@@ -1096,7 +1156,7 @@ void main() {
   });
 
   test('delete applied car switches preference to remaining car', () async {
-    final firstCarId = await repository.createCar(
+    final firstCarId = await createCar(repository, 
       Car(
         brand: '本田',
         model: '22款思域',
@@ -1105,7 +1165,7 @@ void main() {
         sync: sync,
       ),
     );
-    final secondCarId = await repository.createCar(
+    final secondCarId = await createCar(repository, 
       Car(
         brand: '日产',
         model: '22款轩逸',
@@ -1376,7 +1436,7 @@ void main() {
 
   test('record rejects items from another car', () async {
     final (carId, _) = await seedCarAndItem();
-    final otherCarId = await repository.createCar(
+    final otherCarId = await createCar(repository, 
       Car(
         brand: '日产',
         model: '22款轩逸',
@@ -1570,6 +1630,24 @@ void main() {
       database,
       loadBuiltInVehicleCatalog: () async => builtInCatalog,
     );
+    // 恢复前在本地写入偏好：主题/手动日期/停车倒计时应跨恢复保留（R2 口径），
+    // 提醒抑制键（snooze）应被恢复清除。
+    await repository.setPreferenceValue('themeMode', 'dark');
+    await repository.setPreferenceValue('manualDate', '2026-05-23');
+    await repository.saveParkingCountdown(
+      ParkingCountdown(
+        startedAt: DateTime(2026, 6, 10, 10, 20, 15),
+        durationSeconds: 1800,
+      ),
+    );
+    await repository.setPreferenceValue(
+      '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}42',
+      '2026-06-01',
+    );
+    await repository.setPreferenceValue(
+      '${LunioRepository.mileageUpdateInAppAcknowledgedOnPrefix}42',
+      '2026-05-23',
+    );
 
     await repository.restoreBackupPayload(backup);
 
@@ -1593,7 +1671,115 @@ void main() {
     final restoredCar = (await database.select(database.cars).get()).single;
     expect(restoredCar.id, isNot(carId));
     expect(await repository.getAppliedCarId(), '${restoredCar.id}');
-    expect(await repository.getPreferenceValue('manualDate'), isNull);
+    // 偏好保留：恢复只替换三类业务数据。
+    expect(await repository.getPreferenceValue('themeMode'), 'dark');
+    expect(await repository.getPreferenceValue('manualDate'), '2026-05-23');
+    expect(
+      await repository.getParkingCountdown(),
+      ParkingCountdown(
+        startedAt: DateTime(2026, 6, 10, 10, 20, 15),
+        durationSeconds: 1800,
+      ),
+    );
+    // 提醒抑制键按前缀清除：恢复出的车/项目是全新 id，旧抑制不再生效。
+    expect(
+      await repository.getPreferenceValue(
+        '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}42',
+      ),
+      isNull,
+    );
+    expect(
+      await repository.getPreferenceValue(
+        '${LunioRepository.mileageUpdateInAppAcknowledgedOnPrefix}42',
+      ),
+      isNull,
+    );
+  });
+
+  test('backup restore rejects tampered business data before writing', () async {
+    final (carId, itemId) = await seedCarAndItem();
+    final backup = await repository.exportBackupPayload();
+    expect(backup.cars, hasLength(1));
+
+    MaintenanceRecord tamperedRecord({
+      required int costCents,
+      required int mileageKm,
+      List<int> itemIds = const [],
+    }) {
+      return MaintenanceRecord(
+        id: 1,
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: itemIds,
+        costCents: costCents,
+        mileageKm: mileageKm,
+        sync: sync,
+      );
+    }
+
+    final negativeCost = BackupPayload(
+      schemaVersion: 2,
+      cars: backup.cars,
+      maintenanceItems: backup.maintenanceItems,
+      records: [tamperedRecord(costCents: -1, mileageKm: 12000, itemIds: [itemId])],
+    );
+    final negativeMileage = BackupPayload(
+      schemaVersion: 2,
+      cars: backup.cars,
+      maintenanceItems: backup.maintenanceItems,
+      records: [tamperedRecord(costCents: 0, mileageKm: -1, itemIds: [itemId])],
+    );
+    final emptyItemIds = BackupPayload(
+      schemaVersion: 2,
+      cars: backup.cars,
+      maintenanceItems: backup.maintenanceItems,
+      records: [tamperedRecord(costCents: 0, mileageKm: 12000)],
+    );
+    final invalidItemInterval = BackupPayload(
+      schemaVersion: 2,
+      cars: backup.cars,
+      maintenanceItems: [
+        MaintenanceItem(
+          id: itemId,
+          carsId: carId,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: null,
+          sortOrder: 1,
+          sync: sync,
+        ),
+      ],
+      records: const [],
+    );
+
+    expect(
+      () => repository.restoreBackupPayload(negativeCost),
+      throwsArgumentError,
+    );
+    expect(
+      () => repository.restoreBackupPayload(negativeMileage),
+      throwsArgumentError,
+    );
+    expect(
+      () => repository.restoreBackupPayload(emptyItemIds),
+      throwsArgumentError,
+    );
+    expect(
+      () => repository.restoreBackupPayload(invalidItemInterval),
+      throwsArgumentError,
+    );
+    // 预校验在事务外执行：库未被任何一次失败恢复改动。
+    expect(await database.select(database.cars).get(), hasLength(1));
+    expect(
+      await database.select(database.maintenanceItems).get(),
+      hasLength(1),
+    );
+    expect(
+      await database.select(database.maintenanceRecords).get(),
+      isEmpty,
+    );
   });
 
   test('parking countdown is temporary preference outside backup', () async {
@@ -1737,7 +1923,7 @@ void main() {
 
   test('backup restore rejects record items from another car', () async {
     final (carId, _) = await seedCarAndItem();
-    final otherCarId = await repository.createCar(
+    final otherCarId = await createCar(repository, 
       Car(
         brand: '日产',
         model: '22款轩逸',

@@ -4,7 +4,7 @@
 // 被三处消费（同一套计算保证口径一致）：
 //  1. 提醒列表 ReminderList（buildReminderRows）；
 //  2. 英雄卡"到期概览"文案（dueOverviewText）；
-//  3. 系统通知内容（buildScheduledNotifications，AppShell 调用）。
+//  3. 系统通知内容（buildScheduledNotifications，通知同步控制器调用）。
 //
 // ⚠ 本文件是 UI 目录却直接 import data 层的 LunioRepository
 // （isSnoozed/isAcknowledgedToday 直连数据库读偏好），跨层依赖点。
@@ -41,7 +41,7 @@ class ReminderViewData {
 
   String get title => item.name;
 
-  int get displayPercent => displayPercentForThresholds(
+  int get displayPercent => _displayPercentForThresholds(
     percent: progress.percent,
     notOverdueUpperLimit: item.notOverdueUpperLimit,
     overdueUpperLimit: item.overdueUpperLimit,
@@ -68,7 +68,7 @@ class ReminderViewData {
   List<String> get detailTexts {
     final details = <String>[];
     if (item.remindByMileage && progress.mileageRemainingKm != null) {
-      details.add(mileageReminderText(progress.mileageRemainingKm!));
+      details.add(_mileageReminderText(progress.mileageRemainingKm!));
     }
     if (item.remindByTime && progress.daysRemaining != null) {
       details.add(timeReminderText(progress.daysRemaining!));
@@ -124,7 +124,7 @@ List<ReminderViewData> buildReminderRows({
   return rows;
 }
 
-/// 组装系统通知清单（AppShell 重排时调用）：
+/// 组装系统通知清单（通知同步控制器重排时调用）：
 ///  - 到期项目 ≥1（snooze 过滤后）→ 一条汇总通知 id 8000"保养提醒"
 ///    （正文=最紧急项 + 到期数量）；
 ///  - 里程更新到期（且没 snooze）→ id 8900"更新车辆里程"（9:05 错峰）。
@@ -165,13 +165,9 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
         id: 8000,
         title: '保养提醒',
         body: maintenanceNoticeSummaryForRows(car, activeMaintenanceNotices),
-        repeatFrequency: maintenanceRepeatFrequency(
-          settings: settings,
-          car: car,
-          items: items,
-          records: records,
-          today: today,
-        ),
+        // 重复频率直接取用户设置（原经 maintenanceRepeatFrequency 转发，
+        // 该函数四个参数全未用，R30 死代码已删）。
+        repeatFrequency: settings.dueRepeatFrequency,
       ),
     );
   }
@@ -214,8 +210,8 @@ String parkingCountdownReminderSignature(ParkingCountdown? parkingCountdown) {
 }
 
 /// ★ 全量数据签名：把车辆/项目/记录的全部影响提醒的字段拼成一个大字符串。
-/// AppShell 每帧 build 调用，签名变了才重排系统通知。
-/// ⚠ 长列表下每帧 O(n) 字符串拼接，是性能热点之一（R11/R12 关联）。
+/// 通知同步控制器在数据变化时调用，签名变了才重排系统通知
+/// （原 AppShell 每帧 build 拼接的性能热点已随 R11/R12 修复移除）。
 String reminderNotificationDataSignature({
   required Car car,
   required List<MaintenanceItem> items,
@@ -276,18 +272,6 @@ bool mileageUpdateReminderDue({
     frequency: frequency,
     today: today,
   );
-}
-
-/// 保养通知的重复频率：直接取用户设置（car/items/records/today 参数
-/// 全部未用，属于预留签名，R30）。
-ReminderRepeatFrequency maintenanceRepeatFrequency({
-  required LunioNotificationSettings settings,
-  required Car car,
-  required List<MaintenanceItem> items,
-  required List<MaintenanceRecord> records,
-  required LocalDate today,
-}) {
-  return settings.dueRepeatFrequency;
 }
 
 /// 系统通知正文：品牌车型 + 到期数量 + 最紧急项目及其到期原因。
@@ -352,25 +336,28 @@ String dueNoticeText(ReminderViewData row) {
 // ---- snooze / ack 偏好 key 与判定 ----
 // snooze（15 天内不再提醒）：同时静默系统通知 + 应用内弹窗；
 // ack（知道了）：只静默当天的应用内弹窗，系统通知照发。
+// key 前缀引用 LunioRepository 上的静态常量（单一事实来源）：
+// 恢复备份时按同一组前缀清除抑制键，两处不会各自漂移。
 
 /// 里程更新 snooze key（按车辆）。
 String mileageUpdateSnoozeKey(int carId) {
-  return 'mileageUpdateSnoozedUntil:$carId';
+  return '${LunioRepository.mileageUpdateSnoozedUntilPrefix}$carId';
 }
 
 /// 里程更新当日 ack key。
 String mileageUpdateInAppAcknowledgedKey(int carId) {
-  return 'mileageUpdateInAppAcknowledgedOn:$carId';
+  return '${LunioRepository.mileageUpdateInAppAcknowledgedOnPrefix}$carId';
 }
 
 /// 保养项 snooze key（按项目）。
 String maintenanceReminderSnoozeKey(int itemId) {
-  return 'maintenanceReminderSnoozedUntil:$itemId';
+  return '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}$itemId';
 }
 
 /// 保养项当日 ack key。
 String maintenanceInAppReminderAcknowledgedKey(int itemId) {
-  return 'maintenanceInAppReminderAcknowledgedOn:$itemId';
+  return '${LunioRepository.maintenanceInAppReminderAcknowledgedOnPrefix}'
+      '$itemId';
 }
 
 /// snooze 截止日 = 今天 + 15 天（⚠ 跨 DST 时区天数会漂移，R34）。
@@ -480,7 +467,7 @@ int reminderStatusRank(ReminderStatus status) {
 }
 
 /// 英雄卡"到期概览"文案：如"超期 1 / 到期 2"、"全部正常"、"暂无"。
-/// ⚠ 每次调用都全量重算提醒行（250ms ticker 下高频执行，R11）。
+/// 数据变化时重算（页面已无周期性 ticker，不再高频执行）。
 String dueOverviewText(
   AsyncValue<List<MaintenanceItem>> items,
   AsyncValue<List<MaintenanceRecord>> records,
@@ -521,4 +508,35 @@ String dueOverviewText(
     return '到期 $dueCount';
   }
   return '全部正常';
+}
+
+// ---- 文件内私有格式化（§5.2 回收：仅本文件消费的函数不留公共面）----
+
+/// 进度环显示百分比的四舍五入钳制：真实进度没到阈值时，
+/// 显示值不允许"看起来已到阈值"（如 99.6% 显示 99% 而不是 100%）。
+int _displayPercentForThresholds({
+  required double percent,
+  required double notOverdueUpperLimit,
+  required double overdueUpperLimit,
+}) {
+  var display = percent.round();
+  if (percent < notOverdueUpperLimit &&
+      display >= notOverdueUpperLimit.ceil()) {
+    display = notOverdueUpperLimit.ceil() - 1;
+  }
+  if (percent < overdueUpperLimit && display >= overdueUpperLimit.ceil()) {
+    display = overdueUpperLimit.ceil() - 1;
+  }
+  return display;
+}
+
+/// 里程维剩余文案（提醒详情用）。
+String _mileageReminderText(int remainingKm) {
+  if (remainingKm > 0) {
+    return '里程：距离下次约 ${formatNumber(remainingKm)} 公里';
+  }
+  if (remainingKm == 0) {
+    return '里程：已到期';
+  }
+  return '里程：已超 ${formatNumber(remainingKm.abs())} 公里';
 }

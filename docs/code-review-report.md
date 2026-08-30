@@ -130,21 +130,26 @@ docs/                               # prd（当前权威）、migration、protot
 
 ## 4. 问题清单
 
-> 编号 R1-R38，按严重度分三档。每条含：位置（文件:行号）、推理、建议修法。**全部未修复。**
+> 编号 R1-R38，按严重度分三档。每条含：位置（文件:行号）、推理、建议修法。
+>
+> **修复状态（2026-08-26 更新）**：R2/R3/R6/R7/R8/R11/R12/R13/R15/R16/R18/R19/R21/R22/R23/R24/R25/R26/R27/R28/R29/R31/R33/R35/R37 与 §5.2、§5.3（5.3.2 除外）已修复；R1 部分修复（恢复/清空路径已补通知取消，"删除最后一辆车"路径不在本轮）；R32 部分修复（三套 sheet 骨架子项保留）。其余条目未修复（不在本轮范围）。各条目下方的【已修复】行为修复说明。
 
 ### 4.1 高优先级（正确性 / 数据一致性）
 
 **R1 · 恢复备份/清空数据后，停车倒计时系统通知残留**
+- **【部分修复 2026-08-26】** 恢复/清空两条路径已补显式取消：恢复后 `cancelLunioNotifications()`（8000/8900 系）；清空后 `cancelParkingCountdownNotification()`（9001/9002）+ `cancelLunioNotifications()`（偏好已删必须全取消）。「删除最后一辆车」的残留路径不在本轮。
 - 位置：`lib/features/shell/profile/settings_data.dart`（restoreBackupFromFile / clearAllData，约 208-271 行）；`lib/core/notifications/lunio_notification_service.dart:243`（scheduleParkingCountdownNotification）
 - 推理：恢复/清空只做 `notificationSyncGeneration++` + invalidate。停车进行中时恢复备份 → 偏好被清（数据库里无倒计时），但 OS 层已注册的 **9001 到点闹钟照常响铃**、**9002 Android 常驻通知**（`autoCancel:false, ongoing:true`）持续显示到 timeoutAfter。同理，清空数据后被删车辆的 8000/8900 系通知也不会被取消——`app_shell.dart` 的 `_applySystemNotificationSchedule` 在 `car == null` 时提前 return，唯一 cancel 入口不会执行。
 - 建议：restore/clearAllData 动作里显式调用 `cancelParkingCountdownNotification()` + `cancelLunioNotifications()`；或让 `_syncReminderNotifications` 在 car 为 null 时也走一次"全取消"调度。
 
 **R2 · 恢复备份会静默清空全部偏好**
+- **【已修复 2026-08-26】** 恢复改走 `_clearRestorableDataInTransaction`：只清 4 张业务表 + 按前缀清提醒抑制键，偏好（主题/通知设置/手动日期/停车倒计时）整体保留；确认文案同步为「偏好设置会保留」口径。
 - 位置：`lib/data/repositories/lunio_repository.dart:1079`（`_clearAllDataInTransaction` 删 `appPreferences` 整表）；恢复链路 `settings_data.dart` restoreBackupFromFile
 - 推理：备份 JSON 契约不含偏好（刻意设计，见 `docs/migration/review-fix-todo.md`），恢复时清库把主题、通知设置、开发者模式、全部 snooze/ack 一起删掉。确认文案虽然写了"会清空偏好"，但用户预期"恢复数据"≈"数据回来"，主题/设置被重置是隐性损失。
 - 建议：短期在确认文案里更显眼地列出会丢失的设置项；长期把偏好按 key 白名单保留（themeMode 等"设备级设置"不该随备份走）。
 
 **R3 · 通知重调度存在"丢更新"竞态**
+- **【已修复 2026-08-26】** 同步控制器（notification_sync_controller.dart）在执行中收到新签名时置 pending，本轮 finally 置空签名并用最新数据重跑一轮；reschedule 前再查一次同步代数。
 - 位置：`lib/features/shell/app_shell.dart:297`（签名先置值）+ `:399`（in-flight 直接 return）
 - 推理：签名变化时**先**把 `_systemNotificationSignature` 记为新值，post-frame 异步执行调度；若此刻上一轮 `_applySystemNotificationSchedule` 还在跑（内部有 1000 次 cancel await，见 R10，耗时可观），新任务被 `if (_syncingSystemNotifications) return;` 直接丢弃。之后没有新数据变化的话，**这次变更永远不会反映到系统通知**（直到下次任意数据变化或冷启动）。
 - 建议：把"执行中收到新签名"改为排队（存 pending 签名，执行完比对再跑一轮），而不是丢弃。
@@ -160,11 +165,13 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：要么在 UI 加上这个开关，要么从实体/偏好/签名里整体移除该字段（当前是"半尸"状态）。
 
 **R6 · 通知设置 sheet 在 loading 期读默认值，保存会覆盖真实设置**
+- **【已修复 2026-08-26】** 打开 sheet 前 `await ref.read(notificationSettingsProvider.future)`，加载失败 toast「设置加载失败」并返回。
 - 位置：`lib/features/shell/profile/settings_data.dart:281`（`maybeWhen(orElse: () => const LunioNotificationSettings())`）
 - 推理：打开 sheet 时若 `notificationSettingsProvider` 尚在 loading，初始值回退为全默认（应用内开、每周）；用户直接点"保存设置"就会把默认值写库。冷启动后立刻进设置页可复现。
 - 建议：打开 sheet 前 `await ref.read(notificationSettingsProvider.future)`（与记录表单入口的做法一致）。
 
 **R7 · iOS 文件桥注册失败无容错，备份功能可能抛未处理异常**
+- **【已修复 2026-08-26】** Dart 侧两个方法捕获 PlatformException/MissingPluginException（返回 false/null + debugPrint）；iOS 侧 `configureNativeFilesChannelIfNeeded` 存 channel 属性 + guard，willConnectTo 延迟一拍与 sceneDidBecomeActive 重试，完全镜像通知设置桥。
 - 位置：`ios/Runner/SceneDelegate.swift:32-50`（`lunio/native_files` 仅在 `scene(willConnectTo:)` 注册一次，无重试；对比通知设置桥有 `sceneDidBecomeActive` 重试）；Dart 侧 `lib/core/platform/native_files.dart` **不捕获 MissingPluginException**（另两个桥都捕获）
 - 推理：iOS Scene 生命周期时机问题若导致 channel 未注册，点"备份/恢复"直接抛未处理异常。
 - 建议：Dart 侧补 try/catch（返回 false + toast）；iOS 侧参照通知设置桥补注册重试。
@@ -172,6 +179,7 @@ docs/                               # prd（当前权威）、migration、protot
 ### 4.2 中优先级（健壮性 / 性能）
 
 **R8 · 全局可变 `notificationSyncGeneration` 做并发控制**
+- **【已修复 2026-08-26】** 改为 `notificationSyncGenerationProvider`（NotifierProvider，bump() 自增）；恢复/清空、同步控制器、saveParkingCountdown 的快照/比对全部走 provider。
 - 位置：`lib/features/shell/shared/shell_actions.dart:18`；写入点 `settings_data.dart`（恢复/清空），读取点 `app_shell.dart:396/475`
 - 推理：用顶层全局变量做"作废在途任务"的代数令牌，绕过 provider 体系，测试不可注入，且覆盖不了所有在途 Future（如 `parking_countdown.dart:614` saveParkingCountdown 的通知调度链不受保护）。
 - 建议：改为 Riverpod `StateProvider<int>` 或专用 Notifier。
@@ -187,16 +195,19 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：维护"已注册 id 集合"或直接 cancel 用过的 16 个 id；一次 `cancelAll()` 也可考虑（注意别误删停车通知）。
 
 **R11 · 提醒页 250ms Timer 全页重建**
+- **【已修复 2026-08-26】** 删除页面级 250ms Timer；ParkingCountdownCard 改 ConsumerStatefulWidget 内部 1s Timer 自刷新（时钟走 appDateContext，测试可注入）；英雄卡与提醒列表不再秒级重建。
 - 位置：`lib/features/shell/reminders/reminder_page.dart:55`（`Timer.periodic(250ms) → setState`）
 - 推理：停车倒计时秒级刷新需要重算，但 setState 重建整页：hero 卡、提醒列表（`buildReminderRows` 对 items×records 全量重算）、`dueOverviewText`（又一次全量重算，见 `reminder_notifications.dart:484`）每秒执行 4 次。无倒计时时也在空转。
 - 建议：ticker 下沉到 `ParkingCountdownCard` 内部；或用 `ValueNotifier<DateTime>` 只驱动时钟文本；无倒计时时暂停 ticker。
 
 **R12 · AppShell 在 build 里做副作用 + 每帧拼数据签名**
+- **【已修复 2026-08-26】** 通知同步抽到 `NotificationSyncController`（reminders/notification_sync_controller.dart）：start() 对 6 个 provider `ref.listenManual(fireImmediately: true)` 驱动，AppShell build 只渲染。
 - 位置：`lib/features/shell/app_shell.dart:244`（`_syncReminderNotifications` 在 build 中调用并改写字段）；`lib/features/shell/reminders/reminder_notifications.dart:219`（`reminderNotificationDataSignature` 拼大字符串）
 - 推理：build 每帧执行（含 250ms ticker 引发的重建），签名拼接是 O(items+records) 的字符串操作；副作用虽被 postFrameCallback 推迟到帧后，但"build 驱动 I/O"模式让权限请求、通知调度、弹窗都挂在渲染路径上，难测试且有隐式循环（权限查询 → 写偏好 → invalidate → rebuild → 再查询）。
 - 建议：把通知同步抽成独立的 `Notifier`/服务类，由 provider 变化（`ref.listen`）驱动而非 build。
 
 **R13 · 多处 async gap 后使用 `ref` 无 mounted 保护**
+- **【已修复 2026-08-26】** 控制器所有 await 后补 `_disposed` 检查（弹窗前另取 shellContext() 新鲜 context）；saveParkingCountdown/clearParkingCountdown 增加 BuildContext 参数，每个 await 后 `if (!context.mounted) return;`。
 - 位置：`lib/features/shell/app_shell.dart:333-385`（`_ensureInitialSystemNotificationPermission` / `_applySystemNotificationSchedule` 多个 await 后 `invalidatePreferenceProviders(ref)` / `ref.read`）；`lib/features/shell/reminders/parking_countdown.dart:614-660`（saveParkingCountdown 闭包持有外部 ref，sheet 关闭不中断链路）
 - 推理：Widget 销毁后使用其 `WidgetRef` 会抛错（Riverpod 3 中对已 dispose 元素调用 invalidate 抛 `StateError`）。UI 层的 `context.mounted` 检查整体做得不错（20+ 处都有），唯独 ref 这条线没有保护。
 - 建议：await 后补 `if (!mounted) return;`，或把这段逻辑移出 Widget。
@@ -209,11 +220,13 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：至少加 `debugPrint`/日志；时区回退应视为初始化失败并提示。
 
 **R15 · `main()` 通知初始化无兜底**
+- **【已修复 2026-08-26】** main() 包 try/catch + `markInitializationFailed()`；服务增加 `_available` 降级标志：不可用时权限/开关查询返回 false、调度/取消全部安全 no-op。补服务测试。
 - 位置：`lib/main.dart:33`
 - 推理：`await LunioNotificationService.instance.initialize()` 在 runApp 之前执行且无 try/catch；插件异常 = 白屏起不来。
 - 建议：包 try/catch，失败降级（App 可用、通知功能标记不可用）。
 
 **R16 · 外键式查询列缺索引**
+- **【已修复 2026-08-26】** schema v6：三张业务表加 `@TableIndex`（items.cars_id / records.car_id / record_items.maintenance_record_id），onUpgrade 补 createIndex；database_test 补 sqlite_master 断言。
 - 位置：`lib/data/database/app_database.dart`（`maintenance_records.car_id`、`maintenance_record_items.maintenance_record_id`、`maintenance_items.cars_id` 均无索引）；查询点如 `lunio_repository.dart` listMaintenanceRecordsForCar / maintenanceItemHasHistory / _ensureRecordIsUnique
 - 推理：本地单用户数据量小，当前无感；记录上千后按车查记录、查项目历史会全表扫描。
 - 建议：下次 bump schemaVersion 时顺手加三个普通索引。
@@ -224,11 +237,13 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：保存时校验 endsAt 必须在未来，或提示"该时刻已过期"。
 
 **R18 · monthly 重复步进未做月末钳制，月度提醒漂移**
+- **【已修复 2026-08-26】** `nextMonthlyOccurrence` 做月末钳制（1.31 → 2.28/29，12.31 → 次年 1.31）；补单测与 rescheduleNotifications 通道参数的集成断言。
 - 位置：`lib/core/notifications/lunio_notification_service.dart:399`（`TZDateTime(y, month+1, day)`）
 - 推理：1 月 31 日排的月度提醒，下次归一化到 3 月 3 日，此后固定漂移到 3 号。对比 `LocalDate.addMonths`（`lib/core/date/local_date.dart`）有正确的 clamp 实现。
 - 建议：monthly 分支改用日历库的月份加法或手动 clamp。
 
 **R19 · 迁移产物漂移：升级库与全新安装 schema 不一致**
+- **【已修复 2026-08-26】** 已在 `docs/migration/current-database-schema.md` 显式记录 v6 索引的两种等价形态（建表附带 vs createIndex）。
 - 位置：`lib/data/database/app_database.dart:239-269`（v5 迁移建的是 `WHERE catalog_id IS NOT NULL` 部分唯一索引；全新安装走 createAll 生成表内 UNIQUE 约束）
 - 推理：两种产物在 SQLite 语义上等价（可空列 UNIQUE 允许多 NULL），功能无差，但结构漂移会给未来写 onUpgrade 的人埋坑（以为只有一种形态）。
 - 建议：在 `docs/migration/current-database-schema.md` 里显式记录两种形态；或统一为部分索引。
@@ -239,26 +254,31 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：无需动作，记录在案。
 
 **R21 · build 期间修改 state 集合**
+- **【已修复 2026-08-26】** 记录页筛选改为派生集合：渲染与过滤用 `_validSelections` 的过滤视图，state 仅由用户点击变更。
 - 位置：`lib/features/shell/records/records_page.dart:75/80`（`selectedYears.removeWhere(...)` 在 build 的数据分支里执行）
 - 推理：纯清理不触发重建，能跑；但属于 build 副作用，配合未来重构容易变成隐患。
 - 建议：移到数据变化回调（provider listen）或用 derived 过滤（渲染时忽略失效选项，不改 state）。
 
 **R22 · TextPainter 未 dispose**
+- **【已修复 2026-08-26】** ItemPills 整体改 `Wrap`（spacing/runSpacing 6），删除手写装箱算法与 `_measureTextWidth`，TextPainter 泄漏随之消失。
 - 位置：`lib/features/shell/shared/shared_widgets.dart:262`（`_measureTextWidth`）
 - 推理：Flutter 3.16+ 要求 TextPainter dispose，debug 模式会打泄漏提示；每次 ItemPills build 都新建。
 - 建议：测量完调用 `painter.dispose()`；更根本的：整个手写装箱算法可用 `Wrap` 替代。
 
 **R23 · 切换车辆 sheet 同步读 provider，loading 期误报**
+- **【已修复 2026-08-26】** showVehicleSwitcher 改 async：await carsProvider/appliedCarProvider，加载失败 toast「车辆加载失败」，后续逻辑补 context.mounted 检查。
 - 位置：`lib/features/shell/profile/vehicles.dart:1052`（showVehicleSwitcher 用 `ref.read(...).maybeWhen(orElse: 空列表)`）
 - 推理：冷启动车辆还在加载时点"切换车辆"，会提示"请先新增车辆"（实际有车）。按钮本身有多车才显示的守卫，窗口小但存在。
 - 建议：改 `await ref.read(carsProvider.future)`。
 
 **R24 · 列表用实体 `==` 判断"最后一项"**
+- **【已修复 2026-08-26】** records_page（改 SliverList.builder 后按 index 控制行距）与 maintenance_items 两处列表全部改下标循环判断。
 - 位置：`lib/features/shell/records/records_page.dart:276`（`record != records.last` 按 id 比较）；maintenance_items 列表同模式
 - 推理：实体未重写 `==`（按引用比较），当前数据源去重后恰好安全；若列表出现同 id 重复对象，间距判断会错位。
 - 建议：改用 `for (var i = 0; ...)` 下标或 `List.sublistView` 模式。
 
 **R25 · 各列表非懒加载、无 key**
+- **【已修复 2026-08-26】** 记录页两个列表改 `SliverList.builder` + `ValueKey('record-…')`；LunioPage 增加 slivers 构造（CustomScrollView）。其余页面维持 Column+for（量级小，加法式改动不影响）。
 - 位置：`records_page.dart` 两个列表、`reminder_list.dart`、`vehicles.dart`、`maintenance_items.dart` 全部 `Column + for` 直排
 - 推理：LunioPage 外层是 ListView，但列表项整块一次性构建，记录多时整页构建成本线性涨。当前量级可接受。
 - 建议：记录页转 `ListView.builder` + itemKey（id）。
@@ -266,6 +286,7 @@ docs/                               # prd（当前权威）、migration、protot
 ### 4.3 低优先级（代码卫生 / 口径 / 边界）
 
 **R26 · 死代码与遗留 API**
+- **【已修复 2026-08-26】** 全清：id_generator.dart + uuid 依赖、barrel re-export、maintenanceRepeatFrequency（内联）、停车表单 initial 死分支、isScrollControlled 参数及全部调用点、with/withoutManualDate、statusForPercent（连测试）、noHistoryBaselineMileageKm 死参数（签名收缩，doc 注明 PRD 口径）、createCar/createCarWithDefaultItems（测试改写等价替身）。`AppDateContext.manualDate` 字段保留（测试注入在用）。
 - `lib/core/id/id_generator.dart`：UUID 生成器无调用方，连带 `pubspec.yaml` 的 `uuid` 依赖可移除；
 - `maintenance_rules.dart` `statusForPercent`：生产无调用（仅测试），与 `_statusForItem` 双轨阈值；
 - `reminder_notifications.dart` `maintenanceRepeatFrequency`：忽略全部入参直接返回设置值（预留签名）；
@@ -276,14 +297,17 @@ docs/                               # prd（当前权威）、migration、protot
 - `providers.dart` `AppDateContext.manualDate` 生产永不填充（手动日期实际走另一个 provider）。
 
 **R27 · 偏好读写串行无批量、无事务**
+- **【已修复 2026-08-26】** Repository 新增 `getPreferenceValues`（IN 查询）/`updatePreferenceValues`（事务批量写）；notificationSettingsProvider 与 saveNotificationSettings 改用批量接口。
 - 位置：`lib/app/providers.dart`（notificationSettingsProvider 串行 4 读）；`settings_data.dart` saveNotificationSettings 串行 4 写
 - 建议：Repository 加批量读/事务写接口。
 
 **R28 · bootstrap asset 重复加载 3 次**
+- **【已修复 2026-08-26】** Repository 实例内 memoize 目录解析 Future（`_loadCatalog`），三个 ensure 入口共用。
 - 位置：`lib/data/repositories/lunio_repository.dart:162`（ensureBootstrapData 链路里 catalog 被加载 3 次，无缓存；添加车辆向导 loadDefaultItems 又调一次）
 - 建议：catalog 解析结果按启动周期缓存。
 
 **R29 · provider 依赖存在"只借失效信号"的隐式 watch**
+- **【已修复 2026-08-26】** carsProvider/appliedCarProvider 改显式 `await ref.watch(上游.future)`（行为等价，依赖一目了然）。
 - 位置：`lib/app/providers.dart:164-174`（carsProvider watch bootstrap 不 await；appliedCarProvider watch carsProvider 丢弃结果只取失效信号）
 - 推理：当前正确（bootstrap 不写 cars；getAppliedCar 自查车辆），但依赖关系是隐式的，重构时容易引入顺序 bug。
 - 建议：加注释已做；进一步可显式化（如 appliedCarProvider 直接 await carsProvider.future）。
@@ -291,10 +315,12 @@ docs/                               # prd（当前权威）、migration、protot
 **R30 · 过度提取与欠提取的组件（详见 §5）**
 
 **R31 · `maintenanceItemHasHistory` 等用 `.get()` 拉全行判空**
+- **【已修复 2026-08-26】** maintenanceItemHasHistory 加 limit(1)；getAppliedCar/deleteCar/_ensureAppliedCarInTransaction 改点查（回退「id 最小的车」与原 listCars 首行语义等价）。
 - 位置：`lunio_repository.dart`（maintenanceItemHasHistory / getAppliedCar / deleteCar / _ensureAppliedCarInTransaction 全表 `.get()`）
 - 建议：`count()` 或 `limit(1)`。
 
 **R32 · 重复实现**
+- **【部分修复 2026-08-26】** _formatClock 合并为 formatters.formatClock（两处调用）；两个输入行合并为 shared 的 IntervalNumberInputRow；itemRuleText/defaultItemRuleText 合并为 maintenance_items 私有函数；vehicles 两份加载失败检查块提取为 carFormLoadGuard。**三套 sheet 骨架（5.3.2）本轮确认跳过，保留现状。**
 - `_formatClock` 两份（`parking_countdown.dart` / `lunio_notification_service.dart`）；
 - `RecordIntervalInputRow`（records_page）与 `ReminderRuleInputRow`（maintenance_items）几乎逐行相同；
 - 三套 sheet 骨架并存（`PrototypeSheetFrame` / `_LunioDefaultSheetSurface` / `LunioSheetScaffold`）；
@@ -302,6 +328,7 @@ docs/                               # prd（当前权威）、migration、protot
 - 添加车辆与编辑车辆 sheet 里"车型/日期加载失败"检查块复制两份。
 
 **R33 · 空态文案与实际不符**
+- **【已修复 2026-08-26】** 记录页空态改为「暂无保养记录，可在提醒页点「新增保养记录」。」，文件头注释同步。
 - `records_page.dart:136`："点击右下角 + 新增"——App 没有 FloatingActionButton，新增入口只在提醒页。
 
 **R34 · DST/时区类边界（目标市场 Asia/Shanghai 无夏令时，影响有限）**
@@ -311,6 +338,7 @@ docs/                               # prd（当前权威）、migration、protot
 - 时区回退 UTC（R14 已列）。
 
 **R35 · 恢复备份不执行业务规则校验**
+- **【已修复 2026-08-26】** restoreBackupPayload 在引用校验后、开事务前逐条过 `item.validate()` 与 `RecordRules.validateRecord`，失败抛中文 ArgumentError；补篡改备份（负金额/负里程/空项目/非法间隔）被拒且库未动的测试。
 - 位置：`lunio_repository.dart:890`（restoreBackupPayload 只做引用完整性预校验，裸 insert）
 - 推理：手工编辑的备份可注入负数金额/里程、空 itemIds 记录，破坏 RecordRules 不变量。
 - 建议：恢复循环里逐条调 `RecordRules.validateRecord` / `item.validate()`。
@@ -321,6 +349,7 @@ docs/                               # prd（当前权威）、migration、protot
 - 属产品口径宽松而非 bug，列出待确认。
 
 **R37 · 无历史车辆的里程基线为 0（设计确认项）**
+- **【已确认并收缩 2026-08-26】** 确认为 PRD 设计（无历史按 0 里程基线）；`noHistoryBaselineMileageKm` 死参数已从 progressForItem/_mileageProgress 签名移除，doc 注释写明口径。
 - 位置：`lib/domain/rules/maintenance_rules.dart:130`（`noHistoryBaselineMileageKm = 0`，生产调用从不传）
 - 推理：二手高里程车无记录时里程进度会立刻算出超高百分比。但产品约定"没有任何记录就不产生提醒"（`maintenanceNotices` 空记录直接返回），实际不会被轰炸；首条记录落库后基线立即修正。
 - PRD 明示为设计（"无历史按上路日期与 0 里程基线"），列出仅供确认。
@@ -347,7 +376,7 @@ docs/                               # prd（当前权威）、migration、protot
 
 这一层的提取度是健康的：**提取的判断标准应该是"被多处使用且语义稳定"，以上都符合。**
 
-### 5.2 过度提取（单调用点却放进 shared，建议回收或就地内联）
+### 5.2 过度提取（单调用点却放进 shared，建议回收或就地内联）——【已处理 2026-08-26】
 
 | 组件 | 位置 | 唯一使用方 |
 |---|---|---|
@@ -358,13 +387,15 @@ docs/                               # prd（当前权威）、migration、protot
 
 **权衡说明**：本仓库的规模下这些"伪共享"伤害不大（没有增加理解成本太多），但它们让 shared/ 看起来比实际更"公共"，新人会把页面私有组件也往里塞。建议：单调用点的组件移回使用方文件，shared/ 只保留 ≥2 个调用方的内容。
 
-### 5.3 该提取未提取（重复代码，建议合并）
+> **【已处理 2026-08-26】**：LoadingPage/ErrorPage 三页统一推广（提醒/记录/我的同构 when 分支）；FilterBar/ChoiceChipButton 回收为 records_page 私有；单点格式化函数（formatMoney/itemRuleText/defaultItemRuleText/mileageReminderText/displayPercentForThresholds/normalizeItemName 及配套紧凑文案函数）全部回收或合并到各自消费文件；formatters.dart 只保留多文件复用项。
 
-1. `RecordIntervalInputRow`（records_page）≡ `ReminderRuleInputRow`（maintenance_items）——逐行重复的输入行，合并为一个带开关可选的组件；
-2. 三套 sheet 骨架（`PrototypeSheetFrame` / `_LunioDefaultSheetSurface` / `LunioSheetScaffold`）——收敛为一套两种模式；
-3. `_formatClock` 双实现——移到 formatters；
-4. `ItemPills` 手写 TextPainter 装箱——`Wrap` 一行等价；
-5. 六个表单的"取消/主按钮 + saving 态 + errorText + LunioInlineMessage"样板——可抽 `FormActions`（此条可暂缓，样板尚直观）。
+### 5.3 该提取未提取（重复代码，建议合并）——【已处理 2026-08-26，第 2 项除外】
+
+1. 【已合并】`RecordIntervalInputRow` ≡ `ReminderRuleInputRow` → shared 的 `IntervalNumberInputRow`（可选开关的数字输入行），两个表单已迁移；
+2. 【本轮跳过】三套 sheet 骨架（`PrototypeSheetFrame` / `_LunioDefaultSheetSurface` / `LunioSheetScaffold`）——用户确认本轮不做（5.3.2）；
+3. 【已合并】`_formatClock` 双实现 → formatters 的 `formatClock`（停车卡片/表单与通知服务共用）；
+4. 【已替换】`ItemPills` 手写 TextPainter 装箱 → `Wrap`；
+5. 【确认暂缓】表单 FormActions 样板（5.3.5，用户确认本轮不做）。
 
 ### 5.4 结论
 

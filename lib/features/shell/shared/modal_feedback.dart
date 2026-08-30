@@ -22,11 +22,9 @@ import '../../../core/widgets/lunio_components.dart';
 
 /// 底部 sheet：全屏对话框 + 底部对齐内容。
 /// backgroundColor 传 transparent 时不再包默认白底（自绘 sheet 用）。
-/// ⚠ isScrollControlled 参数声明了但未使用（恒全屏），具误导性（R30）。
 Future<T?> showLunioModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
-  bool isScrollControlled = false,
   bool showDragHandle = false,
   Color? backgroundColor,
   bool barrierDismissible = true,
