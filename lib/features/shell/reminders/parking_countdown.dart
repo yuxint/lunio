@@ -228,10 +228,7 @@ class _ParkingIcon extends StatelessWidget {
 /// + 快捷时长 chip + 校验 + 开始按钮。入口仅在无倒计时且按钮可用，
 /// 无编辑分支（原 initial 死分支已删，R26）。
 class ParkingCountdownForm extends StatefulWidget {
-  const ParkingCountdownForm({
-    required this.now,
-    required this.onSubmit,
-  });
+  const ParkingCountdownForm({required this.now, required this.onSubmit});
 
   final DateTime now;
   final Future<void> Function(ParkingCountdown countdown) onSubmit;
@@ -312,22 +309,11 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(
-                label: '取消',
-                onPressed: saving ? null : () => Navigator.of(context).pop(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: saving ? '保存中' : '开始计时',
-                onPressed: saving ? null : _submit,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          confirmLabel: '开始计时',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: _submit,
+          saving: saving,
         ),
       ],
     );
@@ -419,74 +405,55 @@ class ParkingEntryTimePickerState extends State<ParkingEntryTimePicker> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-      child: LunioSheetScaffold(
-        title: '选择入场时间',
-        subtitle: '按当前日期选择时、分、秒。',
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _TimePartWheel(
-                    label: '时',
-                    value: hour,
-                    count: 24,
-                    onChanged: (value) => setState(() => hour = value),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _TimePartWheel(
-                    label: '分',
-                    value: minute,
-                    count: 60,
-                    onChanged: (value) => setState(() => minute = value),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _TimePartWheel(
-                    label: '秒',
-                    value: second,
-                    count: 60,
-                    onChanged: (value) => setState(() => second = value),
-                  ),
-                ),
-              ],
+            Expanded(
+              child: _TimePartWheel(
+                label: '时',
+                value: hour,
+                count: 24,
+                onChanged: (value) => setState(() => hour = value),
+              ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: LunioSecondaryButton(
-                    label: '取消',
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: LunioPrimaryButton(
-                    label: '确定',
-                    onPressed: () => Navigator.of(context).pop(
-                      DateTime(
-                        widget.initial.year,
-                        widget.initial.month,
-                        widget.initial.day,
-                        hour,
-                        minute,
-                        second,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: _TimePartWheel(
+                label: '分',
+                value: minute,
+                count: 60,
+                onChanged: (value) => setState(() => minute = value),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _TimePartWheel(
+                label: '秒',
+                value: second,
+                count: 60,
+                onChanged: (value) => setState(() => second = value),
+              ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 16),
+        LunioFormActions(
+          confirmLabel: '确定',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: () => Navigator.of(context).pop(
+            DateTime(
+              widget.initial.year,
+              widget.initial.month,
+              widget.initial.day,
+              hour,
+              minute,
+              second,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -571,8 +538,11 @@ Future<DateTime?> showParkingEntryTimePicker(
 }) {
   return showLunioModalSheet<DateTime>(
     context: context,
-    showDragHandle: true,
-    builder: (context) => ParkingEntryTimePicker(initial: initial),
+    builder: (context) => PrototypeSheetFrame(
+      title: '选择入场时间',
+      subtitle: '按当前日期选择时、分、秒。',
+      child: ParkingEntryTimePicker(initial: initial),
+    ),
   );
 }
 
@@ -616,19 +586,16 @@ Future<void> showParkingCountdownSheet(
 }) {
   return showLunioModalSheet<void>(
     context: context,
-    showDragHandle: true,
     builder: (sheetContext) {
       final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-      return Padding(
-        padding: EdgeInsets.fromLTRB(18, 0, 18, bottomInset + 16),
-        child: LunioSheetScaffold(
-          title: '停车计时',
-          subtitle: '设置入场时间和免费停车时长。',
-          child: ParkingCountdownForm(
-            now: now,
-            onSubmit: (countdown) =>
-                saveParkingCountdown(context, ref, countdown),
-          ),
+      return PrototypeSheetFrame(
+        title: '停车计时',
+        subtitle: '设置入场时间和免费停车时长。',
+        bottomInset: bottomInset,
+        child: ParkingCountdownForm(
+          now: now,
+          onSubmit: (countdown) =>
+              saveParkingCountdown(context, ref, countdown),
         ),
       );
     },

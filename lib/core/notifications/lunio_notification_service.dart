@@ -4,7 +4,8 @@
 //  1. 保养到期/里程更新提醒 —— 由通知同步控制器的签名比对触发重排
 //     （见 features/shell/reminders/notification_sync_controller.dart 的
 //     _applySystemNotificationSchedule），
-//     id 段 8000~8999（8000 系保养、8900 系里程，每个通知排 8 次）；
+//     id 段 8000~8999（8000 系保养、8900 系里程，每个通知排 8 次，
+//     实际占用 16 个 id，取消时精确取消这 16 个，见 R10）；
 //  2. 停车到点闹钟 —— id 9001（channel lunio_parking_due_heads_up）；
 //  3. Android 停车进行中常驻通知 —— id 9002（low priority +
 //     chronometer 倒计时显示，到点自动消失）。
@@ -69,6 +70,14 @@ class LunioNotificationService {
   /// 停车到点闹钟 / Android 常驻通知的固定 id（取消时成对取消）。
   static const _parkingCountdownNotificationId = 9001;
   static const _parkingCountdownOngoingNotificationId = 9002;
+
+  /// 保养/里程提醒通知的基础 id 与每个通知的重复次数。取消逻辑依赖
+  /// 这份清单与 LunioScheduledNotification 的 id 分配保持一致：
+  /// 8000-8007 保养汇总、8900-8907 里程更新（R10 收紧后按此精确取消，
+  /// 不再整段扫 8000~8999）。改动 occurrenceCount 或新增基础 id 时
+  /// 必须同步这里。
+  static const _reminderBaseNotificationIds = [8000, 8900];
+  static const _reminderOccurrenceCount = 8;
 
   static final LunioNotificationService instance = LunioNotificationService._();
 
@@ -205,8 +214,8 @@ class LunioNotificationService {
   }
 
   /// 全量重排保养/里程提醒。每次调用：
-  ///  1. 先 cancelLunioNotifications() 清掉旧计划（⚠ 串行 cancel 8000~8999
-  ///     共 1000 次，实际只用到 16 个 id，是性能放大器，见 R10）；
+  ///  1. 先 cancelLunioNotifications() 清掉旧计划（精确取消 16 个在用
+  ///     id，R10 收紧后不再是整段 1000 次）；
   ///  2. 每条通知从"下一个 9:00 + minuteOffset"开始排 occurrenceCount 次，
   ///     id = 基础 id + 序号；exactAlarm 决定 Android 精确/非精确调度；
   ///  3. reservedDateTimes：停车到点时刻——若撞上则以 5 分钟为步长后移
@@ -268,16 +277,19 @@ class LunioNotificationService {
     }
   }
 
-  /// 取消全部保养/里程提醒：⚠ 按段循环 cancel 8000~8999（1000 次串行
-  /// platform channel 调用）。不碰 9001/9002（停车通知单独取消）。
+  /// 取消全部保养/里程提醒：按 id 分配表精确取消在用的 16 个 id
+  /// （8000-8007 保养、8900-8907 里程；R10 收紧，不再串行扫 8000~8999
+  /// 共 1000 个）。不碰 9001/9002（停车通知单独取消）。
   /// 服务不可用时安全 no-op。
   Future<void> cancelLunioNotifications() async {
     await initialize();
     if (!_available) {
       return;
     }
-    for (var id = 8000; id < 9000; id++) {
-      await _plugin.cancel(id: id);
+    for (final baseId in _reminderBaseNotificationIds) {
+      for (var index = 0; index < _reminderOccurrenceCount; index++) {
+        await _plugin.cancel(id: baseId + index);
+      }
     }
   }
 
@@ -385,14 +397,19 @@ class LunioNotificationService {
     );
   }
 
-  /// 把 tz.local 设为设备实际时区；失败回退 UTC（⚠ 无日志，
-  /// 非 UTC 设备的通知时刻会整体偏移一个时区，R14）。
+  /// 把 tz.local 设为设备实际时区；失败回退 Asia/Shanghai（R34：目标
+  /// 市场时区、固定 +8 无夏令时——不再回退 UTC，避免非 UTC 设备的通知
+  /// 时刻整体偏移一个时区差）并打日志（R14：不再静默吞异常）。
   Future<void> _configureLocalTimezone() async {
     try {
       final timezone = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(timezone.identifier));
-    } catch (_) {
-      tz.setLocalLocation(tz.UTC);
+    } catch (error) {
+      debugPrint(
+        'LunioNotificationService: 获取系统时区失败($error)，'
+        '回退为 Asia/Shanghai',
+      );
+      tz.setLocalLocation(tz.getLocation('Asia/Shanghai'));
     }
   }
 
@@ -412,7 +429,7 @@ class LunioNotificationService {
       9,
     ).add(Duration(minutes: minuteOffset));
     if (!next.isAfter(now)) {
-      next = next.add(const Duration(days: 1));
+      next = addCalendarDays(next, 1);
     }
     return switch (frequency) {
       ReminderRepeatFrequency.daily => next,
@@ -427,22 +444,35 @@ class LunioNotificationService {
   /// monthly 分支做月末钳制：1 月 31 日排的月度提醒，下月没有 31 日就
   /// 钳到当月最后一天（2 月 28/29 日），与 LocalDate.addMonths 行为
   /// 一致（否则 TZDateTime(y, m+1, 31) 会溢出进位漂到 3 月初，R18）。
-  /// 日/周步进用 Duration 相加，跨 DST 时区的小时会漂（目标市场无 DST）。
+  /// 日/两周/三周分支走 [addCalendarDays] 日历加减（R34：不再用 24 小时
+  /// Duration 相加，避免跨 DST 时区漂移墙钟时刻）。
   tz.TZDateTime _nextOccurrence(
     tz.TZDateTime date,
     ReminderRepeatFrequency frequency,
   ) {
     return switch (frequency) {
-      ReminderRepeatFrequency.daily => date.add(const Duration(days: 1)),
-      ReminderRepeatFrequency.weekly => date.add(const Duration(days: 7)),
-      ReminderRepeatFrequency.everyTwoWeeks => date.add(
-        const Duration(days: 14),
-      ),
-      ReminderRepeatFrequency.everyThreeWeeks => date.add(
-        const Duration(days: 21),
-      ),
+      ReminderRepeatFrequency.daily => addCalendarDays(date, 1),
+      ReminderRepeatFrequency.weekly => addCalendarDays(date, 7),
+      ReminderRepeatFrequency.everyTwoWeeks => addCalendarDays(date, 14),
+      ReminderRepeatFrequency.everyThreeWeeks => addCalendarDays(date, 21),
       ReminderRepeatFrequency.monthly => nextMonthlyOccurrence(date),
     };
+  }
+
+  /// 按日历加 n 天（可为负）：保持墙钟时刻（时/分）不变，day 字段 +n
+  /// 由 TZDateTime 构造器归一化跨月/跨年，与 Java 的
+  /// ZonedDateTime.plusDays 思路一致（R34：替代 Duration 24 小时累加）。
+  /// static + visibleForTesting 便于直接单测锁定该行为。
+  @visibleForTesting
+  static tz.TZDateTime addCalendarDays(tz.TZDateTime date, int days) {
+    return tz.TZDateTime(
+      tz.local,
+      date.year,
+      date.month,
+      date.day + days,
+      date.hour,
+      date.minute,
+    );
   }
 
   /// 月度步进 + 月末钳制：目标年月进位后，day 超过目标月天数时钳到

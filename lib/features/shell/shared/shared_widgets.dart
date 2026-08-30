@@ -17,7 +17,6 @@ import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import 'formatters.dart';
 
-
 /// 项目名 pill 组：Wrap 自动换行（每行尽量塞满），用于记录卡/项目卡的
 /// 项目标签展示。原先的手写装箱算法（TextPainter 量宽 + 贪心塞行）
 /// 与 Wrap 等价且存在 painter 未 dispose 的泄漏隐患，已删除（R22）。
@@ -139,8 +138,9 @@ class SmallActionButton extends StatelessWidget {
   }
 }
 
-/// 表单类 sheet 的统一骨架：drag handle + 标题/副标题 + 可滚动内容 +
-/// bottomInset（预留给键盘）。配合 showLunioModalSheet(transparent) 使用。
+/// 表单/信息类 sheet 的统一骨架（全项目唯一，§5.3.2 收敛）：drag handle +
+/// 标题/副标题 + 可滚动内容 + bottomInset（预留给键盘）。
+/// 配合 showLunioModalSheet 使用（内部即透明底，调用方不再传表面参数）。
 class PrototypeSheetFrame extends StatelessWidget {
   const PrototypeSheetFrame({
     required this.title,
@@ -211,12 +211,63 @@ class PrototypeSheetFrame extends StatelessWidget {
           ),
         ],
       ),
-      child: SingleChildScrollView(child: content),
+      // 表面容器自带底色，ListTile/SwitchListTile 的调试断言要求其
+      // Material 祖先在底色容器之内（否则报"背景/水波纹不可见"），
+      // 因此内容包一层透明 Material 作为绘制底板。
+      child: Material(
+        type: MaterialType.transparency,
+        child: SingleChildScrollView(child: content),
+      ),
     );
     return sheet;
   }
 }
 
+/// 表单 sheet 底部的"取消 + 确认"动作行（§5.3.5 收敛：原 9 处手写
+/// Row(Secondary+Primary) 样板统一到这里）。
+///  - [saving] 为 true 时确认按钮置灰、文案切到 [confirmSavingLabel]；
+///  - [enabled] 为 false 时确认按钮置灰（表单校验未通过等场景）；
+///  - [onCancel] / [onConfirm] 传 null 表示对应按钮禁用（与
+///    LunioSecondaryButton/LunioPrimaryButton 的可空回调语义一致）；
+///  - 确认文案各表单不同（保存记录/开始计时/确定…），由 [confirmLabel]
+///    传入；保存中通用文案默认"保存中"。
+class LunioFormActions extends StatelessWidget {
+  const LunioFormActions({
+    required this.confirmLabel,
+    required this.onCancel,
+    required this.onConfirm,
+    this.cancelLabel = '取消',
+    this.confirmSavingLabel = '保存中',
+    this.saving = false,
+    this.enabled = true,
+  });
+
+  final String cancelLabel;
+  final String confirmLabel;
+  final String confirmSavingLabel;
+  final VoidCallback? onCancel;
+  final VoidCallback? onConfirm;
+  final bool saving;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: LunioSecondaryButton(label: cancelLabel, onPressed: onCancel),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: LunioPrimaryButton(
+            label: saving ? confirmSavingLabel : confirmLabel,
+            onPressed: saving || !enabled ? null : onConfirm,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// 页面级加载占位（提醒/记录/我的三页统一使用，§5.2）。
 class LoadingPage extends StatelessWidget {

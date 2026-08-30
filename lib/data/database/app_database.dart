@@ -136,9 +136,8 @@ class MaintenanceItems extends Table {
 /// 保养记录主表。
 /// carId 普通索引：记录页按车全量拉取记录走它（原全表扫描，R16）。
 @TableIndex(name: 'idx_maintenance_records_car_id', columns: {#carId})
-/// ⚠ 唯一约束 {carId, date}：一辆车一天只有一条记录；
-/// "同日不同项目想存多条"会撞约束抛 SqliteException（业务层另有
-/// "同日同项目不可重复"校验，两层口径不同，见审查报告 R4）。
+/// 唯一约束 {carId, date}：一辆车一天只有一条记录（R4 收紧后与业务层
+/// "同日一条"校验口径一致，见审查报告 R4）。
 @DataClassName('MaintenanceRecordRow')
 class MaintenanceRecords extends Table {
   IntColumn get id => integer()();

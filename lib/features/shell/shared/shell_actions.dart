@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/notifications/lunio_notification_service.dart';
 import '../../../domain/entities/car.dart';
 import 'modal_feedback.dart';
 
@@ -37,6 +38,12 @@ Future<void> setThemeModePreference(
 
 /// 删除车辆：先弹确认对话框，确认后走 Repository 的级联删除事务，
 /// 再失效车辆类 provider（appliedCar 回退逻辑在 Repository 内处理）。
+///
+/// 通知同步代数 bump + 显式取消 8000/8900 系系统通知（R1）：同步控制器
+/// 在无车时（car == null）直接短路不走重排，删除最后一辆车后旧调度
+/// 无人清理，必须在此显式取消；非最后一辆车的场景取消后也会随
+/// invalidate 触发的重排恢复，代价可忽略。停车 9001/9002 与车辆无关，
+/// 不在此处理（由倒计时保存/结束/清空数据路径负责）。
 Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   final confirmed = await showConfirmDialog(
     context: context,
@@ -47,6 +54,8 @@ Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   if (confirmed != true || car.id == null) {
     return;
   }
+  ref.read(notificationSyncGenerationProvider.notifier).bump();
   await ref.read(lunioRepositoryProvider).deleteCar(car.id!);
+  await LunioNotificationService.instance.cancelLunioNotifications();
   invalidateVehicleProviders(ref);
 }

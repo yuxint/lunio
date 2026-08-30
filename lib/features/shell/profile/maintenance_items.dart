@@ -83,19 +83,12 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(label: '上一步', onPressed: onBack),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: saving ? '保存中' : '保存车辆',
-                onPressed: onSubmit,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          cancelLabel: '上一步',
+          confirmLabel: '保存车辆',
+          onCancel: onBack,
+          onConfirm: onSubmit,
+          saving: saving,
         ),
       ],
     );
@@ -153,8 +146,6 @@ Future<List<VehicleDefaultMaintenanceItem>?> showRestoreDefaultItemsSheet(
 }) {
   return showLunioModalSheet<List<VehicleDefaultMaintenanceItem>>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) {
       return PrototypeSheetFrame(
         title: '恢复默认项目',
@@ -222,30 +213,33 @@ class RestoreDefaultItemsSheetState extends State<RestoreDefaultItemsSheet> {
               children: [
                 // 下标循环：行距判断用 index 而非实体 ==（重复实体时
                 // == 比较会让多个"最后一项"都丢行距，R24）。
-                for (var index = 0; index < widget.defaultItems.length; index++)
-                  ...[
-                    RestoreDefaultItemRow(
-                      item: widget.defaultItems[index],
-                      selected: selectedNames.contains(
-                        _normalizeItemName(widget.defaultItems[index].itemName),
-                      ),
-                      enabled: !existingNames.contains(
-                        _normalizeItemName(widget.defaultItems[index].itemName),
-                      ),
-                      onChanged: (selected) => setState(() {
-                        final key = _normalizeItemName(
-                          widget.defaultItems[index].itemName,
-                        );
-                        if (selected) {
-                          selectedNames.add(key);
-                        } else {
-                          selectedNames.remove(key);
-                        }
-                      }),
+                for (
+                  var index = 0;
+                  index < widget.defaultItems.length;
+                  index++
+                ) ...[
+                  RestoreDefaultItemRow(
+                    item: widget.defaultItems[index],
+                    selected: selectedNames.contains(
+                      _normalizeItemName(widget.defaultItems[index].itemName),
                     ),
-                    if (index != widget.defaultItems.length - 1)
-                      const SizedBox(height: 8),
-                  ],
+                    enabled: !existingNames.contains(
+                      _normalizeItemName(widget.defaultItems[index].itemName),
+                    ),
+                    onChanged: (selected) => setState(() {
+                      final key = _normalizeItemName(
+                        widget.defaultItems[index].itemName,
+                      );
+                      if (selected) {
+                        selectedNames.add(key);
+                      } else {
+                        selectedNames.remove(key);
+                      }
+                    }),
+                  ),
+                  if (index != widget.defaultItems.length - 1)
+                    const SizedBox(height: 8),
+                ],
               ],
             ),
           ),
@@ -376,8 +370,6 @@ void showMaintenanceItemsSheet(
 }) {
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) => MaintenanceItemsSheetRoute(car: car),
   );
 }
@@ -440,6 +432,7 @@ class MaintenanceItemsSheetContentState
   bool itemsLoading = false;
   String? itemsError;
   int? loadedCarId;
+
   /// 加载代数：只接受最新一次加载的结果（防快速切换车辆时旧结果覆盖）。
   int loadGeneration = 0;
 
@@ -825,22 +818,11 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(
-                label: '取消',
-                onPressed: saving ? null : () => Navigator.of(context).pop(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: saving ? '保存中' : '保存项目',
-                onPressed: saving ? null : _submit,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          confirmLabel: '保存项目',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: _submit,
+          saving: saving,
         ),
       ],
     );
@@ -907,7 +889,6 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
   }
 }
 
-
 /// ★ 落库版项目表单 sheet（项目 sheet / 记录表单行内新增用）：
 /// 新增走 saveMaintenanceItem、编辑走 updateMaintenanceItem →
 /// invalidate → pop(true)（true=已保存，调用方据此刷新）。
@@ -919,8 +900,6 @@ Future<bool?> showMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) {
       return PrototypeSheetFrame(
         title: item == null ? '新增保养项目' : '编辑保养项目',
@@ -955,8 +934,6 @@ Future<bool?> showDraftMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) {
       return PrototypeSheetFrame(
         title: item.name.isEmpty ? '新增保养项目' : '编辑保养项目',

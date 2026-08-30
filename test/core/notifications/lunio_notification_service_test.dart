@@ -266,6 +266,44 @@ void main() {
       );
     },
   );
+
+  test('exact alarm denial degrades reminders to inexact scheduling', () async {
+    // 精确闹钟权限被拒：canScheduleExactNotifications false 且用户
+    // 拒绝授权 → 请求返回 false，重排降级为 inexactAllowWhileIdle
+    // （§7 测试缺口：此前 mock 恒 true，降级分支无覆盖）。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+          notificationCalls.add(call);
+          return switch (call.method) {
+            'initialize' => true,
+            'canScheduleExactNotifications' => false,
+            'requestExactAlarmsPermission' => false,
+            _ => null,
+          };
+        });
+
+    final granted = await LunioNotificationService.instance
+        .requestExactAlarmPermission();
+    expect(granted, isFalse);
+
+    await LunioNotificationService.instance.rescheduleNotifications([
+      const LunioScheduledNotification(
+        id: 8000,
+        title: '保养提醒',
+        body: '测试车辆有保养项目到期。',
+        repeatFrequency: ReminderRepeatFrequency.weekly,
+        occurrenceCount: 1,
+      ),
+    ], exactAlarm: granted);
+
+    final scheduledCall = notificationCalls.singleWhere(
+      (call) => call.method == 'zonedSchedule',
+    );
+    final specifics =
+        (scheduledCall.arguments as Map<Object?, Object?>)['platformSpecifics']
+            as Map<Object?, Object?>;
+    expect(specifics['scheduleMode'], 'inexactAllowWhileIdle');
+  });
 }
 
 String _formatClock(DateTime dateTime) {

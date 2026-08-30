@@ -1208,6 +1208,60 @@ void main() {
     );
   });
 
+  test('same car and date rejects a record with different items too', () async {
+    // R4 收紧：同车同日只允许一条记录，即使项目不同也拦截
+    // （此前业务层放行、插入时撞表级唯一约束抛 SqliteException）。
+    final (carId, firstItemId) = await seedCarAndItem();
+    final secondItemId = await repository.saveMaintenanceItem(
+      MaintenanceItem(
+        carsId: carId,
+        name: '机滤',
+        enabled: true,
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: 6,
+        notOverdueUpperLimit: 100,
+        overdueUpperLimit: 125,
+        sortOrder: 2,
+        sync: sync,
+      ),
+    );
+    final first = MaintenanceRecord(
+      carId: carId,
+      date: const LocalDate(2026, 5, 19),
+      itemIds: [firstItemId],
+      costCents: 10000,
+      mileageKm: 12000,
+      sync: sync,
+    );
+    final differentItemsSameDay = MaintenanceRecord(
+      carId: carId,
+      date: const LocalDate(2026, 5, 19),
+      itemIds: [secondItemId],
+      costCents: 20000,
+      mileageKm: 12500,
+      sync: sync,
+    );
+
+    await repository.saveMaintenanceRecord(first);
+
+    await expectLater(
+      repository.saveMaintenanceRecord(differentItemsSameDay),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          '这辆车当天已有保养记录，请编辑原记录',
+        ),
+      ),
+    );
+    expect(
+      await repository.listMaintenanceRecordsForCar(carId),
+      hasLength(1),
+    );
+  });
+
   test('lists updates and deletes maintenance records', () async {
     final (carId, itemId) = await seedCarAndItem();
     final recordId = await repository.saveMaintenanceRecord(

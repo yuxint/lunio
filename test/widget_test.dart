@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1048,9 +1049,13 @@ void main() {
             .whereType<int>()
             .toSet();
         expect(cancelledIds, containsAll([9001, 9002]));
+        // R10 收紧：取消只发 16 个在用 id，不再整段扫 8000~8999。
         expect(
           cancelledIds.where((id) => id >= 8000 && id < 9000),
-          isNotEmpty,
+          <int>{
+            for (var index = 0; index < 8; index++) 8000 + index,
+            for (var index = 0; index < 8; index++) 8900 + index,
+          },
         );
         expect(find.text('已清空数据'), findsOneWidget);
         expect(await database.select(database.cars).get(), isEmpty);
@@ -1080,6 +1085,147 @@ void main() {
       }
     },
   );
+
+  testWidgets('deleting the last car cancels reminder notifications', (
+    tester,
+  ) async {
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+    try {
+      final database = await pumpApp(
+        tester,
+        dateContext: AppDateContext(readSystemNow: () => DateTime.now()),
+        systemNotificationsEnabled: true,
+      );
+      await createDefaultCar(tester);
+
+      // 车辆创建触发的首轮调度结束后清空调用记录，只看删除动作的取消。
+      await tester.pump(const Duration(milliseconds: 300));
+      notificationCalls.clear();
+
+      await tester.tap(find.widgetWithText(TextButton, '删除').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '删除'));
+      await tester.pumpAndSettle();
+
+      // R1：同步控制器在无车时短路不走重排，删除动作必须显式取消
+      // 8000/8900 系旧调度，否则最后一辆车删完后通知残留。
+      final cancelledIds = notificationCalls
+          .where((call) => call.method == 'cancel')
+          .map((call) => (call.arguments as Map<Object?, Object?>)['id'])
+          .whereType<int>()
+          .toSet();
+      expect(
+        cancelledIds,
+        containsAll(<int>[
+          for (var index = 0; index < 8; index++) 8000 + index,
+          for (var index = 0; index < 8; index++) 8900 + index,
+        ]),
+      );
+      expect(await database.select(database.cars).get(), isEmpty);
+    } finally {
+      cleanupNotifications();
+    }
+  });
+
+  testWidgets('notification sync queues a pending reschedule instead of '
+      'dropping it', (tester) async {
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+    try {
+      final database = await pumpApp(
+        tester,
+        systemNotificationsEnabled: true,
+      );
+      await createDefaultCar(tester);
+
+      // 首轮调度稳定结束后清空调用记录，只看本用例触发的重排。
+      await tester.pump(const Duration(milliseconds: 300));
+      notificationCalls.clear();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp)),
+      );
+      final repository = testRepository(database);
+      final car = (await repository.listCars()).first;
+      final items = await repository.listMaintenanceItemsForCar(car.id!);
+
+      // 闸门：第一轮重排的第一个 cancel 挂起不返回，制造"重排仍在
+      // 进行中"的时间窗口（R3 竞态的复现条件）。
+      final gate = Completer<void>();
+      var gateUsed = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(notificationsChannel, (call) async {
+            if (call.method == 'cancel' && !gateUsed) {
+              gateUsed = true;
+              notificationCalls.add(call);
+              await gate.future;
+              return null;
+            }
+            notificationCalls.add(call);
+            return switch (call.method) {
+              'initialize' => true,
+              'requestNotificationsPermission' => true,
+              'areNotificationsEnabled' => true,
+              'canScheduleExactNotifications' => true,
+              'requestExactAlarmsPermission' => true,
+              _ => null,
+            };
+          });
+
+      // 变更 1：保存一条记录（数据签名变化）→ 第一轮重排启动并卡在闸门。
+      await repository.saveMaintenanceRecord(
+        MaintenanceRecord(
+          carId: car.id!,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: [items.first.id!],
+          costCents: 10000,
+          mileageKm: 13000,
+          sync: car.sync,
+        ),
+      );
+      container.invalidate(appliedCarRecordsProvider);
+      for (var i = 0; i < 30 && notificationCalls.isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(
+        notificationCalls.map((call) => call.method),
+        contains('cancel'),
+      );
+
+      // 变更 2（第一轮仍未结束）：再保存一条不同日期的记录 → 新签名
+      // 只能排队等待，不允许被丢弃（R3）。
+      await repository.saveMaintenanceRecord(
+        MaintenanceRecord(
+          carId: car.id!,
+          date: const LocalDate(2026, 5, 18),
+          itemIds: [items.first.id!],
+          costCents: 20000,
+          mileageKm: 13100,
+          sync: car.sync,
+        ),
+      );
+      container.invalidate(appliedCarRecordsProvider);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // 打开闸门 → 第一轮收尾 → finally 里按 pending 用最新数据重跑一轮。
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      // R10 后每轮重排精确取消 16 个在用 id：两轮都发生 → cancel 恰好
+      // 32 次；若第二轮被丢弃则只有 16 次。
+      final cancelCount = notificationCalls
+          .where((call) => call.method == 'cancel')
+          .length;
+      expect(cancelCount, 32);
+      expect(
+        await repository.listMaintenanceRecordsForCar(car.id!),
+        hasLength(2),
+      );
+    } finally {
+      cleanupNotifications();
+    }
+  });
 
   testWidgets('add car first step does not persist data', (tester) async {
     final database = await pumpApp(tester);
@@ -1817,10 +1963,6 @@ void main() {
       final repository = testRepository(database);
       expect(
         await repository.getPreferenceValue('inAppNotificationsEnabled'),
-        'true',
-      );
-      expect(
-        await repository.getPreferenceValue('maintenanceDueEnabled'),
         'true',
       );
       expect(

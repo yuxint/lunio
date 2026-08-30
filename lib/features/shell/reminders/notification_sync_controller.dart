@@ -187,8 +187,7 @@ class NotificationSyncController {
       );
     }
     final inAppSignature =
-        '${settings.inAppNotificationsEnabled}:'
-        '${settings.maintenanceDueEnabled}:$dataSignature';
+        '${settings.inAppNotificationsEnabled}:$dataSignature';
     if (_inAppNotificationSignature != inAppSignature) {
       _inAppNotificationSignature = inAppSignature;
       _showDueInAppNotifications(
@@ -412,7 +411,6 @@ class NotificationSyncController {
       final repository = ref.read(lunioRepositoryProvider);
       final dueNotices = <bridge.ReminderViewData>[];
       for (final notice in bridge.maintenanceNotices(
-        settings: settings,
         car: car,
         items: items,
         records: records,

@@ -201,7 +201,8 @@ Future<void> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
     title: '恢复数据',
-    message: '恢复会先清空本地车辆、保养项目、保养记录，再写入备份文件中的数据。'
+    message:
+        '恢复会先清空本地车辆、保养项目、保养记录，再写入备份文件中的数据。'
         '主题、通知等偏好设置会保留。该操作不可撤销。',
     confirmLabel: '恢复',
   );
@@ -259,7 +260,8 @@ Future<void> clearAllData(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
     title: '清空数据',
-    message: '确定清空本地车辆、保养项目、保养记录和偏好设置？'
+    message:
+        '确定清空本地车辆、保养项目、保养记录和偏好设置？'
         '默认车辆模型与默认保养项目目录会保留。该操作不可撤销。',
     confirmLabel: '清空',
   );
@@ -312,15 +314,10 @@ Future<void> showNotificationSettingsSheet(
   );
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: true,
     builder: (sheetContext) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-          18,
-          0,
-          18,
-          MediaQuery.of(sheetContext).viewInsets.bottom + 24,
-        ),
+      return PrototypeSheetFrame(
+        title: '通知提醒',
+        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
         child: NotificationSettingsForm(
           initialSettings: initialSettings,
           onOpenSystemSettings: () async {
@@ -358,7 +355,7 @@ Future<void> showNotificationSettingsSheet(
 }
 
 /// 查询系统真实通知开关并回写偏好（用户可能在系统设置里改过）。
-/// 查询失败静默回退"偏好当前值"（吞异常，R14）。
+/// 查询失败打日志并回退"偏好当前值"（R14：不再静默吞异常）。
 Future<bool> refreshSystemNotificationPreference(WidgetRef ref) async {
   final repository = ref.read(lunioRepositoryProvider);
   final currentValue = await repository.getPreferenceValue(
@@ -375,29 +372,29 @@ Future<bool> refreshSystemNotificationPreference(WidgetRef ref) async {
       invalidatePreferenceProviders(ref);
     }
     return enabled;
-  } catch (_) {
+  } catch (error) {
+    debugPrint('settings_data: 查询系统通知开关失败($error)，回退为偏好当前值');
     return currentValue != 'false';
   }
 }
 
-/// 保存通知设置：一个事务内批量写 4 个偏好 key（R27）。
-/// ⚠ 表单里没有"保养到期提醒"开关，maintenanceDueEnabled 由表单硬编码
-/// true 传入（用户无法关闭到期提醒，R5）。
+/// 保存通知设置：一个事务内批量写 3 个偏好 key（R27）。
+/// 保养到期提醒是产品核心能力，设计上不提供关闭入口（R5，原
+/// maintenanceDueEnabled 偏好已移除）。
 Future<void> saveNotificationSettings(
   WidgetRef ref,
   LunioNotificationSettings settings,
 ) async {
   await ref.read(lunioRepositoryProvider).updatePreferenceValues({
-    'systemNotificationsEnabled': settings.systemNotificationsEnabled.toString(),
+    'systemNotificationsEnabled': settings.systemNotificationsEnabled
+        .toString(),
     'inAppNotificationsEnabled': settings.inAppNotificationsEnabled.toString(),
-    'maintenanceDueEnabled': settings.maintenanceDueEnabled.toString(),
     'maintenanceDueRepeat': settings.dueRepeatFrequency.value,
   });
 }
 
 /// 通知表单：状态行 + 应用内通知开关 + 到期重复频率三段（每周/每 2 周/
-/// 每月）。提交构造 LunioNotificationSettings（⚠ maintenanceDueEnabled
-/// 硬编码 true，见 saveNotificationSettings 注释）。
+/// 每月）。提交构造 LunioNotificationSettings。
 class NotificationSettingsForm extends StatefulWidget {
   const NotificationSettingsForm({
     required this.initialSettings,
@@ -437,61 +434,45 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('通知提醒', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 14),
-          SystemNotificationStatusRow(
-            enabled: widget.initialSettings.systemNotificationsEnabled,
-            onOpenSettings: saving ? null : widget.onOpenSystemSettings,
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('应用内通知'),
-            value: inAppNotificationsEnabled,
-            onChanged: saving
-                ? null
-                : (value) => setState(() => inAppNotificationsEnabled = value),
-          ),
-          const SizedBox(height: 6),
-          Text('到期后提醒次数', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 8),
-          LunioSegmentedControl(
-            values: dueRepeatOptions
-                .map((frequency) => frequency.label)
-                .toList(),
-            selectedIndex: dueRepeatOptions.contains(dueRepeatFrequency)
-                ? dueRepeatOptions.indexOf(dueRepeatFrequency)
-                : 0,
-            onSelected: saving
-                ? (_) {}
-                : (index) => setState(
-                    () => dueRepeatFrequency = dueRepeatOptions[index],
-                  ),
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: LunioSecondaryButton(
-                  label: '取消',
-                  onPressed: saving ? null : () => Navigator.of(context).pop(),
+    // 标题与滚动容器由 PrototypeSheetFrame 提供，这里只出内容列。
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SystemNotificationStatusRow(
+          enabled: widget.initialSettings.systemNotificationsEnabled,
+          onOpenSettings: saving ? null : widget.onOpenSystemSettings,
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('应用内通知'),
+          value: inAppNotificationsEnabled,
+          onChanged: saving
+              ? null
+              : (value) => setState(() => inAppNotificationsEnabled = value),
+        ),
+        const SizedBox(height: 6),
+        Text('到期后提醒次数', style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 8),
+        LunioSegmentedControl(
+          values: dueRepeatOptions.map((frequency) => frequency.label).toList(),
+          selectedIndex: dueRepeatOptions.contains(dueRepeatFrequency)
+              ? dueRepeatOptions.indexOf(dueRepeatFrequency)
+              : 0,
+          onSelected: saving
+              ? (_) {}
+              : (index) => setState(
+                  () => dueRepeatFrequency = dueRepeatOptions[index],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton(
-                  onPressed: saving ? null : _submit,
-                  child: Text(saving ? '保存中...' : '保存设置'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 18),
+        LunioFormActions(
+          confirmLabel: '保存设置',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: _submit,
+          saving: saving,
+        ),
+      ],
     );
   }
 
@@ -504,7 +485,6 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
           systemNotificationsEnabled:
               widget.initialSettings.systemNotificationsEnabled,
           inAppNotificationsEnabled: inAppNotificationsEnabled,
-          maintenanceDueEnabled: true,
           dueRepeatFrequency: dueRepeatFrequency,
         ),
       );
@@ -586,15 +566,11 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
       );
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: true,
     builder: (context) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-          18,
-          0,
-          18,
-          MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
+      return PrototypeSheetFrame(
+        title: '手动日期',
+        subtitle: '开启后，保养提醒里的“今天”会使用该日期。',
+        bottomInset: MediaQuery.of(context).viewInsets.bottom,
         child: ManualDateForm(
           initialDate: initialDate,
           fallbackDate: fallbackDate,
@@ -659,13 +635,6 @@ class ManualDateFormState extends State<ManualDateForm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('手动日期', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        Text(
-          '开启后，保养提醒里的“今天”会使用该日期。',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 14),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('启用手动日期'),
@@ -686,22 +655,11 @@ class ManualDateFormState extends State<ManualDateForm> {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(
-                label: '取消',
-                onPressed: saving ? null : () => Navigator.of(context).pop(),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: saving ? '保存中' : '保存日期',
-                onPressed: saving ? null : _submit,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          confirmLabel: '保存日期',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: _submit,
+          saving: saving,
         ),
       ],
     );

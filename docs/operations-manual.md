@@ -69,7 +69,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 步骤 | 代码位置 | 做了什么 |
 |---|---|---|
 | 1 | `lib/main.dart:20-37 → main()` | 初始化引擎绑定 → **await 通知服务初始化**（时区+插件，`:33`）→ `runApp(ProviderScope(LunioApp))` |
-| 2 | `lib/core/notifications/lunio_notification_service.dart:78 → initialize()` | 时区数据库 + 本地时区（失败回退 UTC）+ 插件初始化（iOS 不在此弹权限） |
+| 2 | `lib/core/notifications/lunio_notification_service.dart:78 → initialize()` | 时区数据库 + 本地时区（失败回退 Asia/Shanghai 并打日志，R34/R14）+ 插件初始化（iOS 不在此弹权限） |
 | 3 | `lib/app/lunio_app.dart:31 → LunioApp.build` | watch 主题偏好 → `MaterialApp.router`，路由挂全局单例 `appRouter` |
 | 4 | `lib/app/app_router.dart:26 → appRouter` | 三条平级路由，初始 `/reminders`，每条渲染 `AppShell(selectedIndex: n)` |
 | 5 | `lib/features/shell/app_shell.dart:34 → AppShell` | 主壳首帧 build：watch 全部 provider（此时数据库才真正打开） |
@@ -184,7 +184,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 2 | `_buildRecordDraft()`（:660 附近）+ `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项）→ 构造记录草稿 → 为每个选中项目建间隔输入草稿 | — |
 | 3 | 第二步 `_buildIntervalStep` | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步） | — |
 | 4 | `_submit()` → `_buildItemUpdates()` | 间隔校验；**有变化的项目**才生成 update 实体 | — |
-| 5 | onSubmit（sheet 入口处） | 新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:667）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:721)。**单事务**：项目归属校验 → 同日唯一校验（`:1227 → _ensureRecordIsUnique`，重复抛中文文案）→ 插/改主表+关联表 → 车辆里程只增同步 → 更新项目间隔 | `maintenance_records` + `maintenance_record_items`；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |
+| 5 | onSubmit（sheet 入口处） | 新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:667）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:721)。**单事务**：项目归属校验 → 同日唯一校验（`:1227 → _ensureRecordIsUnique`，**R4 收紧后同车同日只允许一条记录**，已有记录即抛"这辆车当天已有保养记录，请编辑原记录"，不再区分项目是否相同）→ 插/改主表+关联表 → 车辆里程只增同步 → 更新项目间隔 | `maintenance_records` + `maintenance_record_items`；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |
 | 6 | `invalidateVehicleProviders` + 关 sheet | 记录页/提醒页/通知签名全部刷新 | — |
 
 ### 4.3 删除记录
@@ -221,7 +221,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 #### 5.1.3 删除车辆
 
-车辆卡"删除" → `shell_actions.dart:47 → deleteCar` → 确认框 → `repository.deleteCar`（lunio_repository.dart:334，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车）→车辆；删完应用车辆指向剩余第一辆，无剩余清空）→ invalidate。
+车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → `bump()` 通知同步代数 → `repository.deleteCar`（lunio_repository.dart，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车）→车辆；删完应用车辆指向剩余第一辆，无剩余清空）→ **显式 `cancelLunioNotifications()` 取消保养/里程 8000/8900 系系统通知**（R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须在此显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001/9002 与车辆无关，不在此处理）→ invalidate。
 
 #### 5.1.4 切换当前应用车辆
 
@@ -281,9 +281,9 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 1. 打开前 `await ref.read(notificationSettingsProvider.future)`（加载失败 toast"设置加载失败"并返回，杜绝 loading 期默认值覆盖真实设置）；
 2. 打开时 `refreshSystemNotificationPreference` 向系统查真实开关并回写偏好；
 3. 表单：系统通知状态行（只读）+ "系统设置"跳转（`NativeNotificationSettings` → 原生设置页，跳转后 sheet 关闭）+ 应用内通知开关 + 到期重复频率三段（每周/每 2 周/每月）；
-4. 保存 → `saveNotificationSettings` → `repository.updatePreferenceValues`（**一个事务内批量写 4 个偏好 key**）→ `invalidatePreferenceProviders` → 同步控制器签名变化触发系统通知重排。
+4. 保存 → `saveNotificationSettings` → `repository.updatePreferenceValues`（**一个事务内批量写 3 个偏好 key**）→ `invalidatePreferenceProviders` → 同步控制器签名变化触发系统通知重排。
 
-> ⚠ 已知问题：`maintenanceDueEnabled` 提交时硬编码 true（R5，不在本轮修复范围）。
+> 产品口径：保养到期提醒是 App 核心能力，**不提供用户关闭入口**（R5 确认；原 `maintenanceDueEnabled` 偏好已于 2026-08-29 移除）。
 
 ### 5.7 手动日期（开发者模式专属）
 
@@ -329,8 +329,10 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
              │    └─ 里程更新到期且未 snooze → id 8900（9:05 错峰）
              └─ Android 申请精确闹钟 → reschedule 前再比对一次同步代数
                   → rescheduleNotifications（lunio_notification_service.dart：
-                     先 cancel 8000-8999，再每条通知排 8 次重复，
-                     避开停车到点时刻 ±5 分钟步进错峰；monthly 步进带月末钳制）
+                     先精确取消 16 个在用 id（8000-8007/8900-8907，R10 收紧），
+                     再每条通知排 8 次重复，
+                     避开停车到点时刻 ±5 分钟步进错峰；月/日步进按日历字段
+                     计算（R34：月末钳制 + 不做 24 小时累加））
       否 → 什么都不做
 ```
 
@@ -372,7 +374,6 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | `systemNotificationsEnabled` | 系统通知开关 | 权限链 / 通知设置 / 停车保存被拒时 |
 | `systemNotificationPermissionRequested` | 是否请求过权限 | 首启权限链 / 停车保存 |
 | `inAppNotificationsEnabled` | 应用内弹窗开关 | 通知设置 |
-| `maintenanceDueEnabled` | 保养到期提醒开关（**当前被硬编码 true**） | 通知设置 |
 | `maintenanceDueRepeat` | 到期重复频率 | 通知设置 |
 | `developerModeEnabled` | 开发者模式 | 版本连点 |
 | `manualDateEnabled` / `manualDate` | 手动日期 | 手动日期 sheet / 关开发者模式 |

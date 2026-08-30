@@ -175,54 +175,50 @@ void showReminderRecordDetail(BuildContext context, ReminderViewData row) {
   final record = row.latestRecord;
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: true,
     builder: (context) {
       final tokens = Theme.of(context).extension<LunioTokens>()!;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-        child: LunioSheetScaffold(
-          title: row.title,
-          subtitle: row.badge == '正常' ? '保养状态正常' : '当前状态：${row.badge}',
-          child: record == null
-              ? Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: tokens.surface2,
-                    borderRadius: BorderRadius.circular(tokens.radiusLarge),
-                  ),
-                  child: Text(
-                    '暂无上次保养记录',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: tokens.muted,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ReminderRecordMetric(
-                            label: '上次保养日期',
-                            value: record.date.toString(),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ReminderRecordMetric(
-                            label: '上次保养里程',
-                            value: '${formatNumber(record.mileageKm)} km',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+      return PrototypeSheetFrame(
+        title: row.title,
+        subtitle: row.badge == '正常' ? '保养状态正常' : '当前状态：${row.badge}',
+        child: record == null
+            ? Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: tokens.surface2,
+                  borderRadius: BorderRadius.circular(tokens.radiusLarge),
                 ),
-        ),
+                child: Text(
+                  '暂无上次保养记录',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: tokens.muted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ReminderRecordMetric(
+                          label: '上次保养日期',
+                          value: record.date.toString(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ReminderRecordMetric(
+                          label: '上次保养里程',
+                          value: '${formatNumber(record.mileageKm)} km',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
       );
     },
   );

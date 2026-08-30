@@ -16,6 +16,7 @@
 //  3. import as domain：给同名实体加命名空间，避免与 Drift 生成的 Row 类
 //     同名冲突（≈ Java 里两个同名类用全限定名区分）。
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:drift/drift.dart';
 
@@ -660,7 +661,6 @@ class LunioRepository {
       await _ensureRecordIsUnique(
         carId: record.carId,
         date: record.date,
-        itemIds: uniqueItemIds,
       );
 
       return _insertMaintenanceRecordInTransaction(
@@ -685,7 +685,6 @@ class LunioRepository {
       await _ensureRecordIsUnique(
         carId: record.carId,
         date: record.date,
-        itemIds: uniqueItemIds,
       );
 
       final recordId = await _insertMaintenanceRecordInTransaction(
@@ -715,7 +714,6 @@ class LunioRepository {
       await _ensureRecordIsUnique(
         carId: record.carId,
         date: record.date,
-        itemIds: uniqueItemIds,
         excludingRecordId: recordId,
       );
 
@@ -743,7 +741,6 @@ class LunioRepository {
       await _ensureRecordIsUnique(
         carId: record.carId,
         date: record.date,
-        itemIds: uniqueItemIds,
         excludingRecordId: recordId,
       );
 
@@ -1072,7 +1069,8 @@ class LunioRepository {
   }
 
   /// 读停车倒计时（偏好里的 JSON）。
-  /// ⚠ JSON 损坏时 catch(_) 静默返回 null——坏数据留在库里无提示（R14）。
+  /// JSON 损坏时打日志并返回 null（R14：不再静默吞异常；坏数据仍留在
+  /// 库里，由下次保存倒计时覆盖修复）。
   Future<domain.ParkingCountdown?> getParkingCountdown() async {
     final value = await getPreferenceValue(_parkingCountdownPreferenceKey);
     if (value == null) {
@@ -1081,7 +1079,11 @@ class LunioRepository {
     try {
       final json = jsonDecode(value) as Map<String, Object?>;
       return domain.ParkingCountdown.fromJson(json);
-    } catch (_) {
+    } catch (error) {
+      developer.log(
+        'LunioRepository: 停车倒计时偏好 JSON 损坏，按无倒计时处理：$error',
+        name: 'lunio.repository',
+      );
       return null;
     }
   }
@@ -1283,16 +1285,12 @@ class LunioRepository {
   }
 
   /// 同日唯一性校验（业务层规则，先于数据库约束给出友好文案）：
-  ///  - 同车同日已有记录且包含本次任一项目 → "当天已保存过相同保养项目"；
-  ///  - 同车同日已有记录但项目不重叠 → "当天已有保养记录，请编辑原记录"。
-  /// ⚠ 第二条意味着业务层只允许"同日多条不重叠记录"，但表级唯一约束
-  ///    {carId,date} 实际只允许一天一条——不重叠的第二条会插主表时撞
-  ///    SqliteException（由 UI 层翻译成通用文案），两层口径不一致（R4）。
+  /// 同车同日只允许一条保养记录（R4 收紧，与表级唯一约束 {carId,date}
+  /// 对齐），已有记录时提示用户编辑原记录。
   /// excludingRecordId：编辑场景跳过自身。
   Future<void> _ensureRecordIsUnique({
     required int carId,
     required LocalDate date,
-    required List<int> itemIds,
     int? excludingRecordId,
   }) async {
     final existingRecords =
@@ -1305,21 +1303,9 @@ class LunioRepository {
                       : row.id.equals(excludingRecordId).not()),
             ))
             .get();
-    if (existingRecords.isEmpty) {
-      return;
+    if (existingRecords.isNotEmpty) {
+      throw StateError('这辆车当天已有保养记录，请编辑原记录');
     }
-    final existingRecordIds = existingRecords.map((row) => row.id).toList();
-    final duplicateItems =
-        await (database.select(database.maintenanceRecordItems)..where(
-              (row) =>
-                  row.maintenanceRecordId.isIn(existingRecordIds) &
-                  row.itemId.isIn(itemIds),
-            ))
-            .get();
-    if (duplicateItems.isNotEmpty) {
-      throw StateError('这辆车当天已经保存过相同保养项目');
-    }
-    throw StateError('这辆车当天已有保养记录，请编辑原记录');
   }
 
   /// 事务内更新记录：主表 write → 删掉全部关联行 → 按新 itemIds 重插

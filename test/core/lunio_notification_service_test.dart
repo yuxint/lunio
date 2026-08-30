@@ -1,10 +1,12 @@
-// 通知服务单元测试：初始化失败降级（R15）与月度重复的月末钳制（R18）。
+// 通知服务单元测试：初始化失败降级（R15）、月度重复的月末钳制（R18）、
+// 日历步进与时区回退（R34）。
 //
 // 说明：
 //  - 服务是进程级单例，每个用例先 resetForTest 重置状态；
 //  - "初始化失败"用 mock 通道对 initialize 抛 PlatformException 模拟；
 //  - 月末钳制直接测 nextMonthlyOccurrence（visibleForTesting 静态方法），
-//    并通过 rescheduleNotifications 的通道参数做一次集成断言。
+//    并通过 rescheduleNotifications 的通道参数做一次集成断言；
+//  - 时区回退用 mock 时区通道抛错模拟，断言 tz.local 落在 Asia/Shanghai。
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -163,5 +165,61 @@ void main() {
     service.markInitializationFailed();
     expect(await service.notificationsEnabled(), isFalse);
     expect(await service.requestNotificationPermission(), isFalse);
+  });
+
+  test('addCalendarDays steps by calendar fields keeping wall clock', () {
+    // R34：日/周步进不再用 24 小时 Duration 相加，改为字段构造——
+    // 墙钟时刻（时/分）保持不变，跨月/跨年由构造器归一化。
+    // 月末进位：1 月 31 日 + 1 天 → 2 月 1 日。
+    final jan31 = tz.TZDateTime(tz.local, 2026, 1, 31, 9, 5);
+    final feb1 = LunioNotificationService.addCalendarDays(jan31, 1);
+    expect(feb1.year, 2026);
+    expect(feb1.month, 2);
+    expect(feb1.day, 1);
+    expect(feb1.hour, 9);
+    expect(feb1.minute, 5);
+
+    // 年末进位：12 月 31 日 + 1 天 → 次年 1 月 1 日。
+    final dec31 = tz.TZDateTime(tz.local, 2026, 12, 31, 9);
+    final nextJan1 = LunioNotificationService.addCalendarDays(dec31, 1);
+    expect(nextJan1.year, 2027);
+    expect(nextJan1.month, 1);
+    expect(nextJan1.day, 1);
+
+    // 三周步进：3 月 15 日 + 21 天 → 4 月 5 日（跨月归一化正确）。
+    final mar15 = tz.TZDateTime(tz.local, 2026, 3, 15, 9);
+    final apr5 = LunioNotificationService.addCalendarDays(mar15, 21);
+    expect(apr5.month, 4);
+    expect(apr5.day, 5);
+
+    // 负数回退：3 月 1 日 - 1 天 → 2 月 28 日（平年）。
+    final mar1 = tz.TZDateTime(tz.local, 2026, 3, 1, 9);
+    final back = LunioNotificationService.addCalendarDays(mar1, -1);
+    expect(back.month, 2);
+    expect(back.day, 28);
+  });
+
+  testWidgets('timezone lookup failure falls back to Asia/Shanghai', (
+    tester,
+  ) async {
+    registerAndroidPlatform();
+    // R34 步骤 1：获取系统时区失败时回退 Asia/Shanghai（目标市场时区、
+    // 固定 +8 无夏令时），不再回退 UTC（避免通知时刻整体偏移一个时区差）。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(timezoneChannel, (call) async {
+          throw PlatformException(code: 'unavailable');
+        });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+          return switch (call.method) {
+            'initialize' => true,
+            _ => null,
+          };
+        });
+
+    await LunioNotificationService.instance.initialize();
+    unregisterAndroidPlatform();
+
+    expect(tz.local.name, 'Asia/Shanghai');
   });
 }

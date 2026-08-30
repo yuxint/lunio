@@ -21,12 +21,11 @@ import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 
 /// 底部 sheet：全屏对话框 + 底部对齐内容。
-/// backgroundColor 传 transparent 时不再包默认白底（自绘 sheet 用）。
+/// 不再内建白底表面（§5.3.2 收敛后全项目唯一骨架是 PrototypeSheetFrame），
+/// 调用方在 builder 里用 PrototypeSheetFrame 自带表面与标题。
 Future<T?> showLunioModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
-  bool showDragHandle = false,
-  Color? backgroundColor,
   bool barrierDismissible = true,
 }) {
   return showGeneralDialog<T>(
@@ -43,15 +42,7 @@ Future<T?> showLunioModalSheet<T>({
         alignment: Alignment.bottomCenter,
         barrierDismissible: barrierDismissible,
         useSafeArea: false,
-        child: FractionallySizedBox(
-          widthFactor: 1,
-          child: backgroundColor == Colors.transparent
-              ? child
-              : _LunioDefaultSheetSurface(
-                  showDragHandle: showDragHandle,
-                  child: child,
-                ),
-        ),
+        child: FractionallySizedBox(widthFactor: 1, child: child),
       );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) {
@@ -155,56 +146,6 @@ class _LunioModalContent extends StatelessWidget {
     return Align(
       alignment: alignment,
       child: GestureDetector(onTap: () {}, child: child),
-    );
-  }
-}
-
-/// 默认 sheet 白底：顶部大圆角 + 可选 drag handle + 上投影。
-/// （与 shared_widgets.dart 的 PrototypeSheetFrame 是两套并存的 sheet 骨架）
-class _LunioDefaultSheetSurface extends StatelessWidget {
-  const _LunioDefaultSheetSurface({
-    required this.showDragHandle,
-    required this.child,
-  });
-
-  final bool showDragHandle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Container(
-      decoration: BoxDecoration(
-        color: tokens.surface,
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(tokens.radiusXl),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: tokens.ink.withValues(alpha: 0.18),
-            blurRadius: 54,
-            offset: const Offset(0, -20),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showDragHandle) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: 48,
-              height: 5,
-              decoration: BoxDecoration(
-                color: tokens.line,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-          child,
-        ],
-      ),
     );
   }
 }

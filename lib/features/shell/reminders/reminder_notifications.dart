@@ -41,7 +41,7 @@ class ReminderViewData {
 
   String get title => item.name;
 
-  int get displayPercent => _displayPercentForThresholds(
+  int get displayPercent => MaintenanceRules.displayPercentForThresholds(
     percent: progress.percent,
     notOverdueUpperLimit: item.notOverdueUpperLimit,
     overdueUpperLimit: item.overdueUpperLimit,
@@ -141,7 +141,6 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   final notifications = <LunioScheduledNotification>[];
   final activeMaintenanceNotices = <ReminderViewData>[];
   for (final notice in maintenanceNotices(
-    settings: settings,
     car: car,
     items: items,
     records: records,
@@ -360,11 +359,10 @@ String maintenanceInAppReminderAcknowledgedKey(int itemId) {
       '$itemId';
 }
 
-/// snooze 截止日 = 今天 + 15 天（⚠ 跨 DST 时区天数会漂移，R34）。
+/// snooze 截止日 = 今天 + 15 天（R34：改用 LocalDate 日历加减，
+/// 不再走 24 小时累加）。
 LocalDate snoozeUntilDate(LocalDate today) {
-  return LocalDate.fromDateTime(
-    today.toDateTime().add(const Duration(days: 15)),
-  );
+  return today.addDays(15);
 }
 
 /// 是否处于 snooze 期（截止日 ≥ 今天）。
@@ -405,7 +403,6 @@ Future<bool> isAcknowledgedToday(
 /// 注意：没有任何记录时直接返回空——产品约定"没记录就不产生提醒"
 /// （新车主不会被无历史基线的假超期轰炸）。
 List<ReminderViewData> maintenanceNotices({
-  required LunioNotificationSettings settings,
   required Car car,
   required List<MaintenanceItem> items,
   required List<MaintenanceRecord> records,
@@ -422,18 +419,17 @@ List<ReminderViewData> maintenanceNotices({
   );
   final notices = <ReminderViewData>[];
   for (final row in rows) {
-    if (noticeDueForRow(settings, row)) {
+    if (noticeDueForRow(row)) {
       notices.add(row);
     }
   }
   return notices;
 }
 
-/// 单项是否到期（保养到期开关开着 且 状态为 warning/danger）。
-bool noticeDueForRow(LunioNotificationSettings settings, ReminderViewData row) {
-  if (!settings.maintenanceDueEnabled) {
-    return false;
-  }
+/// 单项是否到期（状态为 warning/danger）。
+/// 保养到期提醒是产品核心能力，无用户开关（R5，原 maintenanceDueEnabled
+/// 偏好已移除）。
+bool noticeDueForRow(ReminderViewData row) {
   return row.progress.status == ReminderStatus.warning ||
       row.progress.status == ReminderStatus.danger;
 }
@@ -511,24 +507,6 @@ String dueOverviewText(
 }
 
 // ---- 文件内私有格式化（§5.2 回收：仅本文件消费的函数不留公共面）----
-
-/// 进度环显示百分比的四舍五入钳制：真实进度没到阈值时，
-/// 显示值不允许"看起来已到阈值"（如 99.6% 显示 99% 而不是 100%）。
-int _displayPercentForThresholds({
-  required double percent,
-  required double notOverdueUpperLimit,
-  required double overdueUpperLimit,
-}) {
-  var display = percent.round();
-  if (percent < notOverdueUpperLimit &&
-      display >= notOverdueUpperLimit.ceil()) {
-    display = notOverdueUpperLimit.ceil() - 1;
-  }
-  if (percent < overdueUpperLimit && display >= overdueUpperLimit.ceil()) {
-    display = overdueUpperLimit.ceil() - 1;
-  }
-  return display;
-}
 
 /// 里程维剩余文案（提醒详情用）。
 String _mileageReminderText(int remainingKm) {

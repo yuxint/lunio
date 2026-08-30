@@ -1,9 +1,12 @@
 // 通知设置实体 + 重复频率枚举（≈ Java 的配置 DTO 与枚举类）。
 //
-// 这四个值持久化在 app_preferences 表的 4 个 key 里
+// 这三个值持久化在 app_preferences 表的 3 个 key 里
 // （systemNotificationsEnabled / inAppNotificationsEnabled /
-//   maintenanceDueEnabled / maintenanceDueRepeat），
+//   maintenanceDueRepeat），
 // 由 notificationSettingsProvider 一次性读出组装成本对象。
+//
+// 产品口径：保养到期提醒是 App 的核心能力，设计上不提供用户关闭入口
+// （原 maintenanceDueEnabled 偏好已于 2026-08-29 移除，见审查报告 R5）。
 //
 // "extension on 枚举"是 Dart 特性：给已有枚举追加方法/静态工厂，
 // Java 对照：枚举里写字段方法，或用工具类。Codec 后缀即编解码器。
@@ -19,7 +22,6 @@ class LunioNotificationSettings {
   const LunioNotificationSettings({
     this.systemNotificationsEnabled = true,
     this.inAppNotificationsEnabled = true,
-    this.maintenanceDueEnabled = true,
     this.dueRepeatFrequency = ReminderRepeatFrequency.weekly,
   });
 
@@ -29,10 +31,6 @@ class LunioNotificationSettings {
   /// 应用内提醒弹窗开关（到期时在 App 前台弹卡片）。
   final bool inAppNotificationsEnabled;
 
-  /// 保养到期提醒开关。注意：当前通知设置表单保存时被硬编码为 true
-  /// （见 settings_data.dart），用户实际无法关闭（审查报告 R5）。
-  final bool maintenanceDueEnabled;
-
   /// 到期后的重复提醒频率（提醒被忽略后隔多久再提醒一次）。
   final ReminderRepeatFrequency dueRepeatFrequency;
 
@@ -40,7 +38,6 @@ class LunioNotificationSettings {
   LunioNotificationSettings copyWith({
     bool? systemNotificationsEnabled,
     bool? inAppNotificationsEnabled,
-    bool? maintenanceDueEnabled,
     ReminderRepeatFrequency? dueRepeatFrequency,
   }) {
     return LunioNotificationSettings(
@@ -48,8 +45,6 @@ class LunioNotificationSettings {
           systemNotificationsEnabled ?? this.systemNotificationsEnabled,
       inAppNotificationsEnabled:
           inAppNotificationsEnabled ?? this.inAppNotificationsEnabled,
-      maintenanceDueEnabled:
-          maintenanceDueEnabled ?? this.maintenanceDueEnabled,
       dueRepeatFrequency: dueRepeatFrequency ?? this.dueRepeatFrequency,
     );
   }

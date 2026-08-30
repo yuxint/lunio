@@ -3,6 +3,8 @@
 > 制定日期：2026-08-26 · 依据：`docs/code-review-report.md`（R1-R38 问题清单）+ 用户澄清的备份/恢复/清空语义
 >
 > **执行状态（2026-08-26）**：批次 A-H 已全部执行完毕（5.3.2/5.3.5 与"明确不做"清单按计划跳过）。验证：flutter analyze 零告警、flutter test 136 条全过、flutter build ios --simulator 成功。各问题修复详情见 `docs/code-review-report.md` 对应条目的【已修复】标注。
+>
+> **后续轮（2026-08-29）**：用户决策后已完成本计划"明确不做"中的大部分遗留项——R1 收尾（删除最后一辆车通知取消）、R4（同日一条校验收紧）、R5（确认为产品设计并删除死字段）、R10（cancel 收敛 16 个 id）、R14（吞异常补日志）、R34（时区回退 Asia/Shanghai + 日历步进）、5.3.2（sheet 骨架统一到 PrototypeSheetFrame）、5.3.5（FormActions 收敛为 LunioFormActions）及 §7 测试缺口补齐；仅 R9/R17/R20/R30/R36 仍维持"不做/仅记录"。
 
 ## 0. 语义澄清结论（备份 / 恢复 / 清空）
 

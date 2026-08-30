@@ -344,24 +344,11 @@ class AddCarFormState extends State<AddCarForm> {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(
-                label: '取消',
-                onPressed: saving ? null : () => Navigator.of(context).pop(),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: saving
-                    ? '保存中'
-                    : widget.submitLabel ?? (isEditing ? '保存车辆' : '保存车辆'),
-                onPressed: saving ? null : _submit,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          confirmLabel: widget.submitLabel ?? '保存车辆',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: _submit,
+          saving: saving,
         ),
       ],
     );
@@ -705,8 +692,6 @@ Future<(String, String)?> _showVehicleModelPickerSheet(
 }) {
   return showLunioModalSheet<(String, String)>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) => PrototypeSheetFrame(
       title: '选择车型',
       subtitle: '选择车辆品牌和车型，默认保养项目会随车型创建',
@@ -925,8 +910,6 @@ Widget? carFormLoadGuard(
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) {
       var isMaintenanceStep = false;
       return StatefulBuilder(
@@ -1000,8 +983,6 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) {
       return PrototypeSheetFrame(
         title: '编辑车辆',
@@ -1082,8 +1063,6 @@ Future<void> showVehicleSwitcher(BuildContext context, WidgetRef ref) async {
   }
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '选择应用车辆',

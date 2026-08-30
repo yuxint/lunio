@@ -161,42 +161,6 @@ class LunioCard extends StatelessWidget {
   }
 }
 
-/// 底部 sheet 内容骨架：标题 + 副标题 + 可滚动内容
-/// （注意与 shared/modal_feedback.dart 的 _LunioDefaultSheetSurface、
-/// shared_widgets.dart 的 PrototypeSheetFrame 是三套并存的 sheet 骨架）。
-class LunioSheetScaffold extends StatelessWidget {
-  const LunioSheetScaffold({
-    super.key,
-    required this.title,
-    this.subtitle,
-    required this.child,
-  });
-
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: theme.textTheme.titleLarge),
-          if (subtitle != null) ...[
-            const SizedBox(height: 6),
-            Text(subtitle!, style: theme.textTheme.bodySmall),
-          ],
-          const SizedBox(height: 16),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
 /// 内容分组：小节标题（+ 可选右侧动作）+ 子项列表。
 class LunioSection extends StatelessWidget {
   const LunioSection({

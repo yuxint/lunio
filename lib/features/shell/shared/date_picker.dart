@@ -14,8 +14,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
-import '../../../core/widgets/lunio_components.dart';
 import 'modal_feedback.dart';
+import 'shared_widgets.dart';
 
 /// 日期选择入口：弹出 sheet，确定返回所选日期，取消/关闭返回 null。
 Future<LocalDate?> showSimpleDatePicker(
@@ -27,13 +27,12 @@ Future<LocalDate?> showSimpleDatePicker(
 }) {
   return showLunioModalSheet<LocalDate>(
     context: context,
-    showDragHandle: true,
     builder: (context) => ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.72,
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+      child: PrototypeSheetFrame(
+        title: '选择日期',
         child: SimpleDatePicker(
           initialDate: initialDate,
           firstDate: firstDate,
@@ -83,72 +82,57 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return LunioSheetScaffold(
-      title: '选择日期',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DatePickerHeader(
-            mode: mode,
-            visibleYear: visibleYear,
-            visibleMonth: visibleMonth,
-            yearPageStart: visibleYearPageStart,
-            canGoPrevious: _canGoPrevious(),
-            canGoNext: _canGoNext(),
-            onPrevious: _goPrevious,
-            onNext: _goNext,
-            onYearTap: () => setState(() {
-              visibleYearPageStart = _yearPageStartFor(visibleYear);
-              mode = _DatePickerMode.year;
-            }),
-            onMonthTap: () => setState(() => mode = _DatePickerMode.month),
-          ),
-          if (_todayInRange()) ...[
-            const SizedBox(height: 2),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _selectToday,
-                icon: const Icon(Icons.today_outlined, size: 18),
-                label: const Text('今天'),
-                style: TextButton.styleFrom(
-                  foregroundColor: tokens.primary,
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DatePickerHeader(
+          mode: mode,
+          visibleYear: visibleYear,
+          visibleMonth: visibleMonth,
+          yearPageStart: visibleYearPageStart,
+          canGoPrevious: _canGoPrevious(),
+          canGoNext: _canGoNext(),
+          onPrevious: _goPrevious,
+          onNext: _goNext,
+          onYearTap: () => setState(() {
+            visibleYearPageStart = _yearPageStartFor(visibleYear);
+            mode = _DatePickerMode.year;
+          }),
+          onMonthTap: () => setState(() => mode = _DatePickerMode.month),
+        ),
+        if (_todayInRange()) ...[
+          const SizedBox(height: 2),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _selectToday,
+              icon: const Icon(Icons.today_outlined, size: 18),
+              label: const Text('今天'),
+              style: TextButton.styleFrom(
+                foregroundColor: tokens.primary,
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
-          ],
-          const SizedBox(height: 2),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 160),
-            child: switch (mode) {
-              _DatePickerMode.day => _buildDayGrid(context),
-              _DatePickerMode.month => _buildMonthGrid(context),
-              _DatePickerMode.year => _buildYearGrid(context),
-            },
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: LunioSecondaryButton(
-                  label: '取消',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: LunioPrimaryButton(
-                  label: '确定',
-                  onPressed: () => Navigator.of(context).pop(selectedDate),
-                ),
-              ),
-            ],
           ),
         ],
-      ),
+        const SizedBox(height: 2),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          child: switch (mode) {
+            _DatePickerMode.day => _buildDayGrid(context),
+            _DatePickerMode.month => _buildMonthGrid(context),
+            _DatePickerMode.year => _buildYearGrid(context),
+          },
+        ),
+        const SizedBox(height: 10),
+        LunioFormActions(
+          confirmLabel: '确定',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: () => Navigator.of(context).pop(selectedDate),
+        ),
+      ],
     );
   }
 
@@ -225,7 +209,7 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
-/// 月份网格（3 列 × 4 行）。
+  /// 月份网格（3 列 × 4 行）。
   Widget _buildMonthGrid(BuildContext context) {
     return DateOptionTable(
       key: const ValueKey(_DatePickerMode.month),
@@ -242,7 +226,7 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
-/// 年份网格（12 年一页）。
+  /// 年份网格（12 年一页）。
   Widget _buildYearGrid(BuildContext context) {
     return DateOptionTable(
       key: const ValueKey(_DatePickerMode.year),
@@ -258,8 +242,8 @@ class SimpleDatePickerState extends State<SimpleDatePicker> {
     );
   }
 
-// ---- 翻页与边界处理：所有方法都保证 visibleYear/Month 不越出
-// firstDate~lastDate 范围，selectedDate 钳到合法日期 ----
+  // ---- 翻页与边界处理：所有方法都保证 visibleYear/Month 不越出
+  // firstDate~lastDate 范围，selectedDate 钳到合法日期 ----
 
   /// 能否向前翻（按模式判断是否已到下限）。
   bool _canGoPrevious() {

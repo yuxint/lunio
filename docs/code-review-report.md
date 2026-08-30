@@ -133,11 +133,13 @@ docs/                               # prd（当前权威）、migration、protot
 > 编号 R1-R38，按严重度分三档。每条含：位置（文件:行号）、推理、建议修法。
 >
 > **修复状态（2026-08-26 更新）**：R2/R3/R6/R7/R8/R11/R12/R13/R15/R16/R18/R19/R21/R22/R23/R24/R25/R26/R27/R28/R29/R31/R33/R35/R37 与 §5.2、§5.3（5.3.2 除外）已修复；R1 部分修复（恢复/清空路径已补通知取消，"删除最后一辆车"路径不在本轮）；R32 部分修复（三套 sheet 骨架子项保留）。其余条目未修复（不在本轮范围）。各条目下方的【已修复】行为修复说明。
+>
+> **修复状态（2026-08-29 更新）**：R1 全部修复（补"删除最后一辆车"通知取消）；R4 修复（业务校验收紧为同车同日一条记录）；R5 定调为产品设计并删除死字段；R10/R14/R34 修复；R32 全部修复（三套 sheet 骨架统一到 PrototypeSheetFrame、FormActions 样板收敛为 LunioFormActions）；§7 关键缺口补齐测试（调度竞态、exact alarm 被拒、snooze 到期日边界、displayPercent 钳制、时区回退、日历步进）。
 
 ### 4.1 高优先级（正确性 / 数据一致性）
 
 **R1 · 恢复备份/清空数据后，停车倒计时系统通知残留**
-- **【部分修复 2026-08-26】** 恢复/清空两条路径已补显式取消：恢复后 `cancelLunioNotifications()`（8000/8900 系）；清空后 `cancelParkingCountdownNotification()`（9001/9002）+ `cancelLunioNotifications()`（偏好已删必须全取消）。「删除最后一辆车」的残留路径不在本轮。
+- **【全部修复 2026-08-29】** "删除最后一辆车"路径补齐：`shell_actions.dart → deleteCar` 在删除成功后 `bump()` 同步代数 + 显式 `cancelLunioNotifications()`（同步控制器在 car == null 时短路，必须动作层兜底）；widget 测试断言删车后 16 个在用 id 全部取消。此前（2026-08-26）恢复/清空两条路径已补显式取消。
 - 位置：`lib/features/shell/profile/settings_data.dart`（restoreBackupFromFile / clearAllData，约 208-271 行）；`lib/core/notifications/lunio_notification_service.dart:243`（scheduleParkingCountdownNotification）
 - 推理：恢复/清空只做 `notificationSyncGeneration++` + invalidate。停车进行中时恢复备份 → 偏好被清（数据库里无倒计时），但 OS 层已注册的 **9001 到点闹钟照常响铃**、**9002 Android 常驻通知**（`autoCancel:false, ongoing:true`）持续显示到 timeoutAfter。同理，清空数据后被删车辆的 8000/8900 系通知也不会被取消——`app_shell.dart` 的 `_applySystemNotificationSchedule` 在 `car == null` 时提前 return，唯一 cancel 入口不会执行。
 - 建议：restore/clearAllData 动作里显式调用 `cancelParkingCountdownNotification()` + `cancelLunioNotifications()`；或让 `_syncReminderNotifications` 在 car 为 null 时也走一次"全取消"调度。
@@ -155,11 +157,13 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：把"执行中收到新签名"改为排队（存 pending 签名，执行完比对再跑一轮），而不是丢弃。
 
 **R4 · `maintenance_records` 唯一约束与业务规则口径冲突**
+- **【已修复 2026-08-29】** 采纳"收紧业务校验"方案：`_ensureRecordIsUnique` 删除项目重叠分支，同车同日已有记录即抛 `StateError('这辆车当天已有保养记录，请编辑原记录')`（文案保持"这辆车当天"前缀以走 friendlyError 透传）；表注释与 doc 同步；补"同日不同项目也拦截"用例。`removeMaintenanceRecordItem` 删到 0 项连记录删的逻辑保留（语义是"空记录无意义"）。
 - 位置：`lib/data/database/app_database.dart:155`（UNIQUE `{carId, date}`）vs `lib/data/repositories/lunio_repository.dart:1227`（`_ensureRecordIsUnique`：同日不同项目允许）
 - 推理：业务校验放行"同日不同项目的第二条记录"，但插入主表时撞表级约束抛 `SqliteException(2067)`，UI 只能给通用文案"这条数据已经保存过了"。`removeMaintenanceRecordItem` 删到只剩 0 项时连记录一起删（repository 约 860 行）也是为了迁就这个约束。
 - 建议：要么收紧业务校验（同日只允许一条，文案已备好"请编辑原记录"）；要么迁移 schema 把主表唯一约束改为 `{carId, date}` → 关联表 `{carId, date, itemId}` 已有约束就够。二选一，消除两层口径不一致。
 
 **R5 · `maintenanceDueEnabled` 被硬编码 true，用户无法关闭"保养到期提醒"**
+- **【已定调并清理 2026-08-29】** 确认为产品设计：保养到期提醒是 App 核心能力，不提供关闭入口。死字段整体移除：实体 `notification_settings.dart`、`notificationSettingsProvider` 批量读 key、`saveNotificationSettings` 写入项、`noticeDueForRow` 短路判断（去 settings 参数）、inApp 通知签名段、widget 测试断言、AGENTS.md 偏好 key 清单。老库残留偏好行无人读取，无害；升级首帧 inApp 签名变化触发一次幂等重算，无行为差异。
 - 位置：`lib/features/shell/profile/settings_data.dart:498`（提交时硬编码）；`lib/domain/entities/notification_settings.dart`（该开关实体仍存在并被 `app_shell` 签名与 `noticeDueForRow` 消费）
 - 推理：通知设置 UI 只有三个控件（系统状态/应用内开关/重复频率），提交构造 `LunioNotificationSettings(maintenanceDueEnabled: true, …)`。即使旧版本曾把该偏好写成 false，打开一次设置 sheet 保存即被覆盖回 true。
 - 建议：要么在 UI 加上这个开关，要么从实体/偏好/签名里整体移除该字段（当前是"半尸"状态）。
@@ -190,6 +194,7 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：可接受的设计（保留了"已停多久"信息），但建议提供"已到点状态一键开始新计时"；或到期超过 N 小时自动清除 + 取消通知。
 
 **R10 · 每次重排系统通知串行 cancel 1000 个 id**
+- **【已修复 2026-08-29】** `cancelLunioNotifications` 改为按服务内常量（基础 id [8000, 8900] × occurrenceCount 8）精确取消 16 个在用 id；文件头 id 分配表注明改动 occurrenceCount/新增基础 id 时必须同步。widget 测试的 8000 段断言从 `isNotEmpty` 收紧为精确 16 个 id 集合。
 - 位置：`lib/core/notifications/lunio_notification_service.dart:230-233`（`for id in 8000..8999 await cancel`）
 - 推理：实际只使用 8000-8007 / 8900-8907 共 16 个 id。任何数据签名变化（保存一条记录、切换车辆）都触发 1000 次串行 platform channel 调用 + 16 次 zonedSchedule；同时放大 R3 的竞态窗口。
 - 建议：维护"已注册 id 集合"或直接 cancel 用过的 16 个 id；一次 `cancelAll()` 也可考虑（注意别误删停车通知）。
@@ -213,6 +218,7 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：await 后补 `if (!mounted) return;`，或把这段逻辑移出 Widget。
 
 **R14 · 吞异常点（静默失败）**
+- **【已修复 2026-08-29】** 三处补日志：`getParkingCountdown` JSON 损坏 → `dart:developer` log；权限查询失败 → debugPrint；时区获取失败 → debugPrint（回退目标同步改为 Asia/Shanghai，见 R34）。
 - 位置：
   - `lib/data/repositories/lunio_repository.dart:1048`：`getParkingCountdown` JSON 损坏 `catch (_) { return null; }`——坏数据永远留在库里且无感知；
   - `settings_data.dart`（refreshSystemNotificationPreference）：权限查询失败静默回退旧值；
@@ -320,7 +326,7 @@ docs/                               # prd（当前权威）、migration、protot
 - 建议：`count()` 或 `limit(1)`。
 
 **R32 · 重复实现**
-- **【部分修复 2026-08-26】** _formatClock 合并为 formatters.formatClock（两处调用）；两个输入行合并为 shared 的 IntervalNumberInputRow；itemRuleText/defaultItemRuleText 合并为 maintenance_items 私有函数；vehicles 两份加载失败检查块提取为 carFormLoadGuard。**三套 sheet 骨架（5.3.2）本轮确认跳过，保留现状。**
+- **【全部修复】** 2026-08-26 完成 _formatClock 合并、IntervalNumberInputRow 合并、itemRuleText/defaultItemRuleText 合并、vehicles 加载失败检查块提取；2026-08-29 完成剩余两项：三套 sheet 骨架（5.3.2）统一为 PrototypeSheetFrame（迁移 6 处默认表面 sheet + 4 处 LunioSheetScaffold 调用点，删除 LunioSheetScaffold 与 `_LunioDefaultSheetSurface`，表面容器内包透明 Material 供 ListTile 正确绘制）、表单 FormActions 样板（5.3.5）收敛为 shared 的 `LunioFormActions`（迁移 9 处手写按钮行，顺带统一 settings_data 唯一一处裸 FilledButton）。
 - `_formatClock` 两份（`parking_countdown.dart` / `lunio_notification_service.dart`）；
 - `RecordIntervalInputRow`（records_page）与 `ReminderRuleInputRow`（maintenance_items）几乎逐行相同；
 - 三套 sheet 骨架并存（`PrototypeSheetFrame` / `_LunioDefaultSheetSurface` / `LunioSheetScaffold`）；
@@ -332,6 +338,7 @@ docs/                               # prd（当前权威）、migration、protot
 - `records_page.dart:136`："点击右下角 + 新增"——App 没有 FloatingActionButton，新增入口只在提醒页。
 
 **R34 · DST/时区类边界（目标市场 Asia/Shanghai 无夏令时，影响有限）**
+- **【已修复 2026-08-29】** 按确认的 3 步：① `_configureLocalTimezone` 失败回退从 UTC 改为 Asia/Shanghai（目标市场时区、固定 +8，测试 mock 时区通道抛错断言 `tz.local` 落点）；② 日期步进改日历加减——`_nextOccurrence` 日/两周/三周分支改 `addCalendarDays`（字段构造保持墙钟时刻，visibleForTesting 供单测）、`_nextScheduleDate` 顺延一天同步改、`snoozeUntilDate` 改 `LocalDate.addDays`（新增，DateTime 归一化跨月/跨年）；③ 海外使用场景的产品语义留待有需求再议。
 - `local_date.dart:73` daysUntil 用本地午夜差（跨 DST 差 1 天）；
 - 通知日/周步进用 Duration 相加（跨 DST 小时漂移）；
 - snooze +15 天跨 DST 变 14/16 天；
@@ -389,13 +396,13 @@ docs/                               # prd（当前权威）、migration、protot
 
 > **【已处理 2026-08-26】**：LoadingPage/ErrorPage 三页统一推广（提醒/记录/我的同构 when 分支）；FilterBar/ChoiceChipButton 回收为 records_page 私有；单点格式化函数（formatMoney/itemRuleText/defaultItemRuleText/mileageReminderText/displayPercentForThresholds/normalizeItemName 及配套紧凑文案函数）全部回收或合并到各自消费文件；formatters.dart 只保留多文件复用项。
 
-### 5.3 该提取未提取（重复代码，建议合并）——【已处理 2026-08-26，第 2 项除外】
+### 5.3 该提取未提取（重复代码，建议合并）——【已全部处理 2026-08-29】
 
 1. 【已合并】`RecordIntervalInputRow` ≡ `ReminderRuleInputRow` → shared 的 `IntervalNumberInputRow`（可选开关的数字输入行），两个表单已迁移；
-2. 【本轮跳过】三套 sheet 骨架（`PrototypeSheetFrame` / `_LunioDefaultSheetSurface` / `LunioSheetScaffold`）——用户确认本轮不做（5.3.2）；
+2. 【已统一 2026-08-29】三套 sheet 骨架收敛为 `PrototypeSheetFrame`（15 处 sheet 全部迁移；删除 `LunioSheetScaffold` 与 `_LunioDefaultSheetSurface`）；
 3. 【已合并】`_formatClock` 双实现 → formatters 的 `formatClock`（停车卡片/表单与通知服务共用）；
 4. 【已替换】`ItemPills` 手写 TextPainter 装箱 → `Wrap`；
-5. 【确认暂缓】表单 FormActions 样板（5.3.5，用户确认本轮不做）。
+5. 【已收敛 2026-08-29】表单 FormActions 样板 → shared 的 `LunioFormActions`（9 处迁移）。
 
 ### 5.4 结论
 
@@ -439,13 +446,13 @@ R9（过期倒计时不清理）、R17（过期调度静默吞）、R18（月末
 
 **关键缺口**（与问题清单一一对应）：
 
-- 恢复/清空后的通知清理（R1，无实现也无测试）；
-- 调度竞态交错（R3）；
-- monthly 月末漂移、DST、时区回退 UTC（R18/R34）；
-- exact alarm 被拒的降级分支（测试里恒 true）；
-- 过期倒计时的 schedule 提前返回（R17）；
-- 原生桥真机行为（iOS scene 注册时序，R7）；
-- snooze 到期日当天边界、签名稳定性、`displayPercentForThresholds` 钳制边界。
+- ~~恢复/清空后的通知清理（R1，无实现也无测试）~~（已补：清空/删除最后一辆车用例断言 16 个在用 id 取消）；
+- ~~调度竞态交错（R3）~~（已补：widget 测试用闸门 mock 卡住第一轮 cancel，第二签名变更到达后断言 pending 重跑发生，并经变异验证有效）；
+- ~~monthly 月末漂移、DST、时区回退 UTC（R18/R34）~~（已补：R18 月末钳制两条；R34 日历步进、LocalDate.addDays 边界、时区通道抛错回退 Asia/Shanghai 各一条）；
+- ~~exact alarm 被拒的降级分支（测试里恒 true）~~（已补：mock 双双拒绝后断言 zonedSchedule 收到 inexactAllowWhileIdle）；
+- 过期倒计时的 schedule 提前返回（R17）——仍无测试（R17 明确不在修复范围）；
+- 原生桥真机行为（iOS scene 注册时序，R7）——单测天然覆盖不到，需真机手动验证；
+- ~~snooze 到期日当天边界、签名稳定性、`displayPercentForThresholds` 钳制边界~~（已补：snooze 截止日当天静默/次日恢复用例、displayPercent 迁入 domain 后 3 组钳制用例；签名稳定性随 R3 竞态用例间接覆盖）。
 
 ---
 

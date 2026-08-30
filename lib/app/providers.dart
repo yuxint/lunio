@@ -93,8 +93,10 @@ final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) async {
   };
 });
 
-/// 通知设置：4 个偏好 key 批量读取（单条 IN 查询，R27）。
+/// 通知设置：3 个偏好 key 批量读取（单条 IN 查询，R27）。
 /// 取值约定：`!= 'false'` ——即从未设置过时默认开启。
+/// 保养到期提醒是产品核心能力，设计上不提供关闭入口（R5，原
+/// maintenanceDueEnabled 偏好已移除）。
 final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
   ref,
 ) async {
@@ -102,7 +104,6 @@ final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
   final values = await repository.getPreferenceValues([
     'systemNotificationsEnabled',
     'inAppNotificationsEnabled',
-    'maintenanceDueEnabled',
     'maintenanceDueRepeat',
   ]);
   return LunioNotificationSettings(
@@ -110,7 +111,6 @@ final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
         values['systemNotificationsEnabled'] != 'false',
     inAppNotificationsEnabled:
         values['inAppNotificationsEnabled'] != 'false',
-    maintenanceDueEnabled: values['maintenanceDueEnabled'] != 'false',
     dueRepeatFrequency: ReminderRepeatFrequencyCodec.parse(
       values['maintenanceDueRepeat'],
     ),

@@ -158,9 +158,7 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
     List<MaintenanceItem> items,
   ) {
     if (car == null) {
-      return const SliverToBoxAdapter(
-        child: LunioCard(child: Text('请先新增车辆')),
-      );
+      return const SliverToBoxAdapter(child: LunioCard(child: Text('请先新增车辆')));
     }
     if (records.isEmpty) {
       return const SliverToBoxAdapter(
@@ -643,22 +641,11 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(
-                label: '取消',
-                onPressed: saving ? null : () => Navigator.of(context).pop(),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: '下一步',
-                onPressed: saving ? null : _goToIntervalStep,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          confirmLabel: '下一步',
+          onCancel: () => Navigator.of(context).pop(),
+          onConfirm: _goToIntervalStep,
+          saving: saving,
         ),
       ],
     );
@@ -763,30 +750,18 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
         ],
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: LunioSecondaryButton(
-                label: '上一步',
-                onPressed: saving
-                    ? null
-                    : () {
-                        _disposeIntervalDrafts();
-                        setState(() {
-                          recordDraft = null;
-                          errorText = null;
-                        });
-                      },
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: LunioPrimaryButton(
-                label: saving ? '保存中' : '保存记录',
-                onPressed: saving ? null : _submit,
-              ),
-            ),
-          ],
+        LunioFormActions(
+          cancelLabel: '上一步',
+          confirmLabel: '保存记录',
+          onCancel: () {
+            _disposeIntervalDrafts();
+            setState(() {
+              recordDraft = null;
+              errorText = null;
+            });
+          },
+          onConfirm: _submit,
+          saving: saving,
         ),
       ],
     );
@@ -959,7 +934,6 @@ class RecordIntervalDraft {
   }
 }
 
-
 /// ★ 记录表单入口（提醒页按钮 / 记录卡"编辑"）：
 /// 先 await 三个 provider（车/项目/生效今天）→ 无车或无可用项目时
 /// toast 拦截 → 弹两步表单 sheet。
@@ -991,8 +965,6 @@ Future<void> showMaintenanceRecordFormSheet(
   }
   showLunioModalSheet<void>(
     context: context,
-    showDragHandle: false,
-    backgroundColor: Colors.transparent,
     builder: (context) {
       return PrototypeSheetFrame(
         title: record == null ? '新增保养记录' : '编辑保养记录',

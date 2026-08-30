@@ -49,6 +49,14 @@ class LocalDate implements Comparable<LocalDate> {
   /// 转 DateTime（当日 00:00，本地时区）。用于天数差值计算。
   DateTime toDateTime() => DateTime(year, month, day);
 
+  /// 加 n 天（可为负）：走 DateTime 归一化（跨月/跨年自动进位），
+  /// 与 Java 的 LocalDate.plusDays 行为一致。纯日历加减，不做 24 小时
+  /// 累加（R34：小时数累加在夏令时切换日会漂移墙钟时刻）。
+  LocalDate addDays(int days) {
+    final normalized = DateTime(year, month, day + days);
+    return LocalDate(normalized.year, normalized.month, normalized.day);
+  }
+
   /// 加 n 个月，月末自动钳制：1.31 + 1月 → 2.28/2.29（与 Java 的
   /// LocalDate.plusMonths 行为一致）。时间进度计算的到期日靠它保证正确。
   LocalDate addMonths(int months) {

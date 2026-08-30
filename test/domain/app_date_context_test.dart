@@ -23,4 +23,12 @@ void main() {
   test('add months clamps to last valid day of target month', () {
     expect(const LocalDate(2026, 1, 31).addMonths(1).toString(), '2026-02-28');
   });
+
+  test('add days normalizes across month and year boundaries', () {
+    // R34：snooze 的 +15 天改走 LocalDate 日历加减，锁定跨月/跨年归一化。
+    expect(const LocalDate(2026, 1, 31).addDays(1).toString(), '2026-02-01');
+    expect(const LocalDate(2026, 12, 31).addDays(1).toString(), '2027-01-01');
+    expect(const LocalDate(2026, 5, 19).addDays(15).toString(), '2026-06-03');
+    expect(const LocalDate(2026, 3, 1).addDays(-1).toString(), '2026-02-28');
+  });
 }

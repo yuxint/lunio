@@ -155,6 +155,25 @@ class MaintenanceRules {
     return ReminderStatus.normal;
   }
 
+  /// 进度环显示百分比的四舍五入钳制：真实进度没到阈值时，
+  /// 显示值不允许"看起来已到阈值"（如 99.6% 显示 99% 而不是 100%）。
+  /// 纯展示函数，无副作用（§7 测试缺口补齐：从 view 层迁入 domain 便于单测）。
+  static int displayPercentForThresholds({
+    required double percent,
+    required double notOverdueUpperLimit,
+    required double overdueUpperLimit,
+  }) {
+    var display = percent.round();
+    if (percent < notOverdueUpperLimit &&
+        display >= notOverdueUpperLimit.ceil()) {
+      display = notOverdueUpperLimit.ceil() - 1;
+    }
+    if (percent < overdueUpperLimit && display >= overdueUpperLimit.ceil()) {
+      display = overdueUpperLimit.ceil() - 1;
+    }
+    return display;
+  }
+
   /// 里程维进度：基线里程 = 最近记录里程（无记录则用兜底基线）；
   /// 已用 = 当前里程 − 基线；百分比 = 已用/间隔×100（负数归 0）；
   /// 剩余 = 间隔 − max(已用, 0)。未启用该维时进度 0、reason=disabled。

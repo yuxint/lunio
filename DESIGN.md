@@ -376,11 +376,11 @@ Bottom navigation is a floating rounded container with three equal destinations.
 
 ### Bottom Sheets
 
-Forms, filters, vehicle switching, project management, and restore confirmation use bottom sheets. Sheets should include a small drag handle, strong title, concise supporting text, and two action buttons where appropriate. Open sheets blur and dim the page behind them; closed sheets must not remain reachable to assistive technologies.
+Forms, filters, vehicle switching, project management, and restore confirmation use bottom sheets. Every sheet is built on a single shared skeleton (`PrototypeSheetFrame`): drag handle, strong title, concise supporting text, scrollable content, 30px top radius, and one surface token. Information sheets and form sheets must not introduce alternate surface containers or radii. Open sheets blur and dim the page behind them; closed sheets must not remain reachable to assistive technologies.
 
 ### Forms
 
-Inputs use light neutral surfaces, 14px radii, and readable 13px labels. Date fields always express business dates in `yyyy-MM-dd` semantics, even if the visual control renders with local separators. Date picking uses a compact sheet with day, month, and year layers so users can select nearby days directly, jump to a month in the current year, or move across years without long scrolling. Numeric fields should be plain and practical.
+Inputs use light neutral surfaces, 14px radii, and readable 13px labels. Form sheets close with a shared action row (`LunioFormActions`): a secondary "取消"-style button beside one primary confirm button that greys out and swaps to a saving label while submitting. Do not hand-roll per-sheet button rows with different heights or labels for the same state. Date fields always express business dates in `yyyy-MM-dd` semantics, even if the visual control renders with local separators. Date picking uses a compact sheet with day, month, and year layers so users can select nearby days directly, jump to a month in the current year, or move across years without long scrolling. Numeric fields should be plain and practical.
 
 ### Toasts
 
