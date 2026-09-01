@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "letter": "E",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-9d27c3f1e9",
+      "brand": "212",
+      "model": "狙击手",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1abc380c02",
+      "brand": "212",
+      "model": "212 T01",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e583f01b62",
+      "brand": "212",
+      "model": "探境者01",
+      "template": "fuel"
+    }
+  ]
+}

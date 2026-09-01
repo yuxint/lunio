@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 2,
+  "letter": "R",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-faf6567b2b",
+      "brand": "日产",
+      "model": "骐达TIIDA",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d450c5acae",
+      "brand": "日产",
+      "model": "轩逸",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e2e1f90ea9",
+      "brand": "日产",
+      "model": "天籁",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-05c6dec846",
+      "brand": "日产",
+      "model": "日产N7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ebfc714ba1",
+      "brand": "日产",
+      "model": "劲客",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-584d6152da",
+      "brand": "日产",
+      "model": "逍客",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4dbaa39c41",
+      "brand": "日产",
+      "model": "奇骏",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-56b6ca39f0",
+      "brand": "日产",
+      "model": "ARIYA 艾睿雅",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-76447b9d29",
+      "brand": "日产",
+      "model": "探陆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-91e0b6d092",
+      "brand": "日产",
+      "model": "纳瓦拉",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7ac7c608b1",
+      "brand": "荣威",
+      "model": "荣威i5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f428226eb2",
+      "brand": "荣威",
+      "model": "荣威D7 DMH",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-f5a43bf42f",
+      "brand": "荣威",
+      "model": "荣威D6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b26b6d1a59",
+      "brand": "荣威",
+      "model": "荣威D7 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ef7f54db9d",
+      "brand": "荣威",
+      "model": "荣威M7 DMH",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-78e82e2399",
+      "brand": "荣威",
+      "model": "荣威D5X DMH",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2ad09a828a",
+      "brand": "荣威",
+      "model": "荣威RX5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bd03d542a0",
+      "brand": "荣威",
+      "model": "荣威eRX5",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3c8b8547f1",
+      "brand": "荣威",
+      "model": "荣威iMAX8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2dabaf8f9d",
+      "brand": "荣威",
+      "model": "荣威iMAX8 DMH",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-29d104b120",
+      "brand": "睿蓝汽车",
+      "model": "蓝气球",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-eac9703c4b",
+      "brand": "睿蓝汽车",
+      "model": "枫叶60s",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8fcd97cc94",
+      "brand": "睿蓝汽车",
+      "model": "睿蓝X3 PRO",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5680b0e04d",
+      "brand": "睿蓝汽车",
+      "model": "睿蓝7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-330ed3a57f",
+      "brand": "睿蓝汽车",
+      "model": "睿蓝9",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-a07aefd09a",
+      "brand": "睿蓝汽车",
+      "model": "睿蓝8",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-50f0b26913",
+      "brand": "瑞驰",
+      "model": "瑞驰R5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ecae96739b",
+      "brand": "瑞驰",
+      "model": "瑞驰ES50",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a601b6f1f7",
+      "brand": "瑞驰",
+      "model": "瑞驰EC35",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6668b055b3",
+      "brand": "瑞驰",
+      "model": "瑞驰EC75",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-46c77c4c4f",
+      "brand": "瑞驰",
+      "model": "瑞驰C3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-08e7d0a163",
+      "brand": "瑞驰",
+      "model": "瑞驰C5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5c87fdc152",
+      "brand": "瑞驰",
+      "model": "瑞驰EC31",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-826556d545",
+      "brand": "瑞驰",
+      "model": "瑞驰EC71",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-832e685e69",
+      "brand": "瑞驰",
+      "model": "瑞驰EC72",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-64a6d8fa77",
+      "brand": "瑞驰",
+      "model": "瑞驰ED71",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a37db92783",
+      "brand": "瑞弗",
+      "model": "瑞弗F系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0e5addd428",
+      "brand": "瑞弗",
+      "model": "瑞弗V系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f90f62a2e0",
+      "brand": "瑞弗",
+      "model": "启界",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c2c331e5e6",
+      "brand": "瑞弗",
+      "model": "瑞弗T系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-840a2d1871",
+      "brand": "瑞弗",
+      "model": "瑞弗S系列",
+      "template": "fuel"
+    }
+  ]
+}

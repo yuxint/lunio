@@ -1,20 +1,23 @@
-// 内置"默认保养项目模板"实体：按 品牌+车型 维度预置的保养项配置。
+// 内置"默认保养项目模板"实体：按 动力类型 维度预置的保养项配置。
 //
-// 数据来源是 asset（assets/data/built_in_vehicle_catalog.json），
-// 首启时由 Repository bootstrap 灌入 vehicle_default_maintenance_items 表
+// 数据来源是 asset（assets/data/catalog/templates.json），首启时由
+// Repository bootstrap 灌入 vehicle_default_maintenance_items 表
 // （幂等：按 catalogId 对账，新增则插入、移除则删除）。
-// 用户添加车辆时，把所选车型的这批模板复制成车辆自己的保养项目。
+// 用户添加车辆时，按所选动力类型把这组模板复制成车辆自己的保养项目；
+// "恢复默认项目"也按动力类型取。
 //
-// 与 MaintenanceItem 的区别：这是"目录数据"（不挂车），
-// MaintenanceItem 是"车辆实例数据"（挂某辆车，用户可改可删）。
+// 与 MaintenanceItem 的区别：这是"目录数据"（不挂车；库里按动力类型
+// 五组各一组，另有个别车型专属模板——如 civicFuel——只作内存草稿不落库，
+// 见 docs/adr/0004），MaintenanceItem 是"车辆实例数据"（挂某辆车，
+// 用户可改可删）。
+import 'powertrain_type.dart';
 import 'sync_metadata.dart';
 
 class VehicleDefaultMaintenanceItem {
   const VehicleDefaultMaintenanceItem({
     this.id,
     this.catalogId,
-    required this.vehicleBrand,
-    required this.vehicleModel,
+    required this.powertrainType,
     required this.itemName,
     required this.remindByMileage,
     required this.remindByTime,
@@ -29,15 +32,12 @@ class VehicleDefaultMaintenanceItem {
   /// 数据库主键。
   final int? id;
 
-  /// asset 目录里的稳定标识（如 "toyota-corolla-fuel:engine-oil"），
+  /// asset 目录里的稳定标识（如 "tpl:fuel:engine-oil"），
   /// bootstrap 按它做 upsert/删除对账。可为 null（兼容旧数据）。
   final String? catalogId;
 
-  /// 适配品牌（与 VehicleModel.brand 对应）。
-  final String vehicleBrand;
-
-  /// 适配车型（与 VehicleModel.model 对应）。
-  final String vehicleModel;
+  /// 适配的动力类型（模板按动力类型分组，共五组；增程组内容同插混组）。
+  final PowertrainType powertrainType;
 
   /// 项目名，如"机油""空气滤芯"。
   final String itemName;

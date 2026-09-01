@@ -1,0 +1,655 @@
+{
+  "schemaVersion": 2,
+  "letter": "B",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-7ae35013f1",
+      "brand": "比亚迪",
+      "model": "海鸥",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-4818f5e3c9",
+      "brand": "比亚迪",
+      "model": "秦PLUS DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-5ec1deefd5",
+      "brand": "比亚迪",
+      "model": "秦PLUS EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-29bdf37ce2",
+      "brand": "比亚迪",
+      "model": "秦L DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-d249fd9236",
+      "brand": "比亚迪",
+      "model": "海豹",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-737c317432",
+      "brand": "比亚迪",
+      "model": "海豹06DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-c603fec416",
+      "brand": "比亚迪",
+      "model": "汉DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2f7f3f47f4",
+      "brand": "比亚迪",
+      "model": "汉EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-7190881b40",
+      "brand": "比亚迪",
+      "model": "元PLUS",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-bcb9611b0a",
+      "brand": "比亚迪",
+      "model": "宋Pro DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-278a47fd14",
+      "brand": "奔驰",
+      "model": "奔驰A级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-915cd9bbc7",
+      "brand": "奔驰",
+      "model": "奔驰C级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e311c9e9c3",
+      "brand": "奔驰",
+      "model": "奔驰E级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9a8494158d",
+      "brand": "奔驰",
+      "model": "奔驰S级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bfe7559fcb",
+      "brand": "奔驰",
+      "model": "奔驰GLA",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-18fbcd3e21",
+      "brand": "奔驰",
+      "model": "奔驰GLB",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a5b44bc426",
+      "brand": "奔驰",
+      "model": "奔驰GLC",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9f4b4c7f01",
+      "brand": "奔驰",
+      "model": "奔驰GLE PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-71ad9e67fb",
+      "brand": "奔驰",
+      "model": "奔驰V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-993073248d",
+      "brand": "奔驰",
+      "model": "威霆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d249673f25",
+      "brand": "宝马",
+      "model": "宝马3系",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b516a239b5",
+      "brand": "宝马",
+      "model": "宝马i3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fb5a550088",
+      "brand": "宝马",
+      "model": "宝马5系",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8a50b2c9eb",
+      "brand": "宝马",
+      "model": "宝马i5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d8a483fcd3",
+      "brand": "宝马",
+      "model": "宝马7系",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9017d6f779",
+      "brand": "宝马",
+      "model": "宝马X1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-74f53a1900",
+      "brand": "宝马",
+      "model": "宝马iX1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1e619e1043",
+      "brand": "宝马",
+      "model": "宝马X3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1e43ffbd08",
+      "brand": "宝马",
+      "model": "宝马X5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-86e91e63f4",
+      "brand": "宝马",
+      "model": "宝马X7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0c1e322e59",
+      "brand": "本田",
+      "model": "思域",
+      "template": "fuel",
+      "itemTemplate": "civicFuel"
+    },
+    {
+      "id": "vehicle-dcd-c93798168c",
+      "brand": "本田",
+      "model": "型格",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d9065e7bbe",
+      "brand": "本田",
+      "model": "雅阁",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e08bb02ad5",
+      "brand": "本田",
+      "model": "英仕派",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a193a8ce64",
+      "brand": "本田",
+      "model": "缤智",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5ca27b8f16",
+      "brand": "本田",
+      "model": "本田XR-V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-287799ebb6",
+      "brand": "本田",
+      "model": "本田CR-V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5f854cd5fa",
+      "brand": "本田",
+      "model": "皓影",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-085ddeb4ab",
+      "brand": "本田",
+      "model": "冠道",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-39f50799b8",
+      "brand": "本田",
+      "model": "奥德赛",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cac91bb62a",
+      "brand": "别克",
+      "model": "威朗",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-85cfd27259",
+      "brand": "别克",
+      "model": "微蓝6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-073e20d812",
+      "brand": "别克",
+      "model": "君威",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f167131675",
+      "brand": "别克",
+      "model": "君越",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-016554e6f2",
+      "brand": "别克",
+      "model": "昂科威S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ab6705e6a3",
+      "brand": "别克",
+      "model": "昂科威",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e424811148",
+      "brand": "别克",
+      "model": "别克E5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3f0212110c",
+      "brand": "别克",
+      "model": "别克GL8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4400b42274",
+      "brand": "别克",
+      "model": "别克GL8 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-01b856e426",
+      "brand": "别克",
+      "model": "世纪",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-338c7c156d",
+      "brand": "保时捷",
+      "model": "Taycan",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0d37f27a66",
+      "brand": "保时捷",
+      "model": "Panamera",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-13fc65ebd9",
+      "brand": "保时捷",
+      "model": "Panamera E-Hybrid",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-06f545d5eb",
+      "brand": "保时捷",
+      "model": "Macan",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e29d3fb346",
+      "brand": "保时捷",
+      "model": "Macan EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-24e476b7f2",
+      "brand": "保时捷",
+      "model": "Cayenne",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0180c06a5c",
+      "brand": "保时捷",
+      "model": "Cayenne Coupé",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d00fba0c92",
+      "brand": "保时捷",
+      "model": "Cayenne E-Hybrid",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3bef41c581",
+      "brand": "保时捷",
+      "model": "保时捷718",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e651a82494",
+      "brand": "保时捷",
+      "model": "保时捷911",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d7c59c3756",
+      "brand": "北京越野",
+      "model": "北京越野BJ30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4db15fe8cd",
+      "brand": "北京越野",
+      "model": "北京越野BJ40",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9e858bf766",
+      "brand": "北京越野",
+      "model": "北京越野BJ40增程",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-d645e7951f",
+      "brand": "北京越野",
+      "model": "北京越野BJ60增程",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-f75070750d",
+      "brand": "北京越野",
+      "model": "北京越野BJ60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-249b914d7c",
+      "brand": "北京越野",
+      "model": "泰钽700",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c2cae4c444",
+      "brand": "北京汽车",
+      "model": "北京U5 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-28b6ece63e",
+      "brand": "北京汽车",
+      "model": "北京X7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-218d16a55a",
+      "brand": "奔腾",
+      "model": "奔腾小马",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0edf120283",
+      "brand": "奔腾",
+      "model": "奔腾B70",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-12173b4660",
+      "brand": "奔腾",
+      "model": "悦意08",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0ac2672e4e",
+      "brand": "奔腾",
+      "model": "悦意03",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-65e9f19ffc",
+      "brand": "奔腾",
+      "model": "悦意07",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-c8e973decc",
+      "brand": "奔腾",
+      "model": "奔腾T90",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-425a333b85",
+      "brand": "宾利",
+      "model": "飞驰PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-02ed6ef3e4",
+      "brand": "宾利",
+      "model": "添越",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-386cb4bd75",
+      "brand": "宾利",
+      "model": "添越PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-b541bf7c1a",
+      "brand": "宾利",
+      "model": "欧陆PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-96b426938a",
+      "brand": "宝骏",
+      "model": "宝骏享境PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-45e1801122",
+      "brand": "宝骏",
+      "model": "宝骏享境EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9830f5a5e9",
+      "brand": "宝骏",
+      "model": "悦也",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-74f81b01e8",
+      "brand": "宝骏",
+      "model": "悦也Plus",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-db73613baf",
+      "brand": "宝骏",
+      "model": "宝骏云海PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2f843e22f1",
+      "brand": "宝骏",
+      "model": "宝骏云海EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-168c9dd616",
+      "brand": "标致",
+      "model": "标致408",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1757cc8ff5",
+      "brand": "标致",
+      "model": "标致408X",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5199e64ee2",
+      "brand": "标致",
+      "model": "标致508L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-24ffc99e40",
+      "brand": "标致",
+      "model": "标致4008",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e837db0a83",
+      "brand": "标致",
+      "model": "标致5008",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5ccc237f84",
+      "brand": "北京汽车制造厂",
+      "model": "勇士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f5232ed933",
+      "brand": "北京汽车制造厂",
+      "model": "锐胜M8新能源",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f29be67716",
+      "brand": "北京汽车制造厂",
+      "model": "锐胜M8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-191a68fb1e",
+      "brand": "北京汽车制造厂",
+      "model": "锐胜王牌M7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2117c6ff63",
+      "brand": "北京汽车制造厂",
+      "model": "锐胜王牌EM7",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-c70fcfaea2",
+      "brand": "北京汽车制造厂",
+      "model": "卡路里F7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5af0ba8bd1",
+      "brand": "北京汽车制造厂",
+      "model": "勇士皮卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1b0ee878a1",
+      "brand": "北京汽车制造厂",
+      "model": "自由王国vala",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-847870c9bf",
+      "brand": "北汽瑞翔",
+      "model": "北汽瑞翔X3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4717870436",
+      "brand": "北汽瑞翔",
+      "model": "北汽瑞翔X5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-213b3db2c9",
+      "brand": "北汽瑞翔",
+      "model": "博腾V1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f7407d8050",
+      "brand": "北汽瑞翔",
+      "model": "博腾V2",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a156cdb6e1",
+      "brand": "博速",
+      "model": "博速 G级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6d30e35a01",
+      "brand": "博速",
+      "model": "博速 V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3c0343a276",
+      "brand": "博速",
+      "model": "博速 S级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7c26a06cee",
+      "brand": "博速",
+      "model": "博速 Smart Fortwo",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cad1b5d29c",
+      "brand": "博速",
+      "model": "博速 CLS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-90cc8a1281",
+      "brand": "巴菲特",
+      "model": "巴菲特S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1df4b16017",
+      "brand": "巴菲特",
+      "model": "巴菲特9",
+      "template": "fuel"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "letter": "V",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-abfb0a49b4",
+      "brand": "威尔特芬",
+      "model": "开拓者系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-44e9dd3c34",
+      "brand": "威尔特芬",
+      "model": "清风系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-26f705f7c0",
+      "brand": "威尔特芬",
+      "model": "Vanlife系列",
+      "template": "fuel"
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 2,
+  "letter": "G",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-626eedc4be",
+      "brand": "广汽传祺",
+      "model": "影豹",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c878aca7b5",
+      "brand": "广汽传祺",
+      "model": "传祺GS3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1b3248c247",
+      "brand": "广汽传祺",
+      "model": "影酷",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-521ee582b0",
+      "brand": "广汽传祺",
+      "model": "传祺GS4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-41d405dd51",
+      "brand": "广汽传祺",
+      "model": "传祺向往S7",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-00ff840b3d",
+      "brand": "广汽传祺",
+      "model": "传祺GS8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9c397e6942",
+      "brand": "广汽传祺",
+      "model": "传祺M6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ca9a337214",
+      "brand": "广汽传祺",
+      "model": "传祺E8",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-8d42c398a9",
+      "brand": "广汽传祺",
+      "model": "传祺M8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-728b51d887",
+      "brand": "广汽传祺",
+      "model": "传祺E9 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-9eb173aea2",
+      "brand": "广汽昊铂",
+      "model": "昊铂GT",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4631f42334",
+      "brand": "广汽昊铂",
+      "model": "昊铂A800",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-dfc500a019",
+      "brand": "广汽昊铂",
+      "model": "昊铂HT",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-25fcc21f19",
+      "brand": "广汽昊铂",
+      "model": "昊铂HL",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b2d54a0fc6",
+      "brand": "广汽昊铂",
+      "model": "昊铂S600",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bd0cba3b4a",
+      "brand": "广汽昊铂",
+      "model": "昊铂SSR",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-af71ece4f7",
+      "brand": "国吉商用车",
+      "model": "大象G30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3147ea8de9",
+      "brand": "国吉商用车",
+      "model": "大象G40",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2bba65ac16",
+      "brand": "歌睿途",
+      "model": "星辰系列",
+      "template": "fuel"
+    }
+  ]
+}

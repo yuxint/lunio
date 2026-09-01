@@ -1,0 +1,480 @@
+{
+  "schemaVersion": 2,
+  "templates": {
+    "fuel": [
+      {
+        "id": "engine-oil",
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "id": "oil-filter",
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "id": "engine-air-filter",
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "cabin-air-filter",
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "fuel-filter",
+        "name": "汽油滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 40000
+      },
+      {
+        "id": "brake-fluid",
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "transmission-fluid",
+        "name": "变速箱油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 60000,
+        "timeIntervalMonths": 36
+      },
+      {
+        "id": "spark-plugs",
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "id": "tire-rotation",
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "id": "coolant",
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      }
+    ],
+    "plugIn": [
+      {
+        "id": "engine-oil",
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "oil-filter",
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "engine-air-filter",
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "cabin-air-filter",
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "brake-fluid",
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "coolant",
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "spark-plugs",
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "id": "tire-rotation",
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "id": "battery-drive-system-inspection",
+        "name": "动力电池/电驱系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      }
+    ],
+    "ev": [
+      {
+        "id": "cabin-air-filter",
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "brake-fluid",
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "reducer-fluid",
+        "name": "减速器油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 60000,
+        "timeIntervalMonths": 36
+      },
+      {
+        "id": "electric-drive-coolant",
+        "name": "电驱冷却液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "battery-high-voltage-system-inspection",
+        "name": "动力电池/高压系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "braking-system-inspection",
+        "name": "制动系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "tire-rotation",
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      }
+    ],
+    "hybrid": [
+      {
+        "id": "engine-oil",
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "id": "oil-filter",
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "id": "engine-air-filter",
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "cabin-air-filter",
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "fuel-filter",
+        "name": "汽油滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 40000
+      },
+      {
+        "id": "brake-fluid",
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "transmission-fluid",
+        "name": "变速箱油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 60000,
+        "timeIntervalMonths": 36
+      },
+      {
+        "id": "spark-plugs",
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "id": "tire-rotation",
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "id": "coolant",
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "hybrid-system-inspection",
+        "name": "混动系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      }
+    ],
+    "extended": [
+      {
+        "id": "engine-oil",
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "oil-filter",
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 10000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "engine-air-filter",
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "cabin-air-filter",
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "brake-fluid",
+        "name": "刹车油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "coolant",
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "spark-plugs",
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "id": "tire-rotation",
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      },
+      {
+        "id": "battery-drive-system-inspection",
+        "name": "动力电池/电驱系统检查",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      }
+    ]
+  },
+  "vehicleTemplates": {
+    "civicFuel": [
+      {
+        "id": "fuel-additive",
+        "name": "燃油宝",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 5000
+      },
+      {
+        "id": "engine-oil",
+        "name": "机油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "id": "oil-filter",
+        "name": "机滤",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 5000,
+        "timeIntervalMonths": 6
+      },
+      {
+        "id": "cabin-air-filter",
+        "name": "空调滤芯",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 20000,
+        "timeIntervalMonths": 12
+      },
+      {
+        "id": "engine-air-filter",
+        "name": "空气滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 20000
+      },
+      {
+        "id": "transmission-fluid",
+        "name": "变速箱油",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "brake-fluid",
+        "name": "刹车油",
+        "remindByMileage": false,
+        "remindByTime": true,
+        "timeIntervalMonths": 36
+      },
+      {
+        "id": "spark-plugs",
+        "name": "火花塞",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 100000
+      },
+      {
+        "id": "drive-belt-inspection",
+        "name": "检查传动皮带",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 40000,
+        "timeIntervalMonths": 24
+      },
+      {
+        "id": "valve-clearance-inspection",
+        "name": "检查气门间隙",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 120000
+      },
+      {
+        "id": "brake-inspection",
+        "name": "检查刹车",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 120000
+      },
+      {
+        "id": "coolant",
+        "name": "防冻液",
+        "remindByMileage": true,
+        "remindByTime": true,
+        "mileageIntervalKm": 200000,
+        "timeIntervalMonths": 120
+      },
+      {
+        "id": "fuel-filter",
+        "name": "汽油滤芯",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 140000
+      },
+      {
+        "id": "tire-rotation",
+        "name": "轮胎换位",
+        "remindByMileage": true,
+        "remindByTime": false,
+        "mileageIntervalKm": 10000
+      }
+    ]
+  }
+}

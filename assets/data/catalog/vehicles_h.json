@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 2,
+  "letter": "H",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-8a059d307c",
+      "brand": "哈弗",
+      "model": "哈弗H5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f922900e8b",
+      "brand": "哈弗",
+      "model": "哈弗H6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4d4f68e25b",
+      "brand": "哈弗",
+      "model": "哈弗H6L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e7334f0b4b",
+      "brand": "哈弗",
+      "model": "哈弗大狗",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1b34aa6e78",
+      "brand": "哈弗",
+      "model": "哈弗大狗PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-86a78bd0f7",
+      "brand": "哈弗",
+      "model": "哈弗猛龙燃油版",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1e10a936a1",
+      "brand": "哈弗",
+      "model": "哈弗猛龙PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-1007dadce2",
+      "brand": "哈弗",
+      "model": "长城猛龙PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ec88cc169d",
+      "brand": "哈弗",
+      "model": "哈弗枭龙MAX",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2c4ddecb8b",
+      "brand": "哈弗",
+      "model": "哈弗H9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-94094159e2",
+      "brand": "红旗",
+      "model": "红旗H5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e92eac625a",
+      "brand": "红旗",
+      "model": "红旗H6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c2754107ab",
+      "brand": "红旗",
+      "model": "红旗E-QM5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b096057a96",
+      "brand": "红旗",
+      "model": "红旗EH7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7b39b189c3",
+      "brand": "红旗",
+      "model": "红旗H9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9a0e414e6d",
+      "brand": "红旗",
+      "model": "红旗HS3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d426e6648f",
+      "brand": "红旗",
+      "model": "红旗HS5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3cac77ea4f",
+      "brand": "红旗",
+      "model": "红旗天工06",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b5da2add66",
+      "brand": "红旗",
+      "model": "红旗HS7 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-8c4548abab",
+      "brand": "红旗",
+      "model": "红旗HQ9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6169868d7b",
+      "brand": "华境",
+      "model": "华境S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7d45ee8c82",
+      "brand": "海马",
+      "model": "海马8S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-511768fa1a",
+      "brand": "海马",
+      "model": "海马7X",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-96c9a5c5ba",
+      "brand": "海马",
+      "model": "海马7X-E",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-30a3de998b",
+      "brand": "黄海",
+      "model": "黄海·蛟龙 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-14a98fba99",
+      "brand": "黄海",
+      "model": "黄海·翔龙",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-175af6bf05",
+      "brand": "黄海",
+      "model": "黄海·蛟龙",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-00dfc6a2e6",
+      "brand": "黄海",
+      "model": "黄海·蛟龙X",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cd6c6c7bb4",
+      "brand": "黄海",
+      "model": "黄海·威龙",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-225b36435d",
+      "brand": "恒天",
+      "model": "恒天L4600",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ad52d55cee",
+      "brand": "华凯",
+      "model": "华凯新能源",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-abd0fb693f",
+      "brand": "华凯",
+      "model": "华凯VB06",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ec73a6bf3a",
+      "brand": "华凯",
+      "model": "华凯新能源VE06",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f0e68af14b",
+      "brand": "货拉拉多拉",
+      "model": "多拉大面",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-29b5260e21",
+      "brand": "货拉拉多拉",
+      "model": "多拉小货",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7ec6162ae3",
+      "brand": "华梓汽车",
+      "model": "欧麦加",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-17cf57daeb",
+      "brand": "宏远汽车",
+      "model": "宏远EM60",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-eaaeb6f693",
+      "brand": "皓旅房车",
+      "model": "麒领",
+      "template": "fuel"
+    }
+  ]
+}

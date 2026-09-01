@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 2,
+  "letter": "S",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-cdb8efd0b7",
+      "brand": "深蓝汽车",
+      "model": "深蓝SL03",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-6fec99925e",
+      "brand": "深蓝汽车",
+      "model": "深蓝L06",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-ac8511a070",
+      "brand": "深蓝汽车",
+      "model": "深蓝L07",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-e2d3dc556e",
+      "brand": "深蓝汽车",
+      "model": "深蓝S05",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-c091d4199f",
+      "brand": "深蓝汽车",
+      "model": "深蓝S07",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-9196858cd9",
+      "brand": "深蓝汽车",
+      "model": "深蓝G318",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-3c2c7e7768",
+      "brand": "深蓝汽车",
+      "model": "深蓝S09",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-28be4bd365",
+      "brand": "smart",
+      "model": "smart精灵#6 EHD超级电混",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-58feb201d0",
+      "brand": "smart",
+      "model": "smart精灵#1",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-60f4b7d5b1",
+      "brand": "smart",
+      "model": "smart精灵#3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-215154b718",
+      "brand": "smart",
+      "model": "smart精灵#5",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-7dedbf4a49",
+      "brand": "smart",
+      "model": "smart精灵#5 EHD超级电混",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-f744e6cca8",
+      "brand": "尚界",
+      "model": "尚界Z7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ea55fa38d4",
+      "brand": "尚界",
+      "model": "尚界Z7T",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-67dc87d9f2",
+      "brand": "尚界",
+      "model": "尚界H5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0d450031ca",
+      "brand": "示界",
+      "model": "示界06",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d44a653b3e",
+      "brand": "斯巴鲁",
+      "model": "斯巴鲁WRX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c00203aa9a",
+      "brand": "斯巴鲁",
+      "model": "CROSSTREK旭豹",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3c6adfaec0",
+      "brand": "斯巴鲁",
+      "model": "FORESTER森林人",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-70f34141d0",
+      "brand": "斯巴鲁",
+      "model": "OUTBACK傲虎",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a0f1a871e6",
+      "brand": "斯巴鲁",
+      "model": "斯巴鲁BRZ",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e0638e8453",
+      "brand": "世极",
+      "model": "世极",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-4a69334620",
+      "brand": "FREELANDER神行者",
+      "model": "神行者8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3637b412af",
+      "brand": "SWM斯威汽车",
+      "model": "斯威大虎",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-db05570c45",
+      "brand": "SWM斯威汽车",
+      "model": "斯威G01FF",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-12e769cabb",
+      "brand": "SWM斯威汽车",
+      "model": "斯威大虎EDi",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f570da3bac",
+      "brand": "SWM斯威汽车",
+      "model": "斯威G05",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-66f17f6e4e",
+      "brand": "思皓",
+      "model": "思皓A5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-78d9477fef",
+      "brand": "上喆",
+      "model": "上喆V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c23d17b05c",
+      "brand": "上喆",
+      "model": "上喆威霆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ce0cbc71e4",
+      "brand": "申龙客车",
+      "model": "申龙DST神州5号",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-778c32392d",
+      "brand": "申龙客车",
+      "model": "申龙地上铁510",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9a896b78f7",
+      "brand": "申龙客车",
+      "model": "申龙V6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b46693736d",
+      "brand": "赛德房车",
+      "model": "白鲸",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1617b2433d",
+      "brand": "赛德房车",
+      "model": "猎鹰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d1e78f9827",
+      "brand": "尚旅房车",
+      "model": "梦享家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e4aa3aa951",
+      "brand": "尚旅房车",
+      "model": "梦骑士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6f44c97cd5",
+      "brand": "赛家房车",
+      "model": "芒果方舱",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-709c83414f",
+      "brand": "赛家房车",
+      "model": "挑战者系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-acc06858c0",
+      "brand": "赛家房车",
+      "model": "奥铃系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8ed61a17cd",
+      "brand": "赛家房车",
+      "model": "霸王龙系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-01fb7448de",
+      "brand": "赛家房车",
+      "model": "中巴系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2ce0c90509",
+      "brand": "赛家房车",
+      "model": "图雅诺系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e8741e5766",
+      "brand": "沙龙汽车",
+      "model": "机甲龙",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-04a73556b3",
+      "brand": "双龙",
+      "model": "蒂维拉",
+      "template": "fuel"
+    }
+  ]
+}

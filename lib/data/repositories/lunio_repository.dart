@@ -23,12 +23,16 @@ import 'package:drift/drift.dart';
 import '../../core/date/local_date.dart';
 import '../../core/id/snowflake_id_generator.dart';
 import '../../domain/entities/car.dart' as domain;
+import '../../domain/entities/fuel_prediction.dart' as domain;
+import '../../domain/entities/fuel_price.dart' as domain;
 import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
 import '../../domain/entities/parking_countdown.dart' as domain;
+import '../../domain/entities/powertrain_type.dart' as domain;
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart' as domain;
 import '../../domain/entities/vehicle_model.dart' as domain;
+import '../../domain/rules/fuel_rules.dart';
 import '../../domain/rules/record_rules.dart';
 import '../backup/backup_codec.dart';
 import '../bootstrap/built_in_vehicle_catalog.dart';
@@ -44,6 +48,17 @@ class LunioRepository {
 
   /// 停车倒计时在偏好表里的 key。
   static const _parkingCountdownPreferenceKey = 'parkingCountdown';
+
+  /// 油价缓存在偏好表里的 key（临时数据，不进备份）。
+  static const _fuelPriceCachePreferenceKey = 'fuelPriceCache';
+
+  /// 手填油价在偏好表里的 key（JSON map："省份|油品code" → 每升价，
+  /// 临时数据，不进备份）。
+  static const _fuelManualPricesPreferenceKey = 'fuelManualPrices';
+
+  /// 加油预测全局偏好 key（省份/油品编号，进备份 v3 的 fuelPrediction）。
+  static const fuelProvincePreferenceKey = 'fuelProvince';
+  static const fuelGradePreferenceKey = 'fuelGrade';
 
   // ---- 提醒抑制类偏好 key 前缀（单一事实来源）----
   // reminder_notifications.dart 里的 key 构造函数引用这些常量拼 key，
@@ -98,9 +113,10 @@ class LunioRepository {
 
   /// 模板表幂等对账（事务内三步）：
   ///  1. 删除"目录里已不存在"的行（catalogId 不在目标集合）；
-  ///  2. 逐条比对：没有则插入、字段有变化则更新（_defaultItemNeedsUpdate）；
-  ///  3. 兼容老数据：catalogId 为 null 的旧行按"品牌+车型+项目名"匹配。
+  ///  2. 逐条比对：没有则插入、字段有变化则更新（_defaultItemNeedsUpdate）。
   /// 结果：库里的模板表与 asset 目录完全一致（升级 App 更新目录后自动同步）。
+  /// v9 起没有"catalogId 为 null 的老行"兼容分支——迁移已把旧表整个重建，
+  /// 行全部带 catalogId。
   Future<void> _ensureDefaultMaintenanceItems(
     BuiltInVehicleCatalog catalog,
   ) async {
@@ -126,20 +142,8 @@ class LunioRepository {
         for (final row in existing)
           if (row.catalogId != null) row.catalogId!: row,
       };
-      final existingByLegacyKey = {
-        for (final row in existing)
-          if (row.catalogId == null)
-            _defaultItemKey(row.vehicleBrand, row.vehicleModel, row.itemName):
-                row,
-      };
       for (final item in builtInItems) {
-        final existingRow =
-            existingByCatalogId[item.catalogId] ??
-            existingByLegacyKey[_defaultItemKey(
-              item.vehicleBrand,
-              item.vehicleModel,
-              item.itemName,
-            )];
+        final existingRow = existingByCatalogId[item.catalogId];
         if (existingRow == null) {
           await saveVehicleDefaultMaintenanceItem(item);
         } else if (_defaultItemNeedsUpdate(existingRow, item)) {
@@ -213,7 +217,7 @@ class LunioRepository {
   ///
   /// （原 createCar / createCarWithDefaultItems 两个遗留入口已删，R26：
   /// 前者等价 createCarWithMaintenanceItems(car, const [])，后者等价
-  /// ensureBootstrapData + listDefaultItemsForModel + 模板转实体的组合。）
+  /// ensureBootstrapData + listDefaultItemsForPowertrain + 模板转实体的组合。）
   Future<int> createCarWithMaintenanceItems(
     domain.Car car,
     List<domain.MaintenanceItem> items,
@@ -224,6 +228,7 @@ class LunioRepository {
     for (final item in items) {
       item.validate();
     }
+    FuelRules.validateTankCapacity(car.tankCapacityLiters);
     return database.transaction(() async {
       final carId = _nextId();
       await database
@@ -233,8 +238,10 @@ class LunioRepository {
               id: Value(carId),
               brand: car.brand,
               model: car.model,
+              powertrainType: Value(car.powertrainType.wire),
               currentMileageKm: car.currentMileageKm,
               roadDate: car.roadDate.toString(),
+              tankCapacityLiters: Value(car.tankCapacityLiters),
               syncStatus: Value(car.sync.status.name),
               updatedAt: car.sync.updatedAt.toIso8601String(),
               version: Value(car.sync.version),
@@ -279,19 +286,21 @@ class LunioRepository {
     return rows.map(_carFromRow).toList();
   }
 
-  /// 编辑车辆（只允许改里程/上路日期/sync；品牌型号是身份字段不可改，
-  /// 因此 UI 的编辑表单不提供品牌车型输入）。id 为空抛错。
+  /// 编辑车辆（只允许改里程/上路日期/油箱容积/sync；品牌型号是身份字段
+  /// 不可改，因此 UI 的编辑表单不提供品牌车型输入）。id 为空抛错。
   Future<void> updateCar(domain.Car car) {
     final carId = car.id;
     if (carId == null) {
       throw ArgumentError('Car id is required');
     }
+    FuelRules.validateTankCapacity(car.tankCapacityLiters);
     return (database.update(
       database.cars,
     )..where((row) => row.id.equals(carId))).write(
       CarsCompanion(
         currentMileageKm: Value(car.currentMileageKm),
         roadDate: Value(car.roadDate.toString()),
+        tankCapacityLiters: Value(car.tankCapacityLiters),
         syncStatus: Value(car.sync.status.name),
         updatedAt: Value(car.sync.updatedAt.toIso8601String()),
         version: Value(car.sync.version),
@@ -351,6 +360,9 @@ class LunioRepository {
           ))
           .go();
       await (database.delete(
+        database.fuelPredictions,
+      )..where((row) => row.carId.equals(carId))).go();
+      await (database.delete(
         database.cars,
       )..where((row) => row.id.equals(carId))).go();
       final remainingRows = await (database.select(
@@ -377,8 +389,7 @@ class LunioRepository {
           VehicleDefaultMaintenanceItemsCompanion.insert(
             id: Value(itemId),
             catalogId: Value(item.catalogId),
-            vehicleBrand: item.vehicleBrand,
-            vehicleModel: item.vehicleModel,
+            powertrainType: Value(item.powertrainType.wire),
             itemName: item.itemName,
             remindByMileage: item.remindByMileage,
             remindByTime: item.remindByTime,
@@ -395,7 +406,7 @@ class LunioRepository {
     return itemId;
   }
 
-  /// 单条插入车型（bootstrap 用）。
+  /// 单条插入车型（bootstrap 用）。template 是推荐动力类型。
   Future<int> saveVehicleModel(domain.VehicleModel model) async {
     final modelId = _nextId();
     await database
@@ -406,6 +417,7 @@ class LunioRepository {
             catalogId: Value(model.catalogId),
             brand: model.brand,
             model: model.model,
+            template: Value(model.template.wire),
             sortOrder: model.sortOrder,
             syncStatus: Value(model.sync.status.name),
             updatedAt: model.sync.updatedAt.toIso8601String(),
@@ -424,6 +436,7 @@ class LunioRepository {
         catalogId: Value(model.catalogId),
         brand: Value(model.brand),
         model: Value(model.model),
+        template: Value(model.template.wire),
         sortOrder: Value(model.sortOrder),
         syncStatus: Value(model.sync.status.name),
         updatedAt: Value(model.sync.updatedAt.toIso8601String()),
@@ -442,8 +455,7 @@ class LunioRepository {
     )..where((row) => row.id.equals(id))).write(
       VehicleDefaultMaintenanceItemsCompanion(
         catalogId: Value(item.catalogId),
-        vehicleBrand: Value(item.vehicleBrand),
-        vehicleModel: Value(item.vehicleModel),
+        powertrainType: Value(item.powertrainType.wire),
         itemName: Value(item.itemName),
         remindByMileage: Value(item.remindByMileage),
         remindByTime: Value(item.remindByTime),
@@ -468,6 +480,7 @@ class LunioRepository {
     return row.catalogId != model.catalogId ||
         row.brand != model.brand ||
         row.model != model.model ||
+        row.template != model.template.wire ||
         row.sortOrder != model.sortOrder ||
         row.syncStatus != model.sync.status.name ||
         row.version != model.sync.version;
@@ -479,8 +492,7 @@ class LunioRepository {
     domain.VehicleDefaultMaintenanceItem item,
   ) {
     return row.catalogId != item.catalogId ||
-        row.vehicleBrand != item.vehicleBrand ||
-        row.vehicleModel != item.vehicleModel ||
+        row.powertrainType != item.powertrainType.wire ||
         row.itemName != item.itemName ||
         row.remindByMileage != item.remindByMileage ||
         row.remindByTime != item.remindByTime ||
@@ -501,21 +513,65 @@ class LunioRepository {
     return rows.map(_vehicleModelFromRow).toList();
   }
 
-  /// 某品牌+车型的默认保养项目模板（添加车辆向导第二步的初始草稿）。
-  Future<List<domain.VehicleDefaultMaintenanceItem>> listDefaultItemsForModel({
-    required String brand,
-    required String model,
+  /// 某动力类型的默认保养项目模板（添加车辆向导第二步的初始草稿、
+  /// "恢复默认项目"的数据源）。v9 起按动力类型取，不再按品牌+车型。
+  Future<List<domain.VehicleDefaultMaintenanceItem>>
+  listDefaultItemsForPowertrain({
+    required domain.PowertrainType powertrainType,
   }) async {
     final rows =
         await (database.select(database.vehicleDefaultMaintenanceItems)
               ..where(
-                (row) =>
-                    row.vehicleBrand.equals(brand) &
-                    row.vehicleModel.equals(model),
+                (row) => row.powertrainType.equals(powertrainType.wire),
               )
               ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
             .get();
     return rows.map(_defaultItemFromRow).toList();
+  }
+
+  /// 车型专属默认保养项目（如思域的 civicFuel 模板，ADR 0004）。
+  /// 命中条件全部满足才返回（否则返回 null，调用方回退动力类型通用模板）：
+  ///  - （品牌, 车型）能在内置目录里找到条目；
+  ///  - 条目带 itemTemplate（车型专属模板）；
+  ///  - 调用方选的动力类型与目录推荐动力类型一致（用户改选其他动力
+  ///    类型时，专属模板不再适用，按所选动力类型走通用模板）。
+  /// 返回的实体不落库（vehicle_default_maintenance_items 表只存五个
+  /// 动力类型组），仅作为向导草稿和"恢复"列表的内存数据源。
+  Future<List<domain.VehicleDefaultMaintenanceItem>?>
+  listDefaultItemsForVehicleModel({
+    required String brand,
+    required String model,
+    required domain.PowertrainType selectedPowertrain,
+  }) async {
+    final catalog = await _loadCatalog();
+    final vehicle = catalog.findVehicle(brand, model);
+    final itemTemplate = vehicle?.itemTemplate;
+    if (itemTemplate == null ||
+        domain.PowertrainType.byWire(vehicle!.template) != selectedPowertrain) {
+      return null;
+    }
+    final specs = catalog.vehicleTemplateItems(itemTemplate);
+    if (specs == null) {
+      return null;
+    }
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime.now(),
+    );
+    return [
+      for (final (index, spec) in specs.indexed)
+        domain.VehicleDefaultMaintenanceItem(
+          catalogId: 'vtpl:$itemTemplate:${spec.id}',
+          powertrainType: selectedPowertrain,
+          itemName: spec.name,
+          remindByMileage: spec.remindByMileage,
+          remindByTime: spec.remindByTime,
+          mileageIntervalKm: spec.mileageIntervalKm,
+          timeIntervalMonths: spec.timeIntervalMonths,
+          sortOrder: index + 1,
+          sync: sync,
+        ),
+    ];
   }
 
   /// 新增保养项目（先过实体 validate；无事务——单条插入）。
@@ -853,8 +909,9 @@ class LunioRepository {
     });
   }
 
-  /// 导出备份：4 张业务表全量读取（顺序两次查询拼 itemIds，无 N+1），
-  /// 组装 BackupPayload（schemaVersion 固定 2）。不含偏好/停车倒计时/目录。
+  /// 导出备份：4 张业务表 + 加油预测设置全量读取（顺序两次查询拼
+  /// itemIds，无 N+1），组装 BackupPayload（schemaVersion=4，v4 起车
+  /// 带动力类型）。不含偏好/停车倒计时/油价缓存与手填价/目录。
   Future<BackupPayload> exportBackupPayload() async {
     final cars = (await database.select(database.cars).get())
         .map(_carFromRow)
@@ -875,29 +932,48 @@ class LunioRepository {
     final records = recordRows.map((row) {
       return _recordFromRow(row, itemIdsByRecordId[row.id] ?? const []);
     }).toList();
+    final fuelPredictionRows = await database.select(
+      database.fuelPredictions,
+    ).get();
+    final fuelPredictions = fuelPredictionRows.map(_fuelPredictionFromRow)
+        .toList();
+    // 全局加油设置（省份/油品）：用户改过才有值，没改过不带进备份。
+    final fuelProvince = await getPreferenceValue(fuelProvincePreferenceKey);
+    final fuelGradeCode = await getPreferenceValue(fuelGradePreferenceKey);
     return BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: BackupCodec.currentSchemaVersion,
       cars: cars,
       maintenanceItems: items,
       records: records,
+      fuelPrediction: fuelProvince == null || fuelGradeCode == null
+          ? null
+          : BackupFuelPreference(
+              province: fuelProvince,
+              gradeCode: fuelGradeCode,
+            ),
+      fuelPredictions: fuelPredictions,
     );
   }
 
   /// 恢复备份（导入）。流程：
-  ///  1. 版本校验（必须 2）；
+  ///  1. 版本校验（必须 2/3/4，v2 老备份没有加油字段，v3 老备份车没有
+  ///     动力类型字段、恢复后默认燃油）；
   ///  2. 事务外先做两层预校验，失败直接抛、不碰库：
   ///     a. 引用完整性（_validateBackupReferences）；
   ///     b. 业务规则——每个项目过实体 validate、每条记录过
-  ///        RecordRules.validateRecord（与手工录入同一套规则，
-  ///        拒绝篡改过的备份：负金额/负里程/空项目/非法间隔，R35）；
-  ///  3. 单一大事务：_clearRestorableDataInTransaction 只清 4 张业务表
+  ///        RecordRules.validateRecord、每条加油设置过实体 validate
+  ///        （与手工录入同一套规则，拒绝篡改过的备份，R35）；
+  ///  3. 单一大事务：_clearRestorableDataInTransaction 只清业务表
   ///     （偏好表保留——主题/通知设置/手动日期/停车倒计时不受影响，
-  ///     仅按前缀清掉提醒抑制键，R2）→ 按 cars→items→records 顺序
-  ///     逐行插入，id 全部换成新雪花 id（旧→新映射表），任何一行违反
-  ///     约束抛错则整体回滚（UI 提示"未写入任何数据"）；
-  ///  4. 应用车辆指向恢复出的第一辆车。
+  ///     仅按前缀清掉提醒抑制键，R2）→ 按 cars→items→records→
+  ///     fuelPredictions 顺序逐行插入，id 全部换成新雪花 id（旧→新
+  ///     映射表），任何一行违反约束抛错则整体回滚（UI 提示"未写入任何数据"）；
+  ///  4. 应用车辆指向恢复出的第一辆车；
+  ///  5. v3 起备份带全局加油设置时覆盖省份/油品偏好（v2 不动）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
-    if (payload.schemaVersion != 2) {
+    if (payload.schemaVersion != 2 &&
+        payload.schemaVersion != 3 &&
+        payload.schemaVersion != BackupCodec.currentSchemaVersion) {
       throw UnsupportedError(
         'Unsupported backup schemaVersion: ${payload.schemaVersion}',
       );
@@ -924,8 +1000,10 @@ class LunioRepository {
                 id: Value(carId),
                 brand: car.brand,
                 model: car.model,
+                powertrainType: Value(car.powertrainType.wire),
                 currentMileageKm: car.currentMileageKm,
                 roadDate: car.roadDate.toString(),
+                tankCapacityLiters: Value(car.tankCapacityLiters),
                 syncStatus: Value(car.sync.status.name),
                 updatedAt: car.sync.updatedAt.toIso8601String(),
                 version: Value(car.sync.version),
@@ -1015,6 +1093,41 @@ class LunioRepository {
 
       await _writeAppliedCarId(firstRestoredCarId);
       await _ensureAppliedCarInTransaction();
+      // v3 备份：恢复全局加油设置（省份/油品）。v2 备份没有该字段，
+      // 保持用户当前的省份/油品不动。
+      final fuelPreference = payload.fuelPrediction;
+      if (fuelPreference != null) {
+        await _writePreferenceValue(
+          fuelProvincePreferenceKey,
+          fuelPreference.province,
+        );
+        await _writePreferenceValue(
+          fuelGradePreferenceKey,
+          fuelPreference.gradeCode,
+        );
+      }
+      // 每车加油设置：按新车辆 id 重插（车辆本身已换成新雪花 id）。
+      // 容积在 v8 起随 cars 条目走，这里只插剩余油量。
+      for (final prediction in payload.fuelPredictions) {
+        final carId = carIdMap[prediction.carId];
+        if (carId == null) {
+          throw ArgumentError(
+            'Backup fuel prediction references missing car',
+          );
+        }
+        await database
+            .into(database.fuelPredictions)
+            .insert(
+              FuelPredictionsCompanion.insert(
+                id: Value(_nextId()),
+                carId: carId,
+                fuelPercent: prediction.fuelPercent,
+                syncStatus: Value(prediction.sync.status.name),
+                updatedAt: prediction.sync.updatedAt.toIso8601String(),
+                version: Value(prediction.sync.version),
+              ),
+            );
+      }
     });
   }
 
@@ -1102,9 +1215,151 @@ class LunioRepository {
     return setPreferenceValue(_parkingCountdownPreferenceKey, null);
   }
 
-  /// 清空数据（"我的"页入口）：事务内删 5 张表（4 张业务表 + 偏好表）。
-  /// 语义（用户确认过的口径）：清空车辆、保养项目、保养记录和全部偏好
-  /// 设置（主题、通知、手动日期、开发者模式、停车倒计时、snooze/ack）；
+  // ---------------- 加油预测（v7 新增；v8 起只剩剩余油量） ----------------
+
+  /// 读某辆车的加油预测设置（剩余油量）；没设置过返回 null
+  /// （展示层按默认 50% 处理）。
+  Future<domain.FuelPrediction?> getFuelPredictionForCar(int carId) async {
+    final row = await (database.select(
+      database.fuelPredictions,
+    )..where((row) => row.carId.equals(carId))).getSingleOrNull();
+    if (row == null) {
+      return null;
+    }
+    return domain.FuelPrediction(
+      id: row.id,
+      carId: row.carId,
+      fuelPercent: row.fuelPercent,
+      sync: SyncMetadata(
+        status: SyncStatus.values.byName(row.syncStatus),
+        updatedAt: DateTime.parse(row.updatedAt),
+        version: row.version,
+      ),
+    );
+  }
+
+  /// 保存加油预测设置（按 carId upsert：有则更新、无则插入）。
+  /// 副作用：syncStatus 记 pendingUpdate、updatedAt 刷新（沿用全库约定）。
+  Future<void> saveFuelPrediction(domain.FuelPrediction prediction) async {
+    prediction.validate();
+    final existingRow = await (database.select(
+      database.fuelPredictions,
+    )..where((row) => row.carId.equals(prediction.carId))).getSingleOrNull();
+    final now = DateTime.now().toIso8601String();
+    if (existingRow == null) {
+      await database
+          .into(database.fuelPredictions)
+          .insert(
+            FuelPredictionsCompanion.insert(
+              id: Value(_nextId()),
+              carId: prediction.carId,
+              fuelPercent: prediction.fuelPercent,
+              syncStatus: const Value('pendingUpdate'),
+              updatedAt: now,
+            ),
+          );
+      return;
+    }
+    await (database.update(
+      database.fuelPredictions,
+    )..where((row) => row.id.equals(existingRow.id))).write(
+      FuelPredictionsCompanion(
+        fuelPercent: Value(prediction.fuelPercent),
+        syncStatus: const Value('pendingUpdate'),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  /// 读油价缓存（上次成功拉取的数据，JSON 存偏好）。
+  /// JSON 损坏时打日志并返回 null（与停车倒计时同口径，R14）。
+  Future<domain.FuelPriceData?> getFuelPriceCache() async {
+    final value = await getPreferenceValue(_fuelPriceCachePreferenceKey);
+    if (value == null) {
+      return null;
+    }
+    try {
+      final json = jsonDecode(value) as Map<String, Object?>;
+      return domain.FuelPriceData.fromJson(json);
+    } catch (error) {
+      developer.log(
+        'LunioRepository: 油价缓存 JSON 损坏，按无缓存处理：$error',
+        name: 'lunio.repository',
+      );
+      return null;
+    }
+  }
+
+  /// 写油价缓存（整个覆盖：一次拉取的结果就是一份完整缓存）。
+  Future<void> saveFuelPriceCache(domain.FuelPriceData data) {
+    return setPreferenceValue(
+      _fuelPriceCachePreferenceKey,
+      jsonEncode(data.toJson()),
+    );
+  }
+
+  /// 读全部手填油价（key = "省份|油品code"，value = 每升价）。
+  /// JSON 损坏时打日志并按空 map 处理。
+  Future<Map<String, double>> getFuelManualPrices() async {
+    final value = await getPreferenceValue(_fuelManualPricesPreferenceKey);
+    if (value == null) {
+      return const {};
+    }
+    try {
+      final json = jsonDecode(value) as Map<String, Object?>;
+      return json.map((key, value) => MapEntry(key, (value as num).toDouble()));
+    } catch (error) {
+      developer.log(
+        'LunioRepository: 手填油价 JSON 损坏，按无手填处理：$error',
+        name: 'lunio.repository',
+      );
+      return const {};
+    }
+  }
+
+  /// 读某个"省+油品"组合的手填价；没填过返回 null。
+  Future<double?> getFuelManualPrice({
+    required String province,
+    required domain.FuelGrade grade,
+  }) async {
+    final prices = await getFuelManualPrices();
+    return prices[_fuelManualPriceKey(province, grade)];
+  }
+
+  /// 写某个"省+油品"组合的手填价（null = 清除该组合）。
+  /// map 清空后把偏好整个删掉，不留空壳数据。
+  Future<void> setFuelManualPrice({
+    required String province,
+    required domain.FuelGrade grade,
+    required double? pricePerLiter,
+  }) async {
+    final prices = Map<String, double>.of(await getFuelManualPrices());
+    final key = _fuelManualPriceKey(province, grade);
+    if (pricePerLiter == null) {
+      prices.remove(key);
+    } else {
+      prices[key] = pricePerLiter;
+    }
+    if (prices.isEmpty) {
+      await setPreferenceValue(_fuelManualPricesPreferenceKey, null);
+      return;
+    }
+    await setPreferenceValue(
+      _fuelManualPricesPreferenceKey,
+      jsonEncode(prices),
+    );
+  }
+
+  /// 手填油价 map 的 key：省份 + 油品 code（\u0000 分隔防歧义，
+  /// 与 bootstrap 兜底键同一手法）。
+  static String _fuelManualPriceKey(String province, domain.FuelGrade grade) =>
+      '$province\u0000${grade.code}';
+
+  /// 清空数据（"我的"页入口）：事务内删 6 张表（4 张业务表
+  /// + 加油预测设置表 + 偏好表）。
+  /// 语义（用户确认过的口径）：清空车辆、保养项目、保养记录、加油预测
+  /// 设置和全部偏好设置（主题、通知、手动日期、开发者模式、停车倒计时、
+  /// 油价缓存、手填油价、snooze/ack）；
   /// 默认车辆模型与默认保养项目两张目录表不动。
   /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录；
   /// 系统通知的取消由 UI 层（settings_data.dart）在清空成功后负责。
@@ -1114,12 +1369,14 @@ class LunioRepository {
     });
   }
 
-  /// 清库实现（须在事务内调用）。删 5 张表：偏好表 + 4 张业务表。
+  /// 清库实现（须在事务内调用）。删 6 张表：偏好表 + 4 张业务表
+  /// + 加油预测设置表（油价缓存/手填油价在偏好表里，随之一起清掉）。
   Future<void> _clearAllDataInTransaction() async {
     await database.delete(database.appPreferences).go();
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();
     await database.delete(database.maintenanceItems).go();
+    await database.delete(database.fuelPredictions).go();
     await database.delete(database.cars).go();
   }
 
@@ -1132,6 +1389,7 @@ class LunioRepository {
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();
     await database.delete(database.maintenanceItems).go();
+    await database.delete(database.fuelPredictions).go();
     await database.delete(database.cars).go();
     for (final prefix in reminderSuppressionKeyPrefixes) {
       await (database.delete(database.appPreferences)
@@ -1233,8 +1491,10 @@ class LunioRepository {
       id: row.id,
       brand: row.brand,
       model: row.model,
+      powertrainType: domain.PowertrainType.byWire(row.powertrainType),
       currentMileageKm: row.currentMileageKm,
       roadDate: LocalDate.parse(row.roadDate),
+      tankCapacityLiters: row.tankCapacityLiters,
       sync: SyncMetadata(
         status: SyncStatus.values.byName(row.syncStatus),
         updatedAt: DateTime.parse(row.updatedAt),
@@ -1250,8 +1510,7 @@ class LunioRepository {
     return domain.VehicleDefaultMaintenanceItem(
       id: row.id,
       catalogId: row.catalogId,
-      vehicleBrand: row.vehicleBrand,
-      vehicleModel: row.vehicleModel,
+      powertrainType: domain.PowertrainType.byWire(row.powertrainType),
       itemName: row.itemName,
       remindByMileage: row.remindByMileage,
       remindByTime: row.remindByTime,
@@ -1268,13 +1527,14 @@ class LunioRepository {
     );
   }
 
-  /// 车型表行 → 实体。
+  /// 车型表行 → 实体。template 是推荐动力类型（添加向导预选用）。
   domain.VehicleModel _vehicleModelFromRow(VehicleModelRow row) {
     return domain.VehicleModel(
       id: row.id,
       catalogId: row.catalogId,
       brand: row.brand,
       model: row.model,
+      template: domain.PowertrainType.byWire(row.template),
       sortOrder: row.sortOrder,
       sync: SyncMetadata(
         status: SyncStatus.values.byName(row.syncStatus),
@@ -1545,6 +1805,11 @@ class LunioRepository {
         }
       }
     }
+    for (final prediction in payload.fuelPredictions) {
+      if (!carIds.contains(prediction.carId)) {
+        throw ArgumentError('Backup fuel prediction references missing car');
+      }
+    }
   }
 
   /// 备份业务规则校验（恢复前、事务外执行，R35）：
@@ -1553,6 +1818,16 @@ class LunioRepository {
   /// 非法间隔）在开事务前就被拒绝，保证"失败时未写入任何数据"。
   /// 校验失败统一包装成中文 ArgumentError（UI 直接展示给用户）。
   void _validateBackupBusinessRules(BackupPayload payload) {
+    for (final car in payload.cars) {
+      try {
+        FuelRules.validateTankCapacity(car.tankCapacityLiters);
+      } on ArgumentError catch (error) {
+        throw ArgumentError(
+          '备份文件中存在无效数据（车辆「${car.brand} ${car.model}」油箱容积）：'
+          '${error.message}',
+        );
+      }
+    }
     for (final item in payload.maintenanceItems) {
       try {
         item.validate();
@@ -1567,6 +1842,15 @@ class LunioRepository {
       } on ArgumentError catch (error) {
         throw ArgumentError(
           '备份文件中存在无效数据（保养记录 ${record.date}）：${error.message}',
+        );
+      }
+    }
+    for (final prediction in payload.fuelPredictions) {
+      try {
+        prediction.validate();
+      } on ArgumentError catch (error) {
+        throw ArgumentError(
+          '备份文件中存在无效数据（加油预测设置）：${error.message}',
         );
       }
     }
@@ -1614,11 +1898,22 @@ class LunioRepository {
       ),
     );
   }
+
+  /// 加油预测表行 → 实体。
+  domain.FuelPrediction _fuelPredictionFromRow(FuelPredictionRow row) {
+    return domain.FuelPrediction(
+      id: row.id,
+      carId: row.carId,
+      fuelPercent: row.fuelPercent,
+      sync: SyncMetadata(
+        status: SyncStatus.values.byName(row.syncStatus),
+        updatedAt: DateTime.parse(row.updatedAt),
+        version: row.version,
+      ),
+    );
+  }
 }
 
 // bootstrap 对账用的"旧数据兜底键"：\u0000 作分隔符保证组合不歧义。
+// （只用于车型表；模板表 v9 重建后全部行带 catalogId，不需要兜底键。）
 String _vehicleModelKey(String brand, String model) => '$brand\u0000$model';
-
-String _defaultItemKey(String brand, String model, String itemName) {
-  return '$brand\u0000$model\u0000$itemName';
-}

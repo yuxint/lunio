@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "letter": "I",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-45f05a7bab",
+      "brand": "iCAR",
+      "model": "iCAR超级V23",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-232d2ec792",
+      "brand": "iCAR",
+      "model": "iCAR V27",
+      "template": "ev"
+    }
+  ]
+}

@@ -4,7 +4,7 @@
 // build_runner 生成 app_database.g.dart 里的类型安全查询代码
 // （那个文件是生成物，不要手改；表结构变更后跑 dart run build_runner build）。
 //
-// 通用约定（7 张表一致）：
+// 通用约定（8 张表一致）：
 //  - 主键 id 手工填 Snowflake 雪花 id（见 core/id/），不用自增；
 //  - 每张业务表都带 syncStatus/updatedAt/version 三列（云同步预留）；
 //  - 没有声明 FOREIGN KEY 外键——表间关联靠应用层维护
@@ -13,11 +13,12 @@
 // ⚠ 唯一约束是重要的业务边界（改字段前先看 docs/migration/）：
 //  - cars:                {brand, model, roadDate}
 //  - vehicleModels:       {catalogId}, {brand, model}
-//  - defaultItems:        {catalogId}, {brand, model, itemName}
+//  - defaultItems:        {catalogId}, {powertrainType, itemName}
 //  - maintenanceItems:    {carsId, name}
 //  - maintenanceRecords:  {carId, date}          ← 一辆车一天只能一条记录
 //  - recordItems:         {carId, date, itemId}
 //  - appPreferences:      {key}
+//  - fuelPredictions:     {carId}                ← 一辆车一份加油预测设置
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -31,13 +32,20 @@ part 'app_database.g.dart';
 // ---------------------------- 表定义 ----------------------------
 
 /// 车辆表。roadDate/syncStatus/updatedAt 以文本存储（yyyy-MM-dd / ISO 时间）。
+/// tankCapacityLiters：油箱容积（升），车的属性，添加/编辑车辆时填写，
+/// 可空（非必填）；加油预估用它算加满金额（v8 起从 fuel_predictions 迁来）。
+/// powertrainType：动力类型（v9 起，ADR 0003），添加车辆时用户选择、
+/// 添加后不可改；老库迁移与 v3 备份导入一律默认 'fuel'。
 @DataClassName('CarRow')
 class Cars extends Table {
   IntColumn get id => integer()();
   TextColumn get brand => text()();
   TextColumn get model => text()();
+  TextColumn get powertrainType =>
+      text().withDefault(const Constant('fuel'))();
   IntColumn get currentMileageKm => integer()();
   TextColumn get roadDate => text()();
+  RealColumn get tankCapacityLiters => real().nullable()();
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
   IntColumn get version => integer().withDefault(const Constant(1))();
@@ -52,12 +60,14 @@ class Cars extends Table {
 }
 
 /// 内置默认保养项目模板表（目录数据，首启从 asset 灌入，按 catalogId 对账）。
+/// v9 起按动力类型分组（每动力一组，共五组约 50 行），不再按品牌+车型
+/// 逐条展开（ADR 0003）。
 @DataClassName('VehicleDefaultMaintenanceItemRow')
 class VehicleDefaultMaintenanceItems extends Table {
   IntColumn get id => integer()();
   TextColumn get catalogId => text().nullable()();
-  TextColumn get vehicleBrand => text()();
-  TextColumn get vehicleModel => text()();
+  TextColumn get powertrainType =>
+      text().withDefault(const Constant('fuel'))();
   TextColumn get itemName => text()();
   BoolColumn get remindByMileage => boolean()();
   BoolColumn get remindByTime => boolean()();
@@ -77,17 +87,20 @@ class VehicleDefaultMaintenanceItems extends Table {
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
     {catalogId},
-    {vehicleBrand, vehicleModel, itemName},
+    {powertrainType, itemName},
   ];
 }
 
-/// 内置车型目录表（约 190 个车型，添加车辆向导的选择器数据源）。
+/// 内置车型目录表（2026-09-01 起精简为每品牌最多 10 款热门车型，共约 1220 条，
+/// 添加车辆向导的选择器数据源）。
+/// template：推荐动力类型 wire 值（添加向导预选动力 chip 用，v9 起）。
 @DataClassName('VehicleModelRow')
 class VehicleModels extends Table {
   IntColumn get id => integer()();
   TextColumn get catalogId => text().nullable()();
   TextColumn get brand => text()();
   TextColumn get model => text()();
+  TextColumn get template => text().withDefault(const Constant('fuel'))();
   IntColumn get sortOrder => integer()();
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
@@ -185,7 +198,8 @@ class MaintenanceRecordItems extends Table {
 }
 
 /// 偏好 KV 表：主题、应用车辆、通知设置、手动日期、停车倒计时、
-/// snooze/ack 记录等都存这里（key 文案见 AGENTS.md 的"重要偏好 key"）。
+/// 油价缓存、手填油价、snooze/ack 记录等都存这里
+/// （key 文案见 AGENTS.md 的"重要偏好 key"）。
 /// value 可为 null（等价"删除该 key"）。
 @DataClassName('AppPreferenceRow')
 class AppPreferences extends Table {
@@ -205,6 +219,30 @@ class AppPreferences extends Table {
   ];
 }
 
+/// 加油预测设置表（按车辆一条）：剩余油量（= 加满预估的基准档）。
+/// 唯一约束 {carId}：一辆车只有一份加油预测设置；
+/// 删除车辆时由 Repository 在事务里级联删除。
+/// v8 起容积挪到 cars 表（车的属性），本表只剩剩余油量；
+/// 没有行的车按默认 50% 展示（首次滚动定档时才落库）。油价不在本表
+/// （油价缓存/手填价是全局临时状态，存偏好表，不进备份）。
+@DataClassName('FuelPredictionRow')
+class FuelPredictions extends Table {
+  IntColumn get id => integer()();
+  IntColumn get carId => integer()();
+  IntColumn get fuelPercent => integer()();
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+  TextColumn get updatedAt => text()();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  @override
+  List<Set<Column<Object>>> get uniqueKeys => [
+    {carId},
+  ];
+}
+
 // ---------------------------- 数据库与迁移 ----------------------------
 
 /// App 数据库。列出全部表后由 Drift 生成类型安全的 API
@@ -218,6 +256,7 @@ class AppPreferences extends Table {
     MaintenanceRecords,
     MaintenanceRecordItems,
     AppPreferences,
+    FuelPredictions,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -227,10 +266,15 @@ class AppDatabase extends _$AppDatabase {
   /// 测试构造：内存库（每个测试用例独立、不落盘）。
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
-  /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion=2，两者独立演进）。
+  /// 测试构造：自定义执行器。迁移测试用它打开临时文件库——先建库再
+  /// 退化成老版本形状、拨回老版本号，重开后验证 onUpgrade 路径
+  /// （内存库每次都是全新 schema，走不到迁移分支）。
+  AppDatabase.withExecutor(super.executor);
+
+  /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion=4，两者独立演进）。
   /// 改表结构必须 +1 并补 onUpgrade 分支，再跑 build_runner。
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 9;
 
   /// 迁移策略：老库升级到当前版本的路径（全新安装走 createAll，不经过这里）。
   ///
@@ -244,6 +288,15 @@ class AppDatabase extends _$AppDatabase {
   /// v5→v6：三张业务表（items/records/recordItems）补普通索引，
   ///        升级库用 createIndex 建独立索引对象，与全新安装时
   ///        建表附带的表内索引两种形态语义等价（R19）。
+  /// v6→v7：新增加油预测设置表 fuel_predictions（纯建表，老数据不动）。
+  /// v7→v8：油箱容积从 fuel_predictions 挪到 cars（车的属性）。
+  ///       cars 加列 tank_capacity_liters，fuel_predictions 删旧列；
+  ///       容积数据不搬迁（App 未上线、库里只有开发数据，产品已确认
+  ///        放弃）。删列用 DROP COLUMN（SQLite ≥3.35）。
+  /// v8→v9：动力类型改版（ADR 0003）。cars/vehicle_models 各加一列
+  ///       （powertrainType / template，默认 'fuel'）；默认项目模板表从
+  ///       "按品牌+车型"重建为"按动力类型"——形状变了，直接删表重建，
+  ///       旧模板行（约 1.8 万行）不搬迁，首启 bootstrap 按新目录灌入。
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
@@ -284,6 +337,35 @@ class AppDatabase extends _$AppDatabase {
             await migrator.createIndex(idxMaintenanceItemsCarsId);
             await migrator.createIndex(idxMaintenanceRecordsCarId);
             await migrator.createIndex(idxMaintenanceRecordItemsRecordId);
+          }
+          if (from < 7) {
+            // v6→v7：加油预测设置表。全新安装走 createAll 时建表约束
+            // 已含 {carId} 唯一约束，这里 createTable 与其语义等价。
+            await migrator.createTable(fuelPredictions);
+          }
+          if (from < 8) {
+            // v7→v8：容积挪去 cars 表（车的属性）。
+            // 先给 cars 加列（老库没有这列，不加会在写车时报 no such column），
+            // 再删 fuel_predictions 的旧列。容积数据不搬迁（App 未上线，
+            // 产品已确认放弃旧开发数据）。列没进任何索引/唯一约束，
+            // DROP COLUMN 安全（SQLite ≥3.35）。
+            await migrator.addColumn(cars, cars.tankCapacityLiters);
+            await customStatement(
+              'ALTER TABLE fuel_predictions DROP COLUMN tank_capacity_liters',
+            );
+          }
+          if (from < 9) {
+            // v8→v9：动力类型改版（ADR 0003）。
+            // cars/vehicle_models 加列（都有默认值，老行自动补 'fuel'）；
+            // 默认项目模板表形状从"品牌+车型"变成"动力类型"，删表重建，
+            // 旧数据不搬迁——首启 bootstrap 会按新目录重新灌入。
+            await migrator.addColumn(cars, cars.powertrainType);
+            await migrator.addColumn(vehicleModels, vehicleModels.template);
+            // deleteTable 收表名字符串；删表连带旧的部分唯一索引一起消失。
+            await migrator.deleteTable(
+              vehicleDefaultMaintenanceItems.actualTableName,
+            );
+            await migrator.createTable(vehicleDefaultMaintenanceItems);
           }
         }
       },

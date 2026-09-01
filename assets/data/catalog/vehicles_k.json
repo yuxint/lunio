@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 2,
+  "letter": "K",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-89a7cc92e3",
+      "brand": "凯迪拉克",
+      "model": "凯迪拉克CT5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8b55802c30",
+      "brand": "凯迪拉克",
+      "model": "凯迪拉克CT6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ccb9f08f98",
+      "brand": "凯迪拉克",
+      "model": "凯迪拉克GT4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c3436c9169",
+      "brand": "凯迪拉克",
+      "model": "凯迪拉克XT4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ba87b6d4a9",
+      "brand": "凯迪拉克",
+      "model": "凯迪拉克XT5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ae68a956dd",
+      "brand": "凯迪拉克",
+      "model": "凯迪拉克XT6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3d10f5b8f9",
+      "brand": "凯迪拉克",
+      "model": "IQ傲歌",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-475aaaedb5",
+      "brand": "凯迪拉克",
+      "model": "IQ锐歌",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f858230b71",
+      "brand": "凯迪拉克",
+      "model": "凯威德",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d3aff6f609",
+      "brand": "凯迪拉克",
+      "model": "凯雷德ESCALADE",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-764c444e05",
+      "brand": "凯翼",
+      "model": "轩度",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-57118531c2",
+      "brand": "凯翼",
+      "model": "拾月",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-dd50e10dfe",
+      "brand": "凯翼",
+      "model": "炫界",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c0121787db",
+      "brand": "凯翼",
+      "model": "昆仑",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-27b92d0ef0",
+      "brand": "凯翼",
+      "model": "炫界Pro EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-a19ba224b3",
+      "brand": "凯翼",
+      "model": "昆仑iHD",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-067c928f92",
+      "brand": "凯翼",
+      "model": "昆仑L8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d1bd5cf907",
+      "brand": "凯翼",
+      "model": "江豚E5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8c7ea4a2ac",
+      "brand": "凯翼",
+      "model": "江豚E7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e5aa42299a",
+      "brand": "开瑞",
+      "model": "江豚",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0135357e2a",
+      "brand": "开瑞",
+      "model": "海豚EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3546c844d0",
+      "brand": "开瑞",
+      "model": "江豚E5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a5d2802d28",
+      "brand": "开瑞",
+      "model": "江豚E7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3c3355be8e",
+      "brand": "开瑞",
+      "model": "小象EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e316fca2cb",
+      "brand": "开瑞",
+      "model": "小象X3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-24305209f7",
+      "brand": "开瑞",
+      "model": "开瑞X6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-344a7acdf7",
+      "brand": "开瑞",
+      "model": "优劲",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-364d31c585",
+      "brand": "开瑞",
+      "model": "优劲EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-fefa32c201",
+      "brand": "开瑞",
+      "model": "优劲T5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2ca944243b",
+      "brand": "卡升",
+      "model": "卡升威霆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-39494e338d",
+      "brand": "卡升",
+      "model": "卡升V-Class",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a8e9e85eb8",
+      "brand": "KTM",
+      "model": "X-BOW GT-XR",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9840bd75b1",
+      "brand": "焜驰",
+      "model": "焜驰V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-00b73dc3b7",
+      "brand": "焜驰",
+      "model": "焜驰威霆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-82ffdd30c3",
+      "brand": "焜驰",
+      "model": "宸辉VL系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1e1741f5d3",
+      "brand": "焜驰",
+      "model": "焜驰麒麟",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7c88765e56",
+      "brand": "开云汽车",
+      "model": "开云电皮卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-72dfc6bdf4",
+      "brand": "克蒂汽车",
+      "model": "克蒂怪兽SV7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c800ea865b",
+      "brand": "克蒂汽车",
+      "model": "克蒂昆仑",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-be00023bcf",
+      "brand": "克蒂汽车",
+      "model": "克蒂帝亚",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a7adb17b38",
+      "brand": "克蒂汽车",
+      "model": "克蒂巴赫",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8d7cdc2e06",
+      "brand": "克蒂汽车",
+      "model": "克蒂圣姆峰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-47021aca5b",
+      "brand": "克蒂汽车",
+      "model": "克蒂雪堆白",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e6c41f268b",
+      "brand": "克蒂汽车",
+      "model": "克蒂山河",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-87e56d7677",
+      "brand": "克蒂汽车",
+      "model": "克蒂山川",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1263055904",
+      "brand": "克蒂汽车",
+      "model": "克蒂怪兽SV3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4230f9ac1c",
+      "brand": "克慕勒",
+      "model": "克慕勒阿尔法",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-25c47c4922",
+      "brand": "凯马汽车",
+      "model": "骏航ES",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3c241d609c",
+      "brand": "卡驰",
+      "model": "莎尔法",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cba1090181",
+      "brand": "宽大房车",
+      "model": "V系列",
+      "template": "fuel"
+    }
+  ]
+}

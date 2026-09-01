@@ -1,14 +1,15 @@
 // 车辆管理：车辆列表/卡片、添加车辆两步向导、编辑车辆、切换应用车辆。
 //
 // 添加车辆向导（showAddCarSheet → AddCarWizard）：
-//   第一步 AddCarForm：选品牌车型（车型选择 sheet：搜索 + 品牌/车型双列）
-//   + 当前里程 + 上路日期；
+//   第一步 AddCarForm：选品牌车型（车型选择 sheet：搜索 + 品牌/车型双列，
+//   列表外可自定义输入）+ 动力类型（五选一，按目录推荐值预选）
+//   + 当前里程 + 上路日期 + 油箱容积（选填，加油预估用）；
 //   第二步 AddCarMaintenanceItemsStep（在 maintenance_items.dart）：
-//   该车型的默认保养项目草稿（可编辑/启停/删除/新增/恢复），点保存 →
+//   按动力类型取默认保养项目草稿（可编辑/启停/删除/新增/恢复），点保存 →
 //   Repository.createCarWithMaintenanceItems 事务落库（首辆车自动设为应用车辆）。
 //
-// 编辑车辆（showEditCarSheet）：品牌车型锁定（身份字段不可改），只改
-// 里程与上路日期。⚠ 里程可任意改小，无回退校验（R36）。
+// 编辑车辆（showEditCarSheet）：品牌车型与动力类型锁定（身份字段不可改），
+// 只改里程、上路日期和油箱容积。⚠ 里程可任意改小，无回退校验（R36）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -21,9 +22,11 @@ import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
+import '../../../domain/entities/powertrain_type.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/entities/vehicle_default_maintenance_item.dart';
 import '../../../domain/entities/vehicle_model.dart';
+import '../../../domain/rules/fuel_rules.dart';
 import '../shared/shell_shared.dart';
 import 'maintenance_items.dart';
 
@@ -241,8 +244,8 @@ class EmptyVehicleCard extends StatelessWidget {
 }
 
 /// 车辆基础信息表单（向导第一步 + 编辑车辆复用）：
-/// 新增模式可选品牌车型、填里程/上路日期；编辑模式品牌车型只读回显。
-/// initialCar != null 且有 id → 编辑模式。
+/// 新增模式可选品牌车型、填里程/上路日期/油箱容积（选填）；
+/// 编辑模式品牌车型只读回显。initialCar != null 且有 id → 编辑模式。
 class AddCarForm extends StatefulWidget {
   const AddCarForm({
     required this.vehicleModels,
@@ -265,7 +268,12 @@ class AddCarForm extends StatefulWidget {
 class AddCarFormState extends State<AddCarForm> {
   late String selectedBrand;
   late String selectedModel;
+
+  /// 选中的动力类型。选车型时重置为该车型的目录推荐值，用户可改；
+  /// 自定义车型没有推荐值，从燃油开始。
+  late PowertrainType selectedPowertrain;
   late final TextEditingController mileageController;
+  late final TextEditingController capacityController;
   late LocalDate roadDate;
   String? errorText;
   bool saving = false;
@@ -277,10 +285,18 @@ class AddCarFormState extends State<AddCarForm> {
     super.initState();
     final initialCar = widget.initialCar;
     final options = widget.vehicleModels;
+    // 新增时默认选中目录第一项（老目录时代写死的"本田 思域（燃油版）"
+    // 已随 ADR 0003 废弃）；编辑模式回显当前车。
     selectedBrand = initialCar?.brand ?? options.first.brand;
     selectedModel = initialCar?.model ?? _modelsForBrand(selectedBrand).first;
+    selectedPowertrain =
+        initialCar?.powertrainType ??
+        _recommendedPowertrain(selectedBrand, selectedModel);
     mileageController = TextEditingController(
       text: initialCar?.currentMileageKm.toString() ?? '0',
+    );
+    capacityController = TextEditingController(
+      text: _capacityInputText(initialCar?.tankCapacityLiters),
     );
     roadDate = initialCar?.roadDate ?? widget.today;
   }
@@ -288,7 +304,27 @@ class AddCarFormState extends State<AddCarForm> {
   @override
   void dispose() {
     mileageController.dispose();
+    capacityController.dispose();
     super.dispose();
+  }
+
+  /// 容积回填文本：整数不带小数位（55），非整数按原样（64.5、55.1234）。
+  static String _capacityInputText(double? liters) {
+    if (liters == null) {
+      return '';
+    }
+    return liters % 1 == 0 ? liters.toStringAsFixed(0) : liters.toString();
+  }
+
+  /// 目录推荐动力类型：按（品牌, 车型）查 vehicleModels；自定义车型
+  /// 不在目录里，没有推荐值，默认燃油。
+  PowertrainType _recommendedPowertrain(String brand, String model) {
+    for (final candidate in widget.vehicleModels) {
+      if (candidate.brand == brand && candidate.model == model) {
+        return candidate.template;
+      }
+    }
+    return PowertrainType.fuel;
   }
 
   @override
@@ -314,8 +350,27 @@ class AddCarFormState extends State<AddCarForm> {
               setState(() {
                 selectedBrand = brand;
                 selectedModel = model;
+                // 换车型时动力类型重置为该车型的推荐值（用户可再改）。
+                selectedPowertrain = _recommendedPowertrain(brand, model);
               });
             },
+          ),
+        const SizedBox(height: 10),
+        // 动力类型：新增可选（决定默认保养项目），编辑只读（身份字段）。
+        if (isEditing)
+          LunioPickerTile(
+            label: '动力类型',
+            value: widget.initialCar!.powertrainType.label,
+            enabled: false,
+            onTap: null,
+          )
+        else
+          PowertrainPicker(
+            selected: selectedPowertrain,
+            enabled: !saving,
+            onSelected: (next) => setState(() {
+              selectedPowertrain = next;
+            }),
           ),
         const SizedBox(height: 10),
         TextField(
@@ -338,6 +393,22 @@ class AddCarFormState extends State<AddCarForm> {
           value: formatDateForUser(roadDate),
           enabled: !saving,
           onTap: _pickRoadDate,
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: capacityController,
+          enabled: !saving,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          inputFormatters: [
+            // 最多四位小数：整数部分至多 3 位 + 可选小数点 + 至多 4 位小数。
+            FilteringTextInputFormatter.allow(RegExp(r'^\d{0,3}\.?\d{0,4}')),
+          ],
+          onSubmitted: (_) => FocusScope.of(context).unfocus(),
+          decoration: numberInputDecoration(
+            labelText: '油箱容积（选填）',
+            suffixText: '升',
+          ),
         ),
         if (errorText != null) ...[
           const SizedBox(height: 10),
@@ -384,13 +455,33 @@ class AddCarFormState extends State<AddCarForm> {
     setState(() => roadDate = picked);
   }
 
-  /// 提交车辆草稿：里程非负校验 → 构造 Car（编辑保留原品牌车型与 id）
-  /// → onSubmit → 成功不关 sheet（由外层向导控制）；失败表单内展示错误。
+  /// 提交车辆草稿：里程非负校验 → 油箱容积校验（选填，1–999、
+  /// 最多四位小数，规则在 FuelRules）→ 构造 Car（编辑保留原品牌车型
+  /// 与 id）→ onSubmit → 成功不关 sheet（由外层向导控制）；
+  /// 失败表单内展示错误。
   Future<void> _submit() async {
     final mileage = int.tryParse(mileageController.text);
     if (mileage == null || mileage < 0) {
       setState(() => errorText = '当前里程必须是非负整数');
       return;
+    }
+    final capacityText = capacityController.text.trim();
+    double? tankCapacity;
+    if (capacityText.isNotEmpty) {
+      final parsed = double.tryParse(capacityText);
+      var valid = parsed != null;
+      if (valid) {
+        try {
+          FuelRules.validateTankCapacity(parsed);
+        } on ArgumentError {
+          valid = false;
+        }
+      }
+      if (!valid) {
+        setState(() => errorText = '油箱容积需在 1–999 升之间，最多四位小数');
+        return;
+      }
+      tankCapacity = parsed;
     }
     final initialCar = widget.initialCar;
     setState(() {
@@ -403,8 +494,12 @@ class AddCarFormState extends State<AddCarForm> {
           id: initialCar?.id,
           brand: isEditing ? initialCar!.brand : selectedBrand,
           model: isEditing ? initialCar!.model : selectedModel,
+          powertrainType: isEditing
+              ? initialCar!.powertrainType
+              : selectedPowertrain,
           currentMileageKm: mileage,
           roadDate: roadDate,
+          tankCapacityLiters: tankCapacity,
           sync: SyncMetadata(
             status: isEditing
                 ? SyncStatus.pendingUpdate
@@ -460,8 +555,8 @@ class AddCarWizardState extends State<AddCarWizard> {
   /// 当前车型对应的默认模板（"恢复"功能用）。
   List<VehicleDefaultMaintenanceItem>? defaultItemTemplates;
 
-  /// 已加载模板的车型标识（brand\u0000model）：返回第一步没换车型时
-  /// 不重新加载，保留用户已做的草稿修改。
+  /// 已加载模板的车型标识（brand\u0000model\u0000动力类型）：返回第一步
+  /// 没换车型且没换动力类型时不重新加载，保留用户已做的草稿修改。
   String? itemModelKey;
 
   /// 加载防串号：只接受最新一次请求的结果（写法正确）。
@@ -505,11 +600,13 @@ class AddCarWizardState extends State<AddCarWizard> {
     );
   }
 
-  /// 第一步"下一步"：记住车辆草稿；车型变了才异步加载默认模板
-  /// （loadDefaultItems：ensureBootstrapData + listDefaultItemsForModel），
-  /// 模板转成项目草稿；同车型返回上一步则跳过加载。
+  /// 第一步"下一步"：记住车辆草稿；车型或动力类型变了才异步加载默认模板
+  /// （loadDefaultItems：ensureBootstrapData + 车型专属模板优先、
+  /// 否则 listDefaultItemsForPowertrain），模板转成项目草稿；
+  /// 同车型同动力返回上一步则跳过加载。
   Future<void> _handleCarDraft(Car car) async {
-    final nextKey = '${car.brand}\u0000${car.model}';
+    final nextKey =
+        '${car.brand}\u0000${car.model}\u0000${car.powertrainType.wire}';
     final shouldLoadItems = itemModelKey != nextKey || itemDrafts == null;
     final requestId = loadRequestId + 1;
     loadRequestId = requestId;
@@ -534,7 +631,8 @@ class AddCarWizardState extends State<AddCarWizard> {
       }
       final currentCar = carDraft;
       if (currentCar == null ||
-          '${currentCar.brand}\u0000${currentCar.model}' != nextKey) {
+          '${currentCar.brand}\u0000${currentCar.model}\u0000'
+              '${currentCar.powertrainType.wire}' != nextKey) {
         return;
       }
       setState(() {
@@ -694,7 +792,7 @@ Future<(String, String)?> _showVehicleModelPickerSheet(
     context: context,
     builder: (context) => PrototypeSheetFrame(
       title: '选择车型',
-      subtitle: '选择车辆品牌和车型，默认保养项目会随车型创建',
+      subtitle: '选择车辆品牌和车型，列表外的车型可自定义输入',
       bottomInset: MediaQuery.of(context).viewInsets.bottom,
       child: VehicleModelPickerSheet(
         vehicleModels: vehicleModels,
@@ -785,11 +883,28 @@ class VehicleModelPickerSheetState extends State<VehicleModelPickerSheet> {
               border: Border.all(color: tokens.line),
             ),
             child: brands.isEmpty
-                ? Center(
-                    child: Text(
-                      '没有匹配车型',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
+                ? Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '没有匹配车型',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                      // 无匹配时自定义入口也要可用（目录外老车的主要入口）。
+                      PickerOption(
+                        label: '＋ 自定义输入…',
+                        selected: false,
+                        enabled: true,
+                        onTap: () async {
+                          final value = await _showCustomModelDialog(context);
+                          if (value != null && context.mounted) {
+                            Navigator.of(context).pop(value);
+                          }
+                        },
+                      ),
+                    ],
                   )
                 : Row(
                     children: [
@@ -815,8 +930,25 @@ class VehicleModelPickerSheetState extends State<VehicleModelPickerSheet> {
                       Expanded(
                         child: ListView.builder(
                           padding: const EdgeInsets.all(8),
-                          itemCount: models.length,
+                          // +1：末尾固定一行"自定义输入"入口——目录以懂车帝
+                          // 为准（ADR 0003），覆盖不到的老车从这里手输。
+                          itemCount: models.length + 1,
                           itemBuilder: (context, index) {
+                            if (index == models.length) {
+                              return PickerOption(
+                                label: '＋ 自定义输入…',
+                                selected: false,
+                                enabled: true,
+                                onTap: () async {
+                                  final value = await _showCustomModelDialog(
+                                    context,
+                                  );
+                                  if (value != null && context.mounted) {
+                                    Navigator.of(context).pop(value);
+                                  }
+                                },
+                              );
+                            }
                             final model = models[index];
                             final selected =
                                 model.brand == widget.selectedBrand &&
@@ -837,6 +969,82 @@ class VehicleModelPickerSheetState extends State<VehicleModelPickerSheet> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 动力类型选择行（添加向导第一步）：五个选项（燃油/混动/插混/增程/纯电）
+/// 行内 chip 点选，不弹 sheet。外观与 LunioPickerTile 同构——同样的
+/// InputDecorator 外框 + label，只是值区换成 chip 组。
+class PowertrainPicker extends StatelessWidget {
+  const PowertrainPicker({
+    required this.selected,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final PowertrainType selected;
+  final bool enabled;
+  final ValueChanged<PowertrainType> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: '动力类型', enabled: enabled),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final type in PowertrainType.values)
+            _PowertrainChip(
+              label: type.label,
+              selected: type == selected,
+              enabled: enabled,
+              onTap: () => onSelected(type),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 动力类型 chip 单体：选中主色弱底（primarySoft）+ 主色文字，
+/// 未选透明底描边；配色沿用全局 chip 惯例（见 LunioTokens 注释）。
+class _PowertrainChip extends StatelessWidget {
+  const _PowertrainChip({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? tokens.primarySoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
+          border: Border.all(
+            color: selected ? tokens.primary : tokens.line,
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: selected ? tokens.primary : tokens.muted,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -881,6 +1089,72 @@ class PickerOption extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 自定义车型弹窗：品牌/车型两个必填输入框，确认返回 (brand, model)。
+/// 目录（懂车帝命名）覆盖不到的车型从这里手输；取消/校验失败返回 null。
+Future<(String, String)?> _showCustomModelDialog(BuildContext context) {
+  final brandController = TextEditingController();
+  final modelController = TextEditingController();
+  return showDialog<(String, String)>(
+    context: context,
+    builder: (dialogContext) {
+      String? errorText;
+      return StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          void submit() {
+            final brand = brandController.text.trim();
+            final model = modelController.text.trim();
+            if (brand.isEmpty || model.isEmpty) {
+              setDialogState(() => errorText = '品牌和车型都要填写');
+              return;
+            }
+            Navigator.of(dialogContext).pop((brand, model));
+          }
+
+          return AlertDialog(
+            title: const Text('自定义车型'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: brandController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: '品牌'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: modelController,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => submit(),
+                  decoration: const InputDecoration(labelText: '车型'),
+                ),
+                if (errorText != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    errorText!,
+                    style: TextStyle(
+                      color: Theme.of(dialogContext)
+                          .extension<LunioTokens>()!
+                          .danger,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('取消'),
+              ),
+              TextButton(onPressed: submit, child: const Text('确定')),
+            ],
+          );
+        },
+      );
+    },
+  );
 }
 
 /// 添加/编辑车辆 sheet 共用的数据前置检查（R32 提取，替代两份重复的
@@ -941,9 +1215,20 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
                       loadDefaultItems: (car) async {
                         final repository = ref.read(lunioRepositoryProvider);
                         await repository.ensureBootstrapData();
-                        return repository.listDefaultItemsForModel(
+                        // 车型专属模板优先（如思域的 civicFuel，ADR 0004）；
+                        // 未命中（非目录车型/无专属模板/改选了其他动力类型）
+                        // 回退动力类型通用模板。
+                        final vehicleSpecific =
+                            await repository.listDefaultItemsForVehicleModel(
                           brand: car.brand,
                           model: car.model,
+                          selectedPowertrain: car.powertrainType,
+                        );
+                        if (vehicleSpecific != null) {
+                          return vehicleSpecific;
+                        }
+                        return repository.listDefaultItemsForPowertrain(
+                          powertrainType: car.powertrainType,
                         );
                       },
                       onMaintenanceStepChanged: (nextValue) {
@@ -978,7 +1263,7 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
 }
 
 /// ★ 编辑车辆 sheet：AddCarForm 编辑模式（品牌车型只读）→
-/// updateCar（只写里程/日期）→ invalidate → 关 sheet。
+/// updateCar（写里程/日期/容积）→ invalidate → 关 sheet。
 /// 车型目录为空时兜底用当前车拼一个假选项（只是为了让表单不炸）。
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   showLunioModalSheet<void>(
@@ -986,7 +1271,7 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
     builder: (context) {
       return PrototypeSheetFrame(
         title: '编辑车辆',
-        subtitle: '品牌车型保持稳定，可更新当前里程和上路日期',
+        subtitle: '品牌车型保持稳定，可更新当前里程、上路日期和油箱容积',
         bottomInset: MediaQuery.of(context).viewInsets.bottom,
         child: Consumer(
           builder: (context, ref, child) {
@@ -1003,9 +1288,12 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
               data: (models) => AddCarForm(
                 vehicleModels: models.isEmpty
                     ? [
+                        // 目录为空时兜底用当前车拼一个假选项（表单不炸）；
+                        // 推荐动力类型用当前车自己的。
                         VehicleModel(
                           brand: car.brand,
                           model: car.model,
+                          template: car.powertrainType,
                           sortOrder: 0,
                           sync: SyncMetadata(
                             status: SyncStatus.synced,

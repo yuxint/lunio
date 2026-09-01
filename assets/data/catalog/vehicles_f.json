@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 2,
+  "letter": "F",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-2b92441f9f",
+      "brand": "丰田",
+      "model": "卡罗拉",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-45d16c4778",
+      "brand": "丰田",
+      "model": "雷凌",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f2ccf45953",
+      "brand": "丰田",
+      "model": "凯美瑞",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9fcd59deac",
+      "brand": "丰田",
+      "model": "亚洲龙",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a7b97fc622",
+      "brand": "丰田",
+      "model": "锋兰达",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a827b4ecad",
+      "brand": "丰田",
+      "model": "卡罗拉锐放",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3ab5f77f2c",
+      "brand": "丰田",
+      "model": "RAV4荣放",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3ce850f95b",
+      "brand": "丰田",
+      "model": "威兰达",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a038e40ef0",
+      "brand": "丰田",
+      "model": "汉兰达",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1f2458859f",
+      "brand": "丰田",
+      "model": "赛那",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1853676e56",
+      "brand": "福特",
+      "model": "蒙迪欧",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-dc284e832e",
+      "brand": "福特",
+      "model": "锐际",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1c50a85f20",
+      "brand": "福特",
+      "model": "领睿",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bca45c21c3",
+      "brand": "福特",
+      "model": "锐界",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-058a27fb2f",
+      "brand": "福特",
+      "model": "福特烈马",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-59eb50e2f7",
+      "brand": "福特",
+      "model": "领裕",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f181335fdf",
+      "brand": "福特",
+      "model": "探险者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-86233ef072",
+      "brand": "福特",
+      "model": "Mustang",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d511146ab1",
+      "brand": "福特",
+      "model": "游骑侠Ranger",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-be2eae35dc",
+      "brand": "福特",
+      "model": "全顺",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f1110ebaa8",
+      "brand": "飞凡汽车",
+      "model": "飞凡F7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8801d58b12",
+      "brand": "飞凡汽车",
+      "model": "飞凡R7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-704689d6ec",
+      "brand": "方程豹",
+      "model": "钛3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-496bdb8502",
+      "brand": "方程豹",
+      "model": "钛7 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-bcf7263a30",
+      "brand": "方程豹",
+      "model": "钛7 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ce49421749",
+      "brand": "方程豹",
+      "model": "豹5",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-7b139d21ad",
+      "brand": "方程豹",
+      "model": "豹8",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-db1609f3ed",
+      "brand": "法拉利",
+      "model": "Purosangue",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6ab0ec0765",
+      "brand": "法拉利",
+      "model": "法拉利Luce",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-714fbdcba4",
+      "brand": "法拉利",
+      "model": "法拉利296",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-67814bea0d",
+      "brand": "法拉利",
+      "model": "法拉利Amalfi",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-75d7eb2ce6",
+      "brand": "法拉利",
+      "model": "法拉利849",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-982c84ee88",
+      "brand": "法拉利",
+      "model": "法拉利12Cilindri",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c636087ee9",
+      "brand": "福田",
+      "model": "大将军F9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a73b268483",
+      "brand": "福田",
+      "model": "火星7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-809c4808db",
+      "brand": "福田",
+      "model": "大将军G9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-32610f75e2",
+      "brand": "福田",
+      "model": "火星9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5596408d23",
+      "brand": "福田",
+      "model": "祥菱V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-afa848a3da",
+      "brand": "福田",
+      "model": "祥菱M",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-eee6bd50fd",
+      "brand": "福田",
+      "model": "风景G5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-46645cbfa4",
+      "brand": "福田",
+      "model": "风景G7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0bbda92760",
+      "brand": "福田",
+      "model": "风景G9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-07b9f5cf23",
+      "brand": "福田",
+      "model": "图雅诺",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bcb09c191d",
+      "brand": "福田卡文汽车",
+      "model": "乐迪",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a77640c11",
+      "brand": "福田卡文汽车",
+      "model": "乐福",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-79018fefda",
+      "brand": "飞碟汽车",
+      "model": "飞碟Q2V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c7ba8ddc08",
+      "brand": "飞碟汽车",
+      "model": "飞碟Q2T",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-679871f853",
+      "brand": "飞碟汽车",
+      "model": "缔途EF3",
+      "template": "fuel"
+    }
+  ]
+}

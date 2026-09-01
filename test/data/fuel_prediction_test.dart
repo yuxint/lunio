@@ -1,0 +1,374 @@
+// 加油预测数据层测试：设置表（剩余油量）的 upsert/级联删除/清空、
+// 车辆容积随车存取（v8 起）、备份 v3 往返、油价缓存与手填价偏好
+// （临时数据不进备份）。
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lunio/core/date/local_date.dart';
+import 'package:lunio/data/backup/backup_codec.dart';
+import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
+import '../helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
+import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/repositories/lunio_repository.dart';
+import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/maintenance_item.dart';
+import 'package:lunio/domain/entities/fuel_prediction.dart';
+import 'package:lunio/domain/entities/fuel_price.dart';
+import 'package:lunio/domain/entities/sync_metadata.dart';
+
+void main() {
+  late AppDatabase database;
+  late LunioRepository repository;
+  late SyncMetadata sync;
+  late BuiltInVehicleCatalog builtInCatalog;
+
+  setUpAll(() {
+    builtInCatalog = loadBuiltInVehicleCatalogForTest();
+  });
+
+  setUp(() {
+    database = AppDatabase.inMemory();
+    repository = LunioRepository(
+      database,
+      loadBuiltInVehicleCatalog: () async => builtInCatalog,
+    );
+    sync = SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026));
+  });
+
+  tearDown(() async {
+    await database.close();
+  });
+
+  Future<int> seedCar({double? tankCapacityLiters}) async {
+    // 建车规则要求至少一个启用项目（R26 口径），这里带一个最小项目。
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: tankCapacityLiters,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    return carId;
+  }
+
+  group('加油预测设置表', () {
+    test('save 后 get 读回，重复 save 走更新不新增行', () async {
+      final carId = await seedCar();
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
+      );
+      final saved = await repository.getFuelPredictionForCar(carId);
+      expect(saved?.fuelPercent, 50);
+
+      // 第二次保存：同车 upsert，只改字段不加行。
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 48, sync: sync),
+      );
+      final updated = await repository.getFuelPredictionForCar(carId);
+      expect(updated?.fuelPercent, 48);
+      expect(
+        await database.select(database.fuelPredictions).get(),
+        hasLength(1),
+      );
+    });
+
+    test('没保存过返回 null（页面按默认 50% 展示）', () async {
+      final carId = await seedCar();
+      expect(await repository.getFuelPredictionForCar(carId), isNull);
+    });
+
+    test('油箱容积随车存取：建车可带、编辑可改、非法值拒绝', () async {
+      // v8 起容积在 cars 表（车的属性），随 createCarWithMaintenanceItems
+      // / updateCar 读写，不再走 saveFuelPrediction。
+      await seedCar(tankCapacityLiters: 55.1234);
+      var car = (await repository.listCars()).single;
+      expect(car.tankCapacityLiters, 55.1234);
+
+      car = car.copyWith(tankCapacityLiters: 64.5, keepCapacity: false);
+      await repository.updateCar(car);
+      expect((await repository.listCars()).single.tankCapacityLiters, 64.5);
+
+      await repository.updateCar(car.copyWith(keepCapacity: false));
+      expect(
+        (await repository.listCars()).single.tankCapacityLiters,
+        isNull,
+      );
+
+      // 非法容积在建车入口就被 Repository 拒绝。
+      expect(
+        () => seedCar(tankCapacityLiters: 0.5),
+        throwsArgumentError,
+      );
+      expect(
+        () => seedCar(tankCapacityLiters: 55.55555),
+        throwsArgumentError,
+      );
+    });
+
+    test('非法油量被实体校验拒绝', () async {
+      final carId = await seedCar();
+      expect(
+        () => repository.saveFuelPrediction(
+          FuelPrediction(carId: carId, fuelPercent: 101, sync: sync),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('删除车辆级联删除加油设置', () async {
+      final carId = await seedCar();
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50),
+      );
+      await repository.deleteCar(carId);
+      expect(
+        await database.select(database.fuelPredictions).get(),
+        isEmpty,
+      );
+    });
+
+    test('清空数据同时清掉加油设置和油价/手填价偏好', () async {
+      final carId = await seedCar();
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50),
+      );
+      await repository.saveFuelPriceCache(
+        FuelPriceData(
+          province: '湖北',
+          fetchedAt: DateTime(2026, 8, 31),
+          pricePerLiterByGrade: {FuelGrade.gasoline92: 7.45},
+        ),
+      );
+      await repository.setFuelManualPrice(
+        province: '湖北',
+        grade: FuelGrade.gasoline92,
+        pricePerLiter: 7.6,
+      );
+      await repository.clearAllData();
+
+      expect(
+        await database.select(database.fuelPredictions).get(),
+        isEmpty,
+      );
+      expect(await repository.getFuelPriceCache(), isNull);
+      expect(await repository.getFuelManualPrices(), isEmpty);
+    });
+  });
+
+  group('油价缓存与手填价偏好', () {
+    test('缓存 JSON 往返', () async {
+      expect(await repository.getFuelPriceCache(), isNull);
+      final data = FuelPriceData(
+        province: '湖北',
+        effectiveDate: '2026-08-28',
+        fetchedAt: DateTime(2026, 8, 31, 9),
+        pricePerLiterByGrade: {
+          FuelGrade.gasoline92: 7.45,
+          FuelGrade.diesel0: 7.12,
+        },
+      );
+      await repository.saveFuelPriceCache(data);
+      // FuelPriceData 未重写 ==，按字段比较（与备份 sync 时间戳还原一致）。
+      final restored = await repository.getFuelPriceCache();
+      expect(restored?.province, data.province);
+      expect(restored?.effectiveDate, data.effectiveDate);
+      expect(restored?.fetchedAt, data.fetchedAt);
+      expect(restored?.priceFor(FuelGrade.gasoline92), 7.45);
+      expect(restored?.priceFor(FuelGrade.diesel0), 7.12);
+    });
+
+    test('缓存 JSON 损坏按无缓存处理', () async {
+      await repository.setPreferenceValue('fuelPriceCache', '{bad json');
+      expect(await repository.getFuelPriceCache(), isNull);
+    });
+
+    test('手填价按"省+油品"组合存取与清除', () async {
+      expect(
+        await repository.getFuelManualPrice(
+          province: '湖北',
+          grade: FuelGrade.gasoline92,
+        ),
+        isNull,
+      );
+      await repository.setFuelManualPrice(
+        province: '湖北',
+        grade: FuelGrade.gasoline92,
+        pricePerLiter: 7.6,
+      );
+      expect(
+        await repository.getFuelManualPrice(
+          province: '湖北',
+          grade: FuelGrade.gasoline92,
+        ),
+        7.6,
+      );
+      // 其他组合不受影响。
+      expect(
+        await repository.getFuelManualPrice(
+          province: '湖北',
+          grade: FuelGrade.gasoline95,
+        ),
+        isNull,
+      );
+      // 清除后回到无手填状态，且偏好 key 一并删除（不留空壳）。
+      await repository.setFuelManualPrice(
+        province: '湖北',
+        grade: FuelGrade.gasoline92,
+        pricePerLiter: null,
+      );
+      expect(
+        await repository.getFuelManualPrice(
+          province: '湖北',
+          grade: FuelGrade.gasoline92,
+        ),
+        isNull,
+      );
+      expect(
+        await repository.getPreferenceValue('fuelManualPrices'),
+        isNull,
+      );
+    });
+  });
+
+  group('备份', () {
+    test('导出包含车辆容积与剩余油量，油价缓存与手填价不进备份', () async {
+      final carId = await seedCar(tankCapacityLiters: 55);
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
+      );
+      await repository.setPreferenceValue('fuelProvince', '湖北');
+      await repository.setPreferenceValue('fuelGrade', '95');
+      await repository.saveFuelPriceCache(
+        FuelPriceData(
+          province: '湖北',
+          fetchedAt: DateTime(2026, 8, 31),
+          pricePerLiterByGrade: {FuelGrade.gasoline92: 7.45},
+        ),
+      );
+      await repository.setFuelManualPrice(
+        province: '湖北',
+        grade: FuelGrade.gasoline92,
+        pricePerLiter: 7.6,
+      );
+
+      final backup = await repository.exportBackupPayload();
+      final json = const BackupCodec().encode(backup);
+      // v4 起车带动力类型；加油设置自 v3 起进备份。
+      expect(backup.schemaVersion, 4);
+      expect(json, contains('fuelPrediction'));
+      expect(json, contains('fuelPredictions'));
+      expect(json, contains('湖北'));
+      // v8 起：容积在车辆条目里，加油条目只剩油量。
+      expect(backup.cars.single.tankCapacityLiters, 55);
+      expect(backup.fuelPredictions.single.fuelPercent, 50);
+      expect(json, contains('tankCapacityLiters'));
+      // 临时数据不进备份。
+      expect(json, isNot(contains('fuelPriceCache')));
+      expect(json, isNot(contains('7.6')));
+    });
+
+    test('恢复 v3 备份：加油设置按新车 id 重插并覆盖省份/油品偏好', () async {
+      final carId = await seedCar(tankCapacityLiters: 55);
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
+      );
+      await repository.setPreferenceValue('fuelProvince', '湖北');
+      await repository.setPreferenceValue('fuelGrade', '95');
+      final backup = await repository.exportBackupPayload();
+
+      await database.close();
+      database = AppDatabase.inMemory();
+      repository = LunioRepository(
+        database,
+        loadBuiltInVehicleCatalog: () async => builtInCatalog,
+      );
+      // 恢复前预置不同省份/油品：v3 备份应覆盖它们。
+      await repository.setPreferenceValue('fuelProvince', '广东');
+      await repository.setPreferenceValue('fuelGrade', '98');
+
+      await repository.restoreBackupPayload(backup);
+
+      expect(
+        await repository.getPreferenceValue('fuelProvince'),
+        '湖北',
+      );
+      expect(await repository.getPreferenceValue('fuelGrade'), '95');
+      // 容积随车辆条目恢复；加油条目只恢复油量。
+      final restoredCar = (await database.select(database.cars).get()).single;
+      expect(restoredCar.tankCapacityLiters, 55);
+      final restoredFuel = await repository.getFuelPredictionForCar(
+        restoredCar.id,
+      );
+      expect(restoredFuel?.fuelPercent, 50);
+    });
+
+    test('恢复 v2 老备份：加油设置清空，省份/油品偏好保留', () async {
+      final carId = await seedCar();
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
+      );
+      final backup = await repository.exportBackupPayload();
+      // 手工降级成 v2 载荷（模拟老版本 App 导出的备份：版本号 2 且
+      // 完全没有加油字段）。
+      final backupMap =
+          jsonDecode(const BackupCodec().encode(backup)) as Map<String, Object?>;
+      backupMap['schemaVersion'] = 2;
+      backupMap.remove('fuelPrediction');
+      backupMap.remove('fuelPredictions');
+      final v2Payload = const BackupCodec().decode(jsonEncode(backupMap));
+      expect(v2Payload.schemaVersion, 2);
+      expect(v2Payload.fuelPrediction, isNull);
+      expect(v2Payload.fuelPredictions, isEmpty);
+
+      await database.close();
+      database = AppDatabase.inMemory();
+      repository = LunioRepository(
+        database,
+        loadBuiltInVehicleCatalog: () async => builtInCatalog,
+      );
+      await repository.setPreferenceValue('fuelProvince', '湖南');
+      await repository.restoreBackupPayload(v2Payload);
+
+      // 恢复替换业务数据：加油设置被清掉；省份/油品是偏好，保留不动。
+      final restoredCar = (await database.select(database.cars).get()).single;
+      expect(
+        await repository.getFuelPredictionForCar(restoredCar.id),
+        isNull,
+      );
+      expect(await repository.getPreferenceValue('fuelProvince'), '湖南');
+    });
+
+    test('codec 解码 v4/v3/v2 均支持，其他版本拒绝', () {
+      const codec = BackupCodec();
+      expect(
+        () => codec.decode(
+          jsonEncode({
+            'schemaVersion': 5,
+            'cars': [],
+            'maintenanceItems': [],
+            'records': [],
+          }),
+        ),
+        throwsUnsupportedError,
+      );
+    });
+  });
+}

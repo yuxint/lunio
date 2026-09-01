@@ -38,13 +38,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/date/app_date_context.dart';
 import '../core/date/local_date.dart';
 import '../data/database/app_database.dart';
+import '../data/fuel/mock_fuel_price_source.dart';
 import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
+import '../domain/entities/fuel_prediction.dart';
+import '../domain/entities/fuel_price.dart';
 import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
 import '../domain/entities/notification_settings.dart';
 import '../domain/entities/parking_countdown.dart';
 import '../domain/entities/vehicle_model.dart';
+import '../domain/rules/fuel_rules.dart';
 
 /// 应用日期上下文：目前只用它读"系统真实当前时间"（停车倒计时用）。
 /// 手动日期（开发者模式）不会写进这里，而是走 [manualDatePreferenceProvider]，
@@ -122,6 +126,126 @@ final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
 final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
   return ref.watch(lunioRepositoryProvider).getParkingCountdown();
 });
+
+// ---------------- 加油预测（v7 新增） ----------------
+
+/// 加油预测功能开关（偏好 `fuelPredictionEnabled`，'true' 才算开）。
+/// 只在开发者模式里提供开关入口（入口见 profile_page.dart）；
+/// 开发者模式关闭时入口会顺手清掉该偏好，所以这里不用叠加判断。
+/// 被 AppShell watch：开关变化 → 底部"加油"tab 实时出现/消失。
+final fuelPredictionEnabledProvider = FutureProvider<bool>((ref) async {
+  final repository = ref.watch(lunioRepositoryProvider);
+  final value = await repository.getPreferenceValue('fuelPredictionEnabled');
+  return value == 'true';
+});
+
+/// 加油预测的省份（全局一份，默认湖北，产品确认）。
+final fuelProvinceProvider = FutureProvider<String>((ref) async {
+  final repository = ref.watch(lunioRepositoryProvider);
+  return await repository.getPreferenceValue(
+        LunioRepository.fuelProvincePreferenceKey,
+      ) ??
+      MockFuelPriceSource.defaultProvince;
+});
+
+/// 加油预测的油品编号（全局一份，单选，默认 92#）。
+final fuelGradeProvider = FutureProvider<FuelGrade>((ref) async {
+  final repository = ref.watch(lunioRepositoryProvider);
+  final code = await repository.getPreferenceValue(
+    LunioRepository.fuelGradePreferenceKey,
+  );
+  return FuelGrade.tryParse(code ?? '') ?? FuelGrade.gasoline92;
+});
+
+/// 当前应用车辆的加油预测设置（剩余油量 = 加满预估基准档，按车一条；
+/// 油箱容积 v8 起在 Car 上）。无应用车辆返回 null；
+/// 从没保存过也是 null（页面按默认 50% 展示）。
+final appliedCarFuelPredictionProvider =
+    FutureProvider<FuelPrediction?>((ref) async {
+      final car = await ref.watch(appliedCarProvider.future);
+      if (car?.id == null) {
+        return null;
+      }
+      return ref
+          .watch(lunioRepositoryProvider)
+          .getFuelPredictionForCar(car!.id!);
+    });
+
+/// 油价数据源（≈ Java 里注入接口实现的地方）。真接口定下来后
+/// 换成新实现即可（见 docs/adr/0001）。
+final fuelPriceSourceProvider = Provider<FuelPriceSource>(
+  (ref) => const MockFuelPriceSource(),
+);
+
+/// 当前"省+油品"的手填价（用户手填的每升价，优先于数据源价格）。
+/// 无手填返回 null。写入口在 fuel_page.dart（手填/清除手填）。
+final fuelManualPriceProvider = FutureProvider<double?>((ref) async {
+  final province = await ref.watch(fuelProvinceProvider.future);
+  final grade = await ref.watch(fuelGradeProvider.future);
+  return ref
+      .watch(lunioRepositoryProvider)
+      .getFuelManualPrice(province: province, grade: grade);
+});
+
+/// 油价状态控制器：缓存优先，过期/换省/无缓存时自动拉取，
+/// 失败退回旧缓存。手动刷新走 [FuelPriceController.manualRefresh]。
+///
+/// watch 时机：AppShell（加油开关开着时，≈ 启动检查）与加油页。
+/// 省份/油品偏好变化会触发 build 重算（watch 了 fuelProvinceProvider）。
+final fuelPriceControllerProvider =
+    AsyncNotifierProvider<FuelPriceController, FuelPriceData?>(
+      FuelPriceController.new,
+    );
+
+class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
+  @override
+  Future<FuelPriceData?> build() async {
+    final province = await ref.watch(fuelProvinceProvider.future);
+    final repository = ref.watch(lunioRepositoryProvider);
+    final cache = await repository.getFuelPriceCache();
+    final fresh = !FuelRules.shouldRefreshFuelPrices(
+      lastFetchedAt: cache?.fetchedAt,
+      cachedProvince: cache?.province,
+      currentProvince: province,
+      now: DateTime.now(),
+    );
+    if (cache != null && fresh) {
+      return cache;
+    }
+    try {
+      final data = await ref
+          .watch(fuelPriceSourceProvider)
+          .fetchPrices(province);
+      await repository.saveFuelPriceCache(data);
+      return data;
+    } catch (error) {
+      // 拉取失败退回旧缓存（可能为 null → 页面显示"暂无油价数据"）。
+      // 缓存损坏已被 Repository 按 null 处理，这里不会把坏数据透出。
+      return cache;
+    }
+  }
+
+  /// 手动刷新：无视新鲜期强制拉一次。成功覆盖缓存与状态返回 true；
+  /// 失败保留原状态数据（不覆盖，与"手填价不被覆盖"同语义）返回 false。
+  Future<bool> manualRefresh() async {
+    final province = await ref.read(fuelProvinceProvider.future);
+    state = const AsyncLoading<FuelPriceData?>();
+    try {
+      final data = await ref
+          .read(fuelPriceSourceProvider)
+          .fetchPrices(province);
+      await ref.read(lunioRepositoryProvider).saveFuelPriceCache(data);
+      state = AsyncData(data);
+      return true;
+    } catch (error) {
+      final previous = await ref
+          .read(lunioRepositoryProvider)
+          .getFuelPriceCache();
+      state = AsyncData(previous);
+      return false;
+    }
+  }
+}
 
 /// 全局生效的"今天"：手动日期优先，否则系统今天。
 /// 所有业务日期口径（提醒进度、记录表单默认日期、snooze/ack 判断）都用它，
@@ -238,6 +362,18 @@ void invalidatePreferenceProviders(WidgetRef ref) {
   ref.invalidate(effectiveTodayProvider);
   ref.invalidate(themeModePreferenceProvider);
   ref.invalidate(notificationSettingsProvider);
+  invalidateFuelPreferenceProviders(ref);
+}
+
+/// 加油预测相关缓存失效：功能开关、省份、油品、当前车设置、
+/// 手填价、油价控制器（换省/清缓存后整体重算）。
+void invalidateFuelPreferenceProviders(WidgetRef ref) {
+  ref.invalidate(fuelPredictionEnabledProvider);
+  ref.invalidate(fuelProvinceProvider);
+  ref.invalidate(fuelGradeProvider);
+  ref.invalidate(appliedCarFuelPredictionProvider);
+  ref.invalidate(fuelManualPriceProvider);
+  ref.invalidate(fuelPriceControllerProvider);
 }
 
 /// 全量失效：恢复备份 / 清空数据后调用，让所有 FutureProvider 重新查库。

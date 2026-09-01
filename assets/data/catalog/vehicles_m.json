@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 2,
+  "letter": "M",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-cba6315454",
+      "brand": "马自达",
+      "model": "马自达3 昂克赛拉",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a3d021fbd",
+      "brand": "马自达",
+      "model": "马自达EZ-6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0edb7ed81d",
+      "brand": "马自达",
+      "model": "马自达EZ-60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5fb85f49cc",
+      "brand": "马自达",
+      "model": "马自达CX-30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f11dadea68",
+      "brand": "马自达",
+      "model": "马自达CX-5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-56db817005",
+      "brand": "马自达",
+      "model": "马自达CX-50行也",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cc592a817d",
+      "brand": "马自达",
+      "model": "马自达CX-9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-92dbca4d55",
+      "brand": "MG",
+      "model": "MG4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3b08166be6",
+      "brand": "MG",
+      "model": "MG5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-034406e4c2",
+      "brand": "MG",
+      "model": "MG6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b110acb168",
+      "brand": "MG",
+      "model": "MG7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1fe0d5ec1e",
+      "brand": "MG",
+      "model": "MG 07 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-0637946eb3",
+      "brand": "MG",
+      "model": "MG 07 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b57f35c229",
+      "brand": "MG",
+      "model": "MG 4X",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7dc18b94ae",
+      "brand": "MG",
+      "model": "MG ES5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0417a3471b",
+      "brand": "MG",
+      "model": "MG Cyberster",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7466d31261",
+      "brand": "MINI",
+      "model": "MINI",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f356cd5382",
+      "brand": "MINI",
+      "model": "MINI JCW",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-21965b24c9",
+      "brand": "MINI",
+      "model": "电动MINI COOPER",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-41064a6e7e",
+      "brand": "MINI",
+      "model": "电动MINI JCW",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-6745831baa",
+      "brand": "MINI",
+      "model": "电动MINI ACEMAN",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2e32e07626",
+      "brand": "MINI",
+      "model": "电动MINI JCW ACEMAN",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-d1cb4c684b",
+      "brand": "MINI",
+      "model": "MINI JCW COUNTRYMAN",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-da08a00365",
+      "brand": "猛士",
+      "model": "猛士M817",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-5b1f6bff7b",
+      "brand": "猛士",
+      "model": "猛士917",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-6409df352c",
+      "brand": "猛士",
+      "model": "猛士M800",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-b22a38e598",
+      "brand": "玛莎拉蒂",
+      "model": "Ghibli",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-27290df210",
+      "brand": "玛莎拉蒂",
+      "model": "Grecale",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f89f8e455f",
+      "brand": "玛莎拉蒂",
+      "model": "Grecale Folgore",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-51f5f00e5c",
+      "brand": "玛莎拉蒂",
+      "model": "Levante",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-6e4b91d5b9",
+      "brand": "玛莎拉蒂",
+      "model": "GranTurismo",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-df5eaa59e8",
+      "brand": "玛莎拉蒂",
+      "model": "GranTurismo Folgore",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-00d3ae6002",
+      "brand": "玛莎拉蒂",
+      "model": "GranCabrio",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ac2a02d741",
+      "brand": "玛莎拉蒂",
+      "model": "玛莎拉蒂MC20",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c110ad563d",
+      "brand": "迈凯伦",
+      "model": "迈凯伦Artura",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9719123b87",
+      "brand": "迈凯伦",
+      "model": "迈凯伦GT",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-179422b0ce",
+      "brand": "迈凯伦",
+      "model": "迈凯伦675LT",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-87b812e1e6",
+      "brand": "迈莎锐",
+      "model": "迈莎锐极氪9X",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f9d6880342",
+      "brand": "迈莎锐",
+      "model": "迈莎锐添越",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a1727b39b",
+      "brand": "迈莎锐",
+      "model": "迈莎锐V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6c30311927",
+      "brand": "摩登汽车",
+      "model": "Modern in",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-53d2718baa",
+      "brand": "摩根",
+      "model": "摩根Plus 4",
+      "template": "fuel"
+    }
+  ]
+}

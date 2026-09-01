@@ -1,10 +1,12 @@
 // 我的页（/me）：个人中心。
 //
 // 结构：我的车辆（车辆列表 + 添加入口）/ 数据与工具（通知提醒、备份、
-// 恢复、清空数据、手动日期[开发者模式专属]、主题切换）/ 版本 footer。
+// 恢复、清空数据、手动日期[开发者模式专属]、加油预测开关[开发者模式
+// 专属]、主题切换）/ 版本 footer。
 // 各行的实际逻辑都在 vehicles.dart / maintenance_items.dart / settings_data.dart。
 //
-// 开发者模式彩蛋：版本号连点 5 次开关（关闭时连带清掉手动日期偏好）。
+// 开发者模式彩蛋：版本号连点 5 次开关（关闭时连带清掉手动日期与
+// 加油预测偏好）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
+import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
@@ -100,13 +103,13 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
               onTap: () => showNotificationSettingsSheet(context, ref),
             ),
             ProfileSettingRow(
-              title: '备份',
+              title: '备份数据',
               subtitle: '导出全部车辆、项目配置和保养记录',
               trailingLabel: '导出',
               onTap: () => exportBackup(context, ref),
             ),
             ProfileSettingRow(
-              title: '恢复',
+              title: '恢复数据',
               subtitle: '选择备份文件并恢复本地数据',
               trailingLabel: '恢复',
               onTap: () => restoreBackupFromFile(context, ref),
@@ -120,7 +123,7 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
             if (developerMode.maybeWhen(
               data: (value) => value,
               orElse: () => false,
-            ))
+            )) ...[
               ProfileSettingRow(
                 title: '手动日期',
                 subtitle: manualDate.when(
@@ -132,6 +135,14 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
                 trailingLabel: '设置',
                 onTap: () => showManualDateSheet(context, ref),
               ),
+              _FuelPredictionSettingRow(
+                enabled: ref
+                    .watch(fuelPredictionEnabledProvider)
+                    .maybeWhen(data: (value) => value, orElse: () => false),
+                onChanged: (value) =>
+                    _setFuelPredictionEnabled(context, value),
+              ),
+            ],
             ThemeModeSettingRow(
               mode: themeMode.maybeWhen(
                 data: (value) => value,
@@ -171,6 +182,9 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
       await repository.setPreferenceValue('developerModeEnabled', 'false');
       await repository.setPreferenceValue('manualDateEnabled', 'false');
       await repository.setPreferenceValue('manualDate', null);
+      // 开发者模式关闭时连带关掉加油预测（开关入口只在开发者模式可见，
+      // 留着偏好会让底部"加油"tab 无法关闭）。
+      await repository.setPreferenceValue('fuelPredictionEnabled', 'false');
       invalidatePreferenceProviders(ref);
       if (context.mounted) {
         showStatusOverlay(context, '开发者模式已关闭', StatusOverlayTone.info);
@@ -182,5 +196,71 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
     if (context.mounted) {
       showStatusOverlay(context, '开发者模式已开启', StatusOverlayTone.info);
     }
+  }
+
+  /// 加油预测开关：写 `fuelPredictionEnabled` 偏好 → 失效 provider。
+  /// AppShell watch 该 provider，底部"加油"tab 实时出现/消失（无需重启）。
+  Future<void> _setFuelPredictionEnabled(
+    BuildContext context,
+    bool value,
+  ) async {
+    await ref
+        .read(lunioRepositoryProvider)
+        .setPreferenceValue('fuelPredictionEnabled', '$value');
+    invalidatePreferenceProviders(ref);
+    if (context.mounted) {
+      showStatusOverlay(
+        context,
+        value ? '已开启，底部新增加油入口' : '已关闭加油预测',
+        StatusOverlayTone.success,
+      );
+    }
+  }
+}
+
+/// 加油预测开关行（开发者模式专属）：标题 + 副标题 + 右侧 Switch。
+/// 与 ProfileSettingRow 同款容器样式，但整行动作用开关而非按钮。
+class _FuelPredictionSettingRow extends StatelessWidget {
+  const _FuelPredictionSettingRow({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+          border: Border.all(color: tokens.line),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('加油预测', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 5),
+                  Text(
+                    enabled ? '开启 · 底部显示加油入口' : '关闭',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Switch(value: enabled, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
   }
 }

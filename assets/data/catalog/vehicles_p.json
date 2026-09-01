@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "letter": "P",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-c3d2b416a9",
+      "brand": "普曼·巅峰",
+      "model": "普曼VLS",
+      "template": "fuel"
+    }
+  ]
+}

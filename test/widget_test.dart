@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -18,15 +16,19 @@ import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/core/notifications/lunio_notification_service.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
+import 'helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
+import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
+import 'package:lunio/features/shell/profile/vehicles.dart' show PickerOption;
 import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
+import 'package:lunio/features/shell/shared/shared_widgets.dart' show PrototypeSheetFrame;
 
 void main() {
   late BuiltInVehicleCatalog builtInCatalog;
@@ -127,15 +129,7 @@ void main() {
   }
 
   setUpAll(() {
-    builtInCatalog = BuiltInVehicleCatalog.fromJson(
-      (jsonDecode(
-                File(
-                  'assets/data/built_in_vehicle_catalog.json',
-                ).readAsStringSync(),
-              )
-              as Map)
-          .cast<String, Object?>(),
-    );
+    builtInCatalog = loadBuiltInVehicleCatalogForTest();
   });
 
   LunioRepository testRepository(AppDatabase database) {
@@ -202,15 +196,14 @@ void main() {
   }
 
   /// 测试替身：等价已删除的 createCarWithDefaultItems（R26 清理）——
-  /// 查当前库里的模板 → 转车辆级项目实体 → 建车。
+  /// 按车的动力类型查当前库里的模板 → 转车辆级项目实体 → 建车。
   /// 注意不主动 bootstrap：目录由调用方按需灌入。
   Future<int> createCarWithDefaultItems(
     LunioRepository repository,
     Car car,
   ) async {
-    final defaults = await repository.listDefaultItemsForModel(
-      brand: car.brand,
-      model: car.model,
+    final defaults = await repository.listDefaultItemsForPowertrain(
+      powertrainType: car.powertrainType,
     );
     return repository.createCarWithMaintenanceItems(
       car,
@@ -730,7 +723,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
 
-    expect(find.text('本田 思域（燃油版）'), findsWidgets);
+    expect(find.text('奥迪 奥迪A3'), findsWidgets);
     expect(
       tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
       '0',
@@ -766,7 +759,7 @@ void main() {
 
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(15),
+      hasLength(11),
     );
     expect(find.text('玻璃水', skipOffstage: false), findsOneWidget);
   });
@@ -779,16 +772,17 @@ void main() {
     await createDefaultCar(tester);
 
     expect(find.text('保养提醒'), findsNothing);
-    expect(find.text('本田 思域（燃油版）'), findsWidgets);
+    expect(find.text('奥迪 奥迪A3'), findsWidgets);
     expect(find.text('当前'), findsOneWidget);
     expect(find.textContaining('0km'), findsOneWidget);
     expect(find.textContaining('车龄'), findsNothing);
     expect(find.textContaining('上路'), findsNothing);
     expect(find.text('当前车辆保养项目'), findsNothing);
     expect(await database.select(database.cars).get(), hasLength(1));
+    // 燃油模板 10 项（默认预选动力 = 目录第一项奥迪A3 的推荐值燃油）。
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(14),
+      hasLength(10),
     );
   });
 
@@ -836,10 +830,10 @@ void main() {
 
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
-    expect(find.text('备份'), findsOneWidget);
+    expect(find.text('备份数据'), findsOneWidget);
     expect(find.text('JSON 备份'), findsNothing);
 
-    await tester.tap(find.text('备份'));
+    await tester.tap(find.text('备份数据'));
     await tester.pumpAndSettle();
     expect(calls, isEmpty);
 
@@ -894,13 +888,15 @@ void main() {
       final database = await pumpApp(tester);
       await createDefaultCar(tester);
 
-      await tester.tap(find.text('恢复').first);
+      // 行标题现在是"恢复数据"（不可点的纯文本），点它不会打开确认弹窗；
+      // 弹窗标题也是"恢复数据"，所以用弹窗副标题区分弹窗是否出现。
+      await tester.tap(find.text('恢复数据').first);
       await tester.pumpAndSettle();
-      expect(find.text('恢复数据'), findsNothing);
+      expect(find.textContaining('恢复会先清空本地'), findsNothing);
 
       await tester.tap(find.widgetWithText(TextButton, '恢复').first);
       await tester.pumpAndSettle();
-      expect(find.text('恢复数据'), findsOneWidget);
+      expect(find.textContaining('恢复会先清空本地'), findsOneWidget);
       // 恢复语义文案：明示只清业务数据、偏好保留（R2 口径）。
       expect(find.textContaining('偏好设置会保留'), findsOneWidget);
 
@@ -1254,12 +1250,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('本田 思域（燃油版）'));
+    await tester.tap(find.text('奥迪 奥迪A3'));
     await tester.pumpAndSettle();
 
     expect(find.text('选择车型'), findsOneWidget);
     expect(find.text('搜索品牌或车型'), findsOneWidget);
-    expect(find.text('本田'), findsWidgets);
+    expect(find.text('奥迪'), findsWidgets);
   });
 
   testWidgets('add car wizard keeps selected model after going back', (
@@ -1271,24 +1267,64 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('本田 思域（燃油版）'));
+    await tester.tap(find.text('奥迪 奥迪A3'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, '轩逸');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('轩逸（燃油版）'));
+    // 搜索框里的输入（EditableText）与列表行同名，精确点 PickerOption 行。
+    await tester.tap(find.widgetWithText(PickerOption, '轩逸'));
     await tester.pumpAndSettle();
-    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
+    expect(find.text('日产 轩逸'), findsOneWidget);
 
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('上一步'));
     await tester.pumpAndSettle();
 
-    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
-    expect(find.text('本田 思域（燃油版）'), findsNothing);
+    expect(find.text('日产 轩逸'), findsOneWidget);
+    expect(find.text('奥迪 奥迪A3'), findsNothing);
   });
 
-  testWidgets('add car wizard reloads maintenance items after model changes', (
+  testWidgets(
+    'add car wizard supports custom model input for catalog gaps',
+    (tester) async {
+      await pumpApp(tester);
+
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('新增车辆'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('奥迪 奥迪A3'));
+      await tester.pumpAndSettle();
+      // 目录外的老车（懂车帝已下架）走自定义输入兜底（ADR 0003）。
+      await tester.enterText(find.byType(TextField).last, '不存在的车系');
+      await tester.pumpAndSettle();
+      expect(find.text('没有匹配车型'), findsOneWidget);
+      await tester.tap(find.text('＋ 自定义输入…'));
+      await tester.pumpAndSettle();
+      // dialog 里只有品牌/车型两个输入框，从 AlertDialog 范围内定位。
+      final dialogFields = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(dialogFields.at(0), '雪佛兰');
+      await tester.enterText(dialogFields.at(1), '科鲁泽');
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('雪佛兰 科鲁泽'), findsOneWidget);
+      // 自定义车型没有目录推荐值，动力类型预选燃油。
+      expect(
+        tester
+            .widgetList<Text>(find.byType(Text))
+            .map((text) => text.data)
+            .whereType<String>(),
+        contains('燃油'),
+      );
+    },
+  );
+
+  testWidgets('add car wizard reloads items after powertrain changes', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -1298,26 +1334,22 @@ void main() {
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
 
+    // 默认预选燃油：机油/汽油滤芯都在。
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
-    expect(find.text('燃油宝'), findsOneWidget);
+    expect(find.text('机油'), findsOneWidget);
+    expect(find.text('汽油滤芯'), findsOneWidget);
 
+    // 回第一步换成纯电：模板应整组换成纯电那套（没有机油）。
     await tester.tap(find.text('上一步'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('本田 思域（燃油版）'));
+    await tester.tap(find.text('纯电'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, '轩逸');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('轩逸（燃油版）'));
-    await tester.pumpAndSettle();
-    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
-
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
 
-    expect(find.text('日产 轩逸（燃油版）'), findsOneWidget);
-    expect(find.text('燃油宝'), findsNothing);
-    expect(find.text('机油'), findsOneWidget);
+    expect(find.text('机油'), findsNothing);
+    expect(find.text('减速器油'), findsOneWidget);
   });
 
   testWidgets('profile can edit car mileage', (tester) async {
@@ -1363,7 +1395,7 @@ void main() {
     expect(find.text('玻璃水'), findsOneWidget);
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(15),
+      hasLength(11),
     );
   });
 
@@ -1377,11 +1409,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('保养项目'), findsOneWidget);
-    expect(find.text('本田 思域（燃油版）'), findsWidgets);
+    expect(find.text('奥迪 奥迪A3'), findsWidgets);
     expect(find.textContaining('项目名称可变'), findsNothing);
     expect(find.textContaining('关闭后不出现在'), findsNothing);
     expect(find.text('提醒：5,000公里/6个月'), findsWidgets);
-    expect(find.text('提醒：2万公里/1年'), findsOneWidget);
+    // 燃油模板里空调滤芯、空气滤芯都是这个间隔，出现两行。
+    expect(find.text('提醒：2万公里/1年'), findsNWidgets(2));
     expect(find.text('默认'), findsNothing);
     expect(find.text('自定义'), findsNothing);
     expect(find.text('点按编辑'), findsNothing);
@@ -1441,7 +1474,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 3));
-    await tester.tap(find.text('燃油宝'));
+    await tester.tap(find.text('机油'));
     await tester.pumpAndSettle();
     expect(find.text('编辑保养项目'), findsNothing);
 
@@ -1543,7 +1576,8 @@ void main() {
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('删除'), findsNWidgets(14));
+    // 燃油模板 10 项。
+    expect(find.byTooltip('删除'), findsNWidgets(10));
     await tester.tap(find.byTooltip('删除').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存车辆'));
@@ -1551,7 +1585,7 @@ void main() {
 
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(13),
+      hasLength(9),
     );
   });
 
@@ -1594,22 +1628,22 @@ void main() {
 
     await tester.tap(find.byTooltip('删除').first);
     await tester.pumpAndSettle();
-    expect(find.text('燃油宝'), findsNothing);
+    expect(find.text('机油'), findsNothing);
 
     await tester.tap(find.widgetWithText(TextButton, '恢复').last);
     await tester.pumpAndSettle();
     expect(find.text('恢复默认项目'), findsOneWidget);
-    expect(find.text('已存在'), findsNWidgets(13));
+    expect(find.text('已存在'), findsNWidgets(9));
     await tester.tap(find.widgetWithText(FilledButton, '恢复'));
     await tester.pumpAndSettle();
-    expect(find.text('燃油宝'), findsOneWidget);
+    expect(find.text('机油'), findsOneWidget);
 
     await tester.tap(find.text('保存车辆'));
     await tester.pumpAndSettle();
 
     expect(
       await database.select(database.maintenanceItems).get(),
-      hasLength(14),
+      hasLength(10),
     );
   });
 
@@ -2281,4 +2315,346 @@ void main() {
       cleanupNotifications();
     },
   );
+
+  testWidgets('fuel prediction developer switch toggles fuel tab instantly', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+
+    // 开发者模式打开后出现"加油预测"开关行；默认关闭，底部没有加油 tab。
+    expect(find.text('加油预测'), findsOneWidget);
+    expect(find.byType(Switch), findsOneWidget);
+    expect(find.text('加油'), findsNothing);
+
+    // 打开开关：底部导航实时出现加油 tab（无需重启 App）。
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(find.text('加油'), findsOneWidget);
+
+    // 再次关闭：加油 tab 消失，数据入口同步隐藏。
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(find.text('加油'), findsNothing);
+  });
+
+  testWidgets('fuel page shows fill cost tiers with capacity and mock price', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    await repository.setPreferenceValue('fuelProvince', '湖北');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    await repository.saveFuelPrediction(
+      FuelPrediction(carId: carId, fuelPercent: 50),
+    );
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 页面骨架：没有独立设置区/剩余油量区，省份与油品是油价卡副标题的
+    // 两个可点段。
+    expect(find.text('当前油价'), findsOneWidget);
+    expect(find.text('剩余油量'), findsNothing);
+    expect(find.text('加油设置'), findsNothing);
+    expect(find.text('湖北'), findsOneWidget);
+    expect(find.text('92#'), findsOneWidget);
+    // 油价来自示例数据源，但界面不再标注"示例数据"（文案已精简）。
+    expect(find.textContaining('示例数据'), findsNothing);
+    // 档位列表：已存的 50% 定位在第一行，窗口内往下可见 48/46/44/42。
+    expect(find.text('50%'), findsOneWidget);
+    expect(find.textContaining('（当前）'), findsNothing);
+    expect(find.text('48%'), findsOneWidget);
+    expect(find.text('46%'), findsOneWidget);
+    expect(find.text('44%'), findsOneWidget);
+    expect(find.text('42%'), findsOneWidget);
+    // 50% 档：55 升 × (100-50)/100 = 27.5 升；
+    // 湖北 92# 示例价 7.45 + 16×0.01 = 7.61，27.5 × 7.61 = 209.28 元。
+    expect(find.textContaining('需 27.5 升'), findsOneWidget);
+    expect(find.text('¥209.28'), findsOneWidget);
+  });
+
+  testWidgets('fuel page persists baseline tier after scrolling tier list', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    // 没保存过的车：默认按 50% 定位，不落库。
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    expect(
+      await repository.getFuelPredictionForCar(carId),
+      isNull,
+      reason: '进入页面不写库',
+    );
+
+    // 向上拖三行左右：滚动停稳后吸附物理把第一行对齐到整行档位，
+    // 并自动把该档位写库（timedDrag 匀速拖动，落点可复现）。
+    await tester.timedDrag(find.text('50%'), const Offset(0, -132), const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    final saved = await repository.getFuelPredictionForCar(carId);
+    expect(saved?.fuelPercent, 46);
+    expect(find.text('46%'), findsOneWidget);
+  });
+
+  testWidgets('fuel page reset icon scrolls baseline back to 50%', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    await repository.saveFuelPrediction(
+      FuelPrediction(carId: carId, fuelPercent: 50),
+    );
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 滚走基准档后点返回图标：滚回 50% 在第一行并写库。
+    await tester.timedDrag(find.text('50%'), const Offset(0, -132), const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('回到 50%'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('50%'), findsOneWidget);
+    expect(
+      (await repository.getFuelPredictionForCar(carId))?.fuelPercent,
+      50,
+    );
+  });
+
+  testWidgets('fuel page opens province and grade picker sheets from price card', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    await repository.setPreferenceValue('fuelProvince', '湖北');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 点副标题油品段 → 弹出油品选择 sheet（4 个胶囊一行单选，贴内容收缩）。
+    await tester.tap(find.text('92#'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择油品'), findsOneWidget);
+    // 油品只有 4 项：sheet 用一行胶囊贴内容收缩，不出现下方空白
+    // （用户反馈过列表版留白，这里守住总高度上限）。
+    expect(
+      tester.getRect(find.byType(PrototypeSheetFrame)).height,
+      lessThan(200),
+    );
+    // 选 95#：关 sheet、写偏好、副标题跟着变。
+    await tester.tap(find.text('95#'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择油品'), findsNothing);
+    expect(await repository.getPreferenceValue('fuelGrade'), '95');
+    expect(find.text('95#'), findsOneWidget);
+
+    // 点副标题省份段 → 弹出省份选择 sheet（限高滚动）。
+    await tester.tap(find.text('湖北'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择省份'), findsOneWidget);
+    // 选广东：关 sheet、写省份偏好，油价自动刷新为广东价。
+    await tester.tap(find.text('广东'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择省份'), findsNothing);
+    expect(await repository.getPreferenceValue('fuelProvince'), '广东');
+    expect(find.text('广东'), findsOneWidget);
+  });
+
+  testWidgets('fuel page guides to fill tank capacity before costing', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 未填容积：空态引导出现（容积入口在车辆管理），不显示金额。
+    expect(find.textContaining('填写油箱容积'), findsOneWidget);
+    expect(find.textContaining('¥'), findsNothing);
+  });
 }

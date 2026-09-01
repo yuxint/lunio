@@ -1,17 +1,20 @@
-import 'dart:convert';
+
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
+import '../helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
+import 'package:lunio/domain/entities/powertrain_type.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/domain/entities/vehicle_default_maintenance_item.dart';
 import 'package:lunio/domain/entities/vehicle_model.dart';
@@ -24,15 +27,7 @@ void main() {
   late BuiltInVehicleCatalog builtInCatalog;
 
   setUpAll(() {
-    builtInCatalog = BuiltInVehicleCatalog.fromJson(
-      (jsonDecode(
-                File(
-                  'assets/data/built_in_vehicle_catalog.json',
-                ).readAsStringSync(),
-              )
-              as Map)
-          .cast<String, Object?>(),
-    );
+    builtInCatalog = loadBuiltInVehicleCatalogForTest();
   });
 
   setUp(() {
@@ -161,15 +156,14 @@ void main() {
   }
 
   /// 测试替身：等价已删除的 createCarWithDefaultItems（按默认模板建车，
-  /// R26 清理）——查当前库里的模板 → 转车辆级项目实体 → 建车。
+  /// R26 清理）——按车的动力类型查当前库里的模板 → 转车辆级项目实体 → 建车。
   /// 注意不主动 bootstrap：目录由调用方按需灌入（有的用例用自定义目录）。
   Future<int> createCarWithDefaultItems(
     LunioRepository repository,
     Car car,
   ) async {
-    final defaults = await repository.listDefaultItemsForModel(
-      brand: car.brand,
-      model: car.model,
+    final defaults = await repository.listDefaultItemsForPowertrain(
+      powertrainType: car.powertrainType,
     );
     return repository.createCarWithMaintenanceItems(
       car,
@@ -232,6 +226,149 @@ void main() {
     expect(cars.single.id, isNotNull);
     expect(cars.single.brand, '本田');
     expect(cars.single.model, '22款思域');
+  });
+
+  test('v7→v8 迁移：cars 补容积列、fuel_predictions 删容积列', () async {
+    // 内存库每次都是全新 schema（createAll 直接建 v9 表），走不到
+    // onUpgrade；用临时文件库先建 v9 表、再手工退化成 v7 形状并拨回
+    // 版本号，重开后验证升级路径（会连跑 v7→v8→v9 两段迁移）。
+    // （回归背景：v8 迁移曾漏给 cars 加容积列，老库升级后保存车辆
+    // 报 no such column，界面提示"操作失败"。）
+    final tempDir = await Directory.systemTemp.createTemp('lunio_migration');
+    addTearDown(() => tempDir.delete(recursive: true));
+    final dbFile = File('${tempDir.path}/lunio.sqlite');
+
+    // 1) 建当前 schema 的库，再退化成 v7 形状：cars 无容积/动力列、
+    //    fuel_predictions 有容积列、车型表无推荐动力列、模板表还是
+    //    "品牌+车型"形状，user_version 拨回 7。
+    final setup = AppDatabase.withExecutor(NativeDatabase(dbFile));
+    await setup.customSelect('SELECT 1').get();
+    await setup.customStatement(
+      'ALTER TABLE cars DROP COLUMN tank_capacity_liters',
+    );
+    await setup.customStatement(
+      'ALTER TABLE cars DROP COLUMN powertrain_type',
+    );
+    await setup.customStatement(
+      'ALTER TABLE vehicle_models DROP COLUMN template',
+    );
+    await setup.customStatement(
+      'ALTER TABLE fuel_predictions ADD COLUMN tank_capacity_liters REAL NULL',
+    );
+    await setup.customStatement(
+      'DROP TABLE vehicle_default_maintenance_items',
+    );
+    await setup.customStatement(
+      'CREATE TABLE vehicle_default_maintenance_items ('
+      'id INTEGER NOT NULL PRIMARY KEY, '
+      'catalog_id TEXT NULL, '
+      'vehicle_brand TEXT NOT NULL, '
+      'vehicle_model TEXT NOT NULL, '
+      'item_name TEXT NOT NULL, '
+      'remind_by_mileage INTEGER NOT NULL, '
+      'remind_by_time INTEGER NOT NULL, '
+      'mileage_interval_km INTEGER NULL, '
+      'time_interval_months INTEGER NULL, '
+      'not_overdue_upper_limit REAL NOT NULL DEFAULT 100, '
+      'overdue_upper_limit REAL NOT NULL DEFAULT 125, '
+      'sort_order INTEGER NOT NULL, '
+      'sync_status TEXT NOT NULL DEFAULT \'synced\', '
+      'updated_at TEXT NOT NULL, '
+      'version INTEGER NOT NULL DEFAULT 1)',
+    );
+    await setup.customStatement('PRAGMA user_version = 7');
+    await setup.close();
+
+    // 2) 重开触发 v7→v8 迁移，检查两张表的列。
+    // （drift 会对"同一路径第二次建库"发例行警告；本测试是先关再开、
+    // 顺序使用无并发，静音该警告。）
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    final migrated = AppDatabase.withExecutor(NativeDatabase(dbFile));
+    Future<List<String>> columnNames(String table) => migrated
+        .customSelect('PRAGMA table_info($table)')
+        .get()
+        .then((rows) => rows.map((row) => row.read<String>('name')).toList());
+    expect(await columnNames('cars'), contains('tank_capacity_liters'));
+    expect(
+      await columnNames('fuel_predictions'),
+      isNot(contains('tank_capacity_liters')),
+    );
+
+    // 3) 迁移后的库能正常写入带容积的车辆（老库缺列时正是死在这一步）。
+    await migrated
+        .into(migrated.cars)
+        .insert(
+          CarsCompanion.insert(
+            id: const Value(1),
+            brand: '本田',
+            model: '22款思域',
+            currentMileageKm: 10000,
+            roadDate: '2023-08-12',
+            tankCapacityLiters: const Value(55.0),
+            updatedAt: DateTime(2026).toIso8601String(),
+          ),
+        );
+    expect(
+      (await migrated.select(migrated.cars).get()).single.tankCapacityLiters,
+      55.0,
+    );
+    await migrated.close();
+  });
+
+  test('v8→v9 迁移：cars/vehicle_models 补动力列、模板表重建', () async {
+    // 与 v7→v8 测试同法：临时文件库先建 v9 表，退化成 v8 形状
+    // （删两列 + 用旧形状重建模板表），拨回版本号重开，验证升级路径。
+    final tempDir = await Directory.systemTemp.createTemp('lunio_migration_v9');
+    addTearDown(() => tempDir.delete(recursive: true));
+    final dbFile = File('${tempDir.path}/lunio.sqlite');
+
+    final setup = AppDatabase.withExecutor(NativeDatabase(dbFile));
+    await setup.customSelect('SELECT 1').get();
+    await setup.customStatement(
+      'ALTER TABLE cars DROP COLUMN powertrain_type',
+    );
+    await setup.customStatement(
+      'ALTER TABLE vehicle_models DROP COLUMN template',
+    );
+    await setup.customStatement('PRAGMA user_version = 8');
+    await setup.close();
+
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    final migrated = AppDatabase.withExecutor(NativeDatabase(dbFile));
+    Future<List<String>> columnNames(String table) => migrated
+        .customSelect('PRAGMA table_info($table)')
+        .get()
+        .then((rows) => rows.map((row) => row.read<String>('name')).toList());
+    expect(await columnNames('cars'), contains('powertrain_type'));
+    expect(await columnNames('vehicle_models'), contains('template'));
+    // 模板表按新形状（动力类型维度）重建。
+    expect(
+      await columnNames('vehicle_default_maintenance_items'),
+      contains('powertrain_type'),
+    );
+    expect(
+      await columnNames('vehicle_default_maintenance_items'),
+      isNot(contains('vehicle_brand')),
+    );
+
+    // 迁移后老车动力类型默认燃油（不回填推断，ADR 0003）。
+    await migrated
+        .into(migrated.cars)
+        .insert(
+          CarsCompanion.insert(
+            id: const Value(1),
+            brand: '本田',
+            model: '22款思域',
+            currentMileageKm: 10000,
+            roadDate: '2023-08-12',
+            updatedAt: DateTime(2026).toIso8601String(),
+          ),
+        );
+    expect(
+      (await migrated.select(migrated.cars).get()).single.powertrainType,
+      'fuel',
+    );
+    await migrated.close();
   });
 
   test('v6 schema creates business table indexes', () async {
@@ -310,9 +447,10 @@ void main() {
       final items = await repository.listMaintenanceItemsForCar(carId);
       expect(
         items.map((item) => item.name),
-        containsAll(['燃油宝', '机油', '机滤', '空调滤芯']),
+        containsAll(['机油', '机滤', '空调滤芯', '汽油滤芯']),
       );
-      expect(items, hasLength(14));
+      // 燃油模板整组复制（10 项）。
+      expect(items, hasLength(10));
       final oilItems = items.where(
         (item) => item.name == '机油' || item.name == '机滤',
       );
@@ -328,64 +466,162 @@ void main() {
   );
 
   test(
-    'bootstraps default maintenance items for common model templates',
+    'bootstraps default maintenance items per powertrain type',
     () async {
       await repository.ensureDefaultMaintenanceItems();
 
-      final civicItems = await repository.listDefaultItemsForModel(
-        brand: '本田',
-        model: '思域（燃油版）',
+      final fuelItems = await repository.listDefaultItemsForPowertrain(
+        powertrainType: PowertrainType.fuel,
       );
-      final sylphyItems = await repository.listDefaultItemsForModel(
-        brand: '日产',
-        model: '轩逸（燃油版）',
+      final hybridItems = await repository.listDefaultItemsForPowertrain(
+        powertrainType: PowertrainType.hybrid,
       );
-      final corollaItems = await repository.listDefaultItemsForModel(
-        brand: '丰田',
-        model: '卡罗拉（燃油版）',
+      final plugInItems = await repository.listDefaultItemsForPowertrain(
+        powertrainType: PowertrainType.plugIn,
       );
-      final modelYItems = await repository.listDefaultItemsForModel(
-        brand: '特斯拉',
-        model: 'Model Y（纯电版）',
+      final extendedItems = await repository.listDefaultItemsForPowertrain(
+        powertrainType: PowertrainType.extendedRange,
       );
-      final qinLItems = await repository.listDefaultItemsForModel(
-        brand: '比亚迪',
-        model: '秦 L（插混版）',
-      );
-      final camryHybridItems = await repository.listDefaultItemsForModel(
-        brand: '丰田',
-        model: '凯美瑞（混动版）',
+      final evItems = await repository.listDefaultItemsForPowertrain(
+        powertrainType: PowertrainType.electric,
       );
 
-      expect(_defaultItemRules(civicItems), [
-        '燃油宝|true|false|5000|null',
-        '机油|true|true|5000|6',
-        '机滤|true|true|5000|6',
-        '空调滤芯|true|true|20000|12',
-        '空气滤芯|true|false|20000|null',
-        '变速箱油|true|true|40000|24',
-        '刹车油|false|true|null|36',
-        '火花塞|true|false|100000|null',
-        '检查传动皮带|true|true|40000|24',
-        '检查气门间隙|true|false|120000|null',
-        '检查刹车|true|false|120000|null',
-        '防冻液|true|true|200000|120',
-        '汽油滤芯|true|false|140000|null',
-        '轮胎换位|true|false|10000|null',
-      ]);
-      expect(_defaultItemRules(sylphyItems), _genericFuelRules);
-      expect(_defaultItemRules(corollaItems), _genericFuelRules);
-      expect(_defaultItemRules(modelYItems), _genericEvRules);
-      expect(_defaultItemRules(qinLItems), _genericPlugInRules);
-      expect(_defaultItemRules(camryHybridItems), _genericHybridRules);
+      expect(_defaultItemRules(fuelItems), _genericFuelRules);
+      expect(_defaultItemRules(hybridItems), _genericHybridRules);
+      expect(_defaultItemRules(plugInItems), _genericPlugInRules);
+      // 增程与插混共用同一套保养内容（ADR 0003）。
+      expect(_defaultItemRules(extendedItems), _genericPlugInRules);
+      expect(_defaultItemRules(evItems), _genericEvRules);
+      // 五组模板行数：fuel 10、hybrid 11、plugIn 9、extended 9、ev 7。
+      expect(fuelItems, hasLength(10));
+      expect(hybridItems, hasLength(11));
+      expect(plugInItems, hasLength(9));
+      expect(extendedItems, hasLength(9));
+      expect(evItems, hasLength(7));
     },
   );
 
-  test('bootstrap adopts matching legacy default template rows', () async {
+  test('civic uses its vehicle-specific civicFuel template (ADR 0004)', () async {
+    await repository.ensureDefaultMaintenanceItems();
+
+    // 目录解析：思域条目带 itemTemplate，civicFuel 组 14 项、首项燃油宝。
+    final civic = builtInCatalog.findVehicle('本田', '思域');
+    expect(civic, isNotNull);
+    expect(civic!.itemTemplate, 'civicFuel');
+    final civicTemplate = builtInCatalog.vehicleTemplateItems('civicFuel');
+    expect(civicTemplate, hasLength(14));
+    expect(civicTemplate!.first.name, '燃油宝');
+
+    // 仓库按（品牌+车型+推荐动力类型一致）返回专属模板。
+    final items = await repository.listDefaultItemsForVehicleModel(
+      brand: '本田',
+      model: '思域',
+      selectedPowertrain: PowertrainType.fuel,
+    );
+    expect(items, hasLength(14));
+    expect(items!.first.itemName, '燃油宝');
+    expect(items.first.catalogId, 'vtpl:civicFuel:fuel-additive');
+    expect(
+      [for (final item in items) item.sortOrder],
+      [for (var i = 1; i <= 14; i++) i],
+    );
+
+    // 专属模板不写 vehicle_default_maintenance_items 表：
+    // 燃油通用组仍是 10 项、不含燃油宝。
+    final fuelItems = await repository.listDefaultItemsForPowertrain(
+      powertrainType: PowertrainType.fuel,
+    );
+    expect(fuelItems, hasLength(10));
+    expect(fuelItems.any((item) => item.itemName == '燃油宝'), isFalse);
+  });
+
+  test('vehicle-specific template falls back when rules not met', () async {
+    // 改选其他动力类型：专属模板不适用，返回 null（向导回退通用模板）。
+    expect(
+      await repository.listDefaultItemsForVehicleModel(
+        brand: '本田',
+        model: '思域',
+        selectedPowertrain: PowertrainType.electric,
+      ),
+      isNull,
+    );
+    // 目录里没有专属模板的车型（本田 型格）→ null。
+    expect(
+      await repository.listDefaultItemsForVehicleModel(
+        brand: '本田',
+        model: '型格',
+        selectedPowertrain: PowertrainType.fuel,
+      ),
+      isNull,
+    );
+    // 非目录自定义车型 → null。
+    expect(
+      await repository.listDefaultItemsForVehicleModel(
+        brand: '自定义',
+        model: '手工车',
+        selectedPowertrain: PowertrainType.fuel,
+      ),
+      isNull,
+    );
+  });
+
+  test('vehicle itemTemplate must reference vehicleTemplates', () {
+    expect(
+      () => BuiltInVehicleCatalog.fromJson({
+        'schemaVersion': 2,
+        'templates': {
+          'fuel': [
+            {
+              'id': 'engine-oil',
+              'name': '机油',
+              'remindByMileage': true,
+              'remindByTime': false,
+              'mileageIntervalKm': 5000,
+            },
+          ],
+        },
+        'vehicleTemplates': {
+          'civicFuel': [
+            {
+              'id': 'fuel-additive',
+              'name': '燃油宝',
+              'remindByMileage': true,
+              'remindByTime': false,
+              'mileageIntervalKm': 5000,
+            },
+          ],
+        },
+        'vehicles': [
+          {
+            'id': 'honda-civic-fuel',
+            'brand': '本田',
+            'model': '思域',
+            'template': 'fuel',
+            'itemTemplate': 'notExist',
+          },
+        ],
+      }),
+      throwsArgumentError,
+    );
+  });
+
+  test('production asset loader keeps vehicleTemplates reachable', () async {
+    // 回归：生产加载器 loadBuiltInVehicleCatalogAsset 手工拼目录 JSON，
+    // 曾把 vehicleTemplates 字段丢掉，导致思域 itemTemplate 校验在真机
+    // 启动时抛错、页面整体加载失败。其余测试走磁盘 helper（已透传该
+    // 字段）或注入目录，抓不到这条路径，必须直连 rootBundle 验证。
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final catalog = await loadBuiltInVehicleCatalogAsset();
+    expect(catalog.findVehicle('本田', '思域')!.itemTemplate, 'civicFuel');
+    expect(catalog.vehicleTemplateItems('civicFuel'), hasLength(14));
+  });
+
+  test('bootstrap updates stale template rows by catalog id', () async {
+    // 旧版本模板行（同 catalogId、旧间隔）：bootstrap 对账后应被目录值覆盖。
     await repository.saveVehicleDefaultMaintenanceItem(
       VehicleDefaultMaintenanceItem(
-        vehicleBrand: '日产',
-        vehicleModel: '轩逸（燃油版）',
+        catalogId: 'tpl:fuel:engine-oil',
+        powertrainType: PowertrainType.fuel,
         itemName: '机油',
         remindByMileage: true,
         remindByTime: true,
@@ -398,13 +634,11 @@ void main() {
 
     await repository.ensureDefaultMaintenanceItems();
 
-    final items = await repository.listDefaultItemsForModel(
-      brand: '日产',
-      model: '轩逸（燃油版）',
+    final items = await repository.listDefaultItemsForPowertrain(
+      powertrainType: PowertrainType.fuel,
     );
     final oilItems = items.where((item) => item.itemName == '机油');
     expect(oilItems, hasLength(1));
-    expect(oilItems.single.catalogId, isNotNull);
     expect(_defaultItemRules(oilItems.toList()), ['机油|true|true|5000|6']);
   });
 
@@ -412,12 +646,18 @@ void main() {
     'bootstrap adopts legacy built-in rows and updates them by catalog id',
     () async {
       await repository.saveVehicleModel(
-        VehicleModel(brand: '日产', model: '轩逸（燃油版）', sortOrder: 99, sync: sync),
+        VehicleModel(
+          brand: '日产',
+          model: '轩逸',
+          template: PowertrainType.fuel,
+          sortOrder: 99,
+          sync: sync,
+        ),
       );
       await repository.saveVehicleDefaultMaintenanceItem(
         VehicleDefaultMaintenanceItem(
-          vehicleBrand: '日产',
-          vehicleModel: '轩逸（燃油版）',
+          catalogId: 'tpl:fuel:engine-oil',
+          powertrainType: PowertrainType.fuel,
           itemName: '机油',
           remindByMileage: true,
           remindByTime: true,
@@ -446,7 +686,7 @@ void main() {
           {
             'id': 'nissan-sylphy-fuel',
             'brand': '日产',
-            'model': '轩逸（燃油版）',
+            'model': '轩逸',
             'template': 'fuel',
           },
         ],
@@ -463,7 +703,8 @@ void main() {
               .single;
       expect(adoptedModel.catalogId, 'nissan-sylphy-fuel');
       expect(adoptedModel.sortOrder, 1);
-      expect(adoptedItem.catalogId, 'nissan-sylphy-fuel:engine-oil');
+      expect(adoptedModel.template, 'fuel');
+      expect(adoptedItem.catalogId, 'tpl:fuel:engine-oil');
       expect(adoptedItem.mileageIntervalKm, 5000);
       expect(adoptedItem.timeIntervalMonths, 6);
 
@@ -485,7 +726,7 @@ void main() {
           {
             'id': 'nissan-sylphy-fuel',
             'brand': '日产',
-            'model': '轩逸经典（燃油版）',
+            'model': '轩逸经典',
             'template': 'fuel',
           },
         ],
@@ -502,9 +743,9 @@ void main() {
               .single;
       expect(updatedModel.id, adoptedModel.id);
       expect(updatedModel.brand, '日产');
-      expect(updatedModel.model, '轩逸经典（燃油版）');
+      expect(updatedModel.model, '轩逸经典');
       expect(updatedItem.id, adoptedItem.id);
-      expect(updatedItem.vehicleModel, '轩逸经典（燃油版）');
+      expect(updatedItem.powertrainType, 'fuel');
       expect(updatedItem.itemName, '发动机机油');
       expect(updatedItem.mileageIntervalKm, 8000);
       expect(updatedItem.timeIntervalMonths, 12);
@@ -542,12 +783,19 @@ void main() {
       );
       await seedRepository.ensureBootstrapData();
       await repository.saveVehicleModel(
-        VehicleModel(brand: '自定义品牌', model: '自定义车型', sortOrder: 1, sync: sync),
+        VehicleModel(
+          brand: '自定义品牌',
+          model: '自定义车型',
+          template: PowertrainType.fuel,
+          sortOrder: 1,
+          sync: sync,
+        ),
       );
       await repository.saveVehicleDefaultMaintenanceItem(
         VehicleDefaultMaintenanceItem(
-          vehicleBrand: '自定义品牌',
-          vehicleModel: '自定义车型',
+          // 放混动组：不混入下面按燃油建车的默认项，测试"目录条目删除
+          // 不碰车辆级项目"的意图不变。
+          powertrainType: PowertrainType.hybrid,
           itemName: '自定义项目',
           remindByMileage: true,
           remindByTime: false,
@@ -566,19 +814,12 @@ void main() {
         ),
       );
 
+      // "目录更新后条目被移除"：模板全撤、车型清空。
+      // 注意 v9 起默认项目按动力类型展开（与车型列表无关），所以这里
+      // 模板也要清空，模板表才会被对账清到只剩用户自建行。
       final emptyCatalog = BuiltInVehicleCatalog.fromJson({
         'schemaVersion': 2,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-          ],
-        },
+        'templates': const <String, Object?>{},
         'vehicles': <Object?>[],
       });
       await LunioRepository(
@@ -605,9 +846,8 @@ void main() {
   test('pure electric templates do not include fuel service items', () async {
     await repository.ensureDefaultMaintenanceItems();
 
-    final items = await repository.listDefaultItemsForModel(
-      brand: '小米',
-      model: 'SU7（纯电版）',
+    final items = await repository.listDefaultItemsForPowertrain(
+      powertrainType: PowertrainType.electric,
     );
     final names = items.map((item) => item.itemName);
 
@@ -623,45 +863,49 @@ void main() {
 
     final models = await repository.listVehicleModels();
 
+    // 目录以懂车帝原始车系名为准（ADR 0003）；2026-09-01 起精简为
+    // 每品牌最多 10 款热门车型，共 1223 条。
     expect(
       models.map((model) => '${model.brand} ${model.model}'),
       containsAll([
-        '本田 思域（燃油版）',
-        '日产 轩逸（燃油版）',
-        '丰田 卡罗拉（燃油版）',
-        '比亚迪 秦 PLUS（插混版）',
-        '吉利银河 星愿（纯电版）',
-        '奇瑞 瑞虎 8（燃油版）',
-        '长安 CS75 PLUS（燃油版）',
-        '哈弗 H6（燃油版）',
-        '特斯拉 Model 3（纯电版）',
-        '理想 L6（增程版）',
-        '问界 M8（增程版）',
-        '大众 速腾（燃油版）',
-        '丰田 凯美瑞（混动版）',
-        '别克 GL8（燃油版）',
-        '宝马 3 系（燃油版）',
-        '欧拉 好猫（纯电版）',
-        '智己 LS6（纯电版）',
-        '保时捷 Macan（纯电版）',
+        '本田 思域',
+        '丰田 卡罗拉',
+        '丰田 凯美瑞',
+        '日产 轩逸',
+        '大众 速腾',
+        '大众 帕萨特',
+        '比亚迪 秦PLUS DM',
+        '比亚迪 秦PLUS EV',
+        '比亚迪 海鸥',
+        '吉利汽车 帝豪',
+        '长安 逸动',
+        '哈弗 哈弗H6',
+        '特斯拉 Model 3',
+        'AITO问界 问界M9',
+        '小米汽车 小米SU7',
+        '宝马 宝马3系',
+        '奥迪 奥迪A4L',
+        '讴歌 讴歌ILX', // 停售条目也进目录
       ]),
     );
-    expect(models.length, greaterThan(140));
+    // 推荐动力类型随车系给出（添加向导预选用）。
+    final byName = {
+      for (final model in models) '${model.brand} ${model.model}': model.template,
+    };
+    expect(byName['比亚迪 秦PLUS DM'], PowertrainType.plugIn);
+    expect(byName['比亚迪 秦PLUS EV'], PowertrainType.electric);
+    expect(byName['AITO问界 问界M9'], PowertrainType.extendedRange);
+    expect(byName['特斯拉 Model 3'], PowertrainType.electric);
+    expect(byName['丰田 卡罗拉'], PowertrainType.fuel);
+    expect(models.length, greaterThan(1000));
   });
 
   test('bootstrap leaves existing brands unchanged', () async {
     await repository.saveVehicleModel(
-      VehicleModel(brand: '东风日产', model: '轩逸（燃油版）', sortOrder: 1, sync: sync),
-    );
-    await repository.saveVehicleDefaultMaintenanceItem(
-      VehicleDefaultMaintenanceItem(
-        vehicleBrand: '东风日产',
-        vehicleModel: '轩逸（燃油版）',
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 3000,
-        timeIntervalMonths: 3,
+      VehicleModel(
+        brand: '东风日产',
+        model: '轩逸',
+        template: PowertrainType.fuel,
         sortOrder: 1,
         sync: sync,
       ),
@@ -671,20 +915,12 @@ void main() {
 
     final modelRows = await database.select(database.vehicleModels).get();
     final sylphyRows = modelRows
-        .where((row) => row.model == '轩逸（燃油版）')
+        .where((row) => row.model == '轩逸')
         .map((row) => row.brand)
         .toList();
+    // 无 catalogId 的老行按（品牌, 车型）兜底认领，不被目录覆盖删除。
     expect(sylphyRows, contains('东风日产'));
     expect(sylphyRows.where((brand) => brand == '日产'), hasLength(1));
-
-    final templateRows = await database
-        .select(database.vehicleDefaultMaintenanceItems)
-        .get();
-    final oilRows = templateRows.where(
-      (row) => row.vehicleModel == '轩逸（燃油版）' && row.itemName == '机油',
-    );
-    expect(oilRows.map((row) => row.vehicleBrand), contains('东风日产'));
-    expect(oilRows.map((row) => row.vehicleBrand), contains('日产'));
   });
 
   test('bootstrap leaves existing car brands unchanged', () async {
@@ -769,206 +1005,63 @@ void main() {
 
     final models = await repository.listVehicleModels();
 
+    // 覆盖各字母分片的抽样（懂车帝原名，含动力拆分条目与停售条目）。
     expect(
       models.map((model) => '${model.brand} ${model.model}'),
       containsAll([
-        '本田 思域（燃油版）',
-        '本田 思域（混动版）',
-        '日产 轩逸（燃油版）',
-        '日产 轩逸（混动版）',
-        '丰田 卡罗拉（燃油版）',
-        '丰田 卡罗拉（混动版）',
-        '丰田 凯美瑞（燃油版）',
-        '丰田 凯美瑞（混动版）',
-        '丰田 汉兰达（混动版）',
-        '丰田 赛那（混动版）',
-        '丰田 威兰达（燃油版）',
-        '丰田 威兰达（混动版）',
-        '丰田 RAV4 荣放（燃油版）',
-        '丰田 RAV4 荣放（混动版）',
-        '丰田 格瑞维亚（混动版）',
-        '本田 雅阁（燃油版）',
-        '本田 雅阁（混动版）',
-        '本田 CR-V（燃油版）',
-        '本田 CR-V（混动版）',
-        '本田 皓影（燃油版）',
-        '本田 皓影（混动版）',
-        '本田 型格（燃油版）',
-        '本田 型格（混动版）',
-        '本田 奥德赛（混动版）',
-        '日产 天籁（燃油版）',
-        '日产 逍客（燃油版）',
-        '日产 奇骏（燃油版）',
-        '大众 速腾（燃油版）',
-        '大众 迈腾（燃油版）',
-        '大众 探岳（燃油版）',
-        '大众 朗逸（燃油版）',
-        '大众 帕萨特（燃油版）',
-        '大众 帕萨特（插混版）',
-        '大众 途观 L（燃油版）',
-        '大众 途观 L（插混版）',
-        '大众 途昂（燃油版）',
-        '大众 ID.3（纯电版）',
-        '大众 ID.4（纯电版）',
-        '别克 GL8（燃油版）',
-        '别克 GL8（插混版）',
-        '别克 GL8 新能源（插混版）',
-        '别克 昂科威（燃油版）',
-        '福特 蒙迪欧（燃油版）',
-        '福特 锐界 L（混动版）',
-        '现代 伊兰特（燃油版）',
-        '起亚 K3（燃油版）',
-        '起亚 狮铂拓界（燃油版）',
-        '马自达 昂克赛拉（燃油版）',
-        '马自达 CX-5（燃油版）',
-        '雪佛兰 科鲁泽（燃油版）',
-        '比亚迪 海鸥（纯电版）',
-        '比亚迪 海豚（纯电版）',
-        '比亚迪 秦 PLUS（插混版）',
-        '比亚迪 秦 PLUS（纯电版）',
-        '比亚迪 秦 L（插混版）',
-        '比亚迪 海豹 06（插混版）',
-        '比亚迪 汉（插混版）',
-        '比亚迪 汉（纯电版）',
-        '比亚迪 宋 PLUS（插混版）',
-        '比亚迪 宋 PLUS（纯电版）',
-        '比亚迪 宋 Pro（插混版）',
-        '比亚迪 元 UP（纯电版）',
-        '比亚迪 元 PLUS（纯电版）',
-        '比亚迪 唐（插混版）',
-        '比亚迪 海狮 06（插混版）',
-        '比亚迪 海狮 06（纯电版）',
-        '比亚迪 宋 L（插混版）',
-        '比亚迪 海豹 07（纯电版）',
-        '腾势 D9（插混版）',
-        '腾势 D9（纯电版）',
-        '方程豹 豹 5（插混版）',
-        '吉利银河 星愿（纯电版）',
-        '吉利银河 L6（插混版）',
-        '吉利银河 L7（插混版）',
-        '吉利银河 E5（纯电版）',
-        '吉利 帝豪（燃油版）',
-        '吉利 星瑞（燃油版）',
-        '吉利 缤越（燃油版）',
-        '吉利 博越 L（燃油版）',
-        '吉利 星越 L（燃油版）',
-        '吉利 星越 L（混动版）',
-        '领克 03（燃油版）',
-        '领克 08（插混版）',
-        '极氪 001（纯电版）',
-        '极氪 007（纯电版）',
-        '极氪 7X（纯电版）',
-        '奇瑞 艾瑞泽 8（燃油版）',
-        '奇瑞 瑞虎 7（燃油版）',
-        '奇瑞 瑞虎 8（燃油版）',
-        '奇瑞 瑞虎 9（燃油版）',
-        '奇瑞风云 A8（插混版）',
-        '奇瑞风云 T9（插混版）',
-        '捷途 X70（燃油版）',
-        '捷途 旅行者（燃油版）',
-        '捷途山海 L7（插混版）',
-        '星途 瑶光（燃油版）',
-        '长安 逸动（燃油版）',
-        '长安 CS75 PLUS（燃油版）',
-        '长安 UNI-V（燃油版）',
-        '长安 UNI-Z（插混版）',
-        '长安启源 A05（插混版）',
-        '长安启源 A07（插混版）',
-        '长安启源 Q05（插混版）',
-        '深蓝 S05（纯电版）',
-        '深蓝 S07（增程版）',
-        '深蓝 L07（增程版）',
-        '深蓝 G318（增程版）',
-        '阿维塔 07（增程版）',
-        '阿维塔 11（纯电版）',
-        '阿维塔 12（纯电版）',
-        '哈弗 H6（燃油版）',
-        '哈弗 H6（插混版）',
-        '哈弗 大狗（燃油版）',
-        '坦克 300（燃油版）',
-        '坦克 500（插混版）',
-        '魏牌 高山（插混版）',
-        '五菱 宏光 MINIEV（纯电版）',
-        '五菱 缤果（纯电版）',
-        '五菱 星光（插混版）',
-        '五菱 星光 730（插混版）',
-        '宝骏 云朵（纯电版）',
-        '欧拉 好猫（纯电版）',
-        '红旗 H5（燃油版）',
-        '红旗 HS5（燃油版）',
-        '奔腾 B70（燃油版）',
-        '奔腾 T90（燃油版）',
-        '荣威 D7（插混版）',
-        '荣威 RX5（燃油版）',
-        'MG MG4（纯电版）',
-        'MG ZS（燃油版）',
-        '传祺 M8（燃油版）',
-        '传祺 E8（插混版）',
-        '传祺 GS4（燃油版）',
-        '埃安 AION Y（纯电版）',
-        '埃安 AION S（纯电版）',
-        '埃安 AION V（纯电版）',
-        '风神 皓瀚（燃油版）',
-        '奕派 eπ007（增程版）',
-        '岚图 梦想家（插混版）',
-        '岚图 梦想家（纯电版）',
-        '岚图 FREE（增程版）',
-        '零跑 A10（纯电版）',
-        '零跑 C10（纯电版）',
-        '零跑 C10（增程版）',
-        '零跑 C11（增程版）',
-        '零跑 C16（增程版）',
-        '理想 L6（增程版）',
-        '理想 L7（增程版）',
-        '理想 L8（增程版）',
-        '理想 i6（纯电版）',
-        '蔚来 ES6（纯电版）',
-        '蔚来 ES8（纯电版）',
-        '蔚来 ET5（纯电版）',
-        '乐道 L60（纯电版）',
-        '小鹏 MONA M03（纯电版）',
-        '小鹏 P7（纯电版）',
-        '小鹏 G6（纯电版）',
-        '小鹏 X9（纯电版）',
-        '小米 SU7（纯电版）',
-        '小米 YU7（纯电版）',
-        '智己 L6（纯电版）',
-        '智己 LS6（纯电版）',
-        '问界 M8（增程版）',
-        '问界 M8（纯电版）',
-        '问界 M9（增程版）',
-        '智界 R7（纯电版）',
-        '享界 S9（纯电版）',
-        '极狐 阿尔法 T5（纯电版）',
-        '昊铂 HT（纯电版）',
-        '昊铂 GT（纯电版）',
-        'iCAR 03（纯电版）',
-        '特斯拉 Model 3（纯电版）',
-        '特斯拉 Model Y（纯电版）',
-        '宝马 3 系（燃油版）',
-        '宝马 5 系（燃油版）',
-        '宝马 X3（燃油版）',
-        '宝马 i3（纯电版）',
-        '奔驰 C 级（燃油版）',
-        '奔驰 E 级（燃油版）',
-        '奔驰 GLC（燃油版）',
-        '奥迪 A4L（燃油版）',
-        '奥迪 A6L（燃油版）',
-        '奥迪 Q5L（燃油版）',
-        '凯迪拉克 CT5（燃油版）',
-        '沃尔沃 XC60（燃油版）',
-        '雷克萨斯 ES（混动版）',
-        '林肯 航海家（燃油版）',
-        'MINI Cooper（纯电版）',
-        '保时捷 Macan（纯电版）',
-        '保时捷 Cayenne（燃油版）',
-        '路虎 发现运动版（燃油版）',
+        '本田 思域',
+        '本田 雅阁',
+        '丰田 汉兰达',
+        '日产 天籁',
+        '大众 途观L',
+        '大众 ID.4 CROZZ',
+        '别克 别克GL8 PHEV',
+        '福特 蒙迪欧',
+        '比亚迪 海豹06DM',
+        '比亚迪 汉EV',
+        '腾势 腾势D9 DM',
+        '方程豹 豹5',
+        '吉利银河 星愿',
+        '吉利银河 银河L6',
+        '领克 领克08 EM-P',
+        '奇瑞 瑞虎8',
+        '长安启源 长安启源A07',
+        '哈弗 哈弗H6',
+        '坦克 坦克300 Hi4-T',
+        '魏牌 高山',
+        '五菱汽车 五菱宏光MINIEV',
+        '广汽传祺 传祺M8',
+        '理想汽车 理想L6',
+        '蔚来 蔚来ET5',
+        '小鹏汽车 小鹏MONA M03',
+        '小米汽车 小米YU7',
+        'AITO问界 问界M8',
+        '特斯拉 Model Y',
+        '宝马 宝马3系',
+        '奔驰 奔驰C级',
+        '奥迪 奥迪Q5L',
+        '雷克萨斯 雷克萨斯ES',
+        '马自达 马自达3 昂克赛拉',
+        '路虎 揽胜极光',
+        'MINI 电动MINI COOPER',
+        'smart smart精灵#1',
+        '欧拉 欧拉好猫',
+        '极氪 ZEEKR 001',
+        '智己汽车 智己LS6',
+        '雪佛兰 科尔维特', // 停售、品牌仅在售目录外
+        '道奇 挑战者', // 停售
+        '讴歌 讴歌ILX', // 停售
       ]),
     );
     expect(models.map((model) => model.catalogId), everyElement(isNotNull));
     expect(
       models.map((model) => model.catalogId).toSet(),
       hasLength(models.length),
+    );
+    // 老目录带动力后缀的名字一条都不该再出现。
+    expect(
+      models.where((model) => model.model.endsWith('版）')),
+      isEmpty,
     );
   });
 
@@ -1649,8 +1742,7 @@ void main() {
     await repository.setPreferenceValue('manualDate', '2026-05-23');
     await repository.saveVehicleDefaultMaintenanceItem(
       VehicleDefaultMaintenanceItem(
-        vehicleBrand: '本田',
-        vehicleModel: '22款思域',
+        powertrainType: PowertrainType.fuel,
         itemName: '机油',
         remindByMileage: true,
         remindByTime: true,

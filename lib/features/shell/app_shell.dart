@@ -16,15 +16,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/providers.dart';
 import '../../core/platform/native_system_ui.dart';
 import '../../core/theme/lunio_tokens.dart';
+import 'fuel/fuel_page.dart';
 import 'profile/profile_page.dart';
 import 'records/records_page.dart';
 import 'reminders/notification_sync_controller.dart';
 import 'reminders/reminder_page.dart';
 import 'shared/shell_shared.dart';
 
-/// 主壳层组件。selectedIndex 来自路由（0/1/2 对应三个入口）。
+/// 主壳层组件。selectedIndex 是"固定 tab 位"：
+/// 0=提醒 1=记录 2=加油 3=我的。加油位只有在"加油预测"开关打开时
+/// 才出现在底部导航（路由常驻，关闭时本组件负责兜底重定向）。
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.selectedIndex});
 
@@ -85,18 +89,42 @@ class _AppShellState extends ConsumerState<AppShell>
 
   /// 每帧 build：渲染当前 tab 页 + 底部导航。
   /// 通知同步已由控制器 listenManual 驱动，这里不做任何同步副作用。
+  ///
+  /// 加油预测开关打开时还顺带 watch 油价控制器（≈ 启动时检查油价：
+  /// 缓存过期/换省/无缓存就静默拉一次，见 fuel_price_controller）。
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final fuelEnabled = ref
+        .watch(fuelPredictionEnabledProvider)
+        .maybeWhen(data: (value) => value, orElse: () => false);
+    if (fuelEnabled) {
+      ref.watch(fuelPriceControllerProvider);
+    }
+    // 兜底：加油 tab 只在开关打开时存在。开关关闭后若仍停在 /fuel
+    // （如冷启动恢复了旧路由），渲染提醒页内容并跳回 /me。
+    final selectedIndex = widget.selectedIndex;
+    final onDisabledFuel = selectedIndex == 2 && !fuelEnabled;
+    final effectiveIndex = onDisabledFuel ? 0 : selectedIndex;
+    if (onDisabledFuel) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          if (context.mounted) {
+            context.go('/me');
+          }
+        }
+      });
+    }
     final pages = [
       const ReminderPreviewPage(),
       const RecordsPreviewPage(),
+      const FuelPreviewPage(),
       const ProfilePreviewPage(),
     ];
 
     return Scaffold(
       backgroundColor: tokens.background,
-      body: SafeArea(child: pages[widget.selectedIndex]),
+      body: SafeArea(child: pages[effectiveIndex]),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(
           14,
@@ -125,7 +153,7 @@ class _AppShellState extends ConsumerState<AppShell>
                   icon: Icons.home_repair_service_outlined,
                   selectedIcon: Icons.home_repair_service,
                   label: '提醒',
-                  selected: widget.selectedIndex == 0,
+                  selected: effectiveIndex == 0,
                   onTap: () {
                     dismissTransientUi(context);
                     context.go('/reminders');
@@ -136,18 +164,31 @@ class _AppShellState extends ConsumerState<AppShell>
                   icon: Icons.format_list_bulleted_outlined,
                   selectedIcon: Icons.format_list_bulleted,
                   label: '记录',
-                  selected: widget.selectedIndex == 1,
+                  selected: effectiveIndex == 1,
                   onTap: () {
                     dismissTransientUi(context);
                     context.go('/records');
                   },
                 ),
+                if (fuelEnabled) ...[
+                  const SizedBox(width: 6),
+                  _BottomNavItem(
+                    icon: Icons.local_gas_station_outlined,
+                    selectedIcon: Icons.local_gas_station,
+                    label: '加油',
+                    selected: effectiveIndex == 2,
+                    onTap: () {
+                      dismissTransientUi(context);
+                      context.go('/fuel');
+                    },
+                  ),
+                ],
                 const SizedBox(width: 6),
                 _BottomNavItem(
                   icon: Icons.person_outline,
                   selectedIcon: Icons.person,
                   label: '我的',
-                  selected: widget.selectedIndex == 2,
+                  selected: effectiveIndex == 3,
                   onTap: () {
                     dismissTransientUi(context);
                     context.go('/me');

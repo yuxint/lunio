@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 2,
+  "letter": "T",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-5b622d7166",
+      "brand": "特斯拉",
+      "model": "Model 3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-56a09d98cd",
+      "brand": "特斯拉",
+      "model": "Model S",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0956abe3de",
+      "brand": "特斯拉",
+      "model": "Model Y",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b59d0ca105",
+      "brand": "特斯拉",
+      "model": "Model Y L",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-40253d0804",
+      "brand": "特斯拉",
+      "model": "Model X",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-80f71bf882",
+      "brand": "坦克",
+      "model": "坦克300",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d24839010e",
+      "brand": "坦克",
+      "model": "坦克300 Hi4-T",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-d233f98993",
+      "brand": "坦克",
+      "model": "坦克300L Hi4-T",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-8da83aa971",
+      "brand": "坦克",
+      "model": "坦克400",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-79eb138d1b",
+      "brand": "坦克",
+      "model": "坦克400 Hi4-T",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-610a072619",
+      "brand": "坦克",
+      "model": "坦克500",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6e90e69472",
+      "brand": "坦克",
+      "model": "坦克500 Hi4-T",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-0d45898bb8",
+      "brand": "坦克",
+      "model": "坦克500 Hi4-Z",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-cd73dc121c",
+      "brand": "坦克",
+      "model": "坦克700 Hi4-T",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-d09810b766",
+      "brand": "坦克",
+      "model": "坦克700 Hi4-Z",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-b9e4f7f312",
+      "brand": "腾势",
+      "model": "腾势Z9 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-4dc1351e6f",
+      "brand": "腾势",
+      "model": "腾势Z9 DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-066ee5dea7",
+      "brand": "腾势",
+      "model": "腾势Z9GT EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-2181b1a258",
+      "brand": "腾势",
+      "model": "腾势Z9GT DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-aa5b65a7bc",
+      "brand": "腾势",
+      "model": "腾势N7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-38b447774b",
+      "brand": "腾势",
+      "model": "腾势N8L DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-cf10797f20",
+      "brand": "腾势",
+      "model": "腾势N9 DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2faa7efe65",
+      "brand": "腾势",
+      "model": "腾势D9 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-344afe7ce3",
+      "brand": "腾势",
+      "model": "腾势D9 DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-78df00083e",
+      "brand": "途酷房车",
+      "model": "十三太保",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1e6e6ca52a",
+      "brand": "途酷房车",
+      "model": "神龙大侠",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8ef65629de",
+      "brand": "途酷房车",
+      "model": "神行太保",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-25f0a37281",
+      "brand": "途酷房车",
+      "model": "神行者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8619cf988a",
+      "brand": "途酷房车",
+      "model": "东风猛士",
+      "template": "fuel"
+    }
+  ]
+}

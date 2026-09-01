@@ -1,0 +1,354 @@
+{
+  "schemaVersion": 2,
+  "letter": "Q",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-4f173f1f02",
+      "brand": "奇瑞",
+      "model": "艾瑞泽5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0241f80cda",
+      "brand": "奇瑞",
+      "model": "艾瑞泽8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b5b869f858",
+      "brand": "奇瑞",
+      "model": "瑞虎5x",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ba852fa191",
+      "brand": "奇瑞",
+      "model": "瑞虎7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a41a0df518",
+      "brand": "奇瑞",
+      "model": "瑞虎7 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d8e4dcf3e1",
+      "brand": "奇瑞",
+      "model": "瑞虎8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-49358b9896",
+      "brand": "奇瑞",
+      "model": "瑞虎8 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-52b904de0d",
+      "brand": "奇瑞",
+      "model": "瑞虎8 PRO",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-26a83d91d1",
+      "brand": "奇瑞",
+      "model": "瑞虎8L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2df885f305",
+      "brand": "奇瑞",
+      "model": "瑞虎9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d6d16aea8c",
+      "brand": "奇瑞风云",
+      "model": "风云A8",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-d7d9f20066",
+      "brand": "奇瑞风云",
+      "model": "风云A8L",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3a1c41749d",
+      "brand": "奇瑞风云",
+      "model": "风云A9",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-17031191ce",
+      "brand": "奇瑞风云",
+      "model": "风云A9L",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-377d4e96cc",
+      "brand": "奇瑞风云",
+      "model": "风云X3",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3127ff4ae8",
+      "brand": "奇瑞风云",
+      "model": "风云X3L",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-1a8b59ec5f",
+      "brand": "奇瑞风云",
+      "model": "风云T6",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-45d276665d",
+      "brand": "奇瑞风云",
+      "model": "风云T8",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2dc4e21b8f",
+      "brand": "奇瑞风云",
+      "model": "风云T9",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-a93cf54270",
+      "brand": "奇瑞风云",
+      "model": "风云T10",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-653478e3bc",
+      "brand": "奇瑞新能源",
+      "model": "艾瑞泽e",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-a3311ad017",
+      "brand": "奇瑞新能源",
+      "model": "奇瑞舒享家",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0802238e55",
+      "brand": "奇瑞QQ",
+      "model": "冰淇淋",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-045fd572e4",
+      "brand": "奇瑞QQ",
+      "model": "小蚂蚁",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e76e13ab8d",
+      "brand": "奇瑞QQ",
+      "model": "多米",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a9a481fcf7",
+      "brand": "奇瑞QQ",
+      "model": "QQ3 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e702b15f47",
+      "brand": "启境",
+      "model": "启境GT7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e6a871b3d8",
+      "brand": "起亚",
+      "model": "焕驰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e5e63e5ad9",
+      "brand": "起亚",
+      "model": "起亚K3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6c1614946c",
+      "brand": "起亚",
+      "model": "起亚K5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c253cbc54b",
+      "brand": "起亚",
+      "model": "奕跑",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c2d665de33",
+      "brand": "起亚",
+      "model": "索奈",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-781dfd1eeb",
+      "brand": "起亚",
+      "model": "起亚EV5",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-d6f2525af1",
+      "brand": "起亚",
+      "model": "赛图斯",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a63b85d6ad",
+      "brand": "起亚",
+      "model": "智跑",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-caca52c173",
+      "brand": "起亚",
+      "model": "狮铂拓界",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-54b7b95e2d",
+      "brand": "起亚",
+      "model": "嘉华",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d7a4de7546",
+      "brand": "启辰",
+      "model": "启辰D60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c6c8971d87",
+      "brand": "启辰",
+      "model": "启辰D60 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-1b1adee708",
+      "brand": "启辰",
+      "model": "启辰T60 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3c0dd990ba",
+      "brand": "启辰",
+      "model": "启辰VX6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c8e42c9b41",
+      "brand": "启辰",
+      "model": "启辰大V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6fa3a95660",
+      "brand": "启辰",
+      "model": "启辰大V DD-i",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-82f9288685",
+      "brand": "启辰",
+      "model": "启辰星",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8f011ac02e",
+      "brand": "骐蔚汽车",
+      "model": "长江7号",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-38e1528957",
+      "brand": "骐蔚汽车",
+      "model": "长江6号",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5e66a4fa6c",
+      "brand": "齐星房车",
+      "model": "星浩",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c9e62b42fa",
+      "brand": "齐星房车",
+      "model": "星领",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fdc1fea6fe",
+      "brand": "齐星房车",
+      "model": "星创",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d43229eee4",
+      "brand": "齐星房车",
+      "model": "拓疆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f1b8d7d46e",
+      "brand": "齐星房车",
+      "model": "新能源",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-890c9fd6f4",
+      "brand": "七狼房车",
+      "model": "V-800系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-97ec34fc07",
+      "brand": "七狼房车",
+      "model": "J-500系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-18344213ca",
+      "brand": "七狼房车",
+      "model": "E-500系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-10cbda3a51",
+      "brand": "七狼房车",
+      "model": "F-500系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a21c711bed",
+      "brand": "七狼房车",
+      "model": "V-900系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-eedadc600b",
+      "brand": "七狼房车",
+      "model": "V-700系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b11b90fe45",
+      "brand": "七狼房车",
+      "model": "V-500系列",
+      "template": "fuel"
+    }
+  ]
+}

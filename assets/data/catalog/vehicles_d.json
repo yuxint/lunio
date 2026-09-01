@@ -1,0 +1,588 @@
+{
+  "schemaVersion": 2,
+  "letter": "D",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-b5bc23be89",
+      "brand": "大众",
+      "model": "朗逸",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f1fc1b0452",
+      "brand": "大众",
+      "model": "宝来",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3357719c2e",
+      "brand": "大众",
+      "model": "速腾",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1c2e7360fd",
+      "brand": "大众",
+      "model": "高尔夫",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-af204bbf8b",
+      "brand": "大众",
+      "model": "帕萨特",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-928e54aa79",
+      "brand": "大众",
+      "model": "迈腾",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-59a9909e9d",
+      "brand": "大众",
+      "model": "途岳",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b517e25b9f",
+      "brand": "大众",
+      "model": "ID.4 CROZZ",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c2590881b5",
+      "brand": "大众",
+      "model": "探岳",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-54ffc1afa8",
+      "brand": "大众",
+      "model": "途观L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fd0b181832",
+      "brand": "东风",
+      "model": "锐骐",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a4e028bae8",
+      "brand": "东风",
+      "model": "锐骐6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f21b1ea502",
+      "brand": "东风",
+      "model": "锐骐6 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ae9e2561de",
+      "brand": "东风",
+      "model": "锐骐7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-05e6864c96",
+      "brand": "东风",
+      "model": "郑州日产Z9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-25861de249",
+      "brand": "东风",
+      "model": "郑州日产Z9 GE PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-7311fa2126",
+      "brand": "东风",
+      "model": "猛士M50",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fad1ce48db",
+      "brand": "东风",
+      "model": "猛士MS600",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-93c16211b2",
+      "brand": "东风",
+      "model": "福瑞通V6E",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c50aeea3f1",
+      "brand": "东风",
+      "model": "途逸T5E",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ba3c0d2cdb",
+      "brand": "东风风行",
+      "model": "星海S7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b992bf23e3",
+      "brand": "东风风行",
+      "model": "星海T5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bea140cd4a",
+      "brand": "东风风行",
+      "model": "风行T5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f9e2fdcbc3",
+      "brand": "东风风行",
+      "model": "风行T5 EVO",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-59f9c01a28",
+      "brand": "东风风行",
+      "model": "风行雷霆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fc119b6fae",
+      "brand": "东风风行",
+      "model": "星海V9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-79e5328fc2",
+      "brand": "东风风行",
+      "model": "菱智",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-76a17c3986",
+      "brand": "东风风行",
+      "model": "菱智PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8eca4d8bfe",
+      "brand": "东风风行",
+      "model": "菱智新能源",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-eb234abf00",
+      "brand": "东风风行",
+      "model": "风行M7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6af52dd1ca",
+      "brand": "东风风神",
+      "model": "奕炫",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7c9fdda07a",
+      "brand": "东风风神",
+      "model": "东风风神E70",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-85f0f6ca26",
+      "brand": "东风风神",
+      "model": "皓瀚",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-05c5cb4d69",
+      "brand": "东风风神",
+      "model": "奕炫GS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f8a6afe419",
+      "brand": "东风风神",
+      "model": "皓极",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-524f1dbaea",
+      "brand": "东风风神",
+      "model": "风神L7 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-f4d6227920",
+      "brand": "东风风神",
+      "model": "风神L7 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-a8708fe51b",
+      "brand": "东风风神",
+      "model": "风神L7X",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ca4ae881e1",
+      "brand": "东风风神",
+      "model": "东风风神L8 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-7e910e4090",
+      "brand": "东风风神",
+      "model": "东风风神L8Y",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6b770cf03b",
+      "brand": "大通",
+      "model": "大通G50",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c5c5fddb2b",
+      "brand": "大通",
+      "model": "大通G10",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-84cccae56e",
+      "brand": "大通",
+      "model": "大通G70",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c78c5b5db0",
+      "brand": "大通",
+      "model": "大家9 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-77aff259d0",
+      "brand": "大通",
+      "model": "大家9超混",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1294ca1080",
+      "brand": "大通",
+      "model": "大通T60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5e13591cea",
+      "brand": "大通",
+      "model": "星际",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-42f8f66ce4",
+      "brand": "大通",
+      "model": "大拿V1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7bc515c18a",
+      "brand": "大通",
+      "model": "新途V80",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5de11d5176",
+      "brand": "大通",
+      "model": "新途V90",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-57705b729a",
+      "brand": "东风风光",
+      "model": "风光MINIEV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-5705cdf9a2",
+      "brand": "东风风光",
+      "model": "风光500",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0035b18878",
+      "brand": "东风风光",
+      "model": "风光S560",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2097ddd5ff",
+      "brand": "东风风光",
+      "model": "风光580",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9f5a8f3cf5",
+      "brand": "东风风光",
+      "model": "风光S580",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-11f5e78c3b",
+      "brand": "东风风光",
+      "model": "风光ix5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-98a49fc84c",
+      "brand": "东风风光",
+      "model": "风光E380",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-272a373743",
+      "brand": "东风风光",
+      "model": "风光380",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-84bb89d823",
+      "brand": "东风奕派",
+      "model": "纳米01",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f427565433",
+      "brand": "东风奕派",
+      "model": "奕派007",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-918f35cc43",
+      "brand": "东风奕派",
+      "model": "纳米06",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9e620587ce",
+      "brand": "东风奕派",
+      "model": "奕派008",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-9695838766",
+      "brand": "东风奕派",
+      "model": "奕派M8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-04e98844ae",
+      "brand": "东风小康",
+      "model": "东风小康K05S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8688476811",
+      "brand": "东风小康",
+      "model": "东风小康K07S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f50119353b",
+      "brand": "东风小康",
+      "model": "东风小康C35",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d47e1d01fc",
+      "brand": "东风小康",
+      "model": "东风小康C36Ⅱ",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5241ab4884",
+      "brand": "东风小康",
+      "model": "东风小康EC36",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b98da613b0",
+      "brand": "东风小康",
+      "model": "东风小康C31",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b28c0c7c2c",
+      "brand": "东风小康",
+      "model": "东风小康C32",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9c57feb0d8",
+      "brand": "东风小康",
+      "model": "东风小康D71",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4c0f250ec9",
+      "brand": "东风小康",
+      "model": "东风小康D72",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ea5987ed38",
+      "brand": "东风小康",
+      "model": "创富牛卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c8269d5e96",
+      "brand": "东风风度",
+      "model": "帕拉丁",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e69b4852d0",
+      "brand": "东风富康",
+      "model": "e爱丽舍",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-35a01a61ee",
+      "brand": "东风·瑞泰特",
+      "model": "东风·瑞泰特EM30",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-ed104c0c9e",
+      "brand": "东风·瑞泰特",
+      "model": "东风·瑞泰特EM10",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-436d527fde",
+      "brand": "大运",
+      "model": "悦虎",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e35752631f",
+      "brand": "大运",
+      "model": "远志M1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7a8a8dc53f",
+      "brand": "大力牛魔王",
+      "model": "大力牛魔王D01",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-06681ad8b7",
+      "brand": "大力牛魔王",
+      "model": "大力牛魔王D02",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b4268e8acb",
+      "brand": "大力牛魔王",
+      "model": "大力牛魔王D03",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-538108a750",
+      "brand": "大力牛魔王",
+      "model": "大力牛魔王D05",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-27eac3ab76",
+      "brand": "大力牛魔王",
+      "model": "大力牛魔王D08",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-1420738a9d",
+      "brand": "戴德房车",
+      "model": "E途",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b0aec3b72d",
+      "brand": "戴德房车",
+      "model": "自由风",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d5b3394783",
+      "brand": "戴德房车",
+      "model": "URV",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-53f5c6f652",
+      "brand": "戴德房车",
+      "model": "恺丰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-83b22afb0c",
+      "brand": "戴德房车",
+      "model": "聚星",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ad2c47ffe7",
+      "brand": "戴德房车",
+      "model": "云游",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a0fb17951",
+      "brand": "大驰房车",
+      "model": "图乐系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4cd4bcf881",
+      "brand": "大驰房车",
+      "model": "火星系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4d08fb3cf7",
+      "brand": "大驰房车",
+      "model": "无极系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ca58188415",
+      "brand": "大驰房车",
+      "model": "VAN家系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-62f0712142",
+      "brand": "大驰房车",
+      "model": "福星系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-07df77cd65",
+      "brand": "道奇",
+      "model": "挑战者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f503fa91d7",
+      "brand": "道奇",
+      "model": "酷威",
+      "template": "fuel"
+    }
+  ]
+}

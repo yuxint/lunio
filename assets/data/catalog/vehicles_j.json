@@ -1,0 +1,1080 @@
+{
+  "schemaVersion": 2,
+  "letter": "J",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-e23c13e52c",
+      "brand": "吉利汽车",
+      "model": "缤瑞",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ba722574ee",
+      "brand": "吉利汽车",
+      "model": "帝豪",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-25cdc3058e",
+      "brand": "吉利汽车",
+      "model": "星瑞",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9e6fd6519a",
+      "brand": "吉利汽车",
+      "model": "牛仔",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5264ed6ffd",
+      "brand": "吉利汽车",
+      "model": "吉利ICON",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3b06b82b5d",
+      "brand": "吉利汽车",
+      "model": "缤越",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ac82653e33",
+      "brand": "吉利汽车",
+      "model": "博越",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bad19144e9",
+      "brand": "吉利汽车",
+      "model": "博越L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3ea1de5f7c",
+      "brand": "吉利汽车",
+      "model": "豪越L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f809af1678",
+      "brand": "吉利汽车",
+      "model": "星越L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7f256a9515",
+      "brand": "吉利银河",
+      "model": "熊猫",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3362d9e649",
+      "brand": "吉利银河",
+      "model": "星愿",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-a4fd97e93a",
+      "brand": "吉利银河",
+      "model": "银河L6",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-8dfb62e2ec",
+      "brand": "吉利银河",
+      "model": "银河A7 EM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-37faa08b1a",
+      "brand": "吉利银河",
+      "model": "银河星耀6",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3d21d9aebb",
+      "brand": "吉利银河",
+      "model": "银河星耀8 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-1ce1e995b6",
+      "brand": "吉利银河",
+      "model": "银河E8",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-304d52713c",
+      "brand": "吉利银河",
+      "model": "银河E5",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-7b10bd3b62",
+      "brand": "吉利银河",
+      "model": "银河星舰7 EM-i",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-037cb282e7",
+      "brand": "吉利银河",
+      "model": "银河M7",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-b39f16a7fb",
+      "brand": "极氪",
+      "model": "ZEEKR 001",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3684f9ee36",
+      "brand": "极氪",
+      "model": "ZEEKR 001 FR",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-bcfbbf62b8",
+      "brand": "极氪",
+      "model": "ZEEKR 007",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-fa34e6abf6",
+      "brand": "极氪",
+      "model": "ZEEKR 007GT",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-779ac44d98",
+      "brand": "极氪",
+      "model": "ZEEKR X",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-78880c0df2",
+      "brand": "极氪",
+      "model": "ZEEKR 7X",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-333a26a2c4",
+      "brand": "极氪",
+      "model": "ZEEKR 8X",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-defed4a69a",
+      "brand": "极氪",
+      "model": "ZEEKR 9X",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-939532b6b4",
+      "brand": "极氪",
+      "model": "ZEEKR 009",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9306e12668",
+      "brand": "极氪",
+      "model": "ZEEKR MIX",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-7ca24bc6a0",
+      "brand": "捷途",
+      "model": "捷途X70",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-66fc5ded72",
+      "brand": "捷途",
+      "model": "捷途X70L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ff4a434cdf",
+      "brand": "捷途",
+      "model": "捷途X70 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c16db95807",
+      "brand": "捷途",
+      "model": "捷途X70 PRO",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1df8e10369",
+      "brand": "捷途",
+      "model": "捷途X70 PLUS C-DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-44ae68a850",
+      "brand": "捷途",
+      "model": "捷途X90 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-635c3f5407",
+      "brand": "捷途",
+      "model": "捷途X90 PRO",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cccbb6b547",
+      "brand": "捷途",
+      "model": "捷途大圣",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7174f5997f",
+      "brand": "捷途",
+      "model": "捷途自由者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6a53e62cd6",
+      "brand": "捷途",
+      "model": "捷途旅行者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bda75d310b",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 贝塔T1",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-18ca737b82",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 贝塔S3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8cc0f54588",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 阿尔法S5",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-84a7c1c516",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 阿尔法S6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8981025d01",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 考拉S",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-2b49402dbe",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 阿尔法T5",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-655f5f1c18",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 阿尔法T6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-222896f67a",
+      "brand": "ARCFOX极狐",
+      "model": "极狐 问道V9",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-aaf3bbe44c",
+      "brand": "捷途山海",
+      "model": "捷途旅行者C-DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-787d914954",
+      "brand": "捷途山海",
+      "model": "捷途山海T1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a940c95c34",
+      "brand": "捷途山海",
+      "model": "捷途山海L6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8728eb12ce",
+      "brand": "捷途山海",
+      "model": "捷途山海L7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-670c4f101b",
+      "brand": "捷途山海",
+      "model": "捷途山海L7 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-03eda12c28",
+      "brand": "捷途山海",
+      "model": "捷途山海L9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7e9c56efbd",
+      "brand": "吉利几何",
+      "model": "吉利几何A",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3b12a940b5",
+      "brand": "吉利几何",
+      "model": "吉利几何G6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-5af0b9294d",
+      "brand": "吉利几何",
+      "model": "吉利几何E萤火虫",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8b53b5ef53",
+      "brand": "吉利几何",
+      "model": "吉利几何M6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-1315efb66f",
+      "brand": "捷达",
+      "model": "捷达VA3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7bba6685b4",
+      "brand": "捷达",
+      "model": "捷达VA7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-42bf2decf0",
+      "brand": "捷达",
+      "model": "捷达VS5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0d2079ec4d",
+      "brand": "捷达",
+      "model": "捷达VS7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ddf3b7dd63",
+      "brand": "捷达",
+      "model": "捷达VS8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4e66448431",
+      "brand": "Jeep",
+      "model": "牧马人",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1aff8ff921",
+      "brand": "Jeep",
+      "model": "牧马人4xe PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-5194f04d70",
+      "brand": "Jeep",
+      "model": "大切诺基4xe(进口)",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ee237e236e",
+      "brand": "Jeep",
+      "model": "角斗士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d33388cb5c",
+      "brand": "捷豹",
+      "model": "捷豹XFL",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e407df4848",
+      "brand": "捷豹",
+      "model": "捷豹E-PACE",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0e2252068f",
+      "brand": "捷尼赛思",
+      "model": "捷尼赛思G80",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c7470ba66b",
+      "brand": "捷尼赛思",
+      "model": "捷尼赛思G90",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1089c36dca",
+      "brand": "捷尼赛思",
+      "model": "捷尼赛思GV70",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9505c77e27",
+      "brand": "捷尼赛思",
+      "model": "捷尼赛思GV80",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4ce064e363",
+      "brand": "ROX极石",
+      "model": "极石01",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-520c26ab7a",
+      "brand": "ROX极石",
+      "model": "极石ADAMAS",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-e6dc6c3891",
+      "brand": "江铃",
+      "model": "域虎",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-93590a0dc7",
+      "brand": "江铃",
+      "model": "宝典",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-329ff37722",
+      "brand": "江铃",
+      "model": "域虎7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-10e0f7975e",
+      "brand": "江铃",
+      "model": "域虎EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-198685ac0d",
+      "brand": "江铃",
+      "model": "大道",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0820dc7b58",
+      "brand": "江铃",
+      "model": "大道EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9371325b51",
+      "brand": "江铃",
+      "model": "E福顺",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0aa662c65e",
+      "brand": "江铃",
+      "model": "E路顺V6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-77ff779eb5",
+      "brand": "江铃",
+      "model": "福顺",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2f43b17dcb",
+      "brand": "江铃",
+      "model": "顺达",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-27efd32a9b",
+      "brand": "江铃晶马汽车",
+      "model": "E路福",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-11a07554e9",
+      "brand": "江铃晶马汽车",
+      "model": "福运EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-42a47cb342",
+      "brand": "江淮汽车",
+      "model": "江淮A5 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-dba78bae40",
+      "brand": "江淮汽车",
+      "model": "江淮QX PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-71fa6008e4",
+      "brand": "江淮汽车",
+      "model": "江淮X8 E家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-839e64e59d",
+      "brand": "江淮汽车",
+      "model": "江淮X8 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-910907c285",
+      "brand": "江淮瑞风",
+      "model": "瑞风E3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9a893d486d",
+      "brand": "江淮瑞风",
+      "model": "瑞风M3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a34c1f06d6",
+      "brand": "江淮瑞风",
+      "model": "瑞风M3 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-0841f311c9",
+      "brand": "江淮瑞风",
+      "model": "瑞风E4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6345576cbf",
+      "brand": "江淮瑞风",
+      "model": "瑞风M4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e15c64fc63",
+      "brand": "江淮瑞风",
+      "model": "瑞风RF8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8cf6f1fda1",
+      "brand": "江淮瑞风",
+      "model": "瑞风RF8 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-8e68173037",
+      "brand": "江淮钇为",
+      "model": "花仙子",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-6f051aaa60",
+      "brand": "江淮钇为",
+      "model": "钇为3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b4161cb427",
+      "brand": "江淮钇为",
+      "model": "爱跑",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e40372bcb2",
+      "brand": "江汽集团",
+      "model": "江淮iEV7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-faf25e04f8",
+      "brand": "江汽集团",
+      "model": "江淮T6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a8d216ea38",
+      "brand": "江汽集团",
+      "model": "江淮T8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1b609b683b",
+      "brand": "江汽集团",
+      "model": "悍途",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8bcf77a0d0",
+      "brand": "江汽集团",
+      "model": "悍途EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-66049fbb12",
+      "brand": "江汽集团",
+      "model": "蓝猫",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c0e43360e3",
+      "brand": "江汽集团",
+      "model": "多米EV1",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-c6576873e4",
+      "brand": "江汽集团",
+      "model": "卡拉",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1d3246f2ed",
+      "brand": "江汽集团",
+      "model": "恺达",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a5849178f",
+      "brand": "江汽集团",
+      "model": "星锐",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-89b54a7eda",
+      "brand": "金杯",
+      "model": "吉运E6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9772b93e81",
+      "brand": "金杯",
+      "model": "小海狮X30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-88e6149a80",
+      "brand": "金杯",
+      "model": "新海狮X30L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1be3843735",
+      "brand": "金杯",
+      "model": "金卡S2",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2ee4ae8dcb",
+      "brand": "金杯",
+      "model": "金卡S3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-70b6b3e243",
+      "brand": "金杯",
+      "model": "金杯T3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ff51631031",
+      "brand": "金杯",
+      "model": "金杯T5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-490611e630",
+      "brand": "金杯",
+      "model": "金杯海狮王",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-61fe5acc1a",
+      "brand": "金杯",
+      "model": "金杯海狮",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d2d6038e6a",
+      "brand": "金杯",
+      "model": "金杯快运",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6d2d9769f8",
+      "brand": "Polestar极星",
+      "model": "Polestar 2",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8b37390dd1",
+      "brand": "Polestar极星",
+      "model": "Polestar 4",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-db99d46dbd",
+      "brand": "Polestar极星",
+      "model": "Polestar 3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-d8205f32bb",
+      "brand": "钧天汽车",
+      "model": "钧天勇猛者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-63786d87f5",
+      "brand": "江铃集团新能源",
+      "model": "易至EV2",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-97a08a58b0",
+      "brand": "江铃集团新能源",
+      "model": "易至EV3",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-388ccc36d3",
+      "brand": "江铃集团新能源",
+      "model": "羿",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a23dc36803",
+      "brand": "江铃集团新能源",
+      "model": "羿驰05",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1f74993d16",
+      "brand": "江铃集团新能源",
+      "model": "羿驰05S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-07adc057c0",
+      "brand": "江铃集团新能源",
+      "model": "羿驰01",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-13c818b11d",
+      "brand": "吉利雷达",
+      "model": "雷达金刚EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-fd679ec4c5",
+      "brand": "吉利雷达",
+      "model": "雷达金刚PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-741ed3c26c",
+      "brand": "吉利雷达",
+      "model": "雷达地平线EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f82cf08c47",
+      "brand": "吉利雷达",
+      "model": "雷达地平线PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-ac03a232e1",
+      "brand": "骏驰",
+      "model": "骏驰EA",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-18e21549de",
+      "brand": "骏驰",
+      "model": "骏驰EK",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-558aaef857",
+      "brand": "骏驰",
+      "model": "骏驰ET",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-876c5b6ba4",
+      "brand": "九龙",
+      "model": "九龙EM3",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-f530291cec",
+      "brand": "九龙",
+      "model": "九龙W5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c56f93a501",
+      "brand": "九龙",
+      "model": "九龙EW5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-15c317e146",
+      "brand": "九龙",
+      "model": "九龙A4",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1fb381ed2a",
+      "brand": "九龙",
+      "model": "九龙A5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-29d7f6b600",
+      "brand": "九龙",
+      "model": "九龙A6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d30acbfe77",
+      "brand": "九龙",
+      "model": "九龙C6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-477db2a174",
+      "brand": "金龙",
+      "model": "金龙赛那",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-eb816ee225",
+      "brand": "金龙",
+      "model": "龙耀6S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3e28e36b0f",
+      "brand": "金龙",
+      "model": "龙耀5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-44ddd3289a",
+      "brand": "金龙",
+      "model": "龙耀6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d26394e0f4",
+      "brand": "金龙",
+      "model": "金威",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-41108ef9e0",
+      "brand": "金龙",
+      "model": "凯锐浩克",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-80234391fe",
+      "brand": "金龙",
+      "model": "凯歌",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e5b1e470df",
+      "brand": "金龙",
+      "model": "龙耀8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a4b4627900",
+      "brand": "金龙",
+      "model": "龙耀8S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f989253436",
+      "brand": "金龙",
+      "model": "凯歌EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-eebfc16c96",
+      "brand": "金旅",
+      "model": "海狮Z系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-99935b5894",
+      "brand": "金旅",
+      "model": "金旅海狮",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-37211ba3f9",
+      "brand": "金旅",
+      "model": "金旅海狮EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-eb7c9a8314",
+      "brand": "金旅",
+      "model": "金旅大海狮",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0b2a6eecfd",
+      "brand": "金旅",
+      "model": "领特",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1a12ea1e77",
+      "brand": "金旅",
+      "model": "领特EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-4fb1b9775c",
+      "brand": "金杯新能源",
+      "model": "新海狮 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-32445e51aa",
+      "brand": "金杯新能源",
+      "model": "新海豚 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b25237df75",
+      "brand": "金杯新能源",
+      "model": "海狮王 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e066ffe202",
+      "brand": "金杯新能源",
+      "model": "海狮 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-37dab06cbe",
+      "brand": "吉祥汽车",
+      "model": "吉祥AIR",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-473288546c",
+      "brand": "金冠汽车",
+      "model": "金冠V-Class",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-efd33ee624",
+      "brand": "金冠汽车",
+      "model": "宾歌T10",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f6a5bf44ce",
+      "brand": "金琥新能源",
+      "model": "金琥EV48",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9bbcf1f9fd",
+      "brand": "金琥新能源",
+      "model": "金琥EV80",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b19f0a5e5a",
+      "brand": "江铃旅居房车",
+      "model": "小野牛",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1df20b5aae",
+      "brand": "江铃旅居房车",
+      "model": "大海牛",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-30eb2869f0",
+      "brand": "江铃旅居房车",
+      "model": "福犀牛",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4d508e6f15",
+      "brand": "旌航房车",
+      "model": "北极熊",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e113a36f32",
+      "brand": "旌航房车",
+      "model": "星舰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6f57e1803e",
+      "brand": "旌航房车",
+      "model": "福特",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-531861fd4e",
+      "brand": "旌航房车",
+      "model": "巍浩",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c0ae26ebf9",
+      "brand": "旌航房车",
+      "model": "未来",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-40e16c59c9",
+      "brand": "旌航房车",
+      "model": "隆旌壹号",
+      "template": "fuel"
+    }
+  ]
+}

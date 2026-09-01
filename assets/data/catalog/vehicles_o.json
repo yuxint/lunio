@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 2,
+  "letter": "O",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-48440d7f87",
+      "brand": "欧拉",
+      "model": "欧拉好猫",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-63e1bf9f26",
+      "brand": "欧拉",
+      "model": "欧拉好猫GT",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8675f0e9c1",
+      "brand": "欧拉",
+      "model": "欧拉芭蕾猫",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-c97aea5b14",
+      "brand": "欧拉",
+      "model": "欧拉闪电猫",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9d0a294419",
+      "brand": "欧拉",
+      "model": "欧拉5运动款燃油版",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3a76188dfc",
+      "brand": "欧拉",
+      "model": "欧拉5运动款纯电版",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-77e10cbf35",
+      "brand": "欧拉",
+      "model": "欧拉5GT燃油版",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-33250c5510",
+      "brand": "欧拉",
+      "model": "欧拉5GT纯电版",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-50656ac4e0",
+      "brand": "欧拉",
+      "model": "欧拉5SUV燃油版",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-122d0a90ff",
+      "brand": "欧拉",
+      "model": "欧拉5SUV纯电版",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8cb0e6300f",
+      "brand": "讴歌",
+      "model": "讴歌ILX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-97d5e32339",
+      "brand": "讴歌",
+      "model": "讴歌RLX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4ff060cfc4",
+      "brand": "讴歌",
+      "model": "讴歌TSX",
+      "template": "fuel"
+    }
+  ]
+}

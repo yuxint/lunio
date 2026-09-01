@@ -1,0 +1,336 @@
+{
+  "schemaVersion": 2,
+  "letter": "Y",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-a872c9d143",
+      "brand": "仰望",
+      "model": "仰望U7 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-dd26aee6de",
+      "brand": "仰望",
+      "model": "仰望U7 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f9e1d6b0e0",
+      "brand": "仰望",
+      "model": "仰望U8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-79af3d2b56",
+      "brand": "仰望",
+      "model": "仰望U8L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4ca590c3ab",
+      "brand": "仰望",
+      "model": "仰望U9",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-85da260ef3",
+      "brand": "一汽",
+      "model": "蓝舰H6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-acdb4285c0",
+      "brand": "firefly萤火虫",
+      "model": "firefly萤火虫",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-5bc7f1fa7c",
+      "brand": "英菲尼迪",
+      "model": "英菲尼迪QX50",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-37025e337d",
+      "brand": "英菲尼迪",
+      "model": "英菲尼迪QX60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-29b0de62a2",
+      "brand": "英菲尼迪",
+      "model": "英菲尼迪QX80",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2e9b27b84d",
+      "brand": "英力士",
+      "model": "英力士掷弹兵",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a360b807b0",
+      "brand": "云度",
+      "model": "云兔",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-5850f8f49e",
+      "brand": "依维柯",
+      "model": "意路达EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e8060961bd",
+      "brand": "依维柯",
+      "model": "依维柯欧霸",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1ebe2f0ad3",
+      "brand": "依维柯",
+      "model": "依维柯得意",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1650a49711",
+      "brand": "依维柯",
+      "model": "依维柯得意EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-76fdc190b4",
+      "brand": "依维柯",
+      "model": "依维柯聚星",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3be9161acd",
+      "brand": "依维柯",
+      "model": "依维柯欧胜",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-84509c4f46",
+      "brand": "依维柯",
+      "model": "依维柯聚星EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-11e94bbc15",
+      "brand": "依维柯",
+      "model": "依维柯欧风",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6a8603c780",
+      "brand": "依维柯",
+      "model": "依维柯欧胜EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-a5ff48f368",
+      "brand": "远程汽车",
+      "model": "远程星享V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-195e472ff7",
+      "brand": "远程汽车",
+      "model": "远程锋锐V5M",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0ac9d125c2",
+      "brand": "远程汽车",
+      "model": "远程星享F1E",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2621718978",
+      "brand": "远程汽车",
+      "model": "远程锋锐F3E",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d9ae7569db",
+      "brand": "远程汽车",
+      "model": "远程锋锐V5E",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e631f960d2",
+      "brand": "远程汽车",
+      "model": "远程星享E6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d0e08d4191",
+      "brand": "远程汽车",
+      "model": "超级VAN",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1f51367e9a",
+      "brand": "远程汽车",
+      "model": "远程星智H",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-dddcb31651",
+      "brand": "远程汽车",
+      "model": "RE500增程式旅居车",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-c26429d453",
+      "brand": "宇通",
+      "model": "天骏V6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e98d29e6fe",
+      "brand": "宇通",
+      "model": "宇通T7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cefa6edc45",
+      "brand": "宇通",
+      "model": "雍和系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5f60c3ff65",
+      "brand": "宇通",
+      "model": "C535系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c5edf14a92",
+      "brand": "宇通",
+      "model": "C533系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7944c7e33c",
+      "brand": "宇通",
+      "model": "C530系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-83c6d4ae07",
+      "brand": "宇通",
+      "model": "C520系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d5f7eb8e5c",
+      "brand": "宇通",
+      "model": "C351系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c4b5e51f0e",
+      "brand": "宇通",
+      "model": "B311系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-57ee39a196",
+      "brand": "宇通",
+      "model": "B530系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5930f4d432",
+      "brand": "雅升汽车",
+      "model": "雅升V-Class",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f3a4d72220",
+      "brand": "雅升汽车",
+      "model": "雅升VITO",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0f06a15b88",
+      "brand": "予风汽车",
+      "model": "予风EV50客运版",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ad3b59ee40",
+      "brand": "予风汽车",
+      "model": "予风黄金仓",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-acdd43673d",
+      "brand": "予风汽车",
+      "model": "予风黄金仓PLUS",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-52020c34d7",
+      "brand": "怡亚通",
+      "model": "吉泰 怡亚通eD1",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-586fd01f87",
+      "brand": "越界",
+      "model": "铸镕",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0a7f71e473",
+      "brand": "越界",
+      "model": "露营大师",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5c5aaa9ad8",
+      "brand": "越界",
+      "model": "越界R6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3963e00be4",
+      "brand": "越界",
+      "model": "盖亚",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9fcb07a900",
+      "brand": "越界",
+      "model": "泰坦",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-710a156992",
+      "brand": "易游房车",
+      "model": "宿营车系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e27b924d3d",
+      "brand": "易游房车",
+      "model": "大通系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0960c2344c",
+      "brand": "亚特房车",
+      "model": "芳语之韵系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-29b0816f9b",
+      "brand": "亚特房车",
+      "model": "NAJA系列",
+      "template": "fuel"
+    }
+  ]
+}

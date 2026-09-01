@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 2,
+  "letter": "Z",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-1b16f9ad02",
+      "brand": "智己汽车",
+      "model": "智己L6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e2a7ece021",
+      "brand": "智己汽车",
+      "model": "智己L7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-54fa5ac49f",
+      "brand": "智己汽车",
+      "model": "智己LS6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-679676aea0",
+      "brand": "智己汽车",
+      "model": "智己LS7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0f6b9bb0bf",
+      "brand": "智己汽车",
+      "model": "智己LS8",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0da83d7436",
+      "brand": "智己汽车",
+      "model": "智己LS9",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-58c6fb282b",
+      "brand": "智界",
+      "model": "智界S7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-cf26f82e80",
+      "brand": "智界",
+      "model": "智界R7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-d7d7329e68",
+      "brand": "智界",
+      "model": "智界V9",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9e64d5104f",
+      "brand": "尊界",
+      "model": "尊界S800",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-80db603dc8",
+      "brand": "尊界",
+      "model": "尊界V680",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-39e97c1c48",
+      "brand": "尊界",
+      "model": "尊界V800",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-31133a382c",
+      "brand": "中兴",
+      "model": "小老虎",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-06940f4aa3",
+      "brand": "中兴",
+      "model": "大领主",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-83ac866815",
+      "brand": "中兴",
+      "model": "中兴1986",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9227a00b08",
+      "brand": "中兴",
+      "model": "中兴1949",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-695f4b24f2",
+      "brand": "纵横",
+      "model": "纵横G700",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d7a8f3841a",
+      "brand": "纵横",
+      "model": "纵横F700",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ea660b958f",
+      "brand": "中国重汽VGV",
+      "model": "VGV VX7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-89705b7244",
+      "brand": "知豆",
+      "model": "知豆彩虹",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-9383ca8e7b",
+      "brand": "智锐汽车",
+      "model": "欧冰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7232ef7ad4",
+      "brand": "智锐汽车",
+      "model": "欧尔法",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d349c8bb08",
+      "brand": "中国重汽",
+      "model": "搏胜",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8277809d1d",
+      "brand": "中国重汽",
+      "model": "先锋官V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5e5dd7eaf4",
+      "brand": "中国重汽",
+      "model": "先锋官R",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1f727d9c4d",
+      "brand": "中国重汽",
+      "model": "先锋官L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5722de0795",
+      "brand": "中国重汽",
+      "model": "先锋官V EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ded66d8469",
+      "brand": "中房房车",
+      "model": "方舱系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-554793f85f",
+      "brand": "中房房车",
+      "model": "辉煌系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6058a0d2db",
+      "brand": "中房房车",
+      "model": "凯旋系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ecdcbc8b00",
+      "brand": "中房房车",
+      "model": "中房之星系列",
+      "template": "fuel"
+    }
+  ]
+}

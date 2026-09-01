@@ -60,7 +60,12 @@ class ItemPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: tokens.line.withValues(alpha: 0.72)),
       ),
-      child: Center(
+      child: Align(
+        alignment: Alignment.center,
+        // widthFactor=1：按文字内容宽度收缩。ItemPills 改用 Wrap 后，
+        // 子项拿到的是"整行剩余空间"的松约束，Center 会把自身撑满，
+        // 导致每个 pill 独占一行（回归 bug）。
+        widthFactor: 1.0,
         child: Text(
           label,
           maxLines: 1,

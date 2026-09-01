@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 2,
+  "letter": "C",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-9f152e6b01",
+      "brand": "长安",
+      "model": "逸动",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0956e81348",
+      "brand": "长安",
+      "model": "长安UNI-V",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-77d9b9c98a",
+      "brand": "长安",
+      "model": "长安X5 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9edc82994a",
+      "brand": "长安",
+      "model": "长安X7 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8d1f8b0ddf",
+      "brand": "长安",
+      "model": "长安CS55 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8764763f14",
+      "brand": "长安",
+      "model": "长安CS75",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bc5dcd78ba",
+      "brand": "长安",
+      "model": "长安CS75 PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-006718304e",
+      "brand": "长安",
+      "model": "长安UNI-Z",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d0d0dc17ba",
+      "brand": "长安",
+      "model": "长安UNI-T",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a685af6486",
+      "brand": "长安",
+      "model": "长安UNI-K",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-40f55b2a96",
+      "brand": "长安启源",
+      "model": "长安Lumin",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f9a0dc5b31",
+      "brand": "长安启源",
+      "model": "长安启源A06",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-f3a1fc4a66",
+      "brand": "长安启源",
+      "model": "长安启源A07",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-726d729cbd",
+      "brand": "长安启源",
+      "model": "长安启源Q05",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-f72ef58df7",
+      "brand": "长安启源",
+      "model": "长安启源Q07",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-198965eb0d",
+      "brand": "长安启源",
+      "model": "长安启源E07",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-3b25d23579",
+      "brand": "长安启源",
+      "model": "长安猎手K50",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-9f577f64f5",
+      "brand": "长城",
+      "model": "山海炮Hi4-T",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-51d07dab21",
+      "brand": "长城",
+      "model": "风骏5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cc3e486cd7",
+      "brand": "长城",
+      "model": "风骏7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1c8229e301",
+      "brand": "长城",
+      "model": "金刚炮",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-37e58ca40c",
+      "brand": "长城",
+      "model": "炮",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cd04ebb5d7",
+      "brand": "长城",
+      "model": "炮PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-6db5a9e432",
+      "brand": "长城",
+      "model": "山海炮",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ee2da46e14",
+      "brand": "长城",
+      "model": "炮EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b26e7e9ecb",
+      "brand": "长安欧尚",
+      "model": "长安欧尚520",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4147a616d3",
+      "brand": "长安欧尚",
+      "model": "长安欧尚530",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-184a50aa38",
+      "brand": "长安欧尚",
+      "model": "长安欧尚Z6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-799bf2812c",
+      "brand": "长安凯程",
+      "model": "长安之星5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-20af80c4e1",
+      "brand": "长安凯程",
+      "model": "欧诺S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-df7710ba41",
+      "brand": "长安凯程",
+      "model": "睿行M60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-37d89255ef",
+      "brand": "长安凯程",
+      "model": "长安之星9 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-04eab3cd8c",
+      "brand": "长安凯程",
+      "model": "长安星卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cec761cdb6",
+      "brand": "长安凯程",
+      "model": "长安星卡PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-764693d090",
+      "brand": "长安凯程",
+      "model": "神骐T30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3e5871cf1c",
+      "brand": "长安凯程",
+      "model": "长安神骐PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-99189dc377",
+      "brand": "长安凯程",
+      "model": "睿行EM80",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-a225371809",
+      "brand": "长安凯程",
+      "model": "睿行M80",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-46433aff33",
+      "brand": "长安跨越",
+      "model": "跨越王F3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-00fc971c65",
+      "brand": "长安跨越",
+      "model": "跨越星V5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3ca7294b99",
+      "brand": "长安跨越",
+      "model": "跨越星V7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5e692a949d",
+      "brand": "长安跨越",
+      "model": "新豹T1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a7802aeea9",
+      "brand": "长安跨越",
+      "model": "跨越王X1",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8cdca1a6ef",
+      "brand": "长安跨越",
+      "model": "跨越王X3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b68f314f31",
+      "brand": "长安跨越",
+      "model": "新豹T3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d300cb95bd",
+      "brand": "长安跨越",
+      "model": "跨越王X5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e5fde33773",
+      "brand": "长安跨越",
+      "model": "跨越王X7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-42fe1dffd5",
+      "brand": "长安跨越",
+      "model": "跨越者D5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bf727a506d",
+      "brand": "创维汽车",
+      "model": "创维EV6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8eadd08354",
+      "brand": "创维汽车",
+      "model": "创维S710",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4c11744782",
+      "brand": "创维汽车",
+      "model": "创维HT-i",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-05edfa8b04",
+      "brand": "成功汽车",
+      "model": "骆驼",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1b08983354",
+      "brand": "成功汽车",
+      "model": "角马",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-86b68eef76",
+      "brand": "成功汽车",
+      "model": "星马T3E",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a63c44eff1",
+      "brand": "成功汽车",
+      "model": "斑马",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ca14936637",
+      "brand": "成功汽车",
+      "model": "骆驼微卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a2d0be9a68",
+      "brand": "橙仕",
+      "model": "橙仕01",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fbdee15337",
+      "brand": "橙仕",
+      "model": "橙仕X2",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a4df5634c1",
+      "brand": "橙仕",
+      "model": "橙仕X7",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a49c30eb70",
+      "brand": "创维商用车",
+      "model": "创维K10",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-49f40fe91f",
+      "brand": "创维商用车",
+      "model": "创维D10",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d6bc77aaa3",
+      "brand": "创维商用车",
+      "model": "创维D11 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-fe42366c7b",
+      "brand": "曹操汽车",
+      "model": "曹操60",
+      "template": "ev"
+    }
+  ]
+}

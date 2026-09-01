@@ -1,0 +1,348 @@
+{
+  "schemaVersion": 2,
+  "letter": "W",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-3f438d9325",
+      "brand": "五菱汽车",
+      "model": "五菱宏光MINIEV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-bd10fd1581",
+      "brand": "五菱汽车",
+      "model": "五菱缤果",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f0ea616d85",
+      "brand": "五菱汽车",
+      "model": "五菱星光PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-a51846d0ff",
+      "brand": "五菱汽车",
+      "model": "五菱星光EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-b02575b6c6",
+      "brand": "五菱汽车",
+      "model": "五菱星驰",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9c22c64b3c",
+      "brand": "五菱汽车",
+      "model": "五菱星光S PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-dd5aa4ee0a",
+      "brand": "五菱汽车",
+      "model": "凯捷Victory",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-359fb49422",
+      "brand": "五菱汽车",
+      "model": "五菱之光",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-34bfc8ec89",
+      "brand": "五菱汽车",
+      "model": "五菱荣光",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-dbe7278e16",
+      "brand": "五菱汽车",
+      "model": "五菱宏光",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bb0e52cd36",
+      "brand": "沃尔沃",
+      "model": "沃尔沃S60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2442a3165b",
+      "brand": "沃尔沃",
+      "model": "沃尔沃S90",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-41426b83b6",
+      "brand": "沃尔沃",
+      "model": "沃尔沃S90 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-9bdeb64f64",
+      "brand": "沃尔沃",
+      "model": "沃尔沃EX30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c60279bd89",
+      "brand": "沃尔沃",
+      "model": "沃尔沃XC40",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9f74b68846",
+      "brand": "沃尔沃",
+      "model": "沃尔沃XC60",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-57a99b37ba",
+      "brand": "沃尔沃",
+      "model": "沃尔沃XC60 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-8cc1e639a0",
+      "brand": "沃尔沃",
+      "model": "沃尔沃XC90",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a48d00fafc",
+      "brand": "沃尔沃",
+      "model": "沃尔沃EX90",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bf9dd83294",
+      "brand": "沃尔沃",
+      "model": "沃尔沃EM90",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-9cd4bb5524",
+      "brand": "蔚来",
+      "model": "蔚来ET5",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e62b699d6b",
+      "brand": "蔚来",
+      "model": "蔚来ET5T",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-5b92b2e7e8",
+      "brand": "蔚来",
+      "model": "蔚来ET7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-eca7c26556",
+      "brand": "蔚来",
+      "model": "蔚来ET9",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-99432c34ed",
+      "brand": "蔚来",
+      "model": "蔚来ES6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-95bdf3b077",
+      "brand": "蔚来",
+      "model": "蔚来EC6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-70fe5e0782",
+      "brand": "蔚来",
+      "model": "蔚来EC7",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-55fe7cc346",
+      "brand": "蔚来",
+      "model": "蔚来ES8",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8abeb2ddcc",
+      "brand": "蔚来",
+      "model": "蔚来ES9",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-e697e0c3ea",
+      "brand": "魏牌",
+      "model": "摩卡PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-6ba8ef1da3",
+      "brand": "魏牌",
+      "model": "蓝山",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-f54ca64b7c",
+      "brand": "魏牌",
+      "model": "魏牌V8X PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-c04bc23cd4",
+      "brand": "魏牌",
+      "model": "魏牌V9X PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-83f98bbc6e",
+      "brand": "魏牌",
+      "model": "高山",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3ca677c7c4",
+      "brand": "五十铃",
+      "model": "mu-X牧游侠",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b0b123ba9a",
+      "brand": "五十铃",
+      "model": "铃拓SUV",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a77e77af2",
+      "brand": "五十铃",
+      "model": "TAGA达咖",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-55d368fa01",
+      "brand": "五十铃",
+      "model": "TAGA达咖H",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b780e6c953",
+      "brand": "五十铃",
+      "model": "T30探险家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4b4718f8f1",
+      "brand": "五十铃",
+      "model": "RE-MAX 瑞迈",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5d949a8e0c",
+      "brand": "五十铃",
+      "model": "庆铃五十铃T17",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a987031ea5",
+      "brand": "五十铃",
+      "model": "铃拓",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-717f7e8d9d",
+      "brand": "五十铃",
+      "model": "D-MAX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c29a73f238",
+      "brand": "五十铃",
+      "model": "翼放EC5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e37742459d",
+      "brand": "威麟",
+      "model": "威麟R08",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ea3cfdec39",
+      "brand": "威麟",
+      "model": "威麟R08 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-0e1aed4c53",
+      "brand": "威麟",
+      "model": "威麟R08 PRO",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5f75005a4b",
+      "brand": "威麟",
+      "model": "捷想者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-81d2626473",
+      "brand": "威麟",
+      "model": "瑞擎V6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-05a3924c7b",
+      "brand": "WALD",
+      "model": "WALD City系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-101c0ffdb1",
+      "brand": "伟昊汽车",
+      "model": "塞里雅兰V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3449fe3df6",
+      "brand": "未奥汽车",
+      "model": "未奥BOMA",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-7df6865b59",
+      "brand": "沃森威尔",
+      "model": "福特黑武士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-30c027c395",
+      "brand": "万象汽车",
+      "model": "万象T01",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e93fb12613",
+      "brand": "万象汽车",
+      "model": "万象T02",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0fc6b61d24",
+      "brand": "万象汽车",
+      "model": "万象DST神州5号",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d1360a421b",
+      "brand": "万象汽车",
+      "model": "万象K01",
+      "template": "fuel"
+    }
+  ]
+}

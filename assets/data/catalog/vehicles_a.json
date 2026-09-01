@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 2,
+  "letter": "A",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-d97757d529",
+      "brand": "奥迪",
+      "model": "奥迪A3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9aaa572ba1",
+      "brand": "奥迪",
+      "model": "奥迪A4L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-f73d763f1c",
+      "brand": "奥迪",
+      "model": "奥迪A5",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7be363cb81",
+      "brand": "奥迪",
+      "model": "奥迪A5L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-78be958b2a",
+      "brand": "奥迪",
+      "model": "奥迪A6L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-361f381cc9",
+      "brand": "奥迪",
+      "model": "奥迪A7L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-aab3cf2141",
+      "brand": "奥迪",
+      "model": "奥迪Q2L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6c4212cea9",
+      "brand": "奥迪",
+      "model": "奥迪Q3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-32278c2fdf",
+      "brand": "奥迪",
+      "model": "奥迪Q5L",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c2e1a66beb",
+      "brand": "奥迪",
+      "model": "奥迪Q6",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-70993a7a6a",
+      "brand": "AITO问界",
+      "model": "问界M5",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-4dfc810599",
+      "brand": "AITO问界",
+      "model": "问界M6",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-cd580eb921",
+      "brand": "AITO问界",
+      "model": "问界M7",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-aeef9db52c",
+      "brand": "AITO问界",
+      "model": "问界M8",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-08ab7e5c95",
+      "brand": "AITO问界",
+      "model": "问界M9",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-1f6443d345",
+      "brand": "埃安",
+      "model": "AION UT",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-2fc6b71b83",
+      "brand": "埃安",
+      "model": "AION UT super",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-cfe9691d56",
+      "brand": "埃安",
+      "model": "AION S",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3588a520b9",
+      "brand": "埃安",
+      "model": "AION RT",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-3eb3de3bd5",
+      "brand": "埃安",
+      "model": "AION i60",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f19a0ec9fe",
+      "brand": "埃安",
+      "model": "AION Y",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-7bec982e89",
+      "brand": "埃安",
+      "model": "AION V",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-00a927f4c3",
+      "brand": "埃安",
+      "model": "AION N60",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-619953a021",
+      "brand": "埃安",
+      "model": "AION LX",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f31d1d0ea7",
+      "brand": "阿维塔",
+      "model": "阿维塔 06",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-86af511d1c",
+      "brand": "阿维塔",
+      "model": "阿维塔 06T",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-e359d28a12",
+      "brand": "阿维塔",
+      "model": "阿维塔 12",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ab5e087959",
+      "brand": "阿维塔",
+      "model": "阿维塔 07",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-01a593ac88",
+      "brand": "阿维塔",
+      "model": "阿维塔 07L",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-5edec40e10",
+      "brand": "阿维塔",
+      "model": "阿维塔 11",
+      "template": "ev"
+    }
+  ]
+}

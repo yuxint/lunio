@@ -1,12 +1,12 @@
 # 当前数据库表结构
 
-本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `6`。
+本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `9`。
 
 本文只记录当前代码事实，不定义未来迁移方案。事实源是 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
 ## 版本和迁移策略
 
-- 当前数据库：`schemaVersion = 6`。
+- 当前数据库：`schemaVersion = 9`。
 - schema 1 升级到 2 时，现有表会被删除并重建。
 - schema 2 升级到 3 时，迁移 `maintenance_items`。
 - schema 3 升级到 4 时，迁移 `cars`。
@@ -16,6 +16,15 @@
 - v6 索引的两种等价形态（R19）：全新安装走建表（`CREATE TABLE` 后随建表语句创建
   `@TableIndex` 声明的索引）；升级库走 `migrator.createIndex(...)` 生成独立的
   `CREATE INDEX IF NOT EXISTS`。两者最终在 SQLite 里产生同名同列的索引对象，语义等价。
+- schema 6 升级到 7 时，新增 `fuel_predictions` 表（加油预测设置，纯建表，老数据不动）。
+- schema 7 升级到 8 时，油箱容积从 `fuel_predictions` 挪到 `cars`（车的属性，
+  见 docs/adr/0002）：`cars` 加列 `tank_capacity_liters`，`fuel_predictions`
+  删列 `tank_capacity_liters`。容积数据不搬迁（App 未上线，产品确认放弃旧开发数据）。
+- schema 8 升级到 9 时，动力类型改版（见 docs/adr/0003）：
+  `cars` 加列 `powertrain_type`（默认 `fuel`，老车不回填推断）、
+  `vehicle_models` 加列 `template`（推荐动力类型，目录按车系名/品牌推断）、
+  `vehicle_default_maintenance_items` 从"按品牌+车型"重建为"按动力类型"
+  （删表重建，旧数据不搬迁，首启 bootstrap 按新目录灌入）。
 - 当前代码没有声明数据库外键约束；关联完整性由 Repository 在事务中校验和维护。
 
 ## 类型约定
@@ -38,8 +47,11 @@
 - `catalog_id`：内置车型目录稳定标识，可空；用于 bootstrap 按内置 JSON 新增、更新或删除内置行。
 - `brand`：品牌。
 - `model`：车型。
+- `powertrain_type`：动力类型（v9 起，见 docs/adr/0003），取值 `fuel`/`hybrid`/`plugIn`/`extended`/`ev`，默认 `fuel`。添加车辆时用户选择，添加后不可改；老库迁移与 v3 及更早备份恢复的老车默认 `fuel`，不回填推断。
 - `current_mileage_km`：当前里程，单位公里。
 - `road_date`：上路日期，格式 `yyyy-MM-dd`。
+- `tank_capacity_liters`：油箱总容积，单位升，可空（v8 从 `fuel_predictions` 迁来；
+  添加/编辑车辆时填写，非必填，加油预估的加满金额用它计算；1–999、最多四位小数）。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
 - `version`：同步/冲突预留版本号，默认 `1`。
@@ -57,7 +69,8 @@
 
 - `id`：主键。
 - `brand`：品牌。
-- `model`：车型。
+- `model`：车型（懂车帝原始车系名，docs/adr/0003）。
+- `template`：推荐动力类型（v9 起），取值同 `cars.powertrain_type`；只在添加向导预选动力 chip 用，不参与默认项目取数。
 - `sort_order`：排序值。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
@@ -71,14 +84,15 @@
 
 ### `vehicle_default_maintenance_items`
 
-车型默认保养项目模板表。它不归属于某一辆用户车辆；创建车辆或恢复默认配置时，会从这里复制到 `maintenance_items`。
+默认保养项目模板表。v9 起按动力类型分组（docs/adr/0003）：五组共 46 项
+（fuel 10、hybrid 11、plugIn 9、extended 9、ev 7，增程组内容同插混组）。
+它不归属于某一辆用户车辆；创建车辆或恢复默认配置时，按车的动力类型从这里复制到 `maintenance_items`。
 
 字段：
 
 - `id`：主键。
-- `catalog_id`：内置模板稳定标识，可空；格式为 `<vehicleId>:<templateItemId>`，用于 bootstrap 按内置 JSON 新增、更新或删除内置行。
-- `vehicle_brand`：车辆品牌。
-- `vehicle_model`：车型。
+- `catalog_id`：内置模板稳定标识，可空；格式为 `tpl:<动力类型>:<templateItemId>`（如 `tpl:fuel:engine-oil`），用于 bootstrap 按内置 JSON 新增、更新或删除内置行。
+- `powertrain_type`：适配的动力类型，取值同 `cars.powertrain_type`，默认 `fuel`。
 - `item_name`：项目名称。
 - `remind_by_mileage`：是否按里程提醒。
 - `remind_by_time`：是否按时间提醒。
@@ -95,7 +109,7 @@
 
 - 主键：`id`。
 - 唯一键：`catalog_id`，允许多条空值。
-- 唯一键：`vehicle_brand + vehicle_model + item_name`。
+- 唯一键：`powertrain_type + item_name`。
 
 ### `maintenance_items`
 
@@ -181,6 +195,25 @@
 - Repository 保存记录时会校验项目存在且属于同一车辆。
 - 同一车辆同一天同一项目只能出现一次。
 
+### `fuel_predictions`
+
+加油预测设置表（v7 新增，按车辆一条；v8 起只剩剩余油量，容积在 `cars` 表）。
+
+字段：
+
+- `id`：主键。
+- `car_id`：所属车辆。
+- `fuel_percent`：剩余油量百分比（0–100，2% 一档，默认 50；即加满预估
+  列表滚动停稳后第一行所在的档位，没有行的车按默认 50 展示）。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`car_id`。
+
 ### `app_preferences`
 
 应用偏好表。用于当前应用车辆、手动日期、主题、通知设置、提醒抑制和停车倒计时等本地状态。
@@ -212,6 +245,11 @@
 - `maintenanceDueRepeat`
 - `systemNotificationPermissionRequested`
 - `parkingCountdown`
+- `fuelPredictionEnabled`（加油预测功能开关，进开发者模式管理）
+- `fuelProvince`（加油预测省份，默认 `湖北`）
+- `fuelGrade`（加油预测油品编号，默认 `92`）
+- `fuelPriceCache`（油价缓存 JSON，临时数据）
+- `fuelManualPrices`（手填油价 JSON：`省份\u0000油品code` → 每升价，临时数据）
 - `maintenanceReminderSnoozedUntil:{itemId}`
 - `maintenanceReminderAcknowledgedOn:{itemId}`
 - `mileageUpdateSnoozedUntil:{carId}`
@@ -219,20 +257,28 @@
 
 ## 删除和恢复边界
 
-- 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联，并清理指向该车的 `appliedCarId`。
-- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目和车辆。
+- 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联、加油预测设置，并清理指向该车的 `appliedCarId`。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置和车辆。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
 - 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。
 
 ## 备份契约边界
 
-当前 JSON 备份契约版本为 `schemaVersion = 2`，由 `lib/data/backup/backup_codec.dart` 编码/解码。
+当前 JSON 备份契约版本为 `schemaVersion = 4`（2026-09-01 动力类型改版起，
+车辆条目带 `powertrainType`，见 docs/adr/0003），由 `lib/data/backup/backup_codec.dart`
+编码/解码。解码兼容 v2/v3 老备份：老备份车辆没有动力类型字段，恢复后默认 `fuel`；
+v4 备份里出现未知动力类型值时解码直接报错（不静默降级）。
+
+版本历史：v2 = 加油预测之前；v3 = 加油设置进备份（省份/油品 + 每车剩余油量，
+车辆条目带 `tankCapacityLiters`）；v4 = 车带动力类型。
 
 备份导出包含：
 
-- `cars`
+- `cars`（含 `powertrainType`；含 `tankCapacityLiters`，可空）
 - `maintenanceItems`
 - `records`
+- `fuelPrediction`（全局加油设置：省份 + 油品编号，用户改过才有值）
+- `fuelPredictions`（每车加油预测设置：剩余油量）
 
 备份不包含：
 
@@ -242,5 +288,6 @@
 - 主题和通知设置
 - 提醒延后/确认状态
 - 停车倒计时
+- 油价缓存与手填油价（临时数据）
 
 恢复备份时，源车辆 ID 和项目 ID 会映射为新 ID；恢复完成后当前应用车辆写为第一辆恢复出的车辆。

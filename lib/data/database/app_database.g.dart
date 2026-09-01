@@ -35,6 +35,18 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _powertrainTypeMeta = const VerificationMeta(
+    'powertrainType',
+  );
+  @override
+  late final GeneratedColumn<String> powertrainType = GeneratedColumn<String>(
+    'powertrain_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('fuel'),
+  );
   static const VerificationMeta _currentMileageKmMeta = const VerificationMeta(
     'currentMileageKm',
   );
@@ -57,6 +69,17 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _tankCapacityLitersMeta =
+      const VerificationMeta('tankCapacityLiters');
+  @override
+  late final GeneratedColumn<double> tankCapacityLiters =
+      GeneratedColumn<double>(
+        'tank_capacity_liters',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _syncStatusMeta = const VerificationMeta(
     'syncStatus',
   );
@@ -97,8 +120,10 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
     id,
     brand,
     model,
+    powertrainType,
     currentMileageKm,
     roadDate,
+    tankCapacityLiters,
     syncStatus,
     updatedAt,
     version,
@@ -134,6 +159,15 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
     } else if (isInserting) {
       context.missing(_modelMeta);
     }
+    if (data.containsKey('powertrain_type')) {
+      context.handle(
+        _powertrainTypeMeta,
+        powertrainType.isAcceptableOrUnknown(
+          data['powertrain_type']!,
+          _powertrainTypeMeta,
+        ),
+      );
+    }
     if (data.containsKey('current_mileage_km')) {
       context.handle(
         _currentMileageKmMeta,
@@ -152,6 +186,15 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
       );
     } else if (isInserting) {
       context.missing(_roadDateMeta);
+    }
+    if (data.containsKey('tank_capacity_liters')) {
+      context.handle(
+        _tankCapacityLitersMeta,
+        tankCapacityLiters.isAcceptableOrUnknown(
+          data['tank_capacity_liters']!,
+          _tankCapacityLitersMeta,
+        ),
+      );
     }
     if (data.containsKey('sync_status')) {
       context.handle(
@@ -198,6 +241,10 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
         DriftSqlType.string,
         data['${effectivePrefix}model'],
       )!,
+      powertrainType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}powertrain_type'],
+      )!,
       currentMileageKm: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}current_mileage_km'],
@@ -206,6 +253,10 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
         DriftSqlType.string,
         data['${effectivePrefix}road_date'],
       )!,
+      tankCapacityLiters: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}tank_capacity_liters'],
+      ),
       syncStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}sync_status'],
@@ -231,8 +282,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
   final int id;
   final String brand;
   final String model;
+  final String powertrainType;
   final int currentMileageKm;
   final String roadDate;
+  final double? tankCapacityLiters;
   final String syncStatus;
   final String updatedAt;
   final int version;
@@ -240,8 +293,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     required this.id,
     required this.brand,
     required this.model,
+    required this.powertrainType,
     required this.currentMileageKm,
     required this.roadDate,
+    this.tankCapacityLiters,
     required this.syncStatus,
     required this.updatedAt,
     required this.version,
@@ -252,8 +307,12 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     map['id'] = Variable<int>(id);
     map['brand'] = Variable<String>(brand);
     map['model'] = Variable<String>(model);
+    map['powertrain_type'] = Variable<String>(powertrainType);
     map['current_mileage_km'] = Variable<int>(currentMileageKm);
     map['road_date'] = Variable<String>(roadDate);
+    if (!nullToAbsent || tankCapacityLiters != null) {
+      map['tank_capacity_liters'] = Variable<double>(tankCapacityLiters);
+    }
     map['sync_status'] = Variable<String>(syncStatus);
     map['updated_at'] = Variable<String>(updatedAt);
     map['version'] = Variable<int>(version);
@@ -265,8 +324,12 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       id: Value(id),
       brand: Value(brand),
       model: Value(model),
+      powertrainType: Value(powertrainType),
       currentMileageKm: Value(currentMileageKm),
       roadDate: Value(roadDate),
+      tankCapacityLiters: tankCapacityLiters == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tankCapacityLiters),
       syncStatus: Value(syncStatus),
       updatedAt: Value(updatedAt),
       version: Value(version),
@@ -282,8 +345,12 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       id: serializer.fromJson<int>(json['id']),
       brand: serializer.fromJson<String>(json['brand']),
       model: serializer.fromJson<String>(json['model']),
+      powertrainType: serializer.fromJson<String>(json['powertrainType']),
       currentMileageKm: serializer.fromJson<int>(json['currentMileageKm']),
       roadDate: serializer.fromJson<String>(json['roadDate']),
+      tankCapacityLiters: serializer.fromJson<double?>(
+        json['tankCapacityLiters'],
+      ),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       version: serializer.fromJson<int>(json['version']),
@@ -296,8 +363,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       'id': serializer.toJson<int>(id),
       'brand': serializer.toJson<String>(brand),
       'model': serializer.toJson<String>(model),
+      'powertrainType': serializer.toJson<String>(powertrainType),
       'currentMileageKm': serializer.toJson<int>(currentMileageKm),
       'roadDate': serializer.toJson<String>(roadDate),
+      'tankCapacityLiters': serializer.toJson<double?>(tankCapacityLiters),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'version': serializer.toJson<int>(version),
@@ -308,8 +377,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     int? id,
     String? brand,
     String? model,
+    String? powertrainType,
     int? currentMileageKm,
     String? roadDate,
+    Value<double?> tankCapacityLiters = const Value.absent(),
     String? syncStatus,
     String? updatedAt,
     int? version,
@@ -317,8 +388,12 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     id: id ?? this.id,
     brand: brand ?? this.brand,
     model: model ?? this.model,
+    powertrainType: powertrainType ?? this.powertrainType,
     currentMileageKm: currentMileageKm ?? this.currentMileageKm,
     roadDate: roadDate ?? this.roadDate,
+    tankCapacityLiters: tankCapacityLiters.present
+        ? tankCapacityLiters.value
+        : this.tankCapacityLiters,
     syncStatus: syncStatus ?? this.syncStatus,
     updatedAt: updatedAt ?? this.updatedAt,
     version: version ?? this.version,
@@ -328,10 +403,16 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       id: data.id.present ? data.id.value : this.id,
       brand: data.brand.present ? data.brand.value : this.brand,
       model: data.model.present ? data.model.value : this.model,
+      powertrainType: data.powertrainType.present
+          ? data.powertrainType.value
+          : this.powertrainType,
       currentMileageKm: data.currentMileageKm.present
           ? data.currentMileageKm.value
           : this.currentMileageKm,
       roadDate: data.roadDate.present ? data.roadDate.value : this.roadDate,
+      tankCapacityLiters: data.tankCapacityLiters.present
+          ? data.tankCapacityLiters.value
+          : this.tankCapacityLiters,
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
           : this.syncStatus,
@@ -346,8 +427,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
           ..write('id: $id, ')
           ..write('brand: $brand, ')
           ..write('model: $model, ')
+          ..write('powertrainType: $powertrainType, ')
           ..write('currentMileageKm: $currentMileageKm, ')
           ..write('roadDate: $roadDate, ')
+          ..write('tankCapacityLiters: $tankCapacityLiters, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -360,8 +443,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     id,
     brand,
     model,
+    powertrainType,
     currentMileageKm,
     roadDate,
+    tankCapacityLiters,
     syncStatus,
     updatedAt,
     version,
@@ -373,8 +458,10 @@ class CarRow extends DataClass implements Insertable<CarRow> {
           other.id == this.id &&
           other.brand == this.brand &&
           other.model == this.model &&
+          other.powertrainType == this.powertrainType &&
           other.currentMileageKm == this.currentMileageKm &&
           other.roadDate == this.roadDate &&
+          other.tankCapacityLiters == this.tankCapacityLiters &&
           other.syncStatus == this.syncStatus &&
           other.updatedAt == this.updatedAt &&
           other.version == this.version);
@@ -384,8 +471,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
   final Value<int> id;
   final Value<String> brand;
   final Value<String> model;
+  final Value<String> powertrainType;
   final Value<int> currentMileageKm;
   final Value<String> roadDate;
+  final Value<double?> tankCapacityLiters;
   final Value<String> syncStatus;
   final Value<String> updatedAt;
   final Value<int> version;
@@ -393,8 +482,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     this.id = const Value.absent(),
     this.brand = const Value.absent(),
     this.model = const Value.absent(),
+    this.powertrainType = const Value.absent(),
     this.currentMileageKm = const Value.absent(),
     this.roadDate = const Value.absent(),
+    this.tankCapacityLiters = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.version = const Value.absent(),
@@ -403,8 +494,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     this.id = const Value.absent(),
     required String brand,
     required String model,
+    this.powertrainType = const Value.absent(),
     required int currentMileageKm,
     required String roadDate,
+    this.tankCapacityLiters = const Value.absent(),
     this.syncStatus = const Value.absent(),
     required String updatedAt,
     this.version = const Value.absent(),
@@ -417,8 +510,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     Expression<int>? id,
     Expression<String>? brand,
     Expression<String>? model,
+    Expression<String>? powertrainType,
     Expression<int>? currentMileageKm,
     Expression<String>? roadDate,
+    Expression<double>? tankCapacityLiters,
     Expression<String>? syncStatus,
     Expression<String>? updatedAt,
     Expression<int>? version,
@@ -427,8 +522,11 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
       if (id != null) 'id': id,
       if (brand != null) 'brand': brand,
       if (model != null) 'model': model,
+      if (powertrainType != null) 'powertrain_type': powertrainType,
       if (currentMileageKm != null) 'current_mileage_km': currentMileageKm,
       if (roadDate != null) 'road_date': roadDate,
+      if (tankCapacityLiters != null)
+        'tank_capacity_liters': tankCapacityLiters,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (version != null) 'version': version,
@@ -439,8 +537,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     Value<int>? id,
     Value<String>? brand,
     Value<String>? model,
+    Value<String>? powertrainType,
     Value<int>? currentMileageKm,
     Value<String>? roadDate,
+    Value<double?>? tankCapacityLiters,
     Value<String>? syncStatus,
     Value<String>? updatedAt,
     Value<int>? version,
@@ -449,8 +549,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
       id: id ?? this.id,
       brand: brand ?? this.brand,
       model: model ?? this.model,
+      powertrainType: powertrainType ?? this.powertrainType,
       currentMileageKm: currentMileageKm ?? this.currentMileageKm,
       roadDate: roadDate ?? this.roadDate,
+      tankCapacityLiters: tankCapacityLiters ?? this.tankCapacityLiters,
       syncStatus: syncStatus ?? this.syncStatus,
       updatedAt: updatedAt ?? this.updatedAt,
       version: version ?? this.version,
@@ -469,11 +571,17 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     if (model.present) {
       map['model'] = Variable<String>(model.value);
     }
+    if (powertrainType.present) {
+      map['powertrain_type'] = Variable<String>(powertrainType.value);
+    }
     if (currentMileageKm.present) {
       map['current_mileage_km'] = Variable<int>(currentMileageKm.value);
     }
     if (roadDate.present) {
       map['road_date'] = Variable<String>(roadDate.value);
+    }
+    if (tankCapacityLiters.present) {
+      map['tank_capacity_liters'] = Variable<double>(tankCapacityLiters.value);
     }
     if (syncStatus.present) {
       map['sync_status'] = Variable<String>(syncStatus.value);
@@ -493,8 +601,10 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
           ..write('id: $id, ')
           ..write('brand: $brand, ')
           ..write('model: $model, ')
+          ..write('powertrainType: $powertrainType, ')
           ..write('currentMileageKm: $currentMileageKm, ')
           ..write('roadDate: $roadDate, ')
+          ..write('tankCapacityLiters: $tankCapacityLiters, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -534,27 +644,17 @@ class $VehicleDefaultMaintenanceItemsTable
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _vehicleBrandMeta = const VerificationMeta(
-    'vehicleBrand',
+  static const VerificationMeta _powertrainTypeMeta = const VerificationMeta(
+    'powertrainType',
   );
   @override
-  late final GeneratedColumn<String> vehicleBrand = GeneratedColumn<String>(
-    'vehicle_brand',
+  late final GeneratedColumn<String> powertrainType = GeneratedColumn<String>(
+    'powertrain_type',
     aliasedName,
     false,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _vehicleModelMeta = const VerificationMeta(
-    'vehicleModel',
-  );
-  @override
-  late final GeneratedColumn<String> vehicleModel = GeneratedColumn<String>(
-    'vehicle_model',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('fuel'),
   );
   static const VerificationMeta _itemNameMeta = const VerificationMeta(
     'itemName',
@@ -691,8 +791,7 @@ class $VehicleDefaultMaintenanceItemsTable
   List<GeneratedColumn> get $columns => [
     id,
     catalogId,
-    vehicleBrand,
-    vehicleModel,
+    powertrainType,
     itemName,
     remindByMileage,
     remindByTime,
@@ -726,27 +825,14 @@ class $VehicleDefaultMaintenanceItemsTable
         catalogId.isAcceptableOrUnknown(data['catalog_id']!, _catalogIdMeta),
       );
     }
-    if (data.containsKey('vehicle_brand')) {
+    if (data.containsKey('powertrain_type')) {
       context.handle(
-        _vehicleBrandMeta,
-        vehicleBrand.isAcceptableOrUnknown(
-          data['vehicle_brand']!,
-          _vehicleBrandMeta,
+        _powertrainTypeMeta,
+        powertrainType.isAcceptableOrUnknown(
+          data['powertrain_type']!,
+          _powertrainTypeMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_vehicleBrandMeta);
-    }
-    if (data.containsKey('vehicle_model')) {
-      context.handle(
-        _vehicleModelMeta,
-        vehicleModel.isAcceptableOrUnknown(
-          data['vehicle_model']!,
-          _vehicleModelMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_vehicleModelMeta);
     }
     if (data.containsKey('item_name')) {
       context.handle(
@@ -850,7 +936,7 @@ class $VehicleDefaultMaintenanceItemsTable
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
     {catalogId},
-    {vehicleBrand, vehicleModel, itemName},
+    {powertrainType, itemName},
   ];
   @override
   VehicleDefaultMaintenanceItemRow map(
@@ -867,13 +953,9 @@ class $VehicleDefaultMaintenanceItemsTable
         DriftSqlType.string,
         data['${effectivePrefix}catalog_id'],
       ),
-      vehicleBrand: attachedDatabase.typeMapping.read(
+      powertrainType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}vehicle_brand'],
-      )!,
-      vehicleModel: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}vehicle_model'],
+        data['${effectivePrefix}powertrain_type'],
       )!,
       itemName: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -932,8 +1014,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     implements Insertable<VehicleDefaultMaintenanceItemRow> {
   final int id;
   final String? catalogId;
-  final String vehicleBrand;
-  final String vehicleModel;
+  final String powertrainType;
   final String itemName;
   final bool remindByMileage;
   final bool remindByTime;
@@ -948,8 +1029,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   const VehicleDefaultMaintenanceItemRow({
     required this.id,
     this.catalogId,
-    required this.vehicleBrand,
-    required this.vehicleModel,
+    required this.powertrainType,
     required this.itemName,
     required this.remindByMileage,
     required this.remindByTime,
@@ -969,8 +1049,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     if (!nullToAbsent || catalogId != null) {
       map['catalog_id'] = Variable<String>(catalogId);
     }
-    map['vehicle_brand'] = Variable<String>(vehicleBrand);
-    map['vehicle_model'] = Variable<String>(vehicleModel);
+    map['powertrain_type'] = Variable<String>(powertrainType);
     map['item_name'] = Variable<String>(itemName);
     map['remind_by_mileage'] = Variable<bool>(remindByMileage);
     map['remind_by_time'] = Variable<bool>(remindByTime);
@@ -995,8 +1074,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
       catalogId: catalogId == null && nullToAbsent
           ? const Value.absent()
           : Value(catalogId),
-      vehicleBrand: Value(vehicleBrand),
-      vehicleModel: Value(vehicleModel),
+      powertrainType: Value(powertrainType),
       itemName: Value(itemName),
       remindByMileage: Value(remindByMileage),
       remindByTime: Value(remindByTime),
@@ -1023,8 +1101,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     return VehicleDefaultMaintenanceItemRow(
       id: serializer.fromJson<int>(json['id']),
       catalogId: serializer.fromJson<String?>(json['catalogId']),
-      vehicleBrand: serializer.fromJson<String>(json['vehicleBrand']),
-      vehicleModel: serializer.fromJson<String>(json['vehicleModel']),
+      powertrainType: serializer.fromJson<String>(json['powertrainType']),
       itemName: serializer.fromJson<String>(json['itemName']),
       remindByMileage: serializer.fromJson<bool>(json['remindByMileage']),
       remindByTime: serializer.fromJson<bool>(json['remindByTime']),
@@ -1046,8 +1123,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'catalogId': serializer.toJson<String?>(catalogId),
-      'vehicleBrand': serializer.toJson<String>(vehicleBrand),
-      'vehicleModel': serializer.toJson<String>(vehicleModel),
+      'powertrainType': serializer.toJson<String>(powertrainType),
       'itemName': serializer.toJson<String>(itemName),
       'remindByMileage': serializer.toJson<bool>(remindByMileage),
       'remindByTime': serializer.toJson<bool>(remindByTime),
@@ -1065,8 +1141,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   VehicleDefaultMaintenanceItemRow copyWith({
     int? id,
     Value<String?> catalogId = const Value.absent(),
-    String? vehicleBrand,
-    String? vehicleModel,
+    String? powertrainType,
     String? itemName,
     bool? remindByMileage,
     bool? remindByTime,
@@ -1081,8 +1156,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   }) => VehicleDefaultMaintenanceItemRow(
     id: id ?? this.id,
     catalogId: catalogId.present ? catalogId.value : this.catalogId,
-    vehicleBrand: vehicleBrand ?? this.vehicleBrand,
-    vehicleModel: vehicleModel ?? this.vehicleModel,
+    powertrainType: powertrainType ?? this.powertrainType,
     itemName: itemName ?? this.itemName,
     remindByMileage: remindByMileage ?? this.remindByMileage,
     remindByTime: remindByTime ?? this.remindByTime,
@@ -1105,12 +1179,9 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     return VehicleDefaultMaintenanceItemRow(
       id: data.id.present ? data.id.value : this.id,
       catalogId: data.catalogId.present ? data.catalogId.value : this.catalogId,
-      vehicleBrand: data.vehicleBrand.present
-          ? data.vehicleBrand.value
-          : this.vehicleBrand,
-      vehicleModel: data.vehicleModel.present
-          ? data.vehicleModel.value
-          : this.vehicleModel,
+      powertrainType: data.powertrainType.present
+          ? data.powertrainType.value
+          : this.powertrainType,
       itemName: data.itemName.present ? data.itemName.value : this.itemName,
       remindByMileage: data.remindByMileage.present
           ? data.remindByMileage.value
@@ -1144,8 +1215,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
     return (StringBuffer('VehicleDefaultMaintenanceItemRow(')
           ..write('id: $id, ')
           ..write('catalogId: $catalogId, ')
-          ..write('vehicleBrand: $vehicleBrand, ')
-          ..write('vehicleModel: $vehicleModel, ')
+          ..write('powertrainType: $powertrainType, ')
           ..write('itemName: $itemName, ')
           ..write('remindByMileage: $remindByMileage, ')
           ..write('remindByTime: $remindByTime, ')
@@ -1165,8 +1235,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
   int get hashCode => Object.hash(
     id,
     catalogId,
-    vehicleBrand,
-    vehicleModel,
+    powertrainType,
     itemName,
     remindByMileage,
     remindByTime,
@@ -1185,8 +1254,7 @@ class VehicleDefaultMaintenanceItemRow extends DataClass
       (other is VehicleDefaultMaintenanceItemRow &&
           other.id == this.id &&
           other.catalogId == this.catalogId &&
-          other.vehicleBrand == this.vehicleBrand &&
-          other.vehicleModel == this.vehicleModel &&
+          other.powertrainType == this.powertrainType &&
           other.itemName == this.itemName &&
           other.remindByMileage == this.remindByMileage &&
           other.remindByTime == this.remindByTime &&
@@ -1204,8 +1272,7 @@ class VehicleDefaultMaintenanceItemsCompanion
     extends UpdateCompanion<VehicleDefaultMaintenanceItemRow> {
   final Value<int> id;
   final Value<String?> catalogId;
-  final Value<String> vehicleBrand;
-  final Value<String> vehicleModel;
+  final Value<String> powertrainType;
   final Value<String> itemName;
   final Value<bool> remindByMileage;
   final Value<bool> remindByTime;
@@ -1220,8 +1287,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   const VehicleDefaultMaintenanceItemsCompanion({
     this.id = const Value.absent(),
     this.catalogId = const Value.absent(),
-    this.vehicleBrand = const Value.absent(),
-    this.vehicleModel = const Value.absent(),
+    this.powertrainType = const Value.absent(),
     this.itemName = const Value.absent(),
     this.remindByMileage = const Value.absent(),
     this.remindByTime = const Value.absent(),
@@ -1237,8 +1303,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   VehicleDefaultMaintenanceItemsCompanion.insert({
     this.id = const Value.absent(),
     this.catalogId = const Value.absent(),
-    required String vehicleBrand,
-    required String vehicleModel,
+    this.powertrainType = const Value.absent(),
     required String itemName,
     required bool remindByMileage,
     required bool remindByTime,
@@ -1250,9 +1315,7 @@ class VehicleDefaultMaintenanceItemsCompanion
     this.syncStatus = const Value.absent(),
     required String updatedAt,
     this.version = const Value.absent(),
-  }) : vehicleBrand = Value(vehicleBrand),
-       vehicleModel = Value(vehicleModel),
-       itemName = Value(itemName),
+  }) : itemName = Value(itemName),
        remindByMileage = Value(remindByMileage),
        remindByTime = Value(remindByTime),
        sortOrder = Value(sortOrder),
@@ -1260,8 +1323,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   static Insertable<VehicleDefaultMaintenanceItemRow> custom({
     Expression<int>? id,
     Expression<String>? catalogId,
-    Expression<String>? vehicleBrand,
-    Expression<String>? vehicleModel,
+    Expression<String>? powertrainType,
     Expression<String>? itemName,
     Expression<bool>? remindByMileage,
     Expression<bool>? remindByTime,
@@ -1277,8 +1339,7 @@ class VehicleDefaultMaintenanceItemsCompanion
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (catalogId != null) 'catalog_id': catalogId,
-      if (vehicleBrand != null) 'vehicle_brand': vehicleBrand,
-      if (vehicleModel != null) 'vehicle_model': vehicleModel,
+      if (powertrainType != null) 'powertrain_type': powertrainType,
       if (itemName != null) 'item_name': itemName,
       if (remindByMileage != null) 'remind_by_mileage': remindByMileage,
       if (remindByTime != null) 'remind_by_time': remindByTime,
@@ -1298,8 +1359,7 @@ class VehicleDefaultMaintenanceItemsCompanion
   VehicleDefaultMaintenanceItemsCompanion copyWith({
     Value<int>? id,
     Value<String?>? catalogId,
-    Value<String>? vehicleBrand,
-    Value<String>? vehicleModel,
+    Value<String>? powertrainType,
     Value<String>? itemName,
     Value<bool>? remindByMileage,
     Value<bool>? remindByTime,
@@ -1315,8 +1375,7 @@ class VehicleDefaultMaintenanceItemsCompanion
     return VehicleDefaultMaintenanceItemsCompanion(
       id: id ?? this.id,
       catalogId: catalogId ?? this.catalogId,
-      vehicleBrand: vehicleBrand ?? this.vehicleBrand,
-      vehicleModel: vehicleModel ?? this.vehicleModel,
+      powertrainType: powertrainType ?? this.powertrainType,
       itemName: itemName ?? this.itemName,
       remindByMileage: remindByMileage ?? this.remindByMileage,
       remindByTime: remindByTime ?? this.remindByTime,
@@ -1340,11 +1399,8 @@ class VehicleDefaultMaintenanceItemsCompanion
     if (catalogId.present) {
       map['catalog_id'] = Variable<String>(catalogId.value);
     }
-    if (vehicleBrand.present) {
-      map['vehicle_brand'] = Variable<String>(vehicleBrand.value);
-    }
-    if (vehicleModel.present) {
-      map['vehicle_model'] = Variable<String>(vehicleModel.value);
+    if (powertrainType.present) {
+      map['powertrain_type'] = Variable<String>(powertrainType.value);
     }
     if (itemName.present) {
       map['item_name'] = Variable<String>(itemName.value);
@@ -1389,8 +1445,7 @@ class VehicleDefaultMaintenanceItemsCompanion
     return (StringBuffer('VehicleDefaultMaintenanceItemsCompanion(')
           ..write('id: $id, ')
           ..write('catalogId: $catalogId, ')
-          ..write('vehicleBrand: $vehicleBrand, ')
-          ..write('vehicleModel: $vehicleModel, ')
+          ..write('powertrainType: $powertrainType, ')
           ..write('itemName: $itemName, ')
           ..write('remindByMileage: $remindByMileage, ')
           ..write('remindByTime: $remindByTime, ')
@@ -1451,6 +1506,18 @@ class $VehicleModelsTable extends VehicleModels
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _templateMeta = const VerificationMeta(
+    'template',
+  );
+  @override
+  late final GeneratedColumn<String> template = GeneratedColumn<String>(
+    'template',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('fuel'),
+  );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -1503,6 +1570,7 @@ class $VehicleModelsTable extends VehicleModels
     catalogId,
     brand,
     model,
+    template,
     sortOrder,
     syncStatus,
     updatedAt,
@@ -1544,6 +1612,12 @@ class $VehicleModelsTable extends VehicleModels
       );
     } else if (isInserting) {
       context.missing(_modelMeta);
+    }
+    if (data.containsKey('template')) {
+      context.handle(
+        _templateMeta,
+        template.isAcceptableOrUnknown(data['template']!, _templateMeta),
+      );
     }
     if (data.containsKey('sort_order')) {
       context.handle(
@@ -1603,6 +1677,10 @@ class $VehicleModelsTable extends VehicleModels
         DriftSqlType.string,
         data['${effectivePrefix}model'],
       )!,
+      template: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}template'],
+      )!,
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -1633,6 +1711,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
   final String? catalogId;
   final String brand;
   final String model;
+  final String template;
   final int sortOrder;
   final String syncStatus;
   final String updatedAt;
@@ -1642,6 +1721,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     this.catalogId,
     required this.brand,
     required this.model,
+    required this.template,
     required this.sortOrder,
     required this.syncStatus,
     required this.updatedAt,
@@ -1656,6 +1736,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     }
     map['brand'] = Variable<String>(brand);
     map['model'] = Variable<String>(model);
+    map['template'] = Variable<String>(template);
     map['sort_order'] = Variable<int>(sortOrder);
     map['sync_status'] = Variable<String>(syncStatus);
     map['updated_at'] = Variable<String>(updatedAt);
@@ -1671,6 +1752,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
           : Value(catalogId),
       brand: Value(brand),
       model: Value(model),
+      template: Value(template),
       sortOrder: Value(sortOrder),
       syncStatus: Value(syncStatus),
       updatedAt: Value(updatedAt),
@@ -1688,6 +1770,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
       catalogId: serializer.fromJson<String?>(json['catalogId']),
       brand: serializer.fromJson<String>(json['brand']),
       model: serializer.fromJson<String>(json['model']),
+      template: serializer.fromJson<String>(json['template']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
@@ -1702,6 +1785,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
       'catalogId': serializer.toJson<String?>(catalogId),
       'brand': serializer.toJson<String>(brand),
       'model': serializer.toJson<String>(model),
+      'template': serializer.toJson<String>(template),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'updatedAt': serializer.toJson<String>(updatedAt),
@@ -1714,6 +1798,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     Value<String?> catalogId = const Value.absent(),
     String? brand,
     String? model,
+    String? template,
     int? sortOrder,
     String? syncStatus,
     String? updatedAt,
@@ -1723,6 +1808,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     catalogId: catalogId.present ? catalogId.value : this.catalogId,
     brand: brand ?? this.brand,
     model: model ?? this.model,
+    template: template ?? this.template,
     sortOrder: sortOrder ?? this.sortOrder,
     syncStatus: syncStatus ?? this.syncStatus,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -1734,6 +1820,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
       catalogId: data.catalogId.present ? data.catalogId.value : this.catalogId,
       brand: data.brand.present ? data.brand.value : this.brand,
       model: data.model.present ? data.model.value : this.model,
+      template: data.template.present ? data.template.value : this.template,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
@@ -1750,6 +1837,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
           ..write('catalogId: $catalogId, ')
           ..write('brand: $brand, ')
           ..write('model: $model, ')
+          ..write('template: $template, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
@@ -1764,6 +1852,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
     catalogId,
     brand,
     model,
+    template,
     sortOrder,
     syncStatus,
     updatedAt,
@@ -1777,6 +1866,7 @@ class VehicleModelRow extends DataClass implements Insertable<VehicleModelRow> {
           other.catalogId == this.catalogId &&
           other.brand == this.brand &&
           other.model == this.model &&
+          other.template == this.template &&
           other.sortOrder == this.sortOrder &&
           other.syncStatus == this.syncStatus &&
           other.updatedAt == this.updatedAt &&
@@ -1788,6 +1878,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
   final Value<String?> catalogId;
   final Value<String> brand;
   final Value<String> model;
+  final Value<String> template;
   final Value<int> sortOrder;
   final Value<String> syncStatus;
   final Value<String> updatedAt;
@@ -1797,6 +1888,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
     this.catalogId = const Value.absent(),
     this.brand = const Value.absent(),
     this.model = const Value.absent(),
+    this.template = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -1807,6 +1899,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
     this.catalogId = const Value.absent(),
     required String brand,
     required String model,
+    this.template = const Value.absent(),
     required int sortOrder,
     this.syncStatus = const Value.absent(),
     required String updatedAt,
@@ -1820,6 +1913,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
     Expression<String>? catalogId,
     Expression<String>? brand,
     Expression<String>? model,
+    Expression<String>? template,
     Expression<int>? sortOrder,
     Expression<String>? syncStatus,
     Expression<String>? updatedAt,
@@ -1830,6 +1924,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
       if (catalogId != null) 'catalog_id': catalogId,
       if (brand != null) 'brand': brand,
       if (model != null) 'model': model,
+      if (template != null) 'template': template,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -1842,6 +1937,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
     Value<String?>? catalogId,
     Value<String>? brand,
     Value<String>? model,
+    Value<String>? template,
     Value<int>? sortOrder,
     Value<String>? syncStatus,
     Value<String>? updatedAt,
@@ -1852,6 +1948,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
       catalogId: catalogId ?? this.catalogId,
       brand: brand ?? this.brand,
       model: model ?? this.model,
+      template: template ?? this.template,
       sortOrder: sortOrder ?? this.sortOrder,
       syncStatus: syncStatus ?? this.syncStatus,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -1873,6 +1970,9 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
     }
     if (model.present) {
       map['model'] = Variable<String>(model.value);
+    }
+    if (template.present) {
+      map['template'] = Variable<String>(template.value);
     }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
@@ -1896,6 +1996,7 @@ class VehicleModelsCompanion extends UpdateCompanion<VehicleModelRow> {
           ..write('catalogId: $catalogId, ')
           ..write('brand: $brand, ')
           ..write('model: $model, ')
+          ..write('template: $template, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
@@ -4034,6 +4135,408 @@ class AppPreferencesCompanion extends UpdateCompanion<AppPreferenceRow> {
   }
 }
 
+class $FuelPredictionsTable extends FuelPredictions
+    with TableInfo<$FuelPredictionsTable, FuelPredictionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FuelPredictionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _carIdMeta = const VerificationMeta('carId');
+  @override
+  late final GeneratedColumn<int> carId = GeneratedColumn<int>(
+    'car_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fuelPercentMeta = const VerificationMeta(
+    'fuelPercent',
+  );
+  @override
+  late final GeneratedColumn<int> fuelPercent = GeneratedColumn<int>(
+    'fuel_percent',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<String> updatedAt = GeneratedColumn<String>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    carId,
+    fuelPercent,
+    syncStatus,
+    updatedAt,
+    version,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'fuel_predictions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FuelPredictionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('car_id')) {
+      context.handle(
+        _carIdMeta,
+        carId.isAcceptableOrUnknown(data['car_id']!, _carIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_carIdMeta);
+    }
+    if (data.containsKey('fuel_percent')) {
+      context.handle(
+        _fuelPercentMeta,
+        fuelPercent.isAcceptableOrUnknown(
+          data['fuel_percent']!,
+          _fuelPercentMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fuelPercentMeta);
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {carId},
+  ];
+  @override
+  FuelPredictionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FuelPredictionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      carId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}car_id'],
+      )!,
+      fuelPercent: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}fuel_percent'],
+      )!,
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+    );
+  }
+
+  @override
+  $FuelPredictionsTable createAlias(String alias) {
+    return $FuelPredictionsTable(attachedDatabase, alias);
+  }
+}
+
+class FuelPredictionRow extends DataClass
+    implements Insertable<FuelPredictionRow> {
+  final int id;
+  final int carId;
+  final int fuelPercent;
+  final String syncStatus;
+  final String updatedAt;
+  final int version;
+  const FuelPredictionRow({
+    required this.id,
+    required this.carId,
+    required this.fuelPercent,
+    required this.syncStatus,
+    required this.updatedAt,
+    required this.version,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['car_id'] = Variable<int>(carId);
+    map['fuel_percent'] = Variable<int>(fuelPercent);
+    map['sync_status'] = Variable<String>(syncStatus);
+    map['updated_at'] = Variable<String>(updatedAt);
+    map['version'] = Variable<int>(version);
+    return map;
+  }
+
+  FuelPredictionsCompanion toCompanion(bool nullToAbsent) {
+    return FuelPredictionsCompanion(
+      id: Value(id),
+      carId: Value(carId),
+      fuelPercent: Value(fuelPercent),
+      syncStatus: Value(syncStatus),
+      updatedAt: Value(updatedAt),
+      version: Value(version),
+    );
+  }
+
+  factory FuelPredictionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FuelPredictionRow(
+      id: serializer.fromJson<int>(json['id']),
+      carId: serializer.fromJson<int>(json['carId']),
+      fuelPercent: serializer.fromJson<int>(json['fuelPercent']),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      updatedAt: serializer.fromJson<String>(json['updatedAt']),
+      version: serializer.fromJson<int>(json['version']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'carId': serializer.toJson<int>(carId),
+      'fuelPercent': serializer.toJson<int>(fuelPercent),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+      'updatedAt': serializer.toJson<String>(updatedAt),
+      'version': serializer.toJson<int>(version),
+    };
+  }
+
+  FuelPredictionRow copyWith({
+    int? id,
+    int? carId,
+    int? fuelPercent,
+    String? syncStatus,
+    String? updatedAt,
+    int? version,
+  }) => FuelPredictionRow(
+    id: id ?? this.id,
+    carId: carId ?? this.carId,
+    fuelPercent: fuelPercent ?? this.fuelPercent,
+    syncStatus: syncStatus ?? this.syncStatus,
+    updatedAt: updatedAt ?? this.updatedAt,
+    version: version ?? this.version,
+  );
+  FuelPredictionRow copyWithCompanion(FuelPredictionsCompanion data) {
+    return FuelPredictionRow(
+      id: data.id.present ? data.id.value : this.id,
+      carId: data.carId.present ? data.carId.value : this.carId,
+      fuelPercent: data.fuelPercent.present
+          ? data.fuelPercent.value
+          : this.fuelPercent,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      version: data.version.present ? data.version.value : this.version,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FuelPredictionRow(')
+          ..write('id: $id, ')
+          ..write('carId: $carId, ')
+          ..write('fuelPercent: $fuelPercent, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, carId, fuelPercent, syncStatus, updatedAt, version);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FuelPredictionRow &&
+          other.id == this.id &&
+          other.carId == this.carId &&
+          other.fuelPercent == this.fuelPercent &&
+          other.syncStatus == this.syncStatus &&
+          other.updatedAt == this.updatedAt &&
+          other.version == this.version);
+}
+
+class FuelPredictionsCompanion extends UpdateCompanion<FuelPredictionRow> {
+  final Value<int> id;
+  final Value<int> carId;
+  final Value<int> fuelPercent;
+  final Value<String> syncStatus;
+  final Value<String> updatedAt;
+  final Value<int> version;
+  const FuelPredictionsCompanion({
+    this.id = const Value.absent(),
+    this.carId = const Value.absent(),
+    this.fuelPercent = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.version = const Value.absent(),
+  });
+  FuelPredictionsCompanion.insert({
+    this.id = const Value.absent(),
+    required int carId,
+    required int fuelPercent,
+    this.syncStatus = const Value.absent(),
+    required String updatedAt,
+    this.version = const Value.absent(),
+  }) : carId = Value(carId),
+       fuelPercent = Value(fuelPercent),
+       updatedAt = Value(updatedAt);
+  static Insertable<FuelPredictionRow> custom({
+    Expression<int>? id,
+    Expression<int>? carId,
+    Expression<int>? fuelPercent,
+    Expression<String>? syncStatus,
+    Expression<String>? updatedAt,
+    Expression<int>? version,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (carId != null) 'car_id': carId,
+      if (fuelPercent != null) 'fuel_percent': fuelPercent,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (version != null) 'version': version,
+    });
+  }
+
+  FuelPredictionsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? carId,
+    Value<int>? fuelPercent,
+    Value<String>? syncStatus,
+    Value<String>? updatedAt,
+    Value<int>? version,
+  }) {
+    return FuelPredictionsCompanion(
+      id: id ?? this.id,
+      carId: carId ?? this.carId,
+      fuelPercent: fuelPercent ?? this.fuelPercent,
+      syncStatus: syncStatus ?? this.syncStatus,
+      updatedAt: updatedAt ?? this.updatedAt,
+      version: version ?? this.version,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (carId.present) {
+      map['car_id'] = Variable<int>(carId.value);
+    }
+    if (fuelPercent.present) {
+      map['fuel_percent'] = Variable<int>(fuelPercent.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(updatedAt.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FuelPredictionsCompanion(')
+          ..write('id: $id, ')
+          ..write('carId: $carId, ')
+          ..write('fuelPercent: $fuelPercent, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4049,6 +4552,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MaintenanceRecordItemsTable maintenanceRecordItems =
       $MaintenanceRecordItemsTable(this);
   late final $AppPreferencesTable appPreferences = $AppPreferencesTable(this);
+  late final $FuelPredictionsTable fuelPredictions = $FuelPredictionsTable(
+    this,
+  );
   late final Index idxMaintenanceItemsCarsId = Index(
     'idx_maintenance_items_cars_id',
     'CREATE INDEX idx_maintenance_items_cars_id ON maintenance_items (cars_id)',
@@ -4073,6 +4579,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     maintenanceRecords,
     maintenanceRecordItems,
     appPreferences,
+    fuelPredictions,
     idxMaintenanceItemsCarsId,
     idxMaintenanceRecordsCarId,
     idxMaintenanceRecordItemsRecordId,
@@ -4084,8 +4591,10 @@ typedef $$CarsTableCreateCompanionBuilder =
       Value<int> id,
       required String brand,
       required String model,
+      Value<String> powertrainType,
       required int currentMileageKm,
       required String roadDate,
+      Value<double?> tankCapacityLiters,
       Value<String> syncStatus,
       required String updatedAt,
       Value<int> version,
@@ -4095,8 +4604,10 @@ typedef $$CarsTableUpdateCompanionBuilder =
       Value<int> id,
       Value<String> brand,
       Value<String> model,
+      Value<String> powertrainType,
       Value<int> currentMileageKm,
       Value<String> roadDate,
+      Value<double?> tankCapacityLiters,
       Value<String> syncStatus,
       Value<String> updatedAt,
       Value<int> version,
@@ -4125,6 +4636,11 @@ class $$CarsTableFilterComposer extends Composer<_$AppDatabase, $CarsTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get powertrainType => $composableBuilder(
+    column: $table.powertrainType,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get currentMileageKm => $composableBuilder(
     column: $table.currentMileageKm,
     builder: (column) => ColumnFilters(column),
@@ -4132,6 +4648,11 @@ class $$CarsTableFilterComposer extends Composer<_$AppDatabase, $CarsTable> {
 
   ColumnFilters<String> get roadDate => $composableBuilder(
     column: $table.roadDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get tankCapacityLiters => $composableBuilder(
+    column: $table.tankCapacityLiters,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4174,6 +4695,11 @@ class $$CarsTableOrderingComposer extends Composer<_$AppDatabase, $CarsTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get powertrainType => $composableBuilder(
+    column: $table.powertrainType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get currentMileageKm => $composableBuilder(
     column: $table.currentMileageKm,
     builder: (column) => ColumnOrderings(column),
@@ -4181,6 +4707,11 @@ class $$CarsTableOrderingComposer extends Composer<_$AppDatabase, $CarsTable> {
 
   ColumnOrderings<String> get roadDate => $composableBuilder(
     column: $table.roadDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get tankCapacityLiters => $composableBuilder(
+    column: $table.tankCapacityLiters,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -4218,6 +4749,11 @@ class $$CarsTableAnnotationComposer
   GeneratedColumn<String> get model =>
       $composableBuilder(column: $table.model, builder: (column) => column);
 
+  GeneratedColumn<String> get powertrainType => $composableBuilder(
+    column: $table.powertrainType,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get currentMileageKm => $composableBuilder(
     column: $table.currentMileageKm,
     builder: (column) => column,
@@ -4225,6 +4761,11 @@ class $$CarsTableAnnotationComposer
 
   GeneratedColumn<String> get roadDate =>
       $composableBuilder(column: $table.roadDate, builder: (column) => column);
+
+  GeneratedColumn<double> get tankCapacityLiters => $composableBuilder(
+    column: $table.tankCapacityLiters,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
@@ -4269,8 +4810,10 @@ class $$CarsTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> brand = const Value.absent(),
                 Value<String> model = const Value.absent(),
+                Value<String> powertrainType = const Value.absent(),
                 Value<int> currentMileageKm = const Value.absent(),
                 Value<String> roadDate = const Value.absent(),
+                Value<double?> tankCapacityLiters = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<int> version = const Value.absent(),
@@ -4278,8 +4821,10 @@ class $$CarsTableTableManager
                 id: id,
                 brand: brand,
                 model: model,
+                powertrainType: powertrainType,
                 currentMileageKm: currentMileageKm,
                 roadDate: roadDate,
+                tankCapacityLiters: tankCapacityLiters,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,
@@ -4289,8 +4834,10 @@ class $$CarsTableTableManager
                 Value<int> id = const Value.absent(),
                 required String brand,
                 required String model,
+                Value<String> powertrainType = const Value.absent(),
                 required int currentMileageKm,
                 required String roadDate,
+                Value<double?> tankCapacityLiters = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 required String updatedAt,
                 Value<int> version = const Value.absent(),
@@ -4298,8 +4845,10 @@ class $$CarsTableTableManager
                 id: id,
                 brand: brand,
                 model: model,
+                powertrainType: powertrainType,
                 currentMileageKm: currentMileageKm,
                 roadDate: roadDate,
+                tankCapacityLiters: tankCapacityLiters,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,
@@ -4330,8 +4879,7 @@ typedef $$VehicleDefaultMaintenanceItemsTableCreateCompanionBuilder =
     VehicleDefaultMaintenanceItemsCompanion Function({
       Value<int> id,
       Value<String?> catalogId,
-      required String vehicleBrand,
-      required String vehicleModel,
+      Value<String> powertrainType,
       required String itemName,
       required bool remindByMileage,
       required bool remindByTime,
@@ -4348,8 +4896,7 @@ typedef $$VehicleDefaultMaintenanceItemsTableUpdateCompanionBuilder =
     VehicleDefaultMaintenanceItemsCompanion Function({
       Value<int> id,
       Value<String?> catalogId,
-      Value<String> vehicleBrand,
-      Value<String> vehicleModel,
+      Value<String> powertrainType,
       Value<String> itemName,
       Value<bool> remindByMileage,
       Value<bool> remindByTime,
@@ -4382,13 +4929,8 @@ class $$VehicleDefaultMaintenanceItemsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get vehicleBrand => $composableBuilder(
-    column: $table.vehicleBrand,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get vehicleModel => $composableBuilder(
-    column: $table.vehicleModel,
+  ColumnFilters<String> get powertrainType => $composableBuilder(
+    column: $table.powertrainType,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4467,13 +5009,8 @@ class $$VehicleDefaultMaintenanceItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get vehicleBrand => $composableBuilder(
-    column: $table.vehicleBrand,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get vehicleModel => $composableBuilder(
-    column: $table.vehicleModel,
+  ColumnOrderings<String> get powertrainType => $composableBuilder(
+    column: $table.powertrainType,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -4548,13 +5085,8 @@ class $$VehicleDefaultMaintenanceItemsTableAnnotationComposer
   GeneratedColumn<String> get catalogId =>
       $composableBuilder(column: $table.catalogId, builder: (column) => column);
 
-  GeneratedColumn<String> get vehicleBrand => $composableBuilder(
-    column: $table.vehicleBrand,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get vehicleModel => $composableBuilder(
-    column: $table.vehicleModel,
+  GeneratedColumn<String> get powertrainType => $composableBuilder(
+    column: $table.powertrainType,
     builder: (column) => column,
   );
 
@@ -4654,8 +5186,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String?> catalogId = const Value.absent(),
-                Value<String> vehicleBrand = const Value.absent(),
-                Value<String> vehicleModel = const Value.absent(),
+                Value<String> powertrainType = const Value.absent(),
                 Value<String> itemName = const Value.absent(),
                 Value<bool> remindByMileage = const Value.absent(),
                 Value<bool> remindByTime = const Value.absent(),
@@ -4670,8 +5201,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
               }) => VehicleDefaultMaintenanceItemsCompanion(
                 id: id,
                 catalogId: catalogId,
-                vehicleBrand: vehicleBrand,
-                vehicleModel: vehicleModel,
+                powertrainType: powertrainType,
                 itemName: itemName,
                 remindByMileage: remindByMileage,
                 remindByTime: remindByTime,
@@ -4688,8 +5218,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String?> catalogId = const Value.absent(),
-                required String vehicleBrand,
-                required String vehicleModel,
+                Value<String> powertrainType = const Value.absent(),
                 required String itemName,
                 required bool remindByMileage,
                 required bool remindByTime,
@@ -4704,8 +5233,7 @@ class $$VehicleDefaultMaintenanceItemsTableTableManager
               }) => VehicleDefaultMaintenanceItemsCompanion.insert(
                 id: id,
                 catalogId: catalogId,
-                vehicleBrand: vehicleBrand,
-                vehicleModel: vehicleModel,
+                powertrainType: powertrainType,
                 itemName: itemName,
                 remindByMileage: remindByMileage,
                 remindByTime: remindByTime,
@@ -4753,6 +5281,7 @@ typedef $$VehicleModelsTableCreateCompanionBuilder =
       Value<String?> catalogId,
       required String brand,
       required String model,
+      Value<String> template,
       required int sortOrder,
       Value<String> syncStatus,
       required String updatedAt,
@@ -4764,6 +5293,7 @@ typedef $$VehicleModelsTableUpdateCompanionBuilder =
       Value<String?> catalogId,
       Value<String> brand,
       Value<String> model,
+      Value<String> template,
       Value<int> sortOrder,
       Value<String> syncStatus,
       Value<String> updatedAt,
@@ -4796,6 +5326,11 @@ class $$VehicleModelsTableFilterComposer
 
   ColumnFilters<String> get model => $composableBuilder(
     column: $table.model,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get template => $composableBuilder(
+    column: $table.template,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4849,6 +5384,11 @@ class $$VehicleModelsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get template => $composableBuilder(
+    column: $table.template,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -4890,6 +5430,9 @@ class $$VehicleModelsTableAnnotationComposer
 
   GeneratedColumn<String> get model =>
       $composableBuilder(column: $table.model, builder: (column) => column);
+
+  GeneratedColumn<String> get template =>
+      $composableBuilder(column: $table.template, builder: (column) => column);
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -4941,6 +5484,7 @@ class $$VehicleModelsTableTableManager
                 Value<String?> catalogId = const Value.absent(),
                 Value<String> brand = const Value.absent(),
                 Value<String> model = const Value.absent(),
+                Value<String> template = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
@@ -4950,6 +5494,7 @@ class $$VehicleModelsTableTableManager
                 catalogId: catalogId,
                 brand: brand,
                 model: model,
+                template: template,
                 sortOrder: sortOrder,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
@@ -4961,6 +5506,7 @@ class $$VehicleModelsTableTableManager
                 Value<String?> catalogId = const Value.absent(),
                 required String brand,
                 required String model,
+                Value<String> template = const Value.absent(),
                 required int sortOrder,
                 Value<String> syncStatus = const Value.absent(),
                 required String updatedAt,
@@ -4970,6 +5516,7 @@ class $$VehicleModelsTableTableManager
                 catalogId: catalogId,
                 brand: brand,
                 model: model,
+                template: template,
                 sortOrder: sortOrder,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
@@ -6110,6 +6657,229 @@ typedef $$AppPreferencesTableProcessedTableManager =
       AppPreferenceRow,
       PrefetchHooks Function()
     >;
+typedef $$FuelPredictionsTableCreateCompanionBuilder =
+    FuelPredictionsCompanion Function({
+      Value<int> id,
+      required int carId,
+      required int fuelPercent,
+      Value<String> syncStatus,
+      required String updatedAt,
+      Value<int> version,
+    });
+typedef $$FuelPredictionsTableUpdateCompanionBuilder =
+    FuelPredictionsCompanion Function({
+      Value<int> id,
+      Value<int> carId,
+      Value<int> fuelPercent,
+      Value<String> syncStatus,
+      Value<String> updatedAt,
+      Value<int> version,
+    });
+
+class $$FuelPredictionsTableFilterComposer
+    extends Composer<_$AppDatabase, $FuelPredictionsTable> {
+  $$FuelPredictionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get carId => $composableBuilder(
+    column: $table.carId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fuelPercent => $composableBuilder(
+    column: $table.fuelPercent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FuelPredictionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $FuelPredictionsTable> {
+  $$FuelPredictionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get carId => $composableBuilder(
+    column: $table.carId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fuelPercent => $composableBuilder(
+    column: $table.fuelPercent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FuelPredictionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FuelPredictionsTable> {
+  $$FuelPredictionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get carId =>
+      $composableBuilder(column: $table.carId, builder: (column) => column);
+
+  GeneratedColumn<int> get fuelPercent => $composableBuilder(
+    column: $table.fuelPercent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+}
+
+class $$FuelPredictionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FuelPredictionsTable,
+          FuelPredictionRow,
+          $$FuelPredictionsTableFilterComposer,
+          $$FuelPredictionsTableOrderingComposer,
+          $$FuelPredictionsTableAnnotationComposer,
+          $$FuelPredictionsTableCreateCompanionBuilder,
+          $$FuelPredictionsTableUpdateCompanionBuilder,
+          (
+            FuelPredictionRow,
+            BaseReferences<
+              _$AppDatabase,
+              $FuelPredictionsTable,
+              FuelPredictionRow
+            >,
+          ),
+          FuelPredictionRow,
+          PrefetchHooks Function()
+        > {
+  $$FuelPredictionsTableTableManager(
+    _$AppDatabase db,
+    $FuelPredictionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FuelPredictionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FuelPredictionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FuelPredictionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> carId = const Value.absent(),
+                Value<int> fuelPercent = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<String> updatedAt = const Value.absent(),
+                Value<int> version = const Value.absent(),
+              }) => FuelPredictionsCompanion(
+                id: id,
+                carId: carId,
+                fuelPercent: fuelPercent,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int carId,
+                required int fuelPercent,
+                Value<String> syncStatus = const Value.absent(),
+                required String updatedAt,
+                Value<int> version = const Value.absent(),
+              }) => FuelPredictionsCompanion.insert(
+                id: id,
+                carId: carId,
+                fuelPercent: fuelPercent,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FuelPredictionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FuelPredictionsTable,
+      FuelPredictionRow,
+      $$FuelPredictionsTableFilterComposer,
+      $$FuelPredictionsTableOrderingComposer,
+      $$FuelPredictionsTableAnnotationComposer,
+      $$FuelPredictionsTableCreateCompanionBuilder,
+      $$FuelPredictionsTableUpdateCompanionBuilder,
+      (
+        FuelPredictionRow,
+        BaseReferences<_$AppDatabase, $FuelPredictionsTable, FuelPredictionRow>,
+      ),
+      FuelPredictionRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6134,4 +6904,6 @@ class $AppDatabaseManager {
       );
   $$AppPreferencesTableTableManager get appPreferences =>
       $$AppPreferencesTableTableManager(_db, _db.appPreferences);
+  $$FuelPredictionsTableTableManager get fuelPredictions =>
+      $$FuelPredictionsTableTableManager(_db, _db.fuelPredictions);
 }

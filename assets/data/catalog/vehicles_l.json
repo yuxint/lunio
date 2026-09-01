@@ -1,0 +1,804 @@
+{
+  "schemaVersion": 2,
+  "letter": "L",
+  "vehicles": [
+    {
+      "id": "vehicle-dcd-9218c5e851",
+      "brand": "路虎",
+      "model": "揽胜极光",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b4394f0322",
+      "brand": "路虎",
+      "model": "揽胜星脉",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a5fa745391",
+      "brand": "路虎",
+      "model": "发现",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7b5246db23",
+      "brand": "路虎",
+      "model": "卫士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8bc5822f21",
+      "brand": "路虎",
+      "model": "揽胜",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6ecd107308",
+      "brand": "路虎",
+      "model": "揽胜运动",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6410f1ef0e",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯ES",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8007938a54",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯LS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-292b7e8f98",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯NX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-890f2936c0",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯NX PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3a3f6030de",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯RZ",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-71e0ed1da6",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯GX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-9a58f6ab52",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯RX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b46b3f078a",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯RX PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-6149785fe6",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯LX",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-564e9ebb3d",
+      "brand": "雷克萨斯",
+      "model": "雷克萨斯LM",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-56b8bb9a5a",
+      "brand": "林肯",
+      "model": "林肯Z",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b183069f89",
+      "brand": "林肯",
+      "model": "冒险家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-90664c234f",
+      "brand": "林肯",
+      "model": "航海家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-952da22dee",
+      "brand": "林肯",
+      "model": "飞行家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c8b0796ddd",
+      "brand": "林肯",
+      "model": "领航员",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-c0ecf2d7ff",
+      "brand": "理想汽车",
+      "model": "理想i6",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f1e71bad98",
+      "brand": "理想汽车",
+      "model": "理想L6",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-36ab8ba4a3",
+      "brand": "理想汽车",
+      "model": "理想i8",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-fd732aae9c",
+      "brand": "理想汽车",
+      "model": "理想L8",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-b9df67f716",
+      "brand": "理想汽车",
+      "model": "理想L9",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-aa483cfef5",
+      "brand": "理想汽车",
+      "model": "理想MEGA",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-9789867b38",
+      "brand": "领克",
+      "model": "领克03",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-804c3ab2c1",
+      "brand": "领克",
+      "model": "领克07 EM-P",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-2734157538",
+      "brand": "领克",
+      "model": "领克10 EM-P",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-da1a9d4b95",
+      "brand": "领克",
+      "model": "领克Z20",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-4538443ff0",
+      "brand": "领克",
+      "model": "领克01",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-95035be930",
+      "brand": "领克",
+      "model": "领克06",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4bededaf35",
+      "brand": "领克",
+      "model": "领克06 EM-P",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-9c18ebdecc",
+      "brand": "领克",
+      "model": "领克08 EM-P",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-4ad4a01a20",
+      "brand": "领克",
+      "model": "领克09",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4afb6568b3",
+      "brand": "领克",
+      "model": "领克900",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-be2690bf66",
+      "brand": "零跑汽车",
+      "model": "零跑T03",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-dcbc93e651",
+      "brand": "零跑汽车",
+      "model": "零跑A05",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-5f586a31a1",
+      "brand": "零跑汽车",
+      "model": "零跑B01",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-1b28e93024",
+      "brand": "零跑汽车",
+      "model": "零跑Lafa5",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-c89a6d45e2",
+      "brand": "零跑汽车",
+      "model": "零跑A10",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-73b35e04da",
+      "brand": "零跑汽车",
+      "model": "零跑B10",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-f8c326e2cd",
+      "brand": "零跑汽车",
+      "model": "零跑C10",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-9a61068d8d",
+      "brand": "零跑汽车",
+      "model": "零跑C11",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-b09bb1bfae",
+      "brand": "零跑汽车",
+      "model": "零跑C16",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-106bf3fc5a",
+      "brand": "零跑汽车",
+      "model": "零跑D19",
+      "template": "extended"
+    },
+    {
+      "id": "vehicle-dcd-47c7a3f796",
+      "brand": "乐道",
+      "model": "乐道L60",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f0bea38f85",
+      "brand": "乐道",
+      "model": "乐道L80",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-ebc1303861",
+      "brand": "乐道",
+      "model": "乐道L90",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-648e3045f4",
+      "brand": "岚图",
+      "model": "岚图追光 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-54724597ef",
+      "brand": "岚图",
+      "model": "岚图追光 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-f12ddbeb7d",
+      "brand": "岚图",
+      "model": "岚图知音",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-30f6a475f1",
+      "brand": "岚图",
+      "model": "岚图FREE",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8d2e8d7a0a",
+      "brand": "岚图",
+      "model": "岚图泰山X8 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-35577f5b63",
+      "brand": "岚图",
+      "model": "岚图泰山X8 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-8a0228a40a",
+      "brand": "岚图",
+      "model": "岚图追光S",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4985691484",
+      "brand": "岚图",
+      "model": "岚图泰山 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-3208f4a8e6",
+      "brand": "岚图",
+      "model": "岚图梦想家 PHEV",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-c1481bb44e",
+      "brand": "岚图",
+      "model": "岚图梦想家 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-4274a5685b",
+      "brand": "劳斯莱斯",
+      "model": "古思特",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fa2d82cb8e",
+      "brand": "劳斯莱斯",
+      "model": "幻影",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-125cddaf0a",
+      "brand": "劳斯莱斯",
+      "model": "库里南",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a0deb34dd5",
+      "brand": "劳斯莱斯",
+      "model": "闪灵",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-336bba5ee0",
+      "brand": "兰博基尼",
+      "model": "Urus",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-55cdd7c07b",
+      "brand": "兰博基尼",
+      "model": "Urus SE",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-337d398fc9",
+      "brand": "兰博基尼",
+      "model": "Temerario",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-e0cad736ca",
+      "brand": "兰博基尼",
+      "model": "Huracán",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5433126cc5",
+      "brand": "兰博基尼",
+      "model": "Revuelto",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-42ce790acd",
+      "brand": "莲花跑车",
+      "model": "Emeya",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-384a137da3",
+      "brand": "莲花跑车",
+      "model": "Eletre",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7d1057e42f",
+      "brand": "莲花跑车",
+      "model": "ForMe",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4483fecd8e",
+      "brand": "莲花跑车",
+      "model": "Emira",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-b5039ef336",
+      "brand": "灵悉",
+      "model": "灵悉L",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-74580e48a7",
+      "brand": "领汇",
+      "model": "领汇e7 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-12106ddc40",
+      "brand": "领汇",
+      "model": "领汇e5 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-13529d1898",
+      "brand": "领汇",
+      "model": "领汇e9 EV",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-225b7fdd6a",
+      "brand": "领汇",
+      "model": "领汇M9 DM",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-f81ca80b7a",
+      "brand": "蓝电",
+      "model": "蓝电E3",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-10e6a5e145",
+      "brand": "蓝电",
+      "model": "蓝电E5",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-bc4799e27e",
+      "brand": "蓝电",
+      "model": "蓝电E5 PLUS",
+      "template": "plugIn"
+    },
+    {
+      "id": "vehicle-dcd-a1f517d223",
+      "brand": "雷驰汽车",
+      "model": "雷驰·信V70",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1d53a61e3e",
+      "brand": "雷驰汽车",
+      "model": "雷驰T10",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-697aeec7e5",
+      "brand": "雷驰汽车",
+      "model": "雷驰T30",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a9ee17c596",
+      "brand": "雷驰汽车",
+      "model": "雷驰F3",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bc21788208",
+      "brand": "Lorinser",
+      "model": "Lorinser 星际战车",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-545dddeb68",
+      "brand": "Lorinser",
+      "model": "Lorinser GS系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bf02564c1b",
+      "brand": "Lorinser",
+      "model": "Lorinser 烈马",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7904ad0aae",
+      "brand": "Lorinser",
+      "model": "Lorinser LW系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3cd57dffb6",
+      "brand": "Lorinser",
+      "model": "Lorinser T系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-be1bbdbd0d",
+      "brand": "Lorinser",
+      "model": "Lorinser 格瑞维亚",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-053d24873e",
+      "brand": "Lorinser",
+      "model": "Lorinser 梦想家",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-bdb4fe03d7",
+      "brand": "Lorinser",
+      "model": "Lorinser VS系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-11b72fc3fe",
+      "brand": "Lorinser",
+      "model": "Lorinser LS系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-1abfe44f70",
+      "brand": "Lorinser",
+      "model": "Lorinser F-150",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-80436221cb",
+      "brand": "领途汽车",
+      "model": "领途M8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-fac96077ac",
+      "brand": "领途汽车",
+      "model": "领途E-M8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3a2d6b9fb8",
+      "brand": "莱茵汽车",
+      "model": "莱茵旅行者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cd9e170059",
+      "brand": "菱势汽车",
+      "model": "菱势EV50",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-1fbcb66901",
+      "brand": "菱势汽车",
+      "model": "菱势黄金仓",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-831490266d",
+      "brand": "菱势汽车",
+      "model": "菱势黄金仓PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-0c55e39ec4",
+      "brand": "菱势汽车",
+      "model": "菱势电卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-8b3d00b49e",
+      "brand": "菱势汽车",
+      "model": "菱势黄金小卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-5a409dd316",
+      "brand": "菱势汽车",
+      "model": "菱势黄金小卡PLUS",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-aff2d516a1",
+      "brand": "菱势汽车",
+      "model": "菱势黄金卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e371934457",
+      "brand": "菱势汽车",
+      "model": "菱势黄金大卡",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-4d3291d80f",
+      "brand": "凌宝汽车",
+      "model": "凌宝BOX",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-578f963173",
+      "brand": "凌宝汽车",
+      "model": "凌宝Uni",
+      "template": "ev"
+    },
+    {
+      "id": "vehicle-dcd-6cfed4e9c6",
+      "brand": "LUMMA",
+      "model": "LUMMA 齐伯林",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b4c47539d4",
+      "brand": "LUMMA",
+      "model": "LUMMA 捍卫者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a9e4c0691b",
+      "brand": "LUMMA",
+      "model": "LUMMA 格鲁克",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-536dbb493a",
+      "brand": "LUMMA",
+      "model": "LUMMA 挑战者",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-19107aff81",
+      "brand": "LUMMA",
+      "model": "LUMMA 骑士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-77d66f9e2c",
+      "brand": "LUMMA",
+      "model": "LUMMA 盖世",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-28e2b5bf54",
+      "brand": "LIMGENE凌际",
+      "model": "凌际卫士",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-27894fcac6",
+      "brand": "LIMGENE凌际",
+      "model": "凌际威途",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-d7522fcd9b",
+      "brand": "LIMGENE凌际",
+      "model": "凌际星云",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-6489526c0b",
+      "brand": "礼骊汽车",
+      "model": "礼骊汽车 VSTAR",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-eb19ffc846",
+      "brand": "礼骊汽车",
+      "model": "礼骊汽车 威霆",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3f4a7b9888",
+      "brand": "礼骊汽车",
+      "model": "礼骊汽车 GL8",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-29e5723759",
+      "brand": "礼骊汽车",
+      "model": "礼骊汽车 V级",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-ed2cde6e5f",
+      "brand": "览众房车",
+      "model": "山海炮房车",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cfa9bee4a8",
+      "brand": "览众房车",
+      "model": "升顶炮房车",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-b01492ff79",
+      "brand": "览众房车",
+      "model": "自由炮房车",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-689434be21",
+      "brand": "旅美房车",
+      "model": "慧驭",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-3f2cf74d97",
+      "brand": "旅美房车",
+      "model": "奇域",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-cc4f35423e",
+      "brand": "旅美房车",
+      "model": "野玩",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-7f86b2a942",
+      "brand": "旅美房车",
+      "model": "灵域",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-2c5f49b045",
+      "brand": "隆翠房车",
+      "model": "凯歌系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-60fb3d50b8",
+      "brand": "隆翠房车",
+      "model": "麒麟系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a8079f9949",
+      "brand": "隆翠房车",
+      "model": "哆啡系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-a2a804aadf",
+      "brand": "隆翠房车",
+      "model": "隆翠系列",
+      "template": "fuel"
+    },
+    {
+      "id": "vehicle-dcd-e1e30a8ca4",
+      "brand": "铃木",
+      "model": "英格尼斯",
+      "template": "fuel"
+    }
+  ]
+}

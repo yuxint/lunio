@@ -1,11 +1,18 @@
-// 内置车型目录：解析 asset JSON（assets/data/built_in_vehicle_catalog.json），
-// 供首启 bootstrap 把车型库和默认保养项目模板灌入数据库。
+// 内置车型目录：解析 asset JSON，供首启 bootstrap 把车型库和默认保养
+// 项目模板灌入数据库。
 //
-// 目录 JSON 的结构（schemaVersion = 2，与备份契约的 2 无关）：
-//   templates: { "fuel": [ {id,name,remindByMileage,...}, ... ], "ev": [...] }
-//   vehicles:  [ {id,brand,model,template:"fuel"}, ... ]
-// 一个 template 是一组保养项目，多个车型可共用同一 template
-// （如所有燃油车共用 fuel 模板）。
+// 目录 asset 按字母分片存储（车型库大，单文件不便维护）：
+//   assets/data/catalog/templates.json        —— schemaVersion + 按动力类型的保养模板；
+//   assets/data/catalog/vehicles_a.json ... vehicles_z.json
+//                                             —— 每个字母一个分片
+//                                                {schemaVersion, letter, vehicles}。
+// 车型条目名用懂车帝原始车系名（ADR 0003），每条带"推荐动力类型"（template
+// 字段，仅作添加向导预选）；默认保养模板按动力类型分组（fuel/hybrid/plugIn/
+// extended/ev 五组，增程组内容同插混组），不再按品牌+车型逐条展开。
+// 例外：个别车型有厂商专属保养项（如思域的燃油宝等），通过条目上可选的
+// itemTemplate 字段引用 templates.json 顶层 vehicleTemplates 里的
+// 车型专属模板（ADR 0004）；专属模板不进数据库，只在添加向导取默认
+// 项目时按（品牌+车型+推荐动力类型一致）命中。
 //
 // typedef ≈ Java 的函数式接口：这里把"目录加载器"抽象成可注入的函数类型，
 // 测试可以传入内存版本而不用真 asset（虽然当前加载器在 Repository 内
@@ -14,6 +21,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import '../../domain/entities/powertrain_type.dart';
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart';
 import '../../domain/entities/vehicle_model.dart';
@@ -21,16 +29,44 @@ import '../../domain/entities/vehicle_model.dart';
 /// 目录加载器类型：无参、异步返回目录。
 typedef BuiltInVehicleCatalogLoader = Future<BuiltInVehicleCatalog> Function();
 
-/// 从 Flutter asset 根读取目录 JSON 并解析。
+/// 车型分片的字母清单（a–z 全量生成，无品牌的字母是空分片，加载不用判存在）。
+const _catalogShardLetters = [
+  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+  'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+];
+
+/// 从 Flutter asset 读取分片目录：templates.json + 26 个字母分片拼装成
+/// 完整目录结构后，走 [BuiltInVehicleCatalog.fromJson] 统一校验。
 /// 注意：本文件因此 import 了 Flutter services（rootBundle）——
 /// data 层对 Flutter 的反向依赖点（审查报告 §3）。
 Future<BuiltInVehicleCatalog> loadBuiltInVehicleCatalogAsset() async {
-  final json = await rootBundle.loadString(
-    'assets/data/built_in_vehicle_catalog.json',
+  final templatesJson = await rootBundle.loadString(
+    'assets/data/catalog/templates.json',
   );
-  return BuiltInVehicleCatalog.fromJson(
-    (jsonDecode(json) as Map).cast<String, Object?>(),
-  );
+  final templatesMap = (jsonDecode(templatesJson) as Map)
+      .cast<String, Object?>();
+  if (templatesMap['schemaVersion'] != 2) {
+    throw ArgumentError('Unsupported vehicle catalog schemaVersion');
+  }
+  final vehicles = <Object?>[];
+  for (final letter in _catalogShardLetters) {
+    final shardJson = await rootBundle.loadString(
+      'assets/data/catalog/vehicles_$letter.json',
+    );
+    final shard = (jsonDecode(shardJson) as Map).cast<String, Object?>();
+    if (shard['schemaVersion'] != 2) {
+      throw ArgumentError(
+        'Unsupported vehicle catalog shard schemaVersion: vehicles_$letter',
+      );
+    }
+    vehicles.addAll((shard['vehicles'] as List?) ?? const []);
+  }
+  return BuiltInVehicleCatalog.fromJson({
+    'schemaVersion': 2,
+    'templates': templatesMap['templates'],
+    'vehicleTemplates': templatesMap['vehicleTemplates'],
+    'vehicles': vehicles,
+  });
 }
 
 /// 解析后的目录：模板集合 + 车型列表，可展开成两张表的实体。
@@ -38,42 +74,36 @@ class BuiltInVehicleCatalog {
   const BuiltInVehicleCatalog({
     required this.templates,
     required this.vehicles,
+    this.vehicleTemplates = const {},
   });
 
-  /// templateKey → 该模板的保养项目规格列表。
+  /// 模板键（= 动力类型 wire 值）→ 该模板的保养项目规格列表。
   final Map<String, List<BuiltInMaintenanceItemSpec>> templates;
 
-  /// 车型种子列表（约 190 个）。
+  /// 车型专属模板键（如 "civicFuel"）→ 保养项目规格列表。
+  /// 与 [templates] 的区别：键不是动力类型，整组不进
+  /// vehicle_default_maintenance_items 表，只在添加向导按车型命中。
+  final Map<String, List<BuiltInMaintenanceItemSpec>> vehicleTemplates;
+
+  /// 车型种子列表（约 1675 个：懂车帝在售 1645 + 停售 30，ADR 0003）。
   final List<BuiltInVehicleSeed> vehicles;
 
   /// 解析 + 完整性校验（fail-fast，坏目录直接抛 ArgumentError）：
   ///  - schemaVersion 必须是 2；
   ///  - 每个模板至少一个项目、模板内项目 id 不重复；
-  ///  - 车型 id 不重复、引用的 template 必须存在。
+  ///  - 车型 id 不重复、引用的 template（推荐动力类型）必须存在；
+  ///  - 车型引用的 itemTemplate（车型专属模板）必须在 vehicleTemplates 里。
   factory BuiltInVehicleCatalog.fromJson(Map<String, Object?> json) {
     final schemaVersion = json['schemaVersion'];
     if (schemaVersion != 2) {
       throw ArgumentError('Unsupported vehicle catalog schemaVersion');
     }
     final templatesJson = (json['templates'] as Map).cast<String, Object?>();
-    final templates = templatesJson.map((key, value) {
-      final templateKey = _nonEmptyString(key, 'template key');
-      final items = (value as List)
-          .cast<Map<String, Object?>>()
-          .map(BuiltInMaintenanceItemSpec.fromJson)
-          .toList();
-      _validateUniqueIds(
-        items.map((item) => item.id),
-        'maintenance item',
-        templateKey,
-      );
-      return MapEntry(templateKey, items);
-    });
-    for (final entry in templates.entries) {
-      if (entry.value.isEmpty) {
-        throw ArgumentError('Template has no maintenance items: ${entry.key}');
-      }
-    }
+    final templates = templatesJson.map(_parseTemplateEntry);
+    final vehicleTemplatesJson =
+        (json['vehicleTemplates'] as Map?)?.cast<String, Object?>();
+    final vehicleTemplates = vehicleTemplatesJson?.map(_parseTemplateEntry) ??
+        const <String, List<BuiltInMaintenanceItemSpec>>{};
     final vehicles = ((json['vehicles'] as List?) ?? const [])
         .cast<Map<String, Object?>>()
         .map(BuiltInVehicleSeed.fromJson)
@@ -83,11 +113,60 @@ class BuiltInVehicleCatalog {
       if (!templates.containsKey(vehicle.template)) {
         throw ArgumentError('Unknown vehicle template: ${vehicle.template}');
       }
+      final itemTemplate = vehicle.itemTemplate;
+      if (itemTemplate != null &&
+          !vehicleTemplates.containsKey(itemTemplate)) {
+        throw ArgumentError(
+          'Unknown vehicle itemTemplate: $itemTemplate '
+          '(${vehicle.brand} ${vehicle.model})',
+        );
+      }
     }
-    return BuiltInVehicleCatalog(templates: templates, vehicles: vehicles);
+    return BuiltInVehicleCatalog(
+      templates: templates,
+      vehicles: vehicles,
+      vehicleTemplates: vehicleTemplates,
+    );
   }
 
-  /// 展开为 vehicle_models 表实体。sortOrder 按目录顺序 1..n。
+  /// 解析单个模板条目（键 + 项目规格列表，组内 id 查重、空组报错），
+  /// templates 与 vehicleTemplates 共用。
+  static MapEntry<String, List<BuiltInMaintenanceItemSpec>>
+      _parseTemplateEntry(String key, Object? value) {
+    final templateKey = _nonEmptyString(key, 'template key');
+    final items = (value as List)
+        .cast<Map<String, Object?>>()
+        .map(BuiltInMaintenanceItemSpec.fromJson)
+        .toList();
+    _validateUniqueIds(
+      items.map((item) => item.id),
+      'maintenance item',
+      templateKey,
+    );
+    if (items.isEmpty) {
+      throw ArgumentError('Template has no maintenance items: $templateKey');
+    }
+    return MapEntry(templateKey, items);
+  }
+
+  /// 按品牌+车型找目录条目（自定义车型不在目录里，返回 null）。
+  /// 同名第一条生效，与添加向导推荐动力类型的查找约定一致。
+  BuiltInVehicleSeed? findVehicle(String brand, String model) {
+    for (final vehicle in vehicles) {
+      if (vehicle.brand == brand && vehicle.model == model) {
+        return vehicle;
+      }
+    }
+    return null;
+  }
+
+  /// 车型专属模板的项目规格；键不存在返回 null。
+  List<BuiltInMaintenanceItemSpec>? vehicleTemplateItems(String key) {
+    return vehicleTemplates[key];
+  }
+
+  /// 展开为 vehicle_models 表实体。sortOrder 按目录顺序 1..n；
+  /// template 是推荐动力类型（添加向导预选用）。
   List<VehicleModel> vehicleModels(SyncMetadata sync) {
     return [
       for (final entry in vehicles.indexed)
@@ -95,6 +174,7 @@ class BuiltInVehicleCatalog {
           catalogId: entry.$2.id,
           brand: entry.$2.brand,
           model: entry.$2.model,
+          template: PowertrainType.byWire(entry.$2.template),
           sortOrder: entry.$1 + 1,
           sync: sync,
         ),
@@ -102,24 +182,23 @@ class BuiltInVehicleCatalog {
   }
 
   /// 展开为 vehicle_default_maintenance_items 表实体：
-  /// 每个车型 × 其模板的每个项目，catalogId = "{车型id}:{项目id}"
-  /// （bootstrap 幂等对账的稳定标识）。
+  /// 每个动力类型模板 × 其每个项目（约 5 组 × 10 项 ≈ 50 行），
+  /// catalogId = "tpl:{动力类型}:{项目id}"（bootstrap 幂等对账的稳定标识）。
   List<VehicleDefaultMaintenanceItem> defaultMaintenanceItems(
     SyncMetadata sync,
   ) {
     return [
-      for (final vehicle in vehicles)
-        for (final entry in templates[vehicle.template]!.indexed)
+      for (final entry in templates.entries)
+        for (final item in entry.value.indexed)
           VehicleDefaultMaintenanceItem(
-            catalogId: '${vehicle.id}:${entry.$2.id}',
-            vehicleBrand: vehicle.brand,
-            vehicleModel: vehicle.model,
-            itemName: entry.$2.name,
-            remindByMileage: entry.$2.remindByMileage,
-            remindByTime: entry.$2.remindByTime,
-            mileageIntervalKm: entry.$2.mileageIntervalKm,
-            timeIntervalMonths: entry.$2.timeIntervalMonths,
-            sortOrder: entry.$1 + 1,
+            catalogId: 'tpl:${entry.key}:${item.$2.id}',
+            powertrainType: PowertrainType.byWire(entry.key),
+            itemName: item.$2.name,
+            remindByMileage: item.$2.remindByMileage,
+            remindByTime: item.$2.remindByTime,
+            mileageIntervalKm: item.$2.mileageIntervalKm,
+            timeIntervalMonths: item.$2.timeIntervalMonths,
+            sortOrder: item.$1 + 1,
             sync: sync,
           ),
     ];
@@ -133,19 +212,24 @@ class BuiltInVehicleSeed {
     required this.brand,
     required this.model,
     required this.template,
+    this.itemTemplate,
   });
 
-  /// 稳定标识，如 "toyota-corolla-fuel"。
+  /// 稳定标识（"vehicle-dcd-" + 懂车帝 品牌|车系名 的哈希）。
   final String id;
 
   /// 品牌名。
   final String brand;
 
-  /// 车型名。
+  /// 车型名（懂车帝原始车系名）。
   final String model;
 
-  /// 使用的模板 key（如 "fuel"/"ev"）。
+  /// 推荐动力类型的 wire 值（如 "fuel"/"extended"）。
   final String template;
+
+  /// 车型专属保养模板键（可选，如 "civicFuel"），引用 templates.json 顶层
+  /// vehicleTemplates；null 表示没有专属模板，走动力类型通用模板（ADR 0004）。
+  final String? itemTemplate;
 
   factory BuiltInVehicleSeed.fromJson(Map<String, Object?> json) {
     return BuiltInVehicleSeed(
@@ -153,6 +237,9 @@ class BuiltInVehicleSeed {
       brand: _nonEmptyString(json['brand'], 'vehicle brand'),
       model: _nonEmptyString(json['model'], 'vehicle model'),
       template: _nonEmptyString(json['template'], 'vehicle template'),
+      itemTemplate: json['itemTemplate'] == null
+          ? null
+          : _nonEmptyString(json['itemTemplate'], 'vehicle itemTemplate'),
     );
   }
 }

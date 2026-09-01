@@ -10,7 +10,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - Flutter / Dart
 - Riverpod：依赖注入、偏好与业务数据状态
-- go_router：三入口路由，当前路径为 `/reminders`、`/records`、`/me`
+- go_router：平级入口路由，固定路径为 `/reminders`、`/records`、`/me`，另有条件路径 `/fuel`（加油预测开关打开时才出现在底部导航，路由常驻）
 - Drift + SQLite：本地数据库、唯一约束、事务、备份恢复
 - Material 3 + 自定义 `LunioTokens`：浅色/深色主题 token
 
@@ -22,9 +22,10 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/app/lunio_app.dart`：`MaterialApp.router`、主题模式和路由挂载。
 - `lib/app/app_router.dart`：GoRouter 配置。`appRouter` 是稳定单例，主题切换时不要重建路由导致跳页。
 - `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、Repository、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好等。
-- `lib/features/shell/app_shell.dart`：主壳层入口，保留三入口页面挂载、底部导航、生命周期监听和提醒通知同步触发。
+- `lib/features/shell/app_shell.dart`：主壳层入口，保留平级入口页面挂载（加油项按开关条件显示）、底部导航、生命周期监听和提醒通知同步触发。
 - `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒通知 view data 与调度 helper。
 - `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。
+- `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案和小型 UI 组件。
   - `reminders/parking_countdown.dart`：停车倒计时卡片、表单、时间选择器、保存和清除逻辑。
@@ -41,10 +42,10 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - `lib/domain/entities/`：领域实体，保持纯 Dart 数据结构与基础校验。
 - `lib/domain/rules/`：业务规则，例如保养进度、记录校验、当前应用车辆回退规则。优先把可测试的业务判断放这里。
-- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 6。
+- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 9。
 - `lib/data/database/app_database.g.dart`：Drift 生成文件。改表结构后用 build_runner 生成，不要手写。
 - `lib/data/repositories/lunio_repository.dart`：数据库读写、事务、默认数据、备份导入导出恢复。
-- `lib/data/backup/backup_codec.dart`：`schemaVersion: 2` JSON 备份契约编码/解码。
+- `lib/data/backup/backup_codec.dart`：`schemaVersion: 4` JSON 备份契约编码/解码（兼容读 v2/v3）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
 - `lib/core/notifications/lunio_notification_service.dart`：系统通知、保养提醒、里程更新提醒和停车倒计时通知。
@@ -60,9 +61,9 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 ## 数据与契约注意点
 
 - 当前产品/文档口径是正式 v1；这不是数据库或备份契约版本。
-- 当前数据库 `schemaVersion` 是 6，备份 JSON `schemaVersion` 是 2。
+- 当前数据库 `schemaVersion` 是 9，备份 JSON `schemaVersion` 是 4（v4 起车带动力类型，解码兼容 v2/v3；加油设置 v3 起进备份；油价缓存/手填价不进。油箱容积 v8 起在 `cars` 表、备份车辆条目带容积，见 `docs/adr/0002`；动力类型改版与目录以懂车帝命名为准，见 `docs/adr/0003`）。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同时考虑迁移、兼容、测试和文档。
-- 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`。不要把展示文案当作稳定标识。（`maintenanceDueEnabled` 已于 2026-08-29 移除：保养到期提醒是产品核心能力，不提供关闭入口，审查报告 R5；老库残留 key 无人读取，无害。）
+- 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`、`fuelPredictionEnabled`、`fuelProvince`（默认湖北）、`fuelGrade`、`fuelPriceCache`、`fuelManualPrices`（后两个是临时数据，不进备份）。不要把展示文案当作稳定标识。（`maintenanceDueEnabled` 已于 2026-08-29 移除：保养到期提醒是产品核心能力，不提供关闭入口，审查报告 R5；老库残留 key 无人读取，无害。）
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用 `LunioRepository` 与 `providers.dart` 里的现有模式。
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。
 - 停车倒计时是临时偏好状态，落在 `app_preferences.parkingCountdown`，不进入 JSON 备份。保存、结束、关闭系统通知、清空数据和恢复备份都要同步考虑通知清理。
@@ -102,7 +103,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - 改动 UI 流程、数据写点、通知行为或 Provider 依赖关系时，必须同步维护 `docs/operations-manual.md` 对应章节（维护规则见该手册第 8 节）。
 - 修复 `docs/code-review-report.md` 中记录的问题后，把对应条目标记为已修复并注明日期。
-- 视觉/token 改动同步 `DESIGN.md`；数据库结构改动同步 `docs/migration/current-database-schema.md`。
+- 视觉/token 改动同步 `DESIGN.md`；数据库结构改动同步 `docs/migration/current-database-schema.md`；新业务词汇或架构决定同步 `CONTEXT.md`（词汇表）与 `docs/adr/`（决定记录）。
 
 ## 常用命令
 

@@ -81,7 +81,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 1 | `lib/app/providers.dart:150 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
-| 2 | `lib/data/repositories/lunio_repository.dart:162 → ensureBootstrapData()` → `_ensureVehicleModels`(:120) + `_ensureDefaultMaintenanceItems`(:65) | 从 asset `assets/data/built_in_vehicle_catalog.json` 加载目录（约 190 车型 + 5 套保养模板），**按 catalogId 幂等对账**写入两张内置表 | `vehicle_models`、`vehicle_default_maintenance_items` 两表灌入/更新 |
+| 2 | `lib/data/repositories/lunio_repository.dart:162 → ensureBootstrapData()` → `_ensureVehicleModels`(:120) + `_ensureDefaultMaintenanceItems`(:65) | 从 asset `assets/data/catalog/`（templates.json + vehicles_a–z.json 字母分片）加载目录（**2026-09-01 动力类型改版后为 1675 条：懂车帝在售 1645 + 停售 30，车系名用懂车帝原名，每条带推荐动力类型；默认保养模板按动力类型分五组；同日起精简为每品牌最多 10 款热门车型，现共 1223 条**，见 ADR 0003），**按 catalogId 幂等对账**写入两张内置表 | `vehicle_models`、`vehicle_default_maintenance_items` 两表灌入/更新 |
 | 3 | `lib/features/shell/reminders/reminder_page.dart:102 → EmptyVehicleCard` | appliedCarProvider 返回 null → 显示"还没有车辆"卡片 | 无 |
 | 4 | `lib/features/shell/app_shell.dart:244 → _syncReminderNotifications` | 系统通知开关为默认开 → postFrame 触发首启权限请求 | 见 1.3 |
 
@@ -209,15 +209,15 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 1 | sheet 内 watch `vehicleModelsProvider` + `effectiveTodayProvider` | 车型目录/日期加载失败给行内提示 | — |
-| 2 | 第一步 `AddCarForm`（vehicles.dart:272 起） | 选品牌车型（`VehicleModelPicker` → 双列选择 sheet `:672 → VehicleModelPickerSheet`，支持搜索）、当前里程、上路日期 | — |
-| 3 | "下一步" → `AddCarWizardState._handleCarDraft`（vehicles.dart:510 附近） | 车型变化才加载默认模板：`loadDefaultItems` 闭包（showAddCarSheet 内）→ `repository.ensureBootstrapData()` + `listDefaultItemsForModel`（lunio_repository.dart:494 附近）→ 模板转项目草稿 | 只读，无写库 |
+| 2 | 第一步 `AddCarForm`（vehicles.dart:272 起） | 选品牌车型（`VehicleModelPicker` → 双列选择 sheet `:672 → VehicleModelPickerSheet`，支持搜索；**列表外可"＋ 自定义输入…"手输品牌车型**，ADR 0003）、**动力类型五选一 chip 行**（`PowertrainPicker`，按目录推荐值预选，换车型时重置推荐、用户可改）、当前里程、上路日期、油箱容积（选填，升，1–999、最多四位小数，`FuelRules.validateTankCapacity` 校验） | — |
+| 3 | "下一步" → `AddCarWizardState._handleCarDraft`（vehicles.dart:510 附近） | 车型或动力类型变化才加载默认模板：`loadDefaultItems` 闭包（showAddCarSheet 内）→ `repository.ensureBootstrapData()` + **车型专属模板优先**（`listDefaultItemsForVehicleModel`：品牌+车型命中目录条目、条目带 itemTemplate、所选动力类型=推荐值三者都满足才命中，目前仅思域→civicFuel 14 项，ADR 0004；不落库）→ 未命中 `listDefaultItemsForPowertrain`（lunio_repository.dart，**按车的动力类型取**）→ 模板转项目草稿 | 只读，无写库 |
 | 4 | 第二步 `AddCarMaintenanceItemsStep`（maintenance_items.dart:32） | 默认项目草稿可编辑（草稿表单 `:1007 → showDraftMaintenanceItemFormSheet`，纯内存）/启停/删除（均受"至少一个启用项"拦截）/"恢复"补回被删默认项（`:133 → showRestoreDefaultItemsSheet` 勾选式） | 纯内存 |
 | 5 | "保存车辆" → `AddCarWizardState._submit` → onSubmit（sheet 入口处） | `repository.createCarWithMaintenanceItems`（lunio_repository.dart:224，**单事务**：校验至少一个启用项目+逐项 validate → 插车辆 → 逐条插项目 → **无应用车辆时把新车设为当前**） | `cars` +1、`maintenance_items` +N、可能写 `appliedCarId` |
 | 6 | `invalidateVehicleProviders` + 关 sheet | 提醒页立即显示新车 | — |
 
 #### 5.1.2 编辑车辆
 
-车辆卡"编辑" → `vehicles.dart:988 → showEditCarSheet` → `AddCarForm` 编辑模式（**品牌车型只读**）→ `repository.updateCar`（lunio_repository.dart:291，只写里程/日期/sync）→ invalidate。⚠ 里程可改小（无回退限制）。
+车辆卡"编辑" → `vehicles.dart:988 → showEditCarSheet` → `AddCarForm` 编辑模式（**品牌车型与动力类型只读**——身份字段，ADR 0003）→ `repository.updateCar`（lunio_repository.dart:291，写里程/日期/油箱容积/sync）→ invalidate。⚠ 里程可改小（无回退限制）。油箱容积在此可随时补填/修改（加油预估用，ADR 0002）。
 
 #### 5.1.3 删除车辆
 
@@ -251,16 +251,16 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 ### 5.3 备份导出
 
-我的页"备份" → `settings_data.dart:170 → exportBackup`：
+我的页"备份数据" → `settings_data.dart:170 → exportBackup`：
 
-1. `repository.exportBackupPayload`（lunio_repository.dart:852）——4 张业务表全量读（不含偏好/停车倒计时/目录），schemaVersion 固定 2；
+1. `repository.exportBackupPayload`——4 张业务表 + 加油设置全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 4（v4 起车带动力类型；v2/v3 老备份解码兼容，恢复后老车动力默认燃油）；
 2. `BackupCodec().encode`（lib/data/backup/backup_codec.dart）——手写 JSON 序列化；
 3. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`；
 4. 成功/失败 toast。
 
 ### 5.4 恢复备份
 
-我的页"恢复" → `settings_data.dart → restoreBackupFromFile`：
+我的页"恢复数据" → `settings_data.dart → restoreBackupFromFile`：
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
 2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本≠2 抛 UnsupportedError）；
@@ -294,13 +294,28 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 我的页"主题模式"三段 → `settings_data.dart:135 附近 ThemeModeSettingRow` → `shell_actions.dart:29 → setThemeModePreference` 写偏好 `themeMode` → `themeModePreferenceProvider` 刷新 → `lunio_app.dart` MaterialApp.themeMode 生效（appRouter 单例保证不跳页）。
 
+### 5.9 加油预测开关（开发者模式专属）
+
+"手动日期"行下方的"加油预测"开关行 → `profile_page.dart → _FuelPredictionSettingRow`，切换写偏好 `fuelPredictionEnabled`（`profile_page.dart → _setFuelPredictionEnabled`）→ invalidate → **`fuelPredictionEnabledProvider`（providers.dart）刷新** → `app_shell.dart` 底部导航实时插入/移除"加油"tab（无需重启 App）。关闭开发者模式时该偏好连带清掉（`_handleVersionTap`），加油 tab 随之消失；已填的加油数据保留。
+
+### 5.10 加油页（/fuel，开发者开关打开时可见）
+
+页面：`fuel/fuel_page.dart → FuelPreviewPage`。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002）：
+
+1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；"手填" → sheet 写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）；"清除"回到数据源价。数据源当前是 `MockFuelPriceSource`（真接口换 `fuelPriceSourceProvider` 注入，见 ADR 0001）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或换省/无缓存时静默拉取，失败退回旧缓存。
+2. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，31 项限高 320 可滚动、打开时定位到当前项）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
+3. **加满预估卡（滚动定档）**：全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 在惯性结束把第一行吸附到整行边界，`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。金额 =（100−档位）/100 × 容积 × 每升价（`FuelRules.fullTankCostCents`，分存储）；第一行档位高亮、无"（当前）"文字。
+4. **油箱容积入口在车辆管理**（v8 起）：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
+
 ---
 
 ## 6. 主壳层与通知同步引擎
 
 ### 6.1 底部导航
 
-`lib/features/shell/app_shell.dart:161-190`：三个 `_BottomNavItem`，点击 → `dismissTransientUi`（收键盘/toast/snackbar，modal_feedback.dart）→ `context.go('/xx')` → NoTransitionPage 重建 AppShell（selectedIndex 由路由决定）。
+三个固定入口（提醒/记录/我的）+ 条件入口"加油"（`fuelPredictionEnabledProvider` 打开时显示，位于记录与我的之间；路由 /fuel 常驻，开关关闭时 AppShell 兜底重定向回 /me）。
+
+`lib/features/shell/app_shell.dart → build`：三或四个 `_BottomNavItem`（加油项按 `fuelPredictionEnabledProvider` 插入），点击 → `dismissTransientUi`（收键盘/toast/snackbar，modal_feedback.dart）→ `context.go('/xx')` → NoTransitionPage 重建 AppShell（selectedIndex 由路由决定，语义 0=提醒 1=记录 2=加油 3=我的）。
 
 ### 6.2 生命周期
 
@@ -353,17 +368,18 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 
 ## 7. 数据与偏好速查表
 
-### 7.1 数据库表（schemaVersion = 6，`lib/data/database/app_database.dart`）
+### 7.1 数据库表（schemaVersion = 9，`lib/data/database/app_database.dart`）
 
 | 表 | 内容 | 关键唯一约束 |
 |---|---|---|
-| cars | 车辆 | {brand, model, roadDate} |
-| vehicle_models | 内置车型目录（bootstrap 灌入） | {catalogId}, {brand, model} |
-| vehicle_default_maintenance_items | 默认项目模板（bootstrap 灌入） | {catalogId}, {brand, model, itemName} |
+| cars | 车辆（v8 起含油箱容积；v9 起含动力类型，默认 fuel） | {brand, model, roadDate} |
+| vehicle_models | 内置车型目录（bootstrap 灌入，v9 起含推荐动力类型 template） | {catalogId}, {brand, model} |
+| vehicle_default_maintenance_items | 默认项目模板，**v9 起按动力类型分组**（五组共 46 项，bootstrap 灌入） | {catalogId}, {powertrainType, itemName} |
 | maintenance_items | 车辆保养项目 | {carsId, name}；普通索引 cars_id（v6） |
 | maintenance_records | 保养记录主表 | **{carId, date}（一天一条）**；普通索引 car_id（v6） |
 | maintenance_record_items | 记录-项目关联 | {carId, date, itemId}；普通索引 maintenance_record_id（v6） |
 | app_preferences | 偏好 KV | {key} |
+| fuel_predictions | 加油预测设置（剩余油量=基准档，v8 起容积在 cars） | {carId} |
 
 ### 7.2 偏好 key 清单（app_preferences 表）
 
@@ -378,6 +394,11 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | `developerModeEnabled` | 开发者模式 | 版本连点 |
 | `manualDateEnabled` / `manualDate` | 手动日期 | 手动日期 sheet / 关开发者模式 |
 | `parkingCountdown` | 停车倒计时 JSON（**不进备份**） | 停车保存/结束 |
+| `fuelPredictionEnabled` | 加油预测功能开关 | 我的页开发者模式开关 / 关开发者模式连带清除 |
+| `fuelProvince` | 加油预测省份（默认湖北，**进备份 v3**） | 加油页省份 sheet / 恢复备份 v3 |
+| `fuelGrade` | 加油预测油品 code（**进备份 v3**） | 加油页油品分段 / 恢复备份 v3 |
+| `fuelPriceCache` | 油价缓存 JSON（**不进备份**） | FuelPriceController 拉取成功 |
+| `fuelManualPrices` | 手填油价 JSON（**不进备份**） | 加油页手填/清除手填 |
 | `maintenanceReminderSnoozedUntil:<itemId>` | 保养项 snooze 截止日 | 应用内弹窗 |
 | `maintenanceInAppReminderAcknowledgedOn:<itemId>` | 保养项当日 ack | 应用内弹窗 |
 | `mileageUpdateSnoozedUntil:<carId>` | 里程提醒 snooze | 应用内弹窗 |
