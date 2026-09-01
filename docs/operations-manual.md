@@ -300,12 +300,13 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 ### 5.10 加油页（/fuel，开发者开关打开时可见）
 
-页面：`fuel/fuel_page.dart → FuelPreviewPage`。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002）：
+页面：`fuel/fuel_page.dart → FuelPreviewPage`。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006）：
 
-1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；"手填" → sheet 写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）；"清除"回到数据源价。数据源当前是 `MockFuelPriceSource`（真接口换 `fuelPriceSourceProvider` 注入，见 ADR 0001）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或换省/无缓存时静默拉取，失败退回旧缓存。
-2. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，31 项限高 320 可滚动、打开时定位到当前项）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
-3. **加满预估卡（滚动定档）**：全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 在惯性结束把第一行吸附到整行边界，`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。金额 =（100−档位）/100 × 容积 × 每升价（`FuelRules.fullTankCostCents`，分存储）；第一行档位高亮、无"（当前）"文字。
-4. **油箱容积入口在车辆管理**：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
+1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；"手填" → sheet 写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）；"清除"回到数据源价。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，一次拉全国 31 省 + 调价预告，见 ADR 0006；`fuelPriceSourceProvider` 注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是全国价表，换省不重新拉），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
+2. **预估下次油价块**（油价卡内，价格行下方）：标题"预估下次油价"（与"当前油价"同字号）；数值 = 生效价（手填优先）+ 调价预告变动中值（`FuelRules.predictedPricePerLiter`，先取整到分），右侧日期胶囊"X月X日调价"；展示样式与价格行一致（`_TagPill` 复用）。无预告/无基准价时显示"暂无调价预测"占位，不算错误。
+3. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，`QiyouJiaFuelPriceSource.provinces` 31 项限高 320 可滚动、打开时定位到当前项）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
+4. **加满预估卡（滚动定档）**：表头四列"当前油量 / 可加油量 / 加满价格 / 调价后价格"（`_TierHeaderRow`，列宽比例与 `_TierRow` 一致）。全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 在惯性结束把第一行吸附到整行边界，`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。当前油量 = 档位/100 × 容积（`FuelRules.litersInTank`）；可加油量 =（100−档位）/100 × 容积（`FuelRules.litersToFill`）；加满价格 = 可加油量 × 生效价（`FuelRules.fullTankCostCents`，分存储）；调价后价格 = 可加油量 × 预估价（`_predictedPriceProvider`，无预告时显示"—"）；第一行档位高亮、无"（当前）"文字。
+5. **油箱容积入口在车辆管理**：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
 
 ---
 
@@ -397,7 +398,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | `fuelPredictionEnabled` | 加油预测功能开关 | 我的页开发者模式开关 / 关开发者模式连带清除 |
 | `fuelProvince` | 加油预测省份（默认湖北，**进备份**） | 加油页省份 sheet / 恢复备份 |
 | `fuelGrade` | 加油预测油品 code（**进备份**） | 加油页油品分段 / 恢复备份 |
-| `fuelPriceCache` | 油价缓存 JSON（**不进备份**） | FuelPriceController 拉取成功 |
+| `fuelPriceCache` | 油价缓存 JSON（全国价表 + 调价预告，**不进备份**） | FuelPriceController 拉取成功 |
 | `fuelManualPrices` | 手填油价 JSON（**不进备份**） | 加油页手填/清除手填 |
 | `maintenanceReminderSnoozedUntil:<itemId>` | 保养项 snooze 截止日 | 应用内弹窗 |
 | `maintenanceInAppReminderAcknowledgedOn:<itemId>` | 保养项当日 ack | 应用内弹窗 |

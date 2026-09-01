@@ -38,7 +38,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/date/app_date_context.dart';
 import '../core/date/local_date.dart';
 import '../data/database/app_database.dart';
-import '../data/fuel/mock_fuel_price_source.dart';
+import '../data/fuel/qiyoujiage_fuel_price_source.dart';
 import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
 import '../domain/entities/fuel_prediction.dart';
@@ -145,7 +145,7 @@ final fuelProvinceProvider = FutureProvider<String>((ref) async {
   return await repository.getPreferenceValue(
         LunioRepository.fuelProvincePreferenceKey,
       ) ??
-      MockFuelPriceSource.defaultProvince;
+      QiyouJiaFuelPriceSource.defaultProvince;
 });
 
 /// 加油预测的油品编号（全局一份，单选，默认 92#）。
@@ -171,10 +171,10 @@ final appliedCarFuelPredictionProvider =
           .getFuelPredictionForCar(car!.id!);
     });
 
-/// 油价数据源（≈ Java 里注入接口实现的地方）。真接口定下来后
-/// 换成新实现即可（见 docs/adr/0001）。
+/// 油价数据源（≈ Java 里注入接口实现的地方）。真源是 qiyoujiage 网页
+/// 解析（见 docs/adr/0006）；换源时在这里换成新实现即可。
 final fuelPriceSourceProvider = Provider<FuelPriceSource>(
-  (ref) => const MockFuelPriceSource(),
+  (ref) => QiyouJiaFuelPriceSource(),
 );
 
 /// 当前"省+油品"的手填价（用户手填的每升价，优先于数据源价格）。
@@ -187,11 +187,12 @@ final fuelManualPriceProvider = FutureProvider<double?>((ref) async {
       .getFuelManualPrice(province: province, grade: grade);
 });
 
-/// 油价状态控制器：缓存优先，过期/换省/无缓存时自动拉取，
+/// 油价状态控制器：缓存优先，过期/无缓存时自动拉取，
 /// 失败退回旧缓存。手动刷新走 [FuelPriceController.manualRefresh]。
 ///
 /// watch 时机：AppShell（加油开关开着时，≈ 启动检查）与加油页。
-/// 省份/油品偏好变化会触发 build 重算（watch 了 fuelProvinceProvider）。
+/// 缓存是全国价表（一次拉取含 31 省 + 调价预告，见 docs/adr/0006），
+/// 所以不再 watch 省份偏好——换省直接读缓存里的价格，不重新拉取。
 final fuelPriceControllerProvider =
     AsyncNotifierProvider<FuelPriceController, FuelPriceData?>(
       FuelPriceController.new,
@@ -200,22 +201,17 @@ final fuelPriceControllerProvider =
 class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
   @override
   Future<FuelPriceData?> build() async {
-    final province = await ref.watch(fuelProvinceProvider.future);
     final repository = ref.watch(lunioRepositoryProvider);
     final cache = await repository.getFuelPriceCache();
     final fresh = !FuelRules.shouldRefreshFuelPrices(
       lastFetchedAt: cache?.fetchedAt,
-      cachedProvince: cache?.province,
-      currentProvince: province,
       now: DateTime.now(),
     );
     if (cache != null && fresh) {
       return cache;
     }
     try {
-      final data = await ref
-          .watch(fuelPriceSourceProvider)
-          .fetchPrices(province);
+      final data = await ref.watch(fuelPriceSourceProvider).fetchPrices();
       await repository.saveFuelPriceCache(data);
       return data;
     } catch (error) {
@@ -228,12 +224,9 @@ class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
   /// 手动刷新：无视新鲜期强制拉一次。成功覆盖缓存与状态返回 true；
   /// 失败保留原状态数据（不覆盖，与"手填价不被覆盖"同语义）返回 false。
   Future<bool> manualRefresh() async {
-    final province = await ref.read(fuelProvinceProvider.future);
     state = const AsyncLoading<FuelPriceData?>();
     try {
-      final data = await ref
-          .read(fuelPriceSourceProvider)
-          .fetchPrices(province);
+      final data = await ref.read(fuelPriceSourceProvider).fetchPrices();
       await ref.read(lunioRepositoryProvider).saveFuelPriceCache(data);
       state = AsyncData(data);
       return true;

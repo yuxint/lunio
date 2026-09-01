@@ -95,24 +95,7 @@ void main() {
 
     test('无缓存需要拉取', () {
       expect(
-        FuelRules.shouldRefreshFuelPrices(
-          lastFetchedAt: null,
-          cachedProvince: null,
-          currentProvince: '湖北',
-          now: now,
-        ),
-        isTrue,
-      );
-    });
-
-    test('缓存省份与当前省份不同需要拉取', () {
-      expect(
-        FuelRules.shouldRefreshFuelPrices(
-          lastFetchedAt: now.subtract(const Duration(days: 1)),
-          cachedProvince: '湖南',
-          currentProvince: '湖北',
-          now: now,
-        ),
+        FuelRules.shouldRefreshFuelPrices(lastFetchedAt: null, now: now),
         isTrue,
       );
     });
@@ -123,8 +106,6 @@ void main() {
       expect(
         FuelRules.shouldRefreshFuelPrices(
           lastFetchedAt: nineDaysAgo,
-          cachedProvince: '湖北',
-          currentProvince: '湖北',
           now: now,
         ),
         isFalse,
@@ -132,11 +113,74 @@ void main() {
       expect(
         FuelRules.shouldRefreshFuelPrices(
           lastFetchedAt: tenDaysAgo,
-          cachedProvince: '湖北',
-          currentProvince: '湖北',
           now: now,
         ),
         isTrue,
+      );
+    });
+  });
+
+  group('FuelRules.litersInTank', () {
+    test('当前油量 = 剩余油量 × 容积，与 litersToFill 互补', () {
+      // 50% × 55 升 = 27.5 升。
+      expect(
+        FuelRules.litersInTank(fuelPercent: 50, tankCapacityLiters: 55),
+        27.5,
+      );
+      // 满箱/空箱两端。
+      expect(
+        FuelRules.litersInTank(fuelPercent: 100, tankCapacityLiters: 55),
+        55,
+      );
+      expect(
+        FuelRules.litersInTank(fuelPercent: 0, tankCapacityLiters: 55),
+        0,
+      );
+      // 互补关系：当前油量 + 需加油量 = 容积。
+      final capacity = 48.0;
+      expect(
+        FuelRules.litersInTank(fuelPercent: 36, tankCapacityLiters: capacity) +
+            FuelRules.litersToFill(
+              fuelPercent: 36,
+              tankCapacityLiters: capacity,
+            ),
+        capacity,
+      );
+    });
+  });
+
+  group('FuelRules.predictedPricePerLiter', () {
+    test('区间取中值：8.10 + (0.05~0.06 的中值 0.055) → 四舍五入到分 8.15', () {
+      final forecast = FuelAdjustmentForecast(
+        month: 9,
+        day: 11,
+        trend: FuelPriceTrend.up,
+        minChangePerLiter: 0.05,
+        maxChangePerLiter: 0.06,
+      );
+      expect(
+        FuelRules.predictedPricePerLiter(
+          currentPricePerLiter: 8.10,
+          forecast: forecast,
+        ),
+        8.15,
+      );
+    });
+
+    test('下调取负向：7.50 − 0.10 → 7.40', () {
+      final forecast = FuelAdjustmentForecast(
+        month: 9,
+        day: 11,
+        trend: FuelPriceTrend.down,
+        minChangePerLiter: 0.10,
+        maxChangePerLiter: 0.10,
+      );
+      expect(
+        FuelRules.predictedPricePerLiter(
+          currentPricePerLiter: 7.50,
+          forecast: forecast,
+        ),
+        7.40,
       );
     });
   });

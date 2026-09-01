@@ -21,6 +21,7 @@ import 'helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForT
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
@@ -30,6 +31,31 @@ import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/features/shell/profile/vehicles.dart' show PickerOption;
 import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
 import 'package:lunio/features/shell/shared/shared_widgets.dart' show PrototypeSheetFrame;
+
+/// 油价源测试替身：固定全国价表（湖北 92# = 7.61，与 55 升 50% 档
+/// 组合出 ¥209.28 便于断言），可选带调价预告。替换真源避免测试触网。
+class _FakeFuelPriceSource implements FuelPriceSource {
+  _FakeFuelPriceSource({this.forecast});
+
+  final FuelAdjustmentForecast? forecast;
+
+  @override
+  Future<FuelPriceData> fetchPrices() async {
+    return FuelPriceData(
+      fetchedAt: DateTime(2026, 5, 19),
+      pricesByProvince: {
+        '湖北': {
+          FuelGrade.gasoline92: 7.61,
+          FuelGrade.gasoline95: 8.15,
+          FuelGrade.gasoline98: 9.15,
+          FuelGrade.diesel0: 7.20,
+        },
+        '广东': {FuelGrade.gasoline92: 7.63},
+      },
+      forecast: forecast,
+    );
+  }
+}
 
 void main() {
   late BuiltInVehicleCatalog builtInCatalog;
@@ -155,6 +181,7 @@ void main() {
     AppDatabase? database,
     bool systemNotificationsEnabled = false,
     bool inAppNotificationsEnabled = false,
+    FuelAdjustmentForecast? fuelForecast,
   }) async {
     // 通知服务是进程级单例：重置初始化状态，避免上一个用例的
     // 初始化结果（可用/不可用）影响本用例的 mock 行为。
@@ -185,6 +212,10 @@ void main() {
           appDateContextProvider.overrideWithValue(
             dateContext ??
                 AppDateContext(readSystemNow: () => DateTime(2026, 5, 19)),
+          ),
+          // 油价真源会发网络请求，统一替换为固定假源。
+          fuelPriceSourceProvider.overrideWithValue(
+            _FakeFuelPriceSource(forecast: fuelForecast),
           ),
         ],
         child: LunioApp(routerConfig: buildAppRouter()),
@@ -2401,19 +2432,96 @@ void main() {
     expect(find.text('加油设置'), findsNothing);
     expect(find.text('湖北'), findsOneWidget);
     expect(find.text('92#'), findsOneWidget);
-    // 油价来自示例数据源，但界面不再标注"示例数据"（文案已精简）。
+    // 油价来自测试假源，但界面不标注数据来源。
     expect(find.textContaining('示例数据'), findsNothing);
-    // 档位列表：已存的 50% 定位在第一行，窗口内往下可见 48/46/44/42。
+    // 预估下次油价块：假源默认无调价预告，显示占位文案。
+    expect(find.text('预估下次油价'), findsOneWidget);
+    expect(find.text('暂无调价预测'), findsOneWidget);
+    // 档位列表：表头四列；已存的 50% 定位在第一行，窗口内往下可见
+    // 48/46/44/42。
+    expect(find.text('当前油量'), findsOneWidget);
+    expect(find.text('可加油量'), findsOneWidget);
+    expect(find.text('加满价格'), findsOneWidget);
+    expect(find.text('调价后价格'), findsOneWidget);
     expect(find.text('50%'), findsOneWidget);
     expect(find.textContaining('（当前）'), findsNothing);
     expect(find.text('48%'), findsOneWidget);
     expect(find.text('46%'), findsOneWidget);
     expect(find.text('44%'), findsOneWidget);
     expect(find.text('42%'), findsOneWidget);
-    // 50% 档：55 升 × (100-50)/100 = 27.5 升；
-    // 湖北 92# 示例价 7.45 + 16×0.01 = 7.61，27.5 × 7.61 = 209.28 元。
-    expect(find.textContaining('需 27.5 升'), findsOneWidget);
+    // 50% 档：55 升 × 50% = 27.5 升（当前油量与可加油量相同，各一列）；
+    // 湖北 92# 假源价 7.61，27.5 × 7.61 = 209.28 元。
+    expect(find.text('27.5 升'), findsNWidgets(2));
     expect(find.text('¥209.28'), findsOneWidget);
+    // 无调价预告时"调价后价格"列显示占位符（可见 5 档各一个）。
+    expect(find.text('—'), findsNWidgets(5));
+  });
+
+  testWidgets('fuel page shows predicted price from adjustment forecast', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    await repository.setPreferenceValue('fuelProvince', '湖北');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    await repository.saveFuelPrediction(
+      FuelPrediction(carId: carId, fuelPercent: 50),
+    );
+    // 调价预告：9月11日上调 0.05~0.06 → 中值 0.055，预估价 7.67。
+    await pumpApp(
+      tester,
+      database: database,
+      fuelForecast: const FuelAdjustmentForecast(
+        month: 9,
+        day: 11,
+        trend: FuelPriceTrend.up,
+        minChangePerLiter: 0.05,
+        maxChangePerLiter: 0.06,
+      ),
+    );
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 预估下次油价块：预估价 + 调价日期，样式与当前油价行一致。
+    expect(find.text('7.67 元/升'), findsOneWidget);
+    expect(find.text('9月11日调价'), findsOneWidget);
+    // 调价后价格列：50% 档 27.5 × 7.67 = 210.93；当前价列不受影响。
+    expect(find.text('¥209.28'), findsOneWidget);
+    expect(find.text('¥210.93'), findsOneWidget);
   });
 
   testWidgets('fuel page persists baseline tier after scrolling tier list', (

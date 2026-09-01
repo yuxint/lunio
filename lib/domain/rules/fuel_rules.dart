@@ -5,6 +5,9 @@
 //  2. 档位表（100% 到 0% 每 2% 一档，滚动定档用，见 CONTEXT.md"档位"）；
 //  3. 油价缓存"该不该重新拉"的判断（10 个自然日规则，见 ADR 0001）。
 //  4. 油箱容积校验（容积在 Car 上，写库/恢复备份前调用）。
+//  5. 预估下次油价（调价预告变动中值参与计算，见 ADR 0006）。
+import '../entities/fuel_price.dart';
+
 class FuelRules {
   FuelRules._();
 
@@ -54,6 +57,15 @@ class FuelRules {
     return (100 - fuelPercent) / 100 * tankCapacityLiters;
   }
 
+  /// 油箱里当前的油量（升）= 剩余油量 ÷ 100 × 油箱容积。
+  /// 加满预估表头"当前油量"列的取值，与 [litersToFill] 互补。
+  static double litersInTank({
+    required int fuelPercent,
+    required double tankCapacityLiters,
+  }) {
+    return fuelPercent / 100 * tankCapacityLiters;
+  }
+
   /// 加满金额（分）= 油量 × 每升价 × 100，四舍五入到分。
   /// 用 int 分承载金额，与保养记录 costCents 的约定一致。
   static int fullTankCostCents({
@@ -70,20 +82,30 @@ class FuelRules {
         .round();
   }
 
-  /// 油价缓存是否需要重新拉取：没有缓存、换了省、或距上次拉取
-  /// 超过 [priceRefreshDays] 个自然日，都算需要。
+  /// 油价缓存是否需要重新拉取：没有缓存，或距上次拉取超过
+  /// [priceRefreshDays] 个自然日，都算需要。
+  /// （缓存是全国价表，换省不用重新拉，见 docs/adr/0006。）
   static bool shouldRefreshFuelPrices({
     required DateTime? lastFetchedAt,
-    required String? cachedProvince,
-    required String currentProvince,
     required DateTime now,
   }) {
-    if (cachedProvince != currentProvince) {
-      return true;
-    }
     if (lastFetchedAt == null) {
       return true;
     }
     return now.difference(lastFetchedAt).inDays >= priceRefreshDays;
+  }
+
+  /// 预估调价后每升价 = 当前生效价 + 涨跌方向 × 变动中值，
+  /// 四舍五入到分。"调价后价格"列与"预估下次油价"块都基于它，
+  /// 先取整到分保证两处展示一致。
+  static double predictedPricePerLiter({
+    required double currentPricePerLiter,
+    required FuelAdjustmentForecast forecast,
+  }) {
+    final signedChange = forecast.trend == FuelPriceTrend.up
+        ? forecast.midChangePerLiter
+        : -forecast.midChangePerLiter;
+    final predicted = currentPricePerLiter + signedChange;
+    return (predicted * 100).round() / 100;
   }
 }

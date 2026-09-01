@@ -1267,8 +1267,10 @@ class LunioRepository {
     );
   }
 
-  /// 读油价缓存（上次成功拉取的数据，JSON 存偏好）。
-  /// JSON 损坏时打日志并返回 null（与停车倒计时同口径，R14）。
+  /// 读油价缓存（上次成功拉取的全国价表 + 调价预告，JSON 存偏好，
+  /// 见 docs/adr/0006）。
+  /// JSON 损坏或结构不符合当前契约（如旧版单省缓存）时打日志并返回
+  /// null（与停车倒计时同口径，R14）。
   Future<domain.FuelPriceData?> getFuelPriceCache() async {
     final value = await getPreferenceValue(_fuelPriceCachePreferenceKey);
     if (value == null) {
@@ -1286,7 +1288,7 @@ class LunioRepository {
     }
   }
 
-  /// 写油价缓存（整个覆盖：一次拉取的结果就是一份完整缓存）。
+  /// 写油价缓存（整个覆盖：一次拉取的全国价表就是一份完整缓存）。
   Future<void> saveFuelPriceCache(domain.FuelPriceData data) {
     return setPreferenceValue(
       _fuelPriceCachePreferenceKey,

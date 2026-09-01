@@ -4,18 +4,22 @@
 //   1. 油价卡：当前省+油品的每升价（手填价 > 数据源价），带刷新/手填/清除；
 //      副标题"湖北 · 92#"的省份、油品两段各自可点弹出选择 sheet
 //      （设置很少改，不再单设设置区）；省份 31 项用列表 sheet 内部限高
-//      滚动，油品固定 4 项用一行胶囊单选（sheet 贴内容，很矮）；
-//   2. 加满预估卡：全量档位列表（100%→0%，2% 一档共 51 档），窗口内
-//      可见 5 档，可上下滚动；滚动停稳后第一行所在的档位就是剩余油量
-//      （自动写库，下次进入定位到该档在第一行）；右上角返回图标滚回
-//      默认 50%。油箱容积在"我的 → 车辆管理"添加/编辑车辆时填写
-//      （选填），没填时本卡显示引导。
+//      滚动，油品固定 4 项用一行胶囊单选（sheet 贴内容，很矮）。
+//      下方是"预估下次油价"块：按调价预告算出的调价后每升价 + 调价日期
+//      （见 docs/adr/0006），预告缺失时显示占位文案；
+//   2. 加满预估卡：表头四列（当前油量/可加油量/加满价格/调价后价格），
+//      全量档位列表（100%→0%，2% 一档共 51 档），窗口内可见 5 档，
+//      可上下滚动；滚动停稳后第一行所在的档位就是剩余油量（自动写库，
+//      下次进入定位到该档在第一行）；右上角返回图标滚回默认 50%。
+//      油箱容积在"我的 → 车辆管理"添加/编辑车辆时填写（选填），
+//      没填时本卡显示引导。
 //   无应用车辆时整页占位提示"请先新增车辆"。
 //
-// 数据规则（设计决定见 CONTEXT.md / ADR 0001 / ADR 0002）：
+// 数据规则（设计决定见 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006）：
 //   - 剩余油量按车存 fuel_predictions 表（默认 50%，滚动定档才落库）；
 //     省份、油品全局存偏好；油箱容积在 cars 表（车的属性）；
 //   - 油价来源优先级：手填价 > 数据源价；手填不被自动/手动刷新覆盖；
+//   - 油价缓存是全国价表（一次拉取含 31 省 + 调价预告），换省不重新拉；
 //   - 所有修改即写库（自动保存），无保存按钮。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
@@ -26,7 +30,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
-import '../../../data/fuel/mock_fuel_price_source.dart';
+import '../../../data/fuel/qiyoujiage_fuel_price_source.dart';
 import '../../../data/repositories/lunio_repository.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_prediction.dart';
@@ -153,6 +157,8 @@ class _PriceCard extends ConsumerWidget {
 
   /// 油价展示：手填价优先；其次数据源价；都没有时给"暂无数据"引导。
   /// 副标题"省份 · 油品"两段各自可点，点开对应的选择 sheet。
+  /// 下方"预估下次油价"块：按调价预告算出的调价后每升价（同样
+  /// 手填价优先作为基准）+ 调价日期；无预告/无基准价时显示占位文案。
   Widget _buildPriceBody(
     BuildContext context,
     WidgetRef ref,
@@ -168,6 +174,13 @@ class _PriceCard extends ConsumerWidget {
     final subtitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: tokens.muted,
     );
+    final data = priceState.maybeWhen(
+      data: (value) => value,
+      orElse: () => null,
+    );
+    // 当前生效价（手填优先），也是预估下次油价的计算基准。
+    final effectivePrice =
+        manualPrice ?? data?.priceFor(province: province, grade: grade);
     Widget priceLine;
     if (manualPrice != null) {
       priceLine = _priceRow(
@@ -177,28 +190,21 @@ class _PriceCard extends ConsumerWidget {
         tokens.primary,
       );
     } else {
-      final data = priceState.maybeWhen(
-        data: (value) => value,
-        orElse: () => null,
-      );
       if (priceState.isLoading && data == null) {
         priceLine = Text('油价获取中…', style: subtitleStyle);
       } else if (data == null) {
         priceLine = Text('暂无油价数据，可稍后刷新或手填。', style: subtitleStyle);
+      } else if (effectivePrice == null) {
+        priceLine = Text('该油品暂无价格，可手填。', style: subtitleStyle);
       } else {
-        final price = data.priceFor(grade);
-        if (price == null) {
-          priceLine = Text('该油品暂无价格，可手填。', style: subtitleStyle);
-        } else {
-          final updatedText =
-              '${data.fetchedAt.month}月${data.fetchedAt.day}日更新';
-          priceLine = _priceRow(
-            context,
-            '${price.toStringAsFixed(2)} 元/升',
-            updatedText,
-            tokens.ink,
-          );
-        }
+        final updatedText =
+            '${data.fetchedAt.month}月${data.fetchedAt.day}日更新';
+        priceLine = _priceRow(
+          context,
+          '${effectivePrice.toStringAsFixed(2)} 元/升',
+          updatedText,
+          tokens.ink,
+        );
       }
     }
     return Column(
@@ -219,6 +225,54 @@ class _PriceCard extends ConsumerWidget {
         ),
         const SizedBox(height: 6),
         priceLine,
+        const SizedBox(height: 14),
+        // 预估下次油价块：标题字号与"当前油价"一致，数值行的
+        // 价格/单位与日期展示方式复用 _priceRow 的样式（去掉清除按钮）。
+        Text('预估下次油价', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        _buildForecastLine(
+          context,
+          province: province,
+          forecast: data?.forecast,
+          basePrice: effectivePrice,
+        ),
+      ],
+    );
+  }
+
+  /// 预估下次油价数值行：预估价 + "X月X日调价"日期胶囊。
+  /// 无预告或无基准价时显示占位文案（布局不跳动，不算错误）。
+  Widget _buildForecastLine(
+    BuildContext context, {
+    required String province,
+    required FuelAdjustmentForecast? forecast,
+    required double? basePrice,
+  }) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    if (forecast == null || basePrice == null) {
+      return Text(
+        '暂无调价预测',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: tokens.muted,
+        ),
+      );
+    }
+    final predicted = FuelRules.predictedPricePerLiter(
+      currentPricePerLiter: basePrice,
+      forecast: forecast,
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          '${predicted.toStringAsFixed(2)} 元/升',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: tokens.ink,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(width: 8),
+        _TagPill(label: '${forecast.month}月${forecast.day}日调价'),
       ],
     );
   }
@@ -229,7 +283,6 @@ class _PriceCard extends ConsumerWidget {
     String tagText,
     Color priceColor,
   ) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -241,21 +294,7 @@ class _PriceCard extends ConsumerWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: tokens.surface2,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: tokens.line),
-          ),
-          child: Text(
-            tagText,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: tokens.muted,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
+        _TagPill(label: tagText),
         const Spacer(),
         SmallActionButton(
           label: '清除',
@@ -277,11 +316,11 @@ class _PriceCard extends ConsumerWidget {
     await showLunioModalSheet<void>(
       context: context,
       builder: (sheetContext) {
-        final initialIndex = MockFuelPriceSource.provinces.indexOf(current);
+        final initialIndex = QiyouJiaFuelPriceSource.provinces.indexOf(current);
         return PrototypeSheetFrame(
           title: '选择省份',
           child: _SheetOptionList(
-            labels: MockFuelPriceSource.provinces,
+            labels: QiyouJiaFuelPriceSource.provinces,
             selectedIndex: initialIndex,
             onSelected: (name) async {
               await ref
@@ -407,6 +446,34 @@ class _PriceCard extends ConsumerWidget {
         ok ? StatusOverlayTone.success : StatusOverlayTone.error,
       );
     }
+  }
+}
+
+/// 价格行/预估行里的小标签胶囊（"9月1日更新""手填价""9月11日调价"），
+/// 两处展示样式统一由这里给。
+class _TagPill extends StatelessWidget {
+  const _TagPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: tokens.surface2,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tokens.line),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: tokens.muted,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }
 
@@ -840,36 +907,56 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     );
   }
 
-  /// 滚动列表：定高窗口 + 每档定行高；滚动停稳吸附整行并落库。
+  /// 滚动列表：表头（当前油量/可加油量/加满价格/调价后价格）+ 定高窗口
+  /// + 每档定行高；滚动停稳吸附整行并落库。
   Widget _buildTierList(BuildContext context, double price) {
     final capacity = widget.capacity!;
-    return NotificationListener<ScrollNotification>(
-      onNotification: _onScrollNotification,
-      child: SizedBox(
-        height: _visibleRows * _rowExtent,
-        child: ListView.builder(
-          controller: _controller,
-          physics: const _RowSnapScrollPhysics(rowExtent: _kTierRowExtent),
-          itemExtent: _rowExtent,
-          // 底部留出"窗口高度 - 一行"的空白：否则滚到底时 0% 那档
-          // 只能出现在窗口底部，永远到不了第一行。
-          padding: EdgeInsets.only(bottom: (_visibleRows - 1) * _rowExtent),
-          itemCount: _tiers.length,
-          itemBuilder: (context, index) => _TierRow(
-            percent: _tiers[index],
-            liters: FuelRules.litersToFill(
-              fuelPercent: _tiers[index],
-              tankCapacityLiters: capacity,
+    final predictedPrice = ref.watch(_predictedPriceProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _TierHeaderRow(),
+        const SizedBox(height: 4),
+        NotificationListener<ScrollNotification>(
+          onNotification: _onScrollNotification,
+          child: SizedBox(
+            height: _visibleRows * _rowExtent,
+            child: ListView.builder(
+              controller: _controller,
+              physics: const _RowSnapScrollPhysics(rowExtent: _kTierRowExtent),
+              itemExtent: _rowExtent,
+              // 底部留出"窗口高度 - 一行"的空白：否则滚到底时 0% 那档
+              // 只能出现在窗口底部，永远到不了第一行。
+              padding: EdgeInsets.only(bottom: (_visibleRows - 1) * _rowExtent),
+              itemCount: _tiers.length,
+              itemBuilder: (context, index) => _TierRow(
+                percent: _tiers[index],
+                litersInTank: FuelRules.litersInTank(
+                  fuelPercent: _tiers[index],
+                  tankCapacityLiters: capacity,
+                ),
+                litersToFill: FuelRules.litersToFill(
+                  fuelPercent: _tiers[index],
+                  tankCapacityLiters: capacity,
+                ),
+                costCents: FuelRules.fullTankCostCents(
+                  fuelPercent: _tiers[index],
+                  tankCapacityLiters: capacity,
+                  pricePerLiter: price,
+                ),
+                costAfterCents: predictedPrice == null
+                    ? null
+                    : FuelRules.fullTankCostCents(
+                        fuelPercent: _tiers[index],
+                        tankCapacityLiters: capacity,
+                        pricePerLiter: predictedPrice,
+                      ),
+                isCurrent: index == _firstIndex,
+              ),
             ),
-            costCents: FuelRules.fullTankCostCents(
-              fuelPercent: _tiers[index],
-              tankCapacityLiters: capacity,
-              pricePerLiter: price,
-            ),
-            isCurrent: index == _firstIndex,
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -940,51 +1027,162 @@ final _effectivePriceProvider = Provider<double?>((ref) {
   if (grade == null) {
     return null;
   }
-  return data?.priceFor(grade);
+  final province = ref.watch(fuelProvinceProvider).value;
+  if (province == null) {
+    return null;
+  }
+  return data?.priceFor(province: province, grade: grade);
 });
 
-/// 单档金额行：档位% + 需要的油量 + 加满金额。第一行（基准档）高亮。
+/// 预估调价后每升价（生效价 + 调价预告变动中值，见 docs/adr/0006）。
+/// 无预告或无生效价时为 null（"调价后价格"列显示占位符）。
+final _predictedPriceProvider = Provider<double?>((ref) {
+  final base = ref.watch(_effectivePriceProvider);
+  final forecast = ref.watch(fuelPriceControllerProvider).value?.forecast;
+  if (base == null || forecast == null) {
+    return null;
+  }
+  return FuelRules.predictedPricePerLiter(
+    currentPricePerLiter: base,
+    forecast: forecast,
+  );
+});
+
+/// 单档行：档位% + 表头四列取值（当前油量/可加油量/加满价格/调价后价格）。
+/// 第一行（基准档）高亮。
 class _TierRow extends StatelessWidget {
   const _TierRow({
     required this.percent,
-    required this.liters,
+    required this.litersInTank,
+    required this.litersToFill,
     required this.costCents,
+    required this.costAfterCents,
     required this.isCurrent,
   });
 
   final int percent;
-  final double liters;
+
+  /// 油箱里当前的油量（升）。
+  final double litersInTank;
+
+  /// 需要加的油量（升）。
+  final double litersToFill;
+
+  /// 按当前价算的加满金额（分）。
   final int costCents;
+
+  /// 按预估调价后价格算的加满金额（分）；无预告时 null 显示"—"。
+  final int? costAfterCents;
+
   final bool isCurrent;
+
+  /// 油量列文本：整数不带小数，小数保留 1 位。
+  static String _litersText(double liters) {
+    return '${liters % 1 == 0 ? liters.toStringAsFixed(0) : liters.toStringAsFixed(1)} 升';
+  }
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final percentStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: isCurrent ? tokens.primary : tokens.ink,
+      fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
+    );
     // 行高由列表的 itemExtent 统一控制（44），这里只管横向布局。
+    // 列宽比例与表头 _TierHeaderRow 完全一致，保证上下对齐。
     return Row(
       children: [
-        Text(
-          '$percent%',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: isCurrent ? tokens.primary : tokens.ink,
-            fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
-          ),
+        SizedBox(
+          width: _kPercentColumnWidth,
+          child: Text('$percent%', style: percentStyle),
         ),
-        const Spacer(),
-        Text(
-          '需 ${liters % 1 == 0 ? liters.toStringAsFixed(0) : liters.toStringAsFixed(1)} 升',
+        _cell(
+          context,
+          flex: 3,
+          _litersText(litersInTank),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: tokens.muted,
           ),
         ),
-        const SizedBox(width: 12),
-        Text(
+        _cell(
+          context,
+          flex: 3,
+          _litersText(litersToFill),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: tokens.muted,
+          ),
+        ),
+        _cell(
+          context,
+          flex: 4,
           '¥${(costCents / 100).toStringAsFixed(2)}',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: isCurrent ? tokens.primary : tokens.ink,
             fontWeight: FontWeight.w800,
           ),
         ),
+        _cell(
+          context,
+          flex: 4,
+          costAfterCents == null
+              ? '—'
+              : '¥${(costAfterCents! / 100).toStringAsFixed(2)}',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: costAfterCents == null
+                ? tokens.muted
+                : isCurrent
+                    ? tokens.primary
+                    : tokens.ink,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 右对齐的一个取值列。
+  Widget _cell(
+    BuildContext context,
+    String text, {
+    required int flex,
+    required TextStyle? style,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: Text(text, style: style, textAlign: TextAlign.right),
+    );
+  }
+}
+
+/// 档位%列的固定宽度（"100%"最宽，各档等宽左对齐）。
+const double _kPercentColumnWidth = 42;
+
+/// 加满预估表头：当前油量 / 可加油量 / 加满价格 / 调价后价格。
+/// 列宽比例与 [_TierRow] 完全一致。
+class _TierHeaderRow extends StatelessWidget {
+  const _TierHeaderRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: tokens.muted,
+      fontWeight: FontWeight.w700,
+    );
+    Widget cell(int flex, String label) {
+      return Expanded(
+        flex: flex,
+        child: Text(label, style: style, textAlign: TextAlign.right),
+      );
+    }
+
+    return Row(
+      children: [
+        const SizedBox(width: _kPercentColumnWidth),
+        cell(3, '当前油量'),
+        cell(3, '可加油量'),
+        cell(4, '加满价格'),
+        cell(4, '调价后价格'),
       ],
     );
   }

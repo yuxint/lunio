@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 油价数据源 m.qiyoujiage.com 只有明文 http，Android 9+（API 28）默认拦截
+     明文流量，只对该域开例外（与 iOS Info.plist 的 ATS 例外同口径，
+     见 docs/adr/0006）。
+     注意：一旦启用 network security config，清单里的 usesCleartextTraffic
+     标志会被系统忽略，本文件是明文例外的唯一生效点。 -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">m.qiyoujiage.com</domain>
+    </domain-config>
+</network-security-config>

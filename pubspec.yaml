@@ -44,6 +44,8 @@ dependencies:
   flutter_local_notifications: ^22.0.0
   timezone: ^0.11.0
   flutter_timezone: ^5.1.0
+  # 油价数据源（m.qiyoujiage.com）的 HTTP 客户端（见 docs/adr/0006）。
+  http: ^1.5.0
 
 dev_dependencies:
   flutter_test:
