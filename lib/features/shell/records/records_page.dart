@@ -559,7 +559,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
               child: TextField(
                 controller: mileageController,
                 enabled: !saving,
-                keyboardType: TextInputType.text,
+                // 数字输入统一用数字键盘（与油箱容积同款方式）。
+                keyboardType: const TextInputType.numberWithOptions(),
                 textInputAction: TextInputAction.done,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 onTap: () {
@@ -576,7 +577,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
               child: TextField(
                 controller: costController,
                 enabled: !saving,
-                keyboardType: TextInputType.text,
+                // 费用可带小数 → 数字键盘带小数点。
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 textInputAction: TextInputAction.done,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
@@ -995,6 +999,7 @@ Future<void> showMaintenanceRecordFormSheet(
             invalidateVehicleProviders(ref);
             if (context.mounted) {
               Navigator.of(context).pop();
+              showStatusOverlay(context, '保养记录已保存', StatusOverlayTone.success);
             }
           },
         ),

@@ -378,7 +378,8 @@ class IntervalNumberInputRow extends StatelessWidget {
             child: TextField(
               controller: controller,
               enabled: inputEnabled,
-              keyboardType: TextInputType.text,
+              // 数字输入统一用数字键盘（与油箱容积同款方式）。
+              keyboardType: const TextInputType.numberWithOptions(),
               textInputAction: TextInputAction.done,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onSubmitted: (_) => FocusScope.of(context).unfocus(),

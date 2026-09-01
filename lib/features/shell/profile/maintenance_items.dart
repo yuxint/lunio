@@ -917,6 +917,12 @@ Future<bool?> showMaintenanceItemFormSheet(
             invalidateVehicleProviders(ref);
             if (context.mounted) {
               Navigator.of(context).pop(true);
+              // 落库版才提示保存成功；向导里的草稿版不落库，不提示。
+              showStatusOverlay(
+                context,
+                '保养项目已保存',
+                StatusOverlayTone.success,
+              );
             }
           },
         ),

@@ -347,6 +347,13 @@ Future<void> showNotificationSettingsSheet(
             if (sheetContext.mounted) {
               Navigator.of(sheetContext).pop();
             }
+            if (context.mounted) {
+              showStatusOverlay(
+                context,
+                '设置已保存',
+                StatusOverlayTone.success,
+              );
+            }
           },
         ),
       );
@@ -566,11 +573,11 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
       );
   showLunioModalSheet<void>(
     context: context,
-    builder: (context) {
+    builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '手动日期',
         subtitle: '开启后，保养提醒里的“今天”会使用该日期。',
-        bottomInset: MediaQuery.of(context).viewInsets.bottom,
+        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
         child: ManualDateForm(
           initialDate: initialDate,
           fallbackDate: fallbackDate,
@@ -587,8 +594,15 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
               );
             }
             invalidatePreferenceProviders(ref);
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
+            }
             if (context.mounted) {
-              Navigator.of(context).pop();
+              showStatusOverlay(
+                context,
+                '手动日期已保存',
+                StatusOverlayTone.success,
+              );
             }
           },
         ),

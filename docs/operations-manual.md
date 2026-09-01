@@ -37,6 +37,10 @@
   → appliedCarRecordsProvider 等重算 → AppShell build → UI 刷新
 ```
 
+**保存成功反馈**：所有落库保存（保养记录/车辆新增编辑/保养项目/通知设置/手动日期）成功关 sheet 后，统一在页面级 context 弹轻量 toast"已保存"（`showStatusOverlay`，1.6s 自动消失，modal_feedback.dart）。
+
+**数字输入键盘**：所有只填数字的输入框统一数字键盘——整数字段用 `TextInputType.numberWithOptions()`（免费时长/保养里程/费用外的里程/项目周期数字行），金额类带小数用 `numberWithOptions(decimal: true)`（费用/油箱容积）。
+
 **三大缓存失效入口**（`lib/app/providers.dart:205-230`）：
 
 | 函数 | 失效内容 | 什么时候调 |
@@ -117,7 +121,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 1 | `reminder_page.dart:128`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
-| 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（默认现在，时间轮只能改时分秒）+ 免费时长（输入框或 0.5/1/2 小时快捷 chip） | — |
+| 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（**点按钮此刻实时取系统时间，秒/毫秒截 0 默认整分**；时间轮可改时分秒）+ 免费时长（数字键盘输入框或 0.5/1/2 小时快捷 chip） | — |
 | 3 | 提交 → `parking_countdown.dart → saveParkingCountdown(context, ref, countdown)` | ① 写偏好 ② 失效 ③ 若系统通知开：请求权限 →（调度前比对**通知同步代数**，保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。每个 await 后检查页面 context 仍挂载 | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
 | 4 | `lunio_notification_service.dart:243 → scheduleParkingCountdownNotification` | 先成对取消旧 9001/9002，再排新闹钟；**到点时刻已过则静默 return** | — |
 
@@ -185,7 +189,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 3 | 第二步 `_buildIntervalStep` | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步） | — |
 | 4 | `_submit()` → `_buildItemUpdates()` | 间隔校验；**有变化的项目**才生成 update 实体 | — |
 | 5 | onSubmit（sheet 入口处） | 新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:667）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:721)。**单事务**：项目归属校验 → 同日唯一校验（`:1227 → _ensureRecordIsUnique`，**R4 收紧后同车同日只允许一条记录**，已有记录即抛"这辆车当天已有保养记录，请编辑原记录"，不再区分项目是否相同）→ 插/改主表+关联表 → 车辆里程只增同步 → 更新项目间隔 | `maintenance_records` + `maintenance_record_items`；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |
-| 6 | `invalidateVehicleProviders` + 关 sheet | 记录页/提醒页/通知签名全部刷新 | — |
+| 6 | `invalidateVehicleProviders` + 关 sheet + toast"保养记录已保存" | 记录页/提醒页/通知签名全部刷新 | — |
 
 ### 4.3 删除记录
 
@@ -213,11 +217,11 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 | 3 | "下一步" → `AddCarWizardState._handleCarDraft`（vehicles.dart:510 附近） | 车型或动力类型变化才加载默认模板：`loadDefaultItems` 闭包（showAddCarSheet 内）→ `repository.ensureBootstrapData()` + **车型专属模板优先**（`listDefaultItemsForVehicleModel`：品牌+车型命中目录条目、条目带 itemTemplate、所选动力类型=推荐值三者都满足才命中，目前仅思域→civicFuel 14 项，ADR 0004；不落库）→ 未命中 `listDefaultItemsForPowertrain`（lunio_repository.dart，**按车的动力类型取**）→ 模板转项目草稿 | 只读，无写库 |
 | 4 | 第二步 `AddCarMaintenanceItemsStep`（maintenance_items.dart:32） | 默认项目草稿可编辑（草稿表单 `:1007 → showDraftMaintenanceItemFormSheet`，纯内存）/启停/删除（均受"至少一个启用项"拦截）/"恢复"补回被删默认项（`:133 → showRestoreDefaultItemsSheet` 勾选式） | 纯内存 |
 | 5 | "保存车辆" → `AddCarWizardState._submit` → onSubmit（sheet 入口处） | `repository.createCarWithMaintenanceItems`（lunio_repository.dart:224，**单事务**：校验至少一个启用项目+逐项 validate → 插车辆 → 逐条插项目 → **无应用车辆时把新车设为当前**） | `cars` +1、`maintenance_items` +N、可能写 `appliedCarId` |
-| 6 | `invalidateVehicleProviders` + 关 sheet | 提醒页立即显示新车 | — |
+| 6 | `invalidateVehicleProviders` + 关 sheet + toast"车辆已保存" | 提醒页立即显示新车 | — |
 
 #### 5.1.2 编辑车辆
 
-车辆卡"编辑" → `vehicles.dart:988 → showEditCarSheet` → `AddCarForm` 编辑模式（**品牌车型与动力类型只读**——身份字段，ADR 0003）→ `repository.updateCar`（lunio_repository.dart:291，写里程/日期/油箱容积/sync）→ invalidate。⚠ 里程可改小（无回退限制）。油箱容积在此可随时补填/修改（加油预估用，ADR 0002）。
+车辆卡"编辑" → `vehicles.dart:988 → showEditCarSheet` → `AddCarForm` 编辑模式（**品牌车型与动力类型只读**——身份字段，ADR 0003）→ `repository.updateCar`（lunio_repository.dart:291，写里程/日期/油箱容积/sync）→ invalidate → toast"车辆已保存"。⚠ 里程可改小（无回退限制）。油箱容积在此可随时补填/修改（加油预估用，ADR 0002）。
 
 #### 5.1.3 删除车辆
 
@@ -242,8 +246,8 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 | 操作 | 代码位置 | 数据变化 |
 |---|---|---|
-| 新增项目 | 卡片区"新增" → `:969 → showMaintenanceItemFormSheet`（表单：名称+里程/时间开关行+间隔）→ `repository.saveMaintenanceItem`（lunio_repository.dart:516） | `maintenance_items` +1 |
-| 编辑项目 | 卡片"编辑" → 同上表单 → `repository.updateMaintenanceItem`（:556；停用态先过"至少一个启用"校验） | 更新该行 |
+| 新增项目 | 卡片区"新增" → `:969 → showMaintenanceItemFormSheet`（表单：名称+里程/时间开关行+间隔，数字键盘）→ `repository.saveMaintenanceItem`（lunio_repository.dart:516）→ 成功 toast"保养项目已保存" | `maintenance_items` +1 |
+| 编辑项目 | 卡片"编辑" → 同上表单 → `repository.updateMaintenanceItem`（:556；停用态先过"至少一个启用"校验）→ 成功 toast"保养项目已保存" | 更新该行 |
 | 启停项目 | 卡片"已启用/已禁用"按钮 → `:1038 → toggleMaintenanceItem` → `repository.setMaintenanceItemEnabled`（:590） | 更新 enabled |
 | 删除项目 | 卡片"删除" → 确认框 → `:1065 → deleteMaintenanceItem` → `repository.deleteMaintenanceItem`（:626，**有历史记录直接抛错**拒绝删除） | 删该行（或报错 toast） |
 
@@ -281,14 +285,14 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 1. 打开前 `await ref.read(notificationSettingsProvider.future)`（加载失败 toast"设置加载失败"并返回，杜绝 loading 期默认值覆盖真实设置）；
 2. 打开时 `refreshSystemNotificationPreference` 向系统查真实开关并回写偏好；
 3. 表单：系统通知状态行（只读）+ "系统设置"跳转（`NativeNotificationSettings` → 原生设置页，跳转后 sheet 关闭）+ 应用内通知开关 + 到期重复频率三段（每周/每 2 周/每月）；
-4. 保存 → `saveNotificationSettings` → `repository.updatePreferenceValues`（**一个事务内批量写 3 个偏好 key**）→ `invalidatePreferenceProviders` → 同步控制器签名变化触发系统通知重排。
+4. 保存 → `saveNotificationSettings` → `repository.updatePreferenceValues`（**一个事务内批量写 3 个偏好 key**）→ `invalidatePreferenceProviders` → 关 sheet + toast"设置已保存" → 同步控制器签名变化触发系统通知重排。
 
 > 产品口径：保养到期提醒是 App 核心能力，**不提供用户关闭入口**（R5 确认；原 `maintenanceDueEnabled` 偏好已于 2026-08-29 移除）。
 
 ### 5.7 手动日期（开发者模式专属）
 
 1. 开发者模式：版本 footer **连点 5 次** → `profile_page.dart:156 → _handleVersionTap` → 写 `developerModeEnabled`（关闭时连带清 `manualDateEnabled`/`manualDate`）；
-2. "手动日期"行 → `settings_data.dart:568 → showManualDateSheet`：开关+日期（1990~今天+10 年）→ 写 `manualDateEnabled`/`manualDate` → invalidate → **`effectiveTodayProvider`（providers.dart:127）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
+2. "手动日期"行 → `settings_data.dart:568 → showManualDateSheet`：开关+日期（1990~今天+10 年）→ 写 `manualDateEnabled`/`manualDate` → invalidate → toast"手动日期已保存" → **`effectiveTodayProvider`（providers.dart:127）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
 
 ### 5.8 主题切换
 
@@ -302,10 +306,10 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 页面：`fuel/fuel_page.dart → FuelPreviewPage`。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006）：
 
-1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；"手填" → sheet 写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）；"清除"回到数据源价。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，一次拉全国 31 省 + 调价预告，见 ADR 0006；`fuelPriceSourceProvider` 注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是全国价表，换省不重新拉），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
+1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格文字本身可点**（价格+标签胶囊旁有小编辑图标）→ `showLunioModalSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理），保存写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ toast"手填油价已保存"；价格行右侧"重置"按钮（**只有存有手填价时可用**，无手填价置灰）→ 写 null 删该组合键恢复数据源价 + toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示可点的"— 元/升"占位价 + "暂无数据"胶囊，点它即进上述手填编辑**（无数据状态下唯一的手填入口；油价获取中的加载态不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，一次拉全国 31 省 + 调价预告，见 ADR 0006；`fuelPriceSourceProvider` 注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是全国价表，换省不重新拉），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
 2. **预估下次油价块**（油价卡内，价格行下方）：标题"预估下次油价"（与"当前油价"同字号）；数值 = 生效价（手填优先）+ 调价预告变动中值（`FuelRules.predictedPricePerLiter`，先取整到分），右侧日期胶囊"X月X日调价"；展示样式与价格行一致（`_TagPill` 复用）。无预告/无基准价时显示"暂无调价预测"占位，不算错误。
 3. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，`QiyouJiaFuelPriceSource.provinces` 31 项限高 320 可滚动、打开时定位到当前项）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
-4. **加满预估卡（滚动定档）**：表头四列"当前油量 / 可加油量 / 加满价格 / 调价后价格"（`_TierHeaderRow`，列宽比例与 `_TierRow` 一致）。全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 在惯性结束把第一行吸附到整行边界，`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。当前油量 = 档位/100 × 容积（`FuelRules.litersInTank`）；可加油量 =（100−档位）/100 × 容积（`FuelRules.litersToFill`）；加满价格 = 可加油量 × 生效价（`FuelRules.fullTankCostCents`，分存储）；调价后价格 = 可加油量 × 预估价（`_predictedPriceProvider`，无预告时显示"—"）；第一行档位高亮、无"（当前）"文字。
+4. **加满预估卡（滚动定档）**：表头四列"当前油量 / 可加油量 / 加满价格 / 调价后价格"（`_TierHeaderRow`，列宽比例与 `_TierRow` 一致）。全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 吸附整行边界（**按父物理自然弹道投射停点再取最近整行**，照搬官方 `FixedExtentScrollPhysics` 模式——快速甩动可连滚多档、慢速就近弹回，停点严格对齐整行），`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。当前油量 = 档位/100 × 容积（`FuelRules.litersInTank`）；可加油量 =（100−档位）/100 × 容积（`FuelRules.litersToFill`）；加满价格 = 可加油量 × 生效价（`FuelRules.fullTankCostCents`，分存储）；调价后价格 = 可加油量 × 预估价（`_predictedPriceProvider`，无预告时显示"—"）；第一行档位高亮、无"（当前）"文字。
 5. **油箱容积入口在车辆管理**：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
 
 ---
@@ -318,9 +322,11 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 `lib/features/shell/app_shell.dart → build`：三或四个 `_BottomNavItem`（加油项按 `fuelPredictionEnabledProvider` 插入），点击 → `dismissTransientUi`（收键盘/toast/snackbar，modal_feedback.dart）→ `context.go('/xx')` → NoTransitionPage 重建 AppShell（selectedIndex 由路由决定，语义 0=提醒 1=记录 2=加油 3=我的）。
 
-### 6.2 生命周期
+### 6.2 生命周期与跨零点刷新
 
 `app_shell.dart → didChangeAppLifecycleState`：resumed（回前台）转交 `_notificationSync.onAppResumed()`（清空应用内提醒签名并立即重跑同步，强制重查弹窗）+ 刷新 Android 导航 inset。Android 三键导航 inset 适配在 `_refreshAndroidSystemNavigationInset`（requestId+mounted 双检查）。
+
+**跨零点静默刷新**：`_AppShellState._scheduleMidnightDateRefresh`（initState 启动）排一个对准下一个 00:00:00 的 Timer，触发时 `ref.invalidate(effectiveTodayProvider)`（"今天"是 FutureProvider 只算一次，跨零点不失效会让提醒页到期概览/待关注项目、"我的"页车龄停在昨天）→ 各 watch 方自动重建，通知同步控制器监听该 provider 静默重排系统通知 → 重新排次日零点。App 在后台时 Timer 挂起，回前台瞬间补触发。手动日期开启时重算结果不变，无害。dispose 取消 Timer。
 
 ### 6.3 系统通知同步引擎（核心机制）
 

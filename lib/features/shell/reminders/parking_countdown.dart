@@ -272,7 +272,8 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
         TextField(
           controller: durationMinutesController,
           enabled: !saving,
-          keyboardType: TextInputType.text,
+          // 数字输入统一用数字键盘（与油箱容积同款方式）。
+          keyboardType: const TextInputType.numberWithOptions(),
           textInputAction: TextInputAction.done,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           onChanged: (_) => setState(() => errorText = null),
@@ -576,24 +577,33 @@ class ParkingDurationChip extends StatelessWidget {
 }
 
 /// 停车计时 sheet 入口（提醒页"停车倒计时"按钮）。
+/// 点按钮的此刻实时取系统时间（不用页面构建时缓存的时间，页面开久了
+/// 会过期），秒/毫秒截成 0：入场时间默认整分，需要秒再手动调滚轮。
 /// bottomInset 跟随键盘高度，键盘弹起时把内容顶上去。
 /// context 是页面级 context：传给 saveParkingCountdown 做"页面仍在
 /// 挂载"的检查（sheet 可能先一步关闭）。
 Future<void> showParkingCountdownSheet(
   BuildContext context,
-  WidgetRef ref, {
-  required DateTime now,
-}) {
+  WidgetRef ref,
+) {
   return showLunioModalSheet<void>(
     context: context,
     builder: (sheetContext) {
       final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+      final tappedNow = ref.read(appDateContextProvider).readSystemNow();
+      final entryTime = DateTime(
+        tappedNow.year,
+        tappedNow.month,
+        tappedNow.day,
+        tappedNow.hour,
+        tappedNow.minute,
+      );
       return PrototypeSheetFrame(
         title: '停车计时',
         subtitle: '设置入场时间和免费停车时长。',
         bottomInset: bottomInset,
         child: ParkingCountdownForm(
-          now: now,
+          now: entryTime,
           onSubmit: (countdown) =>
               saveParkingCountdown(context, ref, countdown),
         ),

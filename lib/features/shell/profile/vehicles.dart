@@ -376,7 +376,8 @@ class AddCarFormState extends State<AddCarForm> {
         TextField(
           controller: mileageController,
           enabled: !saving,
-          keyboardType: TextInputType.text,
+          // 数字输入统一用数字键盘（与油箱容积同款方式）。
+          keyboardType: const TextInputType.numberWithOptions(),
           textInputAction: TextInputAction.done,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           onTap: () {
@@ -1250,6 +1251,11 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
                         invalidateVehicleProviders(ref);
                         if (context.mounted) {
                           Navigator.of(context).pop();
+                          showStatusOverlay(
+                            context,
+                            '车辆已保存',
+                            StatusOverlayTone.success,
+                          );
                         }
                       },
                     );
@@ -1311,6 +1317,11 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
                   invalidateVehicleProviders(ref);
                   if (context.mounted) {
                     Navigator.of(context).pop();
+                    showStatusOverlay(
+                      context,
+                      '车辆已保存',
+                      StatusOverlayTone.success,
+                    );
                   }
                 },
               ),

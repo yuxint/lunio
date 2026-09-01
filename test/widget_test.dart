@@ -667,7 +667,8 @@ void main() {
     final durationField = tester.widget<TextField>(
       find.widgetWithText(TextField, '免费时长'),
     );
-    expect(durationField.keyboardType, TextInputType.text);
+    // 数字输入统一数字键盘（整数，不带小数点）。
+    expect(durationField.keyboardType, const TextInputType.numberWithOptions());
     expect(durationField.textInputAction, TextInputAction.done);
     expect(durationField.inputFormatters, hasLength(1));
     expect(
@@ -675,7 +676,8 @@ void main() {
       isA<FilteringTextInputFormatter>(),
     );
 
-    await tester.tap(find.text('10:20:15'));
+    // 入场时间默认取点按钮此刻的系统时间，秒/毫秒截 0（10:20:15 → 10:20:00）。
+    await tester.tap(find.text('10:20:00'));
     await tester.pumpAndSettle();
 
     expect(find.text('选择入场时间'), findsOneWidget);
@@ -2575,14 +2577,15 @@ void main() {
       reason: '进入页面不写库',
     );
 
-    // 向上拖三行左右：滚动停稳后吸附物理把第一行对齐到整行档位，
-    // 并自动把该档位写库（timedDrag 匀速拖动，落点可复现）。
+    // 向上拖三行左右：吸附物理按拖动末速度投射惯性停点再取整行档位
+    // （132px 匀速拖动的末速度会多走约一档，落点确定可复现），
+    // 停稳后自动把该档位写库。
     await tester.timedDrag(find.text('50%'), const Offset(0, -132), const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
     final saved = await repository.getFuelPredictionForCar(carId);
-    expect(saved?.fuelPercent, 46);
-    expect(find.text('46%'), findsOneWidget);
+    expect(saved?.fuelPercent, 42);
+    expect(find.text('42%'), findsOneWidget);
   });
 
   testWidgets('fuel page reset icon scrolls baseline back to 50%', (

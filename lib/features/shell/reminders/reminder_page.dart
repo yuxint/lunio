@@ -96,7 +96,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
             ReminderActionRow(
               onAddRecord: () => showMaintenanceRecordFormSheet(context, ref),
               onParkingCountdown: currentParkingCountdown == null
-                  ? () => showParkingCountdownSheet(context, ref, now: now)
+                  ? () => showParkingCountdownSheet(context, ref)
                   : null,
             ),
           ],

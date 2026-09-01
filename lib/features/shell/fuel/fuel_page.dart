@@ -1,7 +1,10 @@
 // 加油页（/fuel）：加油预测的交互页面。
 //
 // 页面结构：
-//   1. 油价卡：当前省+油品的每升价（手填价 > 数据源价），带刷新/手填/清除；
+//   1. 油价卡：当前省+油品的每升价（手填价 > 数据源价），右上角刷新；
+//      价格文字可点进编辑（输入框每次留空，保存后成为手填价），价格旁
+//      "重置"按钮只在存有手填价时可用（恢复数据源价）；没拉到数据时
+//      显示可点的"—"占位价，点击即进手填编辑；
 //      副标题"湖北 · 92#"的省份、油品两段各自可点弹出选择 sheet
 //      （设置很少改，不再单设设置区）；省份 31 项用列表 sheet 内部限高
 //      滚动，油品固定 4 项用一行胶囊单选（sheet 贴内容，很矮）。
@@ -24,6 +27,8 @@
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
+// FrictionSimulation/SpringSimulation 在 physics 包里，material 不带。
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -127,13 +132,6 @@ class _PriceCard extends ConsumerWidget {
                 ),
               ),
               SmallActionButton(
-                label: '手填',
-                onPressed: province == null || grade == null
-                    ? null
-                    : () => _editManualPrice(context, ref),
-              ),
-              const SizedBox(width: 8),
-              SmallActionButton(
                 label: '刷新',
                 onPressed: priceState.isLoading
                     ? null
@@ -183,27 +181,39 @@ class _PriceCard extends ConsumerWidget {
         manualPrice ?? data?.priceFor(province: province, grade: grade);
     Widget priceLine;
     if (manualPrice != null) {
+      // 手填价行：点价格进编辑；有手填价才允许"重置"回数据源价。
       priceLine = _priceRow(
         context,
+        ref,
         '${manualPrice.toStringAsFixed(2)} 元/升',
         '手填价',
         tokens.primary,
+        canReset: true,
       );
     } else {
       if (priceState.isLoading && data == null) {
         priceLine = Text('油价获取中…', style: subtitleStyle);
-      } else if (data == null) {
-        priceLine = Text('暂无油价数据，可稍后刷新或手填。', style: subtitleStyle);
-      } else if (effectivePrice == null) {
-        priceLine = Text('该油品暂无价格，可手填。', style: subtitleStyle);
+      } else if (data == null || effectivePrice == null) {
+        // 没拉到数据（或该油品无报价）：显示可点的"—"占位价，
+        // 点击即进手填编辑——这是无数据状态下唯一的手填入口。
+        priceLine = _priceRow(
+          context,
+          ref,
+          '— 元/升',
+          '暂无数据',
+          tokens.muted,
+          canReset: false,
+        );
       } else {
         final updatedText =
             '${data.fetchedAt.month}月${data.fetchedAt.day}日更新';
         priceLine = _priceRow(
           context,
+          ref,
           '${effectivePrice.toStringAsFixed(2)} 元/升',
           updatedText,
           tokens.ink,
+          canReset: false,
         );
       }
     }
@@ -277,29 +287,50 @@ class _PriceCard extends ConsumerWidget {
     );
   }
 
+  /// 价格行：价格文字 + 标签胶囊可点（进入手填价编辑），右侧"重置"按钮。
+  /// 重置只在当前省+油品存有手填价时可用（点了恢复数据源价）；没有
+  /// 手填价时置灰。价格区加小编辑图标提示可点。
   Widget _priceRow(
     BuildContext context,
+    WidgetRef ref,
     String priceText,
     String tagText,
-    Color priceColor,
-  ) {
+    Color priceColor, {
+    required bool canReset,
+  }) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          priceText,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: priceColor,
-            fontWeight: FontWeight.w800,
+        Expanded(
+          child: InkWell(
+            onTap: () => _editManualPrice(context, ref),
+            borderRadius: BorderRadius.circular(tokens.radiusSmall),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    priceText,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: priceColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _TagPill(label: tagText),
+                  const SizedBox(width: 4),
+                  Icon(Icons.edit_outlined, size: 14, color: tokens.muted),
+                ],
+              ),
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        _TagPill(label: tagText),
-        const Spacer(),
         SmallActionButton(
-          label: '清除',
-          danger: true,
-          onPressed: () => _clearManualPrice(context),
+          label: '重置',
+          secondary: true,
+          onPressed: canReset ? () => _resetManualPrice(context) : null,
         ),
       ],
     );
@@ -376,19 +407,18 @@ class _PriceCard extends ConsumerWidget {
     );
   }
 
-  /// 手填油价 sheet：只针对当前"省+油品"组合填一个价。
+  /// 编辑手填价 sheet（点价格行进入）：输入框每次留空（不预填，避免
+  /// 顺手一存把数据源价存成手填价），只针对当前"省+油品"组合填一个价；
+  /// 留空提交按校验错误处理，恢复数据源价走价格旁的"重置"按钮。
   Future<void> _editManualPrice(BuildContext context, WidgetRef ref) async {
     final province = ref.read(fuelProvinceProvider).value ?? '';
     final grade = ref.read(fuelGradeProvider).value;
-    final current = ref.read(fuelManualPriceProvider).value;
-    final controller = TextEditingController(
-      text: current?.toStringAsFixed(2) ?? '',
-    );
+    final controller = TextEditingController();
     await showLunioModalSheet<void>(
       context: context,
       builder: (sheetContext) {
         return PrototypeSheetFrame(
-          title: '手填油价',
+          title: '编辑油价',
           subtitle: '$province · ${grade?.label ?? ''}，单位元/升。',
           bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
           child: _ManualPriceForm(
@@ -408,7 +438,7 @@ class _PriceCard extends ConsumerWidget {
               if (context.mounted) {
                 showStatusOverlay(
                   context,
-                  price == null ? '已清除手填价' : '手填油价已保存',
+                  '手填油价已保存',
                   StatusOverlayTone.success,
                 );
               }
@@ -419,8 +449,9 @@ class _PriceCard extends ConsumerWidget {
     );
   }
 
-  /// 清除手填：写 null 删该组合的键，回到数据源价格。
-  Future<void> _clearManualPrice(BuildContext context) async {
+  /// 重置手填价：写 null 删该组合的键，恢复用数据源价格。
+  /// 只在存有手填价时可触发（见 _priceRow 的 canReset）。
+  Future<void> _resetManualPrice(BuildContext context) async {
     final ref = ProviderScope.containerOf(context, listen: false);
     final province = ref.read(fuelProvinceProvider).value;
     final grade = ref.read(fuelGradeProvider).value;
@@ -432,7 +463,7 @@ class _PriceCard extends ConsumerWidget {
         .setFuelManualPrice(province: province, grade: grade, pricePerLiter: null);
     ref.invalidate(fuelManualPriceProvider);
     if (context.mounted) {
-      showStatusOverlay(context, '已清除手填价', StatusOverlayTone.success);
+      showStatusOverlay(context, '已恢复数据源价', StatusOverlayTone.success);
     }
   }
 
@@ -666,12 +697,14 @@ class _SheetOptionRow extends StatelessWidget {
   }
 }
 
-/// 手填油价表单（两位小数以内的每升价，0.01–99.99）。
+/// 编辑手填价表单（两位小数以内的每升价，0.01–99.99）。
+/// 留空提交按校验错误处理（不再有"留空=清除"语义，恢复数据源价走
+/// 价格旁的"重置"按钮）。
 class _ManualPriceForm extends StatefulWidget {
   const _ManualPriceForm({required this.controller, required this.onSubmit});
 
   final TextEditingController controller;
-  final Future<void> Function(double? price) onSubmit;
+  final Future<void> Function(double price) onSubmit;
 
   @override
   State<_ManualPriceForm> createState() => _ManualPriceFormState();
@@ -718,21 +751,7 @@ class _ManualPriceFormState extends State<_ManualPriceForm> {
     final text = widget.controller.text.trim();
     final price = double.tryParse(text);
     if (text.isEmpty) {
-      // 清空输入框 = 清除手填价。
-      setState(() {
-        saving = true;
-        errorText = null;
-      });
-      try {
-        await widget.onSubmit(null);
-      } catch (error) {
-        if (mounted) {
-          setState(() {
-            saving = false;
-            errorText = friendlyError(error);
-          });
-        }
-      }
+      setState(() => errorText = '请输入价格');
       return;
     }
     if (price == null || price <= 0 || price > 99.99) {
@@ -762,10 +781,18 @@ class _ManualPriceFormState extends State<_ManualPriceForm> {
 /// 档位行高（列表吸附与定高的基准，两处必须一致）。
 const double _kTierRowExtent = 44;
 
-/// 档位列表的整行吸附物理：惯性滚动结束时把第一行吸到整行边界。
-/// 吸附放在弹道模拟里做，ScrollEnd 到达时偏移必然已对齐，可直接写库
-/// （不能在 ScrollEnd 通知里再 animateTo——滚动活动收尾期间改活动
-/// 会被滚动位置静默忽略）。
+/// 档位列表的整行吸附物理：滚动停稳后把偏移落在整行边界。
+///
+/// 吸附要"跟手"，甩动惯性不能扔（原实现只吸附到松手位置最近的整行，
+/// 快速一划列表最多挪半行多，手感像跟不上手指）。做法照搬官方
+/// FixedExtentScrollPhysics 的弹道投射（list_wheel_scroll_view.dart）：
+///  1. 已越界且继续朝界外走 → 交给父物理（平台默认）拉回边界；
+///  2. 用父物理的自然摩擦弹道算出"不吸附时会停在哪"，取最近整行作目标；
+///  3. 速度太小翻不过半行 → 弹簧弹回目标行；否则用
+///     FrictionSimulation.through 精确滑到目标行（惯性手感保留）。
+/// 无论走哪条路径，弹道终点都严格对齐整行边界——ScrollEnd 时偏移必已
+/// 对齐，可直接写库（不能在 ScrollEnd 通知里再 animateTo——滚动活动
+/// 收尾期间改活动会被滚动位置静默忽略）。
 class _RowSnapScrollPhysics extends ScrollPhysics {
   const _RowSnapScrollPhysics({required this.rowExtent, super.parent});
 
@@ -780,16 +807,45 @@ class _RowSnapScrollPhysics extends ScrollPhysics {
     ScrollMetrics position,
     double velocity,
   ) {
+    // 情形 1：越界还朝界外走，边界回弹交给父物理。
+    if ((velocity <= 0.0 && position.pixels <= position.minScrollExtent) ||
+        (velocity >= 0.0 && position.pixels >= position.maxScrollExtent)) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+    // 情形 2：父物理自然弹道的停点 → 最近整行（越界停点夹回边界档）。
+    final naturalSimulation = super.createBallisticSimulation(
+      position,
+      velocity,
+    );
+    final naturalStop =
+        naturalSimulation?.x(double.infinity) ?? position.pixels;
     final maxIndex = (position.maxScrollExtent / rowExtent).floor();
-    final targetIndex = (position.pixels / rowExtent)
-        .round()
-        .clamp(0, maxIndex);
+    final targetIndex = (naturalStop / rowExtent).round().clamp(0, maxIndex);
     final target = targetIndex * rowExtent;
-    if ((target - position.pixels).abs() <
-        toleranceFor(position).distance * 2) {
+    final tolerance = toleranceFor(position);
+    // 情形 3：没速度且已在目标行上，不再模拟。
+    if (velocity.abs() < tolerance.velocity &&
+        (target - position.pixels).abs() < tolerance.distance) {
       return null;
     }
-    return ScrollSpringSimulation(spring, position.pixels, target, velocity);
+    final currentIndex = (position.pixels / rowExtent).round();
+    // 情形 4：速度太小翻不过当前行的半程，弹簧弹回目标行。
+    if (targetIndex == currentIndex) {
+      return SpringSimulation(
+        spring,
+        position.pixels,
+        target,
+        velocity,
+        tolerance: tolerance,
+      );
+    }
+    // 情形 5：调摩擦系数让自然弹道恰好停在目标整行上（保留惯性）。
+    return FrictionSimulation.through(
+      position.pixels,
+      target,
+      velocity,
+      tolerance.velocity * velocity.sign,
+    );
   }
 }
 
