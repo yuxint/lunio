@@ -8,19 +8,20 @@ import 'package:lunio/domain/entities/powertrain_type.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 
 void main() {
-  test('schemaVersion 2 backup round-trips new data contract', () {
+  test('backup round-trips full data contract', () {
     final sync = SyncMetadata(
       status: SyncStatus.synced,
       updatedAt: DateTime(2026),
     );
     const codec = BackupCodec();
     final payload = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: BackupCodec.currentSchemaVersion,
       cars: [
         Car(
           id: 1,
           brand: '本田',
           model: '思域',
+          powertrainType: PowertrainType.fuel,
           currentMileageKm: 38600,
           roadDate: const LocalDate(2023, 8, 12),
           sync: sync,
@@ -59,15 +60,14 @@ void main() {
     expect(encoded, isNot(contains('preferences')));
     expect(encoded, isNot(contains('defaultMaintenanceItems')));
     expect(encoded, isNot(contains('isDefault')));
-    expect(decoded.schemaVersion, 2);
+    expect(decoded.schemaVersion, BackupCodec.currentSchemaVersion);
     expect(decoded.cars.single.brand, '本田');
-    // v2 备份没有动力类型字段，恢复后默认燃油（ADR 0003）。
     expect(decoded.cars.single.powertrainType, PowertrainType.fuel);
     expect(decoded.maintenanceItems.single.carsId, 1);
     expect(decoded.records.single.carId, 1);
   });
 
-  test('v4 backup round-trips car powertrain types', () {
+  test('backup round-trips car powertrain types', () {
     final sync = SyncMetadata(
       status: SyncStatus.synced,
       updatedAt: DateTime(2026),
@@ -102,28 +102,22 @@ void main() {
     expect(encoded, contains('"powertrainType":"extended"'));
 
     final decoded = codec.decode(encoded);
-    expect(decoded.schemaVersion, 4);
+    expect(decoded.schemaVersion, BackupCodec.currentSchemaVersion);
     expect(decoded.cars.first.powertrainType, PowertrainType.electric);
     expect(
       decoded.cars.last.powertrainType,
       PowertrainType.extendedRange,
     );
 
-    // v3 老备份（车没有动力类型字段）仍可解码，默认燃油。
-    final v3Json = encoded
-        .replaceFirst('"schemaVersion":4', '"schemaVersion":3')
-        .replaceAll(RegExp(r'"powertrainType":"[a-z]+",?'), '');
-    final v3Decoded = codec.decode(v3Json);
-    expect(v3Decoded.schemaVersion, 3);
-    expect(
-      v3Decoded.cars.every(
-        (car) => car.powertrainType == PowertrainType.fuel,
-      ),
-      isTrue,
-    );
-
-    // v4 备份里出现未知动力类型值：fail-fast 拒绝（不静默降级）。
+    // 备份里出现未知动力类型值：fail-fast 拒绝（不静默降级）。
     final badJson = encoded.replaceFirst('"powertrainType":"ev"', '"powertrainType":"nuclear"');
     expect(() => codec.decode(badJson), throwsArgumentError);
+
+    // 其他版本号直接拒绝（ADR 0005：不做旧版本兼容）。
+    final v2Json = encoded.replaceFirst(
+      '"schemaVersion":${BackupCodec.currentSchemaVersion}',
+      '"schemaVersion":2',
+    );
+    expect(() => codec.decode(v2Json), throwsUnsupportedError);
   });
 }

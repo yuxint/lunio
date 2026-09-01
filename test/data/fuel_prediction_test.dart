@@ -1,5 +1,5 @@
 // 加油预测数据层测试：设置表（剩余油量）的 upsert/级联删除/清空、
-// 车辆容积随车存取（v8 起）、备份 v3 往返、油价缓存与手填价偏好
+// 车辆容积随车存取、备份往返、油价缓存与手填价偏好
 // （临时数据不进备份）。
 import 'dart:convert';
 
@@ -96,8 +96,8 @@ void main() {
     });
 
     test('油箱容积随车存取：建车可带、编辑可改、非法值拒绝', () async {
-      // v8 起容积在 cars 表（车的属性），随 createCarWithMaintenanceItems
-      // / updateCar 读写，不再走 saveFuelPrediction。
+      // 容积在 cars 表（车的属性），随 createCarWithMaintenanceItems
+      // / updateCar 读写，不走 saveFuelPrediction。
       await seedCar(tankCapacityLiters: 55.1234);
       var car = (await repository.listCars()).single;
       expect(car.tankCapacityLiters, 55.1234);
@@ -271,12 +271,12 @@ void main() {
 
       final backup = await repository.exportBackupPayload();
       final json = const BackupCodec().encode(backup);
-      // v4 起车带动力类型；加油设置自 v3 起进备份。
-      expect(backup.schemaVersion, 4);
+      // 车带动力类型、加油设置进备份。
+      expect(backup.schemaVersion, 1);
       expect(json, contains('fuelPrediction'));
       expect(json, contains('fuelPredictions'));
       expect(json, contains('湖北'));
-      // v8 起：容积在车辆条目里，加油条目只剩油量。
+      // 容积在车辆条目里，加油条目只剩油量。
       expect(backup.cars.single.tankCapacityLiters, 55);
       expect(backup.fuelPredictions.single.fuelPercent, 50);
       expect(json, contains('tankCapacityLiters'));
@@ -285,7 +285,7 @@ void main() {
       expect(json, isNot(contains('7.6')));
     });
 
-    test('恢复 v3 备份：加油设置按新车 id 重插并覆盖省份/油品偏好', () async {
+    test('恢复备份：加油设置按新车 id 重插并覆盖省份/油品偏好', () async {
       final carId = await seedCar(tankCapacityLiters: 55);
       await repository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
@@ -300,7 +300,7 @@ void main() {
         database,
         loadBuiltInVehicleCatalog: () async => builtInCatalog,
       );
-      // 恢复前预置不同省份/油品：v3 备份应覆盖它们。
+      // 恢复前预置不同省份/油品：备份应覆盖它们。
       await repository.setPreferenceValue('fuelProvince', '广东');
       await repository.setPreferenceValue('fuelGrade', '98');
 
@@ -320,48 +320,12 @@ void main() {
       expect(restoredFuel?.fuelPercent, 50);
     });
 
-    test('恢复 v2 老备份：加油设置清空，省份/油品偏好保留', () async {
-      final carId = await seedCar();
-      await repository.saveFuelPrediction(
-        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
-      );
-      final backup = await repository.exportBackupPayload();
-      // 手工降级成 v2 载荷（模拟老版本 App 导出的备份：版本号 2 且
-      // 完全没有加油字段）。
-      final backupMap =
-          jsonDecode(const BackupCodec().encode(backup)) as Map<String, Object?>;
-      backupMap['schemaVersion'] = 2;
-      backupMap.remove('fuelPrediction');
-      backupMap.remove('fuelPredictions');
-      final v2Payload = const BackupCodec().decode(jsonEncode(backupMap));
-      expect(v2Payload.schemaVersion, 2);
-      expect(v2Payload.fuelPrediction, isNull);
-      expect(v2Payload.fuelPredictions, isEmpty);
-
-      await database.close();
-      database = AppDatabase.inMemory();
-      repository = LunioRepository(
-        database,
-        loadBuiltInVehicleCatalog: () async => builtInCatalog,
-      );
-      await repository.setPreferenceValue('fuelProvince', '湖南');
-      await repository.restoreBackupPayload(v2Payload);
-
-      // 恢复替换业务数据：加油设置被清掉；省份/油品是偏好，保留不动。
-      final restoredCar = (await database.select(database.cars).get()).single;
-      expect(
-        await repository.getFuelPredictionForCar(restoredCar.id),
-        isNull,
-      );
-      expect(await repository.getPreferenceValue('fuelProvince'), '湖南');
-    });
-
-    test('codec 解码 v4/v3/v2 均支持，其他版本拒绝', () {
+    test('codec 解码：非当前版本拒绝', () {
       const codec = BackupCodec();
       expect(
         () => codec.decode(
           jsonEncode({
-            'schemaVersion': 5,
+            'schemaVersion': 2,
             'cars': [],
             'maintenanceItems': [],
             'records': [],

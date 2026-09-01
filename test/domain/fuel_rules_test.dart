@@ -1,5 +1,5 @@
 // 加油预测领域规则测试：全量档位表、金额/油量计算、油价刷新判断、
-// 容积校验（Car 上，v8 起）与加油预测实体校验。
+// 容积校验（Car 上）与加油预测实体校验。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';

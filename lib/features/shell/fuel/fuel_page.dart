@@ -14,7 +14,7 @@
 //
 // 数据规则（设计决定见 CONTEXT.md / ADR 0001 / ADR 0002）：
 //   - 剩余油量按车存 fuel_predictions 表（默认 50%，滚动定档才落库）；
-//     省份、油品全局存偏好；油箱容积 v8 起在 cars 表（车的属性）；
+//     省份、油品全局存偏好；油箱容积在 cars 表（车的属性）；
 //   - 油价来源优先级：手填价 > 数据源价；手填不被自动/手动刷新覆盖；
 //   - 所有修改即写库（自动保存），无保存按钮。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
@@ -743,7 +743,7 @@ class _TierListCard extends ConsumerStatefulWidget {
 
   final int carId;
 
-  /// 油箱容积（Car 上，v8 起按车存）；null 时无法算钱，显示引导。
+  /// 油箱容积（Car 上，按车存）；null 时无法算钱，显示引导。
   final double? capacity;
 
   /// 数据库里已存的档位（%）；null = 从没保存过（按 50% 定位）。

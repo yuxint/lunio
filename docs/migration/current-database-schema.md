@@ -1,30 +1,22 @@
 # 当前数据库表结构
 
-本文描述 Lunio 正式 v1 文档口径下的当前 SQLite/Drift 数据库事实。产品文档版本是 v1；数据库版本不是 v1，当前 Drift `schemaVersion` 为 `9`。
+本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、数据库
+`schemaVersion`、备份 JSON `schemaVersion`、车型目录 asset `schemaVersion`
+当前均为 `1`（起点归一，见 docs/adr/0005）。
 
-本文只记录当前代码事实，不定义未来迁移方案。事实源是 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
+本文只记录当前代码事实，不记录历史版本演变。事实源是
+`lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
-## 版本和迁移策略
+## 版本和升级策略（ADR 0005）
 
-- 当前数据库：`schemaVersion = 9`。
-- schema 1 升级到 2 时，现有表会被删除并重建。
-- schema 2 升级到 3 时，迁移 `maintenance_items`。
-- schema 3 升级到 4 时，迁移 `cars`。
-- schema 4 升级到 5 时，给内置车型和默认保养模板增加 `catalog_id`。
-- schema 5 升级到 6 时，三张业务表补普通索引（R16）：`maintenance_items(cars_id)`、
-  `maintenance_records(car_id)`、`maintenance_record_items(maintenance_record_id)`。
-- v6 索引的两种等价形态（R19）：全新安装走建表（`CREATE TABLE` 后随建表语句创建
-  `@TableIndex` 声明的索引）；升级库走 `migrator.createIndex(...)` 生成独立的
-  `CREATE INDEX IF NOT EXISTS`。两者最终在 SQLite 里产生同名同列的索引对象，语义等价。
-- schema 6 升级到 7 时，新增 `fuel_predictions` 表（加油预测设置，纯建表，老数据不动）。
-- schema 7 升级到 8 时，油箱容积从 `fuel_predictions` 挪到 `cars`（车的属性，
-  见 docs/adr/0002）：`cars` 加列 `tank_capacity_liters`，`fuel_predictions`
-  删列 `tank_capacity_liters`。容积数据不搬迁（App 未上线，产品确认放弃旧开发数据）。
-- schema 8 升级到 9 时，动力类型改版（见 docs/adr/0003）：
-  `cars` 加列 `powertrain_type`（默认 `fuel`，老车不回填推断）、
-  `vehicle_models` 加列 `template`（推荐动力类型，目录按车系名/品牌推断）、
-  `vehicle_default_maintenance_items` 从"按品牌+车型"重建为"按动力类型"
-  （删表重建，旧数据不搬迁，首启 bootstrap 按新目录灌入）。
+- 当前数据库：`schemaVersion = 1`。
+- 只服务全新安装：新装走 `createAll` 建全部表，然后 bootstrap 从 asset
+  目录灌入车型目录与默认保养模板。
+- 库文件版本与代码不一致（无论升或降）时，`migration` 返回 Drift 的
+  `destructiveFallback`：删光全部表再重建。系统不保留任何升级路径。
+- 改表纪律：改 Drift 表结构必须把 `schemaVersion` +1（+1 本身就是触发
+  删库重建的开关），改完跑 `dart run build_runner build`。
+- 正式上线后本策略作废，届时另立 ADR 恢复"版本号 +1 并补升级分支"的纪律。
 - 当前代码没有声明数据库外键约束；关联完整性由 Repository 在事务中校验和维护。
 
 ## 类型约定
@@ -47,11 +39,11 @@
 - `catalog_id`：内置车型目录稳定标识，可空；用于 bootstrap 按内置 JSON 新增、更新或删除内置行。
 - `brand`：品牌。
 - `model`：车型。
-- `powertrain_type`：动力类型（v9 起，见 docs/adr/0003），取值 `fuel`/`hybrid`/`plugIn`/`extended`/`ev`，默认 `fuel`。添加车辆时用户选择，添加后不可改；老库迁移与 v3 及更早备份恢复的老车默认 `fuel`，不回填推断。
+- `powertrain_type`：动力类型（见 docs/adr/0003），取值 `fuel`/`hybrid`/`plugIn`/`extended`/`ev`，默认 `fuel`。添加车辆时用户选择，添加后不可改。
 - `current_mileage_km`：当前里程，单位公里。
 - `road_date`：上路日期，格式 `yyyy-MM-dd`。
-- `tank_capacity_liters`：油箱总容积，单位升，可空（v8 从 `fuel_predictions` 迁来；
-  添加/编辑车辆时填写，非必填，加油预估的加满金额用它计算；1–999、最多四位小数）。
+- `tank_capacity_liters`：油箱总容积，单位升，可空（添加/编辑车辆时填写，
+  非必填，加油预估的加满金额用它计算；1–999、最多四位小数）。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
 - `version`：同步/冲突预留版本号，默认 `1`。
@@ -70,7 +62,7 @@
 - `id`：主键。
 - `brand`：品牌。
 - `model`：车型（懂车帝原始车系名，docs/adr/0003）。
-- `template`：推荐动力类型（v9 起），取值同 `cars.powertrain_type`；只在添加向导预选动力 chip 用，不参与默认项目取数。
+- `template`：推荐动力类型，取值同 `cars.powertrain_type`；只在添加向导预选动力 chip 用，不参与默认项目取数。
 - `sort_order`：排序值。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
@@ -84,7 +76,7 @@
 
 ### `vehicle_default_maintenance_items`
 
-默认保养项目模板表。v9 起按动力类型分组（docs/adr/0003）：五组共 46 项
+默认保养项目模板表。按动力类型分组（docs/adr/0003）：五组共 46 项
 （fuel 10、hybrid 11、plugIn 9、extended 9、ev 7，增程组内容同插混组）。
 它不归属于某一辆用户车辆；创建车辆或恢复默认配置时，按车的动力类型从这里复制到 `maintenance_items`。
 
@@ -136,7 +128,7 @@
 
 - 主键：`id`。
 - 唯一键：`cars_id + name`。
-- 普通索引：`cars_id`（`idx_maintenance_items_cars_id`，v6 新增，按车查项目）。
+- 普通索引：`cars_id`（`idx_maintenance_items_cars_id`，按车查项目）。
 
 业务注意：
 
@@ -164,7 +156,7 @@
 
 - 主键：`id`。
 - 唯一键：`car_id + date`。
-- 普通索引：`car_id`（`idx_maintenance_records_car_id`，v6 新增，按车拉记录）。
+- 普通索引：`car_id`（`idx_maintenance_records_car_id`，按车拉记录）。
 
 业务注意：
 
@@ -188,7 +180,7 @@
 - 主键：`id`。
 - 唯一键：`car_id + date + item_id`。
 - 普通索引：`maintenance_record_id`（`idx_maintenance_record_items_record_id`，
-  v6 新增，组装记录项目列表时按记录 id 批量查）。
+  组装记录项目列表时按记录 id 批量查）。
 
 业务注意：
 
@@ -197,7 +189,7 @@
 
 ### `fuel_predictions`
 
-加油预测设置表（v7 新增，按车辆一条；v8 起只剩剩余油量，容积在 `cars` 表）。
+加油预测设置表（按车辆一条；容积是 `cars` 表的字段）。
 
 字段：
 
@@ -241,7 +233,6 @@
 - `themeMode`
 - `systemNotificationsEnabled`
 - `inAppNotificationsEnabled`
-- `maintenanceDueEnabled`
 - `maintenanceDueRepeat`
 - `systemNotificationPermissionRequested`
 - `parkingCountdown`
@@ -264,13 +255,9 @@
 
 ## 备份契约边界
 
-当前 JSON 备份契约版本为 `schemaVersion = 4`（2026-09-01 动力类型改版起，
-车辆条目带 `powertrainType`，见 docs/adr/0003），由 `lib/data/backup/backup_codec.dart`
-编码/解码。解码兼容 v2/v3 老备份：老备份车辆没有动力类型字段，恢复后默认 `fuel`；
-v4 备份里出现未知动力类型值时解码直接报错（不静默降级）。
-
-版本历史：v2 = 加油预测之前；v3 = 加油设置进备份（省份/油品 + 每车剩余油量，
-车辆条目带 `tankCapacityLiters`）；v4 = 车带动力类型。
+当前 JSON 备份契约版本为 `schemaVersion = 1`，由
+`lib/data/backup/backup_codec.dart` 编码/解码。解码只认版本 1，其他版本
+直接拒绝，不做旧版本字段回退（docs/adr/0005）。
 
 备份导出包含：
 
@@ -290,4 +277,5 @@ v4 备份里出现未知动力类型值时解码直接报错（不静默降级�
 - 停车倒计时
 - 油价缓存与手填油价（临时数据）
 
-恢复备份时，源车辆 ID 和项目 ID 会映射为新 ID；恢复完成后当前应用车辆写为第一辆恢复出的车辆。
+恢复备份时，源车辆 ID 和项目 ID 会换成新雪花 ID（事务内维护旧→新对应表）；
+恢复完成后当前应用车辆写为第一辆恢复出的车辆。

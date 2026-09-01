@@ -127,7 +127,7 @@ final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
   return ref.watch(lunioRepositoryProvider).getParkingCountdown();
 });
 
-// ---------------- 加油预测（v7 新增） ----------------
+// ---------------- 加油预测 ----------------
 
 /// 加油预测功能开关（偏好 `fuelPredictionEnabled`，'true' 才算开）。
 /// 只在开发者模式里提供开关入口（入口见 profile_page.dart）；
@@ -158,7 +158,7 @@ final fuelGradeProvider = FutureProvider<FuelGrade>((ref) async {
 });
 
 /// 当前应用车辆的加油预测设置（剩余油量 = 加满预估基准档，按车一条；
-/// 油箱容积 v8 起在 Car 上）。无应用车辆返回 null；
+/// 油箱容积在 Car 上）。无应用车辆返回 null；
 /// 从没保存过也是 null（页面按默认 50% 展示）。
 final appliedCarFuelPredictionProvider =
     FutureProvider<FuelPrediction?>((ref) async {

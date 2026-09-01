@@ -8,7 +8,7 @@
 //                                                {schemaVersion, letter, vehicles}。
 // 车型条目名用懂车帝原始车系名（ADR 0003），每条带"推荐动力类型"（template
 // 字段，仅作添加向导预选）；默认保养模板按动力类型分组（fuel/hybrid/plugIn/
-// extended/ev 五组，增程组内容同插混组），不再按品牌+车型逐条展开。
+// extended/ev 五组，增程组内容同插混组）。
 // 例外：个别车型有厂商专属保养项（如思域的燃油宝等），通过条目上可选的
 // itemTemplate 字段引用 templates.json 顶层 vehicleTemplates 里的
 // 车型专属模板（ADR 0004）；专属模板不进数据库，只在添加向导取默认
@@ -45,7 +45,7 @@ Future<BuiltInVehicleCatalog> loadBuiltInVehicleCatalogAsset() async {
   );
   final templatesMap = (jsonDecode(templatesJson) as Map)
       .cast<String, Object?>();
-  if (templatesMap['schemaVersion'] != 2) {
+  if (templatesMap['schemaVersion'] != 1) {
     throw ArgumentError('Unsupported vehicle catalog schemaVersion');
   }
   final vehicles = <Object?>[];
@@ -54,7 +54,7 @@ Future<BuiltInVehicleCatalog> loadBuiltInVehicleCatalogAsset() async {
       'assets/data/catalog/vehicles_$letter.json',
     );
     final shard = (jsonDecode(shardJson) as Map).cast<String, Object?>();
-    if (shard['schemaVersion'] != 2) {
+    if (shard['schemaVersion'] != 1) {
       throw ArgumentError(
         'Unsupported vehicle catalog shard schemaVersion: vehicles_$letter',
       );
@@ -62,7 +62,7 @@ Future<BuiltInVehicleCatalog> loadBuiltInVehicleCatalogAsset() async {
     vehicles.addAll((shard['vehicles'] as List?) ?? const []);
   }
   return BuiltInVehicleCatalog.fromJson({
-    'schemaVersion': 2,
+    'schemaVersion': 1,
     'templates': templatesMap['templates'],
     'vehicleTemplates': templatesMap['vehicleTemplates'],
     'vehicles': vehicles,
@@ -89,13 +89,13 @@ class BuiltInVehicleCatalog {
   final List<BuiltInVehicleSeed> vehicles;
 
   /// 解析 + 完整性校验（fail-fast，坏目录直接抛 ArgumentError）：
-  ///  - schemaVersion 必须是 2；
+  ///  - schemaVersion 必须是 1；
   ///  - 每个模板至少一个项目、模板内项目 id 不重复；
   ///  - 车型 id 不重复、引用的 template（推荐动力类型）必须存在；
   ///  - 车型引用的 itemTemplate（车型专属模板）必须在 vehicleTemplates 里。
   factory BuiltInVehicleCatalog.fromJson(Map<String, Object?> json) {
     final schemaVersion = json['schemaVersion'];
-    if (schemaVersion != 2) {
+    if (schemaVersion != 1) {
       throw ArgumentError('Unsupported vehicle catalog schemaVersion');
     }
     final templatesJson = (json['templates'] as Map).cast<String, Object?>();

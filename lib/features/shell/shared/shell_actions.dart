@@ -1,7 +1,7 @@
 // shell 层通用动作（≈ 抽出来的几个 Controller 方法）：
 // 切换应用车辆、写主题偏好、删除车辆。被 vehicles/profile_page 复用。
 //
-// 通知同步代数（原全局变量）已迁移为 providers.dart 里的
+// 通知同步代数在 providers.dart 里的
 // notificationSyncGenerationProvider（NotifierProvider），见 R8。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

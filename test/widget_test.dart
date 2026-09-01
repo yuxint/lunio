@@ -879,7 +879,7 @@ void main() {
     mockNativeFiles((call) async {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
-          const BackupPayload(schemaVersion: 2),
+          const BackupPayload(schemaVersion: 1),
         );
       }
       return null;
@@ -968,7 +968,7 @@ void main() {
       if (call.method == 'pickJsonFile') {
         return const BackupCodec().encode(
           BackupPayload(
-            schemaVersion: 2,
+            schemaVersion: 1,
             cars: [
               Car(
                 id: 99,

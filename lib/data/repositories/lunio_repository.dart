@@ -56,7 +56,7 @@ class LunioRepository {
   /// 临时数据，不进备份）。
   static const _fuelManualPricesPreferenceKey = 'fuelManualPrices';
 
-  /// 加油预测全局偏好 key（省份/油品编号，进备份 v3 的 fuelPrediction）。
+  /// 加油预测全局偏好 key（省份/油品编号，进备份的 fuelPrediction）。
   static const fuelProvincePreferenceKey = 'fuelProvince';
   static const fuelGradePreferenceKey = 'fuelGrade';
 
@@ -115,8 +115,7 @@ class LunioRepository {
   ///  1. 删除"目录里已不存在"的行（catalogId 不在目标集合）；
   ///  2. 逐条比对：没有则插入、字段有变化则更新（_defaultItemNeedsUpdate）。
   /// 结果：库里的模板表与 asset 目录完全一致（升级 App 更新目录后自动同步）。
-  /// v9 起没有"catalogId 为 null 的老行"兼容分支——迁移已把旧表整个重建，
-  /// 行全部带 catalogId。
+  /// 模板行全部带 catalogId（首启 bootstrap 从 asset 灌入）。
   Future<void> _ensureDefaultMaintenanceItems(
     BuiltInVehicleCatalog catalog,
   ) async {
@@ -514,7 +513,7 @@ class LunioRepository {
   }
 
   /// 某动力类型的默认保养项目模板（添加车辆向导第二步的初始草稿、
-  /// "恢复默认项目"的数据源）。v9 起按动力类型取，不再按品牌+车型。
+  /// "恢复默认项目"的数据源）。按动力类型取。
   Future<List<domain.VehicleDefaultMaintenanceItem>>
   listDefaultItemsForPowertrain({
     required domain.PowertrainType powertrainType,
@@ -910,8 +909,8 @@ class LunioRepository {
   }
 
   /// 导出备份：4 张业务表 + 加油预测设置全量读取（顺序两次查询拼
-  /// itemIds，无 N+1），组装 BackupPayload（schemaVersion=4，v4 起车
-  /// 带动力类型）。不含偏好/停车倒计时/油价缓存与手填价/目录。
+  /// itemIds，无 N+1），组装 BackupPayload（schemaVersion=1）。
+  /// 不含偏好/停车倒计时/油价缓存与手填价/目录。
   Future<BackupPayload> exportBackupPayload() async {
     final cars = (await database.select(database.cars).get())
         .map(_carFromRow)
@@ -956,8 +955,7 @@ class LunioRepository {
   }
 
   /// 恢复备份（导入）。流程：
-  ///  1. 版本校验（必须 2/3/4，v2 老备份没有加油字段，v3 老备份车没有
-  ///     动力类型字段、恢复后默认燃油）；
+  ///  1. 版本校验（只认 schemaVersion=1，ADR 0005：不做旧版本兼容）；
   ///  2. 事务外先做两层预校验，失败直接抛、不碰库：
   ///     a. 引用完整性（_validateBackupReferences）；
   ///     b. 业务规则——每个项目过实体 validate、每条记录过
@@ -969,11 +967,9 @@ class LunioRepository {
   ///     fuelPredictions 顺序逐行插入，id 全部换成新雪花 id（旧→新
   ///     映射表），任何一行违反约束抛错则整体回滚（UI 提示"未写入任何数据"）；
   ///  4. 应用车辆指向恢复出的第一辆车；
-  ///  5. v3 起备份带全局加油设置时覆盖省份/油品偏好（v2 不动）。
+  ///  5. 备份带全局加油设置时覆盖省份/油品偏好（没带则保持用户当前值）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
-    if (payload.schemaVersion != 2 &&
-        payload.schemaVersion != 3 &&
-        payload.schemaVersion != BackupCodec.currentSchemaVersion) {
+    if (payload.schemaVersion != BackupCodec.currentSchemaVersion) {
       throw UnsupportedError(
         'Unsupported backup schemaVersion: ${payload.schemaVersion}',
       );
@@ -1093,7 +1089,7 @@ class LunioRepository {
 
       await _writeAppliedCarId(firstRestoredCarId);
       await _ensureAppliedCarInTransaction();
-      // v3 备份：恢复全局加油设置（省份/油品）。v2 备份没有该字段，
+      // 备份带全局加油设置（省份/油品）时恢复；没带（用户没改过）则
       // 保持用户当前的省份/油品不动。
       final fuelPreference = payload.fuelPrediction;
       if (fuelPreference != null) {
@@ -1107,7 +1103,7 @@ class LunioRepository {
         );
       }
       // 每车加油设置：按新车辆 id 重插（车辆本身已换成新雪花 id）。
-      // 容积在 v8 起随 cars 条目走，这里只插剩余油量。
+      // 容积是 cars 条目的字段（随车恢复），这里只插剩余油量。
       for (final prediction in payload.fuelPredictions) {
         final carId = carIdMap[prediction.carId];
         if (carId == null) {
@@ -1215,7 +1211,7 @@ class LunioRepository {
     return setPreferenceValue(_parkingCountdownPreferenceKey, null);
   }
 
-  // ---------------- 加油预测（v7 新增；v8 起只剩剩余油量） ----------------
+  // ---------------- 加油预测 ----------------
 
   /// 读某辆车的加油预测设置（剩余油量）；没设置过返回 null
   /// （展示层按默认 50% 处理）。
@@ -1915,5 +1911,5 @@ class LunioRepository {
 }
 
 // bootstrap 对账用的"旧数据兜底键"：\u0000 作分隔符保证组合不歧义。
-// （只用于车型表；模板表 v9 重建后全部行带 catalogId，不需要兜底键。）
+// （只用于车型表；模板表全部行带 catalogId，不需要兜底键。）
 String _vehicleModelKey(String brand, String model) => '$brand\u0000$model';

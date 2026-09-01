@@ -1,5 +1,5 @@
-// 测试辅助：从磁盘读取按字母分片的内置车型目录，拼装成与旧单文件
-// 相同结构的 JSON Map，供 BuiltInVehicleCatalog.fromJson 解析。
+// 测试辅助：从磁盘读取按字母分片的内置车型目录，拼装成完整目录
+// JSON Map，供 BuiltInVehicleCatalog.fromJson 解析。
 // （生产环境走 lib/data/bootstrap/built_in_vehicle_catalog.dart 的
 // rootBundle 版本；测试直读文件是为了不依赖 AssetBundle。）
 import 'dart:convert';
@@ -29,7 +29,7 @@ Map<String, Object?> loadBuiltInCatalogJson() {
     vehicles.addAll((shard['vehicles'] as List?) ?? const []);
   }
   return {
-    'schemaVersion': 2,
+    'schemaVersion': 1,
     'templates': templates['templates'],
     'vehicleTemplates': templates['vehicleTemplates'],
     'vehicles': vehicles,

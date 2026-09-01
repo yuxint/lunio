@@ -1,8 +1,5 @@
 
-import 'dart:io';
-
-import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
-import 'package:drift/native.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
@@ -46,7 +43,7 @@ void main() {
   test('vehicle catalog requires stable ids', () {
     expect(
       () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -66,7 +63,7 @@ void main() {
     );
     expect(
       () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -97,7 +94,7 @@ void main() {
     );
     expect(
       () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -226,149 +223,6 @@ void main() {
     expect(cars.single.id, isNotNull);
     expect(cars.single.brand, '本田');
     expect(cars.single.model, '22款思域');
-  });
-
-  test('v7→v8 迁移：cars 补容积列、fuel_predictions 删容积列', () async {
-    // 内存库每次都是全新 schema（createAll 直接建 v9 表），走不到
-    // onUpgrade；用临时文件库先建 v9 表、再手工退化成 v7 形状并拨回
-    // 版本号，重开后验证升级路径（会连跑 v7→v8→v9 两段迁移）。
-    // （回归背景：v8 迁移曾漏给 cars 加容积列，老库升级后保存车辆
-    // 报 no such column，界面提示"操作失败"。）
-    final tempDir = await Directory.systemTemp.createTemp('lunio_migration');
-    addTearDown(() => tempDir.delete(recursive: true));
-    final dbFile = File('${tempDir.path}/lunio.sqlite');
-
-    // 1) 建当前 schema 的库，再退化成 v7 形状：cars 无容积/动力列、
-    //    fuel_predictions 有容积列、车型表无推荐动力列、模板表还是
-    //    "品牌+车型"形状，user_version 拨回 7。
-    final setup = AppDatabase.withExecutor(NativeDatabase(dbFile));
-    await setup.customSelect('SELECT 1').get();
-    await setup.customStatement(
-      'ALTER TABLE cars DROP COLUMN tank_capacity_liters',
-    );
-    await setup.customStatement(
-      'ALTER TABLE cars DROP COLUMN powertrain_type',
-    );
-    await setup.customStatement(
-      'ALTER TABLE vehicle_models DROP COLUMN template',
-    );
-    await setup.customStatement(
-      'ALTER TABLE fuel_predictions ADD COLUMN tank_capacity_liters REAL NULL',
-    );
-    await setup.customStatement(
-      'DROP TABLE vehicle_default_maintenance_items',
-    );
-    await setup.customStatement(
-      'CREATE TABLE vehicle_default_maintenance_items ('
-      'id INTEGER NOT NULL PRIMARY KEY, '
-      'catalog_id TEXT NULL, '
-      'vehicle_brand TEXT NOT NULL, '
-      'vehicle_model TEXT NOT NULL, '
-      'item_name TEXT NOT NULL, '
-      'remind_by_mileage INTEGER NOT NULL, '
-      'remind_by_time INTEGER NOT NULL, '
-      'mileage_interval_km INTEGER NULL, '
-      'time_interval_months INTEGER NULL, '
-      'not_overdue_upper_limit REAL NOT NULL DEFAULT 100, '
-      'overdue_upper_limit REAL NOT NULL DEFAULT 125, '
-      'sort_order INTEGER NOT NULL, '
-      'sync_status TEXT NOT NULL DEFAULT \'synced\', '
-      'updated_at TEXT NOT NULL, '
-      'version INTEGER NOT NULL DEFAULT 1)',
-    );
-    await setup.customStatement('PRAGMA user_version = 7');
-    await setup.close();
-
-    // 2) 重开触发 v7→v8 迁移，检查两张表的列。
-    // （drift 会对"同一路径第二次建库"发例行警告；本测试是先关再开、
-    // 顺序使用无并发，静音该警告。）
-    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-    final migrated = AppDatabase.withExecutor(NativeDatabase(dbFile));
-    Future<List<String>> columnNames(String table) => migrated
-        .customSelect('PRAGMA table_info($table)')
-        .get()
-        .then((rows) => rows.map((row) => row.read<String>('name')).toList());
-    expect(await columnNames('cars'), contains('tank_capacity_liters'));
-    expect(
-      await columnNames('fuel_predictions'),
-      isNot(contains('tank_capacity_liters')),
-    );
-
-    // 3) 迁移后的库能正常写入带容积的车辆（老库缺列时正是死在这一步）。
-    await migrated
-        .into(migrated.cars)
-        .insert(
-          CarsCompanion.insert(
-            id: const Value(1),
-            brand: '本田',
-            model: '22款思域',
-            currentMileageKm: 10000,
-            roadDate: '2023-08-12',
-            tankCapacityLiters: const Value(55.0),
-            updatedAt: DateTime(2026).toIso8601String(),
-          ),
-        );
-    expect(
-      (await migrated.select(migrated.cars).get()).single.tankCapacityLiters,
-      55.0,
-    );
-    await migrated.close();
-  });
-
-  test('v8→v9 迁移：cars/vehicle_models 补动力列、模板表重建', () async {
-    // 与 v7→v8 测试同法：临时文件库先建 v9 表，退化成 v8 形状
-    // （删两列 + 用旧形状重建模板表），拨回版本号重开，验证升级路径。
-    final tempDir = await Directory.systemTemp.createTemp('lunio_migration_v9');
-    addTearDown(() => tempDir.delete(recursive: true));
-    final dbFile = File('${tempDir.path}/lunio.sqlite');
-
-    final setup = AppDatabase.withExecutor(NativeDatabase(dbFile));
-    await setup.customSelect('SELECT 1').get();
-    await setup.customStatement(
-      'ALTER TABLE cars DROP COLUMN powertrain_type',
-    );
-    await setup.customStatement(
-      'ALTER TABLE vehicle_models DROP COLUMN template',
-    );
-    await setup.customStatement('PRAGMA user_version = 8');
-    await setup.close();
-
-    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-    final migrated = AppDatabase.withExecutor(NativeDatabase(dbFile));
-    Future<List<String>> columnNames(String table) => migrated
-        .customSelect('PRAGMA table_info($table)')
-        .get()
-        .then((rows) => rows.map((row) => row.read<String>('name')).toList());
-    expect(await columnNames('cars'), contains('powertrain_type'));
-    expect(await columnNames('vehicle_models'), contains('template'));
-    // 模板表按新形状（动力类型维度）重建。
-    expect(
-      await columnNames('vehicle_default_maintenance_items'),
-      contains('powertrain_type'),
-    );
-    expect(
-      await columnNames('vehicle_default_maintenance_items'),
-      isNot(contains('vehicle_brand')),
-    );
-
-    // 迁移后老车动力类型默认燃油（不回填推断，ADR 0003）。
-    await migrated
-        .into(migrated.cars)
-        .insert(
-          CarsCompanion.insert(
-            id: const Value(1),
-            brand: '本田',
-            model: '22款思域',
-            currentMileageKm: 10000,
-            roadDate: '2023-08-12',
-            updatedAt: DateTime(2026).toIso8601String(),
-          ),
-        );
-    expect(
-      (await migrated.select(migrated.cars).get()).single.powertrainType,
-      'fuel',
-    );
-    await migrated.close();
   });
 
   test('v6 schema creates business table indexes', () async {
@@ -568,7 +422,7 @@ void main() {
   test('vehicle itemTemplate must reference vehicleTemplates', () {
     expect(
       () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -669,7 +523,7 @@ void main() {
       );
 
       final initialCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -709,7 +563,7 @@ void main() {
       expect(adoptedItem.timeIntervalMonths, 6);
 
       final updatedCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -756,7 +610,7 @@ void main() {
     'bootstrap deletes removed catalog rows without touching user car items',
     () async {
       final initialCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': {
           'fuel': [
             {
@@ -815,10 +669,10 @@ void main() {
       );
 
       // "目录更新后条目被移除"：模板全撤、车型清空。
-      // 注意 v9 起默认项目按动力类型展开（与车型列表无关），所以这里
+      // 注意默认项目按动力类型展开（与车型列表无关），所以这里
       // 模板也要清空，模板表才会被对账清到只剩用户自建行。
       final emptyCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 2,
+        'schemaVersion': 1,
         'templates': const <String, Object?>{},
         'vehicles': <Object?>[],
       });
@@ -1864,25 +1718,25 @@ void main() {
     }
 
     final negativeCost = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: backup.cars,
       maintenanceItems: backup.maintenanceItems,
       records: [tamperedRecord(costCents: -1, mileageKm: 12000, itemIds: [itemId])],
     );
     final negativeMileage = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: backup.cars,
       maintenanceItems: backup.maintenanceItems,
       records: [tamperedRecord(costCents: 0, mileageKm: -1, itemIds: [itemId])],
     );
     final emptyItemIds = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: backup.cars,
       maintenanceItems: backup.maintenanceItems,
       records: [tamperedRecord(costCents: 0, mileageKm: 12000)],
     );
     final invalidItemInterval = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: backup.cars,
       maintenanceItems: [
         MaintenanceItem(
@@ -1978,7 +1832,7 @@ void main() {
     final (existingCarId, _) = await seedCarAndItem();
     await repository.setAppliedCarId(existingCarId);
     final backup = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: [
         Car(
           id: 99,
@@ -2043,7 +1897,7 @@ void main() {
       await seedCarAndItem();
       final backup = await repository.exportBackupPayload();
       final invalid = BackupPayload(
-        schemaVersion: 2,
+        schemaVersion: 1,
         cars: backup.cars,
         maintenanceItems: backup.maintenanceItems,
         records: [
@@ -2093,7 +1947,7 @@ void main() {
     );
     final backup = await repository.exportBackupPayload();
     final invalid = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: backup.cars,
       maintenanceItems: backup.maintenanceItems,
       records: [
@@ -2160,7 +2014,7 @@ void main() {
     final (carId, _) = await seedCarAndItem();
     await repository.setAppliedCarId(carId);
     final invalid = BackupPayload(
-      schemaVersion: 2,
+      schemaVersion: 1,
       cars: [
         Car(
           id: 99,

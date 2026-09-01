@@ -1,6 +1,6 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-08-26 · 基于 schemaVersion 6 / 备份 schemaVersion 2 代码快照
+> 版本：2026-09-01 · 基于 schemaVersion 1 / 备份 schemaVersion 1 代码快照
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
@@ -253,7 +253,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 我的页"备份数据" → `settings_data.dart:170 → exportBackup`：
 
-1. `repository.exportBackupPayload`——4 张业务表 + 加油设置全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 4（v4 起车带动力类型；v2/v3 老备份解码兼容，恢复后老车动力默认燃油）；
+1. `repository.exportBackupPayload`——4 张业务表 + 加油设置全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 1（只认当前版本，不做旧备份兼容，见 docs/adr/0005）；
 2. `BackupCodec().encode`（lib/data/backup/backup_codec.dart）——手写 JSON 序列化；
 3. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`；
 4. 成功/失败 toast。
@@ -305,7 +305,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；"手填" → sheet 写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）；"清除"回到数据源价。数据源当前是 `MockFuelPriceSource`（真接口换 `fuelPriceSourceProvider` 注入，见 ADR 0001）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或换省/无缓存时静默拉取，失败退回旧缓存。
 2. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，31 项限高 320 可滚动、打开时定位到当前项）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
 3. **加满预估卡（滚动定档）**：全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 在惯性结束把第一行吸附到整行边界，`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。金额 =（100−档位）/100 × 容积 × 每升价（`FuelRules.fullTankCostCents`，分存储）；第一行档位高亮、无"（当前）"文字。
-4. **油箱容积入口在车辆管理**（v8 起）：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
+4. **油箱容积入口在车辆管理**：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
 
 ---
 
@@ -368,18 +368,18 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 
 ## 7. 数据与偏好速查表
 
-### 7.1 数据库表（schemaVersion = 9，`lib/data/database/app_database.dart`）
+### 7.1 数据库表（schemaVersion = 1，`lib/data/database/app_database.dart`）
 
 | 表 | 内容 | 关键唯一约束 |
 |---|---|---|
-| cars | 车辆（v8 起含油箱容积；v9 起含动力类型，默认 fuel） | {brand, model, roadDate} |
-| vehicle_models | 内置车型目录（bootstrap 灌入，v9 起含推荐动力类型 template） | {catalogId}, {brand, model} |
-| vehicle_default_maintenance_items | 默认项目模板，**v9 起按动力类型分组**（五组共 46 项，bootstrap 灌入） | {catalogId}, {powertrainType, itemName} |
-| maintenance_items | 车辆保养项目 | {carsId, name}；普通索引 cars_id（v6） |
-| maintenance_records | 保养记录主表 | **{carId, date}（一天一条）**；普通索引 car_id（v6） |
-| maintenance_record_items | 记录-项目关联 | {carId, date, itemId}；普通索引 maintenance_record_id（v6） |
+| cars | 车辆（含油箱容积；含动力类型，默认 fuel） | {brand, model, roadDate} |
+| vehicle_models | 内置车型目录（bootstrap 灌入，含推荐动力类型 template） | {catalogId}, {brand, model} |
+| vehicle_default_maintenance_items | 默认项目模板，**按动力类型分组**（五组共 46 项，bootstrap 灌入） | {catalogId}, {powertrainType, itemName} |
+| maintenance_items | 车辆保养项目 | {carsId, name}；普通索引 cars_id |
+| maintenance_records | 保养记录主表 | **{carId, date}（一天一条）**；普通索引 car_id |
+| maintenance_record_items | 记录-项目关联 | {carId, date, itemId}；普通索引 maintenance_record_id |
 | app_preferences | 偏好 KV | {key} |
-| fuel_predictions | 加油预测设置（剩余油量=基准档，v8 起容积在 cars） | {carId} |
+| fuel_predictions | 加油预测设置（剩余油量=基准档，容积在 cars） | {carId} |
 
 ### 7.2 偏好 key 清单（app_preferences 表）
 
@@ -395,8 +395,8 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | `manualDateEnabled` / `manualDate` | 手动日期 | 手动日期 sheet / 关开发者模式 |
 | `parkingCountdown` | 停车倒计时 JSON（**不进备份**） | 停车保存/结束 |
 | `fuelPredictionEnabled` | 加油预测功能开关 | 我的页开发者模式开关 / 关开发者模式连带清除 |
-| `fuelProvince` | 加油预测省份（默认湖北，**进备份 v3**） | 加油页省份 sheet / 恢复备份 v3 |
-| `fuelGrade` | 加油预测油品 code（**进备份 v3**） | 加油页油品分段 / 恢复备份 v3 |
+| `fuelProvince` | 加油预测省份（默认湖北，**进备份**） | 加油页省份 sheet / 恢复备份 |
+| `fuelGrade` | 加油预测油品 code（**进备份**） | 加油页油品分段 / 恢复备份 |
 | `fuelPriceCache` | 油价缓存 JSON（**不进备份**） | FuelPriceController 拉取成功 |
 | `fuelManualPrices` | 手填油价 JSON（**不进备份**） | 加油页手填/清除手填 |
 | `maintenanceReminderSnoozedUntil:<itemId>` | 保养项 snooze 截止日 | 应用内弹窗 |

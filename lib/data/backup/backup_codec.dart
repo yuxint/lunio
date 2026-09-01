@@ -1,8 +1,8 @@
 // 备份 JSON 的编解码器（≈ Java 里的 Jackson 手写 Serializer/Deserializer）。
 //
-// 备份契约（schemaVersion = 4，与数据库 schemaVersion=9 是两套独立版本号）：
+// 备份契约（schemaVersion = 1，与数据库 schemaVersion=1 是两套独立版本号）：
 // {
-//   "schemaVersion": 4,
+//   "schemaVersion": 1,
 //   "cars": [ { id, brand, model, powertrainType, currentMileageKm, roadDate,
 //               tankCapacityLiters, sync } ],
 //   "maintenanceItems": [ { id, carsId, name, ..., sync } ],
@@ -11,12 +11,8 @@
 //   "fuelPredictions": [ { carId, fuelPercent, sync } ]
 // }
 //
-// v3 新增（2026-08-31，加油预测功能）：加油设置进备份——全局的省份/油品
-// （fuelPrediction，可为 null = 用户没动过）+ 每车的剩余油量；油箱容积
-// 挪进 cars 条目（v3 形状调整，App 未上线无流通旧 v3 备份，产品确认）。
-// v4 新增（2026-09-01，动力类型改版 ADR 0003）：cars 条目带 powertrainType。
-// 解码兼容 v2/v3（老备份没有该字段，恢复后动力类型默认燃油）；
-// 油价缓存与手填油价是临时数据，不进备份。
+// 解码只认 schemaVersion=1，其他版本直接拒绝，不做旧版本字段回退
+// （ADR 0005）。油价缓存与手填油价是临时数据，不进备份。
 //
 // ⚠ 契约边界（改字段前必读）：
 //  - 不包含偏好（主题/应用车辆/通知设置/snooze 等）；
@@ -45,13 +41,13 @@ class BackupPayload {
     this.fuelPredictions = const [],
   });
 
-  /// 备份契约版本：v2 = 加油预测之前；v3 = 含加油设置；v4 = 车带动力类型（当前写入版本）。
+  /// 备份契约版本（ADR 0005：只认 1，不做旧版本兼容）。
   final int schemaVersion;
   final List<Car> cars;
   final List<MaintenanceItem> maintenanceItems;
   final List<MaintenanceRecord> records;
 
-  /// 全局加油设置（省份 + 油品），用户没改过为 null（v2 备份恒为 null）。
+  /// 全局加油设置（省份 + 油品），用户没改过为 null。
   final BackupFuelPreference? fuelPrediction;
 
   /// 每辆车的加油预测设置（剩余油量；容积在 cars 条目里）。
@@ -70,8 +66,8 @@ class BackupFuelPreference {
 class BackupCodec {
   const BackupCodec();
 
-  /// 当前写入的备份契约版本。
-  static const int currentSchemaVersion = 4;
+  /// 当前写入的备份契约版本（ADR 0005）。
+  static const int currentSchemaVersion = 1;
 
   /// 编码为 JSON 字符串（导出文件内容）。
   String encode(BackupPayload payload) {
@@ -94,13 +90,14 @@ class BackupCodec {
 
   /// 从 JSON 字符串解码（导入文件内容）。
   ///
-  /// 接受 v2/v3/v4（向后兼容老备份）；引用完整性由 Repository._validateBackupReferences
-  /// 负责，业务规则（金额/里程非负等）恢复时不校验（审查报告 R35）。
-  /// 其他版本抛 UnsupportedError，UI 提示"不支持的备份文件"。
+  /// 只接受当前版本，其他版本抛 UnsupportedError，UI 提示"不支持的备份
+  /// 文件"（ADR 0005：不做旧版本兼容）。引用完整性由
+  /// Repository._validateBackupReferences 负责，业务规则（金额/里程非负
+  /// 等）恢复时不校验（审查报告 R35）。
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;
-    if (version != 2 && version != 3 && version != currentSchemaVersion) {
+    if (version != currentSchemaVersion) {
       throw UnsupportedError('Unsupported backup schemaVersion: $version');
     }
     final fuelPreferenceMap = map['fuelPrediction'] as Map<String, Object?>?;
@@ -181,16 +178,11 @@ class BackupCodec {
   }
 
   Car _carFromJson(Map<String, Object?> json) {
-    // powertrainType 是 v4 起才有的字段：v2/v3 老备份没有，按默认燃油恢复
-    // （ADR 0003：老数据不回填推断）；v4 备份里的未知值 fail-fast 抛错。
-    final powertrainWire = json['powertrainType'] as String?;
     return Car(
       id: json['id'] as int?,
       brand: json['brand'] as String,
       model: json['model'] as String,
-      powertrainType: powertrainWire == null
-          ? PowertrainType.fuel
-          : PowertrainType.byWire(powertrainWire),
+      powertrainType: PowertrainType.byWire(json['powertrainType'] as String),
       currentMileageKm: json['currentMileageKm'] as int,
       roadDate: LocalDate.parse(json['roadDate'] as String),
       tankCapacityLiters: (json['tankCapacityLiters'] as num?)?.toDouble(),
