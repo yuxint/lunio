@@ -719,7 +719,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
         Text('确认下次提醒间隔', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 6),
         Text(
-          '保存后会同时更新本次保养项目的默认提醒间隔。',
+          '间隔会存为项目默认值，下次提醒从最近一次保养记录起算。',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),

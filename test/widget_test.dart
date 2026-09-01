@@ -14,6 +14,7 @@ import 'package:lunio/app/lunio_app.dart';
 import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/core/notifications/lunio_notification_service.dart';
+import 'package:lunio/core/theme/lunio_theme.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
 import 'helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
@@ -2608,6 +2609,44 @@ void main() {
     expect(find.text('选择省份'), findsNothing);
     expect(await repository.getPreferenceValue('fuelProvince'), '广东');
     expect(find.text('广东'), findsOneWidget);
+  });
+
+  testWidgets('sheet 骨架按底部安全区抬高内容，键盘不叠加预留', (tester) async {
+    Widget wrapSheet({double safeBottom = 0, double keyboardInset = 0}) =>
+        MaterialApp(
+          theme: buildLunioTheme(),
+          // 真实弹窗链路里外层是松约束（sheet 贴内容收缩），这里用 Center
+          // 复现：否则紧约束下滚动容器撑满全屏，量不到高度差。
+          home: Center(
+            child: Builder(
+              builder: (context) => MediaQuery(
+                // 模拟全面屏底部安全区（Home 横条/屏幕圆角），iPhone 常见约 34。
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(padding: EdgeInsets.only(bottom: safeBottom)),
+                child: PrototypeSheetFrame(
+                  title: '选择油品',
+                  bottomInset: keyboardInset,
+                  child: const SizedBox(height: 40),
+                ),
+              ),
+            ),
+          ),
+        );
+    double frameHeight() =>
+        tester.getRect(find.byType(PrototypeSheetFrame)).height;
+
+    // 基准：无安全区、无键盘。
+    await tester.pumpWidget(wrapSheet());
+    final baseHeight = frameHeight();
+
+    // 有安全区：总高度比基准多 34，内容被抬离屏幕圆角区。
+    await tester.pumpWidget(wrapSheet(safeBottom: 34));
+    expect(frameHeight(), baseHeight + 34);
+
+    // 键盘高度(300)高于安全区时取较大值，只多 300 而不是 334（不叠加）。
+    await tester.pumpWidget(wrapSheet(safeBottom: 34, keyboardInset: 300));
+    expect(frameHeight(), baseHeight + 300);
   });
 
   testWidgets('fuel page guides to fill tank capacity before costing', (

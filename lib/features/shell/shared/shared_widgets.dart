@@ -10,6 +10,8 @@
 // 与 modal_feedback 的 _LunioDefaultSheetSurface 是两套并存实现。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -146,6 +148,8 @@ class SmallActionButton extends StatelessWidget {
 /// 表单/信息类 sheet 的统一骨架（全项目唯一，§5.3.2 收敛）：drag handle +
 /// 标题/副标题 + 可滚动内容 + bottomInset（预留给键盘）。
 /// 配合 showLunioModalSheet 使用（内部即透明底，调用方不再传表面参数）。
+/// 底部会自动叠加系统安全区高度（全面屏圆角/Home 横条），把内容抬离
+/// 屏幕底边；与键盘高度取较大值，避免键盘弹起时双重预留。
 class PrototypeSheetFrame extends StatelessWidget {
   const PrototypeSheetFrame({
     required this.title,
@@ -162,8 +166,16 @@ class PrototypeSheetFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    // 弹层不走 SafeArea（贴底绘制），这里手动读取底部安全区：
+    // 无圆角/无横条的老设备该值为 0，布局不受影响。
+    final safeBottom = MediaQuery.of(context).padding.bottom;
     final content = Padding(
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + bottomInset),
+      padding: EdgeInsets.fromLTRB(
+        18,
+        12,
+        18,
+        18 + math.max(safeBottom, bottomInset),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
