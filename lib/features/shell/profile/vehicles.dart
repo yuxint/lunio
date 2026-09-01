@@ -405,10 +405,12 @@ class AddCarFormState extends State<AddCarForm> {
             FilteringTextInputFormatter.allow(RegExp(r'^\d{0,3}\.?\d{0,4}')),
           ],
           onSubmitted: (_) => FocusScope.of(context).unfocus(),
+          // 标签始终浮在框顶：默认行为下空值未聚焦时标签会落进输入框
+          // 中间（占位符位置），与上方字段（标签都在框顶）不一致。
           decoration: numberInputDecoration(
             labelText: '油箱容积（选填）',
             suffixText: '升',
-          ),
+          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.always),
         ),
         if (errorText != null) ...[
           const SizedBox(height: 10),
