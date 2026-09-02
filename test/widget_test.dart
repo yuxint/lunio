@@ -30,6 +30,7 @@ import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/features/shell/profile/vehicles.dart' show PickerOption;
 import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
+import 'package:lunio/features/shell/shared/modal_feedback.dart' show showLunioModalSheet;
 import 'package:lunio/features/shell/shared/shared_widgets.dart' show PrototypeSheetFrame;
 
 /// 油价源测试替身：固定全国价表（湖北 92# = 7.61，与 55 升 50% 档
@@ -2758,6 +2759,134 @@ void main() {
     // 键盘高度(300)高于安全区时取较大值，只多 300 而不是 334（不叠加）。
     await tester.pumpWidget(wrapSheet(safeBottom: 34, keyboardInset: 300));
     expect(frameHeight(), baseHeight + 300);
+  });
+
+  testWidgets('底部 sheet 下拉整块跟手，松手过阈值关闭', (tester) async {
+    Widget buildHost(WidgetBuilder sheetBuilder) => MaterialApp(
+      theme: buildLunioTheme(),
+      home: Scaffold(
+        body: Center(
+          child: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showLunioModalSheet<void>(
+                context: context,
+                builder: sheetBuilder,
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      buildHost(
+        (context) => PrototypeSheetFrame(
+          title: '测试弹窗',
+          child: const SizedBox(height: 40),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(find.text('测试弹窗'), findsOneWidget);
+
+    // 在标题处下拉 180px（分步发指针事件，滚动识别器需要帧间隔才认领
+    // 手势；内容无滚动余地，出界距离直接变成 sheet 下移量），松手后远超
+    // 关闭阈值（矮 sheet 阈值按 80px 下限计）。
+    final titleCenter = tester.getCenter(find.text('测试弹窗'));
+    final gesture = await tester.startGesture(titleCenter);
+    await gesture.moveBy(const Offset(0, 60));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 120));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('测试弹窗'), findsNothing);
+  });
+
+  testWidgets('点弹窗内非输入框区域收起键盘但不关弹窗', (tester) async {
+    final focusNode = FocusNode();
+    Widget buildHost() => MaterialApp(
+      theme: buildLunioTheme(),
+      home: Scaffold(
+        body: Center(
+          child: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showLunioModalSheet<void>(
+                context: context,
+                builder: (context) => PrototypeSheetFrame(
+                  title: '输入弹窗',
+                  child: TextField(focusNode: focusNode),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildHost());
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    // 点标题（非输入框）：键盘收起，弹窗保持打开。
+    await tester.tap(find.text('输入弹窗'));
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse);
+    expect(find.text('输入弹窗'), findsOneWidget);
+  });
+
+  testWidgets('内容超一屏的 sheet：向上拖正常滚动，顶部下拉拖关', (tester) async {
+    Widget buildHost() => MaterialApp(
+      theme: buildLunioTheme(),
+      home: Scaffold(
+        body: Center(
+          child: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showLunioModalSheet<void>(
+                context: context,
+                builder: (context) => PrototypeSheetFrame(
+                  title: '长内容弹窗',
+                  child: Container(color: Colors.teal, height: 1200),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildHost());
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    // 内容超一屏：内部滚动容器可滚，向上拖应正常滚内容（标题上移），
+    // 而不是把 sheet 拖走。
+    final titleCenter = tester.getCenter(find.text('长内容弹窗'));
+    final scrollGesture = await tester.startGesture(titleCenter);
+    await scrollGesture.moveBy(const Offset(0, -60));
+    await tester.pump();
+    await scrollGesture.moveBy(const Offset(0, -120));
+    await tester.pump();
+    await scrollGesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('长内容弹窗'), findsOneWidget);
+    final scrolledDy = tester.getTopLeft(find.text('长内容弹窗')).dy;
+    expect(scrolledDy, lessThan(titleCenter.dy - 100));
+
+    // 滚回顶部后下拉：内部出界滚动转成 sheet 跟手，松手过阈值关闭。
+    final backGesture = await tester.startGesture(titleCenter);
+    await backGesture.moveBy(const Offset(0, 60));
+    await tester.pump();
+    await backGesture.moveBy(const Offset(0, 300));
+    await tester.pump();
+    await backGesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('长内容弹窗'), findsNothing);
   });
 
   testWidgets('fuel page guides to fill tank capacity before costing', (

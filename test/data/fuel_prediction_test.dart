@@ -306,9 +306,19 @@ void main() {
       expect(backup.cars.single.tankCapacityLiters, 55);
       expect(backup.fuelPredictions.single.fuelPercent, 50);
       expect(json, contains('tankCapacityLiters'));
-      // 临时数据不进备份。
+      // 临时数据不进备份：键名不出现，手填价的数值也不出现。
+      // 数值判断走解码后的结构遍历，不做全文子串匹配——备份里合法的
+      // ISO 时间戳（秒+毫秒如 :47.6xx）会让"7.6"子串断言偶发误报。
       expect(json, isNot(contains('fuelPriceCache')));
-      expect(json, isNot(contains('7.6')));
+      expect(json, isNot(contains('fuelManualPrice')));
+      bool containsNumValue(Object? node, num target) {
+        if (node is num) return node == target;
+        if (node is Map) return node.values.any((v) => containsNumValue(v, target));
+        if (node is List) return node.any((v) => containsNumValue(v, target));
+        return false;
+      }
+
+      expect(containsNumValue(jsonDecode(json), 7.6), isFalse);
     });
 
     test('恢复备份：加油设置按新车 id 重插并覆盖省份/油品偏好', () async {
