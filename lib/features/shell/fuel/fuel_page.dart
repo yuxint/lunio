@@ -55,7 +55,7 @@ class FuelPreviewPage extends ConsumerWidget {
         .watch(appliedCarProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
     return LunioPage(
-      title: '加油',
+      title: '加油预测',
       children: [
         if (car == null)
           const LunioCard(child: Text('请先新增车辆'))
