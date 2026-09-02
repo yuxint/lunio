@@ -652,7 +652,7 @@ class MaintenanceItemList extends StatelessWidget {
   }
 }
 
-/// 单个项目卡：名称 + 规则文案 + 编辑/启停/删除按钮。
+/// 单个项目卡：左侧名称 + 规则文案，右侧编辑/启停/删除按钮，同一行排布。
 class MaintenanceItemCard extends StatelessWidget {
   const MaintenanceItemCard({
     required this.item,
@@ -705,24 +705,39 @@ class MaintenanceItemCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(item.name, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 5),
-          Text(
-            _itemRuleText(
-              remindByMileage: item.remindByMileage,
-              remindByTime: item.remindByTime,
-              mileageIntervalKm: item.mileageIntervalKm,
-              timeIntervalMonths: item.timeIntervalMonths,
+          // 左侧：名称 + 规则文案，占满剩余宽度；超长时省略号截断，
+          // 保证右侧按钮始终与名称同处一行。
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _itemRuleText(
+                    remindByMileage: item.remindByMileage,
+                    remindByTime: item.remindByTime,
+                    mileageIntervalKm: item.mileageIntervalKm,
+                    timeIntervalMonths: item.timeIntervalMonths,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(height: 10),
-          Align(alignment: Alignment.centerRight, child: actions),
+          const SizedBox(width: 10),
+          actions,
         ],
       ),
     );
