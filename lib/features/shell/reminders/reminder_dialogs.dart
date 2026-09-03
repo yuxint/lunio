@@ -1,31 +1,30 @@
 // 应用内提醒弹窗（AppShell 检测到到期项时弹出）：保养提醒 + 里程更新两类。
 //
-// 两个动作的语义（返回值由 AppShell 处理副作用）：
-//  - acknowledged（"知道了"）：当天不再弹（AppShell 写当日 ack 偏好）；
-//  - snoozed（"15 天内不再提醒"）：这里直接写 snooze 偏好
+// 两个动作的语义（返回值由通知同步控制器处理副作用）：
+//  - acknowledged（"知道了"）：当天不再弹（控制器经协调器写当日 ack 偏好）；
+//  - snoozed（"15 天内不再提醒"）：这里经协调器写 snooze 偏好
 //    （系统通知和应用内弹窗一起静默 15 天）。
 // 点遮罩关闭返回 null（什么都不写，下次签名变化/resume 还会弹）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
+import 'notification_coordinator.dart';
 import 'reminder_notifications.dart';
 
 /// 弹窗动作结果枚举。
 enum ReminderDialogAction { acknowledged, snoozed }
 
 /// 保养提醒弹窗：一次列出全部到期项（每项一段）。
-/// "15 天内不再提醒"逐项写 snooze 偏好后返回 snoozed。
+/// "15 天内不再提醒"经协调器逐项写 snooze 偏好后返回 snoozed。
 Future<ReminderDialogAction?> showMaintenanceReminderDialog({
   required BuildContext context,
-  required WidgetRef ref,
+  required LunioNotificationCoordinator coordinator,
   required Car car,
   required List<ReminderViewData> maintenanceNotices,
   required LocalDate today,
@@ -39,16 +38,12 @@ Future<ReminderDialogAction?> showMaintenanceReminderDialog({
         maintenanceNotices: maintenanceNotices,
         today: today,
         onSnoozeAll: () async {
-          final repository = ref.read(lunioRepositoryProvider);
-          final until = snoozeUntilDate(today).toString();
-          for (final notice in maintenanceNotices) {
-            final itemId = notice.item.id;
-            if (itemId != null) {
-              await repository.setPreferenceValue(
-                maintenanceReminderSnoozeKey(itemId),
-                until,
-              );
-            }
+          final itemIds = [
+            for (final notice in maintenanceNotices)
+              if (notice.item.id != null) notice.item.id!,
+          ];
+          if (itemIds.isNotEmpty) {
+            await coordinator.snoozeMaintenanceItems(itemIds, today);
           }
         },
       );
@@ -59,7 +54,7 @@ Future<ReminderDialogAction?> showMaintenanceReminderDialog({
 /// 里程更新提醒弹窗（按车 snooze）。
 Future<ReminderDialogAction?> showMileageUpdateReminderDialog({
   required BuildContext context,
-  required WidgetRef ref,
+  required LunioNotificationCoordinator coordinator,
   required Car car,
   required LocalDate today,
 }) {
@@ -74,12 +69,7 @@ Future<ReminderDialogAction?> showMileageUpdateReminderDialog({
           if (carId == null) {
             return;
           }
-          await ref
-              .read(lunioRepositoryProvider)
-              .setPreferenceValue(
-                mileageUpdateSnoozeKey(carId),
-                snoozeUntilDate(today).toString(),
-              );
+          await coordinator.snoozeMileageUpdate(carId, today);
         },
       );
     },

@@ -348,15 +348,33 @@ void invalidateVehicleProviders(WidgetRef ref) {
   ref.invalidate(appliedCarRecordsProvider);
 }
 
-/// 偏好类缓存整体失效：开发者模式、手动日期、生效日期、主题、通知设置。
-void invalidatePreferenceProviders(WidgetRef ref) {
+/// 偏好类缓存整体失效的共用实现。WidgetRef 和容器 Ref 是两个没有共同
+/// 父类的类型（riverpod 3.2 也未导出二者共同的参数类型 ProviderOrFamily），
+/// 故用 dynamic 承接二者同签名的 invalidate；对外只暴露下面两个静态
+/// 类型入口，调用侧不失去类型检查。
+void _invalidatePreferences(dynamic ref) {
   ref.invalidate(developerModeProvider);
   ref.invalidate(manualDatePreferenceProvider);
   ref.invalidate(effectiveTodayProvider);
   ref.invalidate(themeModePreferenceProvider);
   ref.invalidate(notificationSettingsProvider);
-  invalidateFuelPreferenceProviders(ref);
+  ref.invalidate(fuelPredictionEnabledProvider);
+  ref.invalidate(fuelProvinceProvider);
+  ref.invalidate(fuelGradeProvider);
+  ref.invalidate(appliedCarFuelPredictionProvider);
+  ref.invalidate(fuelManualPriceProvider);
+  ref.invalidate(fuelPriceControllerProvider);
 }
+
+/// 偏好类缓存整体失效：开发者模式、手动日期、生效日期、主题、通知设置、
+/// 加油预测（写库后由 UI 调用）。
+void invalidatePreferenceProviders(WidgetRef ref) =>
+    _invalidatePreferences(ref);
+
+/// 偏好类缓存整体失效（provider 容器 Ref 版本）：通知协调器在写偏好后
+/// 调用。
+void invalidatePreferenceProvidersWithRef(Ref ref) =>
+    _invalidatePreferences(ref);
 
 /// 加油预测相关缓存失效：功能开关、省份、油品、当前车设置、
 /// 手填价、油价控制器（换省/清缓存后整体重算）。

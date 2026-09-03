@@ -95,12 +95,14 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 ### 1.3 首次通知权限请求
 
+执行体在通知协调器（`reminders/notification_coordinator.dart → LunioNotificationCoordinator`），控制器只做防重入与签名重置：
+
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `lib/features/shell/app_shell.dart:333 → _ensureInitialSystemNotificationPermission` | 读偏好 `systemNotificationPermissionRequested` | — |
-| 2a | 未请求过 → `lunio_notification_service.dart:103 → requestNotificationPermission` | 弹系统权限对话框（iOS/Android 13+） | 写 `systemNotificationPermissionRequested=true`、`systemNotificationsEnabled=<授权结果>` |
-| 2b | 请求过 → `notificationsEnabled()` 查系统真实开关 | 用户可能在系统设置改过，回写偏好保持一致 | 可能更新 `systemNotificationsEnabled` |
-| 3 | `invalidatePreferenceProviders` + 清空签名 | 下帧触发系统通知首次全量重排 | — |
+| 1 | `notification_sync_controller.dart → _ensureInitialSystemNotificationPermission`（防重入）→ `notification_coordinator.dart → ensureInitialSystemNotificationPermission` | 读偏好 `systemNotificationPermissionRequested` 分流 | — |
+| 2a | 未请求过 → 协调器 `requestPermission` | 弹系统权限对话框（iOS/Android 13+） | 写 `systemNotificationPermissionRequested=true`；被拒时写 `systemNotificationsEnabled=false` 并失效偏好缓存 |
+| 2b | 请求过 → 协调器 `reconcileSystemEnabled` 查系统真实开关 | 用户可能在系统设置改过，回写偏好保持一致（查询失败回退偏好值，R14） | 可能更新 `systemNotificationsEnabled` |
+| 3 | 真的弹了请求（2a）→ 控制器清空签名 | 下帧触发系统通知首次全量重排 | — |
 
 ---
 
@@ -124,12 +126,12 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 |---|---|---|---|
 | 1 | `reminder_page.dart:128`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
 | 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（**点按钮此刻实时取系统时间，秒/毫秒截 0 默认整分**；时间轮可改时分秒）+ 免费时长（数字键盘输入框或 0.5/1/2 小时快捷 chip） | — |
-| 3 | 提交 → `parking_countdown.dart → saveParkingCountdown(context, ref, countdown)` | ① 写偏好 ② 失效 ③ 若系统通知开：请求权限 →（调度前比对**通知同步代数**，保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。每个 await 后检查页面 context 仍挂载 | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
+| 3 | 提交 → `parking_countdown.dart → saveParkingCountdown(context, ref, countdown)` | ① 写偏好 ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。写偏好/失效阶段检查页面 context 仍挂载；sheet 提前关闭时通知尾巴照常走完（调度不依赖页面） | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
 | 4 | `lunio_notification_service.dart:243 → scheduleParkingCountdownNotification` | 先成对取消旧 9001/9002，再排新闹钟；**到点时刻已过则静默 return** | — |
 
 **展示**：`parking_countdown.dart → ParkingCountdownCard`（ConsumerStatefulWidget）——进度规则在 `lib/domain/rules/parking_countdown_rules.dart`（剩余≤20% 黄、到期红转正计时）；颜色映射 `_parkingStatusColor`。**卡片内部 1s Timer 自刷新**（时钟走 `appDateContextProvider.readSystemNow()`，测试可注入），重建范围只有这张卡。
 
-**结束**：卡片"结束"按钮 → `parking_countdown.dart → clearParkingCountdown(context, ref)` → 删偏好 key + 失效 + 取消 9001/9002（await 后检查页面 context 挂载）。
+**结束**：卡片"结束"按钮 → `parking_countdown.dart → clearParkingCountdown(context, ref)` → 删偏好 key + 失效 + 通知收尾委托协调器 `onParkingCountdownCleared`（系统通知开着时取消 9001/9002）。
 
 > 已知问题：到期后倒计时不自动清除（须手动结束才能开始新的，R9/R17）。恢复备份/清空数据后的 9001/9002 残留已修复（恢复保留停车偏好不动其通知；清空显式成对取消，见 §5.4/§5.5）。
 
@@ -155,12 +157,12 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `reminder_notifications.dart:420 → maintenanceNotices` | 到期项收集（无记录直接空）；snooze/当日 ack 的过滤在 `:384 → isSnoozed` / `isAcknowledgedToday`（逐项读偏好） | — |
+| 1 | `reminder_notifications.dart → maintenanceNotices` | 到期项收集（无记录直接空）；静默过滤走协调器 `isSilencedForInAppDialog`（"稍后提醒"期内或今天已"知道了"即跳过） | — |
 | 2 | `reminder_dialogs.dart:26 → showMaintenanceReminderDialog` | 弹保养提醒框（逐项列出） | — |
-| 3a | 点"知道了" | 返回 acknowledged，AppShell 逐项写当日 ack | `maintenanceInAppReminderAcknowledgedOn:<itemId>` = 今天（当天不再弹，系统通知照发） |
-| 3b | 点"15 天内不再提醒" | 弹窗内 `onSnoozeAll`（reminder_dialogs.dart:26 内）直接写 snooze | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（`snoozeUntilDate`，系统+应用内一起静默） |
+| 3a | 点"知道了" | 返回 acknowledged，控制器经协调器 `acknowledgeMaintenanceItem` 逐项写当日 ack | `maintenanceInAppReminderAcknowledgedOn:<itemId>` = 今天（当天不再弹，系统通知照发） |
+| 3b | 点"15 天内不再提醒" | 弹窗内 `onSnoozeAll` 经协调器 `snoozeMaintenanceItems` 写 snooze | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（系统+应用内一起静默） |
 | 4 | 有动作后 | 控制器清空两个签名并立即重跑 `syncFromProviders` | 系统通知按新 snooze 状态重排 |
-| 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:60 → showMileageUpdateReminderDialog`；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>` |
+| 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:60 → showMileageUpdateReminderDialog`；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>`（经协调器 `snoozeMileageUpdate` / `acknowledgeMileageUpdate` 写入） |
 | 6 | 回到前台 | `app_shell.dart → didChangeAppLifecycleState` 转交 `controller.onAppResumed()` 清空应用内签名并重跑同步 | 强制重查（处理完离开再回来，到期会再弹） |
 
 ---
@@ -227,7 +229,7 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 #### 5.1.3 删除车辆
 
-车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → `bump()` 通知同步代数 → `repository.deleteCar`（lunio_repository.dart，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车）→车辆；删完应用车辆指向剩余第一辆，无剩余清空）→ **显式 `cancelLunioNotifications()` 取消保养/里程 8000/8900 系系统通知**（R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须在此显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001/9002 与车辆无关，不在此处理）→ invalidate。
+车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**先 bump() 通知同步代数**作废在途任务，再执行 `repository.deleteCar`（lunio_repository.dart，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车）→车辆；删完应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**。R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001/9002 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ invalidate。
 
 #### 5.1.4 切换当前应用车辆
 
@@ -270,24 +272,24 @@ appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
 2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本≠2 抛 UnsupportedError）；
-3. `bump()` 通知同步代数（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）；
+3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）再执行恢复；
 4. `repository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord`，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 4 张业务表 + 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records 逐行插入（id 全换新雪花 id，旧→新映射）→ 应用车辆指向第一辆；任何一行失败整体回滚；
-5. 显式 `cancelLunioNotifications()`（清掉旧数据残留的 8000/8900 系；停车 9001/9002 不动——停车倒计时偏好保留且其通知仍有效）；
+5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001/9002 不动——停车倒计时偏好保留且其通知仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
 6. `invalidateAllAppDataProviders` → 全量刷新（车型目录由 bootstrap 自动重灌）；
 7. 失败分支：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框；其他 → toast。
 
 ### 5.5 清空数据
 
-我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ `bump()` 通知同步代数 → `repository.clearAllData`（事务删 5 张表：4 张业务表 + 偏好表）→ **显式取消停车 9001/9002 与保养/里程 8000/8900 系系统通知**（偏好已删，倒计时与通知开关都不复存在，残留通知必须取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
+我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**先 bump() 通知同步代数** → `repository.clearAllData`（事务删 5 张表：4 张业务表 + 偏好表）→ 取消停车 9001/9002 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知必须取消；清库失败异常上抛、不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
 
 ### 5.6 通知设置
 
 我的页"通知提醒" → `settings_data.dart → showNotificationSettingsSheet`：
 
 1. 打开前 `await ref.read(notificationSettingsProvider.future)`（加载失败 toast"设置加载失败"并返回，杜绝 loading 期默认值覆盖真实设置）；
-2. 打开时 `refreshSystemNotificationPreference` 向系统查真实开关并回写偏好；
+2. 打开时协调器 `reconcileSystemEnabled`（`notification_coordinator.dart`）向系统查真实开关并回写偏好（不一致才写；查询失败回退偏好值，R14）；
 3. 表单：系统通知状态行（只读）+ "系统设置"跳转（`NativeNotificationSettings` → 原生设置页，跳转后 sheet 关闭）+ 应用内通知开关 + 到期重复频率三段（每周/每 2 周/每月）；
-4. 保存 → `saveNotificationSettings` → `repository.updatePreferenceValues`（**一个事务内批量写 3 个偏好 key**）→ `invalidatePreferenceProviders` → 关 sheet + toast"设置已保存" → 同步控制器签名变化触发系统通知重排。
+4. 保存 → 协调器 `saveNotificationSettings` → `repository.updatePreferenceValues`（**一个事务内批量写 3 个偏好 key**）→ 协调器内部失效偏好缓存 → 关 sheet + toast"设置已保存" → 同步控制器签名变化触发系统通知重排。
 
 > 产品口径：保养到期提醒是 App 核心能力，**不提供用户关闭入口**（R5 确认；原 `maintenanceDueEnabled` 偏好已于 2026-08-29 移除）。
 
@@ -347,10 +349,11 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
              ├─ 执行中又有新签名 → 置 pending，本轮 finally 置空签名
              │   并用最新数据重跑一轮（不丢更新，R3）
              ├─ 开关关 → cancelLunioNotifications（全取消）
-             ├─ 查系统权限（必要时补请求/回写偏好）
+             ├─ 协调器 ensureSystemNotificationsSchedulable（查系统开关、
+             │   必要时补请求/回写偏好，仍不可用则回写关并取消）
              ├─ buildScheduledNotifications（reminder_notifications.dart）
-             │    ├─ 到期项目（snooze 过滤后）≥1 → 汇总通知 id 8000
-             │    └─ 里程更新到期且未 snooze → id 8900（9:05 错峰）
+             │    ├─ 到期项目（"稍后提醒"过滤，经协调器静默读）≥1 → 汇总通知 id 8000
+             │    └─ 里程更新到期且未"稍后提醒" → id 8900（9:05 错峰）
              └─ Android 申请精确闹钟 → reschedule 前再比对一次同步代数
                   → rescheduleNotifications（lunio_notification_service.dart：
                      先精确取消 16 个在用 id（8000-8007/8900-8907，R10 收紧），
@@ -360,7 +363,9 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
       否 → 什么都不做
 ```
 
-**防竞态三层**：① 同步代数（`notificationSyncGenerationProvider`，恢复/清空时 `bump()` 作废在途任务）；② 执行中 pending 重跑（不丢更新）；③ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。
+**防竞态三层**：① 同步代数（`notificationSyncGenerationProvider`，删车/恢复/清空由协调器 run* 模板 bump 作废在途任务）；② 执行中 pending 重跑（不丢更新）；③ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。
+
+> 通知域协议（权限真值对账、删车/恢复/清空的通知清扫、"稍后提醒/知道了"静默读写）的执行体集中在 `reminders/notification_coordinator.dart → LunioNotificationCoordinator`（CONTEXT.md 词汇：**通知协调器**）；控制器保留被动监听外壳，停车倒计时的通知尾巴由协调器 `onParkingCountdownSaved/Cleared` 承接。
 
 **一句话：任何数据/偏好变化 → provider 变更 → listenManual 回调 → 签名 diff → 全量重排系统通知。**
 
@@ -396,10 +401,10 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 |---|---|---|
 | `appliedCarId` | 当前应用车辆 id | applyCar / getAppliedCar 回退 / 删车 / 恢复备份（恢复只替换业务数据，偏好保留） |
 | `themeMode` | light/dark/system | 主题切换 |
-| `systemNotificationsEnabled` | 系统通知开关 | 权限链 / 通知设置 / 停车保存被拒时 |
-| `systemNotificationPermissionRequested` | 是否请求过权限 | 首启权限链 / 停车保存 |
-| `inAppNotificationsEnabled` | 应用内弹窗开关 | 通知设置 |
-| `maintenanceDueRepeat` | 到期重复频率 | 通知设置 |
+| `systemNotificationsEnabled` | 系统通知开关 | 通知协调器（reconcile 回写 / saveNotificationSettings / 被拒回写） |
+| `systemNotificationPermissionRequested` | 是否请求过权限 | 通知协调器 requestPermission |
+| `inAppNotificationsEnabled` | 应用内弹窗开关 | 通知协调器 saveNotificationSettings |
+| `maintenanceDueRepeat` | 到期重复频率 | 通知协调器 saveNotificationSettings |
 | `developerModeEnabled` | 开发者模式 | 版本连点 |
 | `manualDateEnabled` / `manualDate` | 手动日期 | 手动日期 sheet / 关开发者模式 |
 | `parkingCountdown` | 停车倒计时 JSON（**不进备份**） | 停车保存/结束 |
@@ -408,10 +413,10 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | `fuelGrade` | 加油预测油品 code（**进备份**） | 加油页油品分段 / 恢复备份 |
 | `fuelPriceCache` | 油价缓存 JSON（全国价表 + 调价预告，**不进备份**） | FuelPriceController 拉取成功 |
 | `fuelManualPrices` | 手填油价 JSON（**不进备份**） | 加油页手填/清除手填 |
-| `maintenanceReminderSnoozedUntil:<itemId>` | 保养项 snooze 截止日 | 应用内弹窗 |
-| `maintenanceInAppReminderAcknowledgedOn:<itemId>` | 保养项当日 ack | 应用内弹窗 |
-| `mileageUpdateSnoozedUntil:<carId>` | 里程提醒 snooze | 应用内弹窗 |
-| `mileageUpdateInAppAcknowledgedOn:<carId>` | 里程提醒当日 ack | 应用内弹窗 |
+| `maintenanceReminderSnoozedUntil:<itemId>` | 保养项 snooze 截止日 | 通知协调器 snoozeMaintenanceItems（应用内弹窗调用） |
+| `maintenanceInAppReminderAcknowledgedOn:<itemId>` | 保养项当日 ack | 通知协调器 acknowledgeMaintenanceItem |
+| `mileageUpdateSnoozedUntil:<carId>` | 里程提醒 snooze | 通知协调器 snoozeMileageUpdate |
+| `mileageUpdateInAppAcknowledgedOn:<carId>` | 里程提醒当日 ack | 通知协调器 acknowledgeMileageUpdate |
 
 ### 7.3 原生桥（MethodChannel）
 

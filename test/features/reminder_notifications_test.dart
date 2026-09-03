@@ -1,56 +1,162 @@
-// 提醒 view 规则的单元测试：snooze 到期日边界、snooze 15 天的日历计算。
+// 提醒静默规则的单元测试：snooze 到期日边界、snooze 15 天的日历计算、
+// "知道了"只静默当天应用内弹窗。
 //
-// isSnoozed / snoozeUntilDate 定义在 reminder_notifications.dart（view 层
-// 的纯判断函数），这里用内存数据库直接驱动，锁死以下语义：
+// 静默协议（"稍后提醒"/"知道了"）已收编进通知协调器
+// notification_coordinator.dart，这里用内存数据库驱动协调器本体，
+// 锁死以下语义：
 //  - snooze 截止日当天仍静默（`until >= today` 的 >= 语义）；
 //  - 截止日次日恢复提醒；
-//  - +15 天走 LocalDate 日历加减（R34）。
+//  - +15 天走 LocalDate 日历加减（R34）；
+//  - "知道了"只静默当天的应用内弹窗，系统通知照发。
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/rules/maintenance_rules.dart';
-import 'package:lunio/features/shell/reminders/reminder_notifications.dart';
+import 'package:lunio/features/shell/reminders/notification_coordinator.dart';
 
 void main() {
   late AppDatabase database;
+  late ProviderContainer container;
   late LunioRepository repository;
+  late LunioNotificationCoordinator coordinator;
 
   setUp(() {
     database = AppDatabase.inMemory();
-    repository = LunioRepository(database);
+    container = ProviderContainer(
+      overrides: [appDatabaseProvider.overrideWithValue(database)],
+    );
+    repository = container.read(lunioRepositoryProvider);
+    coordinator = container.read(notificationCoordinatorProvider);
   });
 
   tearDown(() async {
+    container.dispose();
     await database.close();
   });
 
   test('snooze keeps the reminder silent on the until day, resumes next day', () async {
-    const key = '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}1';
     // 模拟 2026-05-19 点"稍后提醒"：截止日 = 今天 + 15 天 = 2026-06-03。
-    await repository.setPreferenceValue(
-      key,
-      snoozeUntilDate(const LocalDate(2026, 5, 19)).toString(),
-    );
+    await coordinator.snoozeMaintenanceItems([1], const LocalDate(2026, 5, 19));
+    const target = MaintenanceItemTarget(1);
 
-    // 截止期内（含截止日当天）一律静默。
-    expect(await isSnoozed(repository, key, const LocalDate(2026, 5, 19)), isTrue);
-    expect(await isSnoozed(repository, key, const LocalDate(2026, 6, 2)), isTrue);
-    expect(await isSnoozed(repository, key, const LocalDate(2026, 6, 3)), isTrue);
+    // 截止期内（含截止日当天）系统通知一律静默。
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 5, 19),
+      ),
+      isTrue,
+    );
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 6, 2),
+      ),
+      isTrue,
+    );
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 6, 3),
+      ),
+      isTrue,
+    );
     // 截止日次日恢复提醒。
-    expect(await isSnoozed(repository, key, const LocalDate(2026, 6, 4)), isFalse);
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 6, 4),
+      ),
+      isFalse,
+    );
+    // 应用内弹窗在同一窗口内同样静默。
+    expect(
+      await coordinator.isSilencedForInAppDialog(
+        target,
+        const LocalDate(2026, 6, 3),
+      ),
+      isTrue,
+    );
   });
 
-  test('isSnoozed returns false without or with unparsable preference', () async {
-    const key = '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}2';
+  test('snoozed mileage update uses the per-car key and the same window', () async {
+    await coordinator.snoozeMileageUpdate(9, const LocalDate(2026, 5, 19));
+    const target = MileageUpdateTarget(9);
+
     expect(
-      await isSnoozed(repository, key, const LocalDate(2026, 6, 3)),
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 6, 3),
+      ),
+      isTrue,
+    );
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 6, 4),
+      ),
+      isFalse,
+    );
+    // 项目与车辆的 key 互不影响。
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        const MileageUpdateTarget(10),
+        const LocalDate(2026, 5, 19),
+      ),
+      isFalse,
+    );
+  });
+
+  test('silence reads return false without or with unparsable preference', () async {
+    // 直接用 Repository 写入脏数据（模拟不可解析的偏好值），协调器读为 false。
+    const unparsableKey =
+        '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}2';
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        const MaintenanceItemTarget(2),
+        const LocalDate(2026, 6, 3),
+      ),
       isFalse,
     );
 
-    await repository.setPreferenceValue(key, 'not-a-date');
+    await repository.setPreferenceValue(unparsableKey, 'not-a-date');
     expect(
-      await isSnoozed(repository, key, const LocalDate(2026, 6, 3)),
+      await coordinator.isSilencedForSystemNotification(
+        const MaintenanceItemTarget(2),
+        const LocalDate(2026, 6, 3),
+      ),
+      isFalse,
+    );
+  });
+
+  test('acknowledgement silences the in-app dialog for the day only', () async {
+    await coordinator.acknowledgeMaintenanceItem(3, const LocalDate(2026, 6, 3));
+    const target = MaintenanceItemTarget(3);
+
+    // 当天：应用内弹窗静默，但系统通知照发（"知道了"不影响系统通知）。
+    expect(
+      await coordinator.isSilencedForInAppDialog(
+        target,
+        const LocalDate(2026, 6, 3),
+      ),
+      isTrue,
+    );
+    expect(
+      await coordinator.isSilencedForSystemNotification(
+        target,
+        const LocalDate(2026, 6, 3),
+      ),
+      isFalse,
+    );
+    // 次日：应用内弹窗恢复。
+    expect(
+      await coordinator.isSilencedForInAppDialog(
+        target,
+        const LocalDate(2026, 6, 4),
+      ),
       isFalse,
     );
   });

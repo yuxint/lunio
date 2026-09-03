@@ -29,6 +29,7 @@ import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
+import 'notification_coordinator.dart';
 import 'reminder_dialogs.dart' as bridge;
 import 'reminder_notifications.dart' as bridge;
 
@@ -200,66 +201,28 @@ class NotificationSyncController {
     }
   }
 
-  /// 首启权限链（只跑一次，由偏好 systemNotificationPermissionRequested 把关）：
-  ///  1. 请求过 → 只把系统真实开关回写到偏好（用户可能在系统设置改过）；
-  ///  2. 没请求过 → 弹系统权限对话框，记录"已请求过"和授权结果；
-  ///  3. 回写后失效偏好 provider + 清空签名强制重排。
+  /// 首启权限链（只跑一次，由偏好 systemNotificationPermissionRequested
+  /// 把关；执行体已收编进通知协调器）：
+  ///  1. 请求过 → 协调器把系统真实开关回写到偏好（用户可能在系统设置改过）；
+  ///  2. 没请求过 → 协调器弹系统权限对话框，记录"已请求过"和授权结果，
+  ///     被拒时回写"系统通知关闭"。
+  /// 真的弹了请求 → 失效偏好缓存 + 清空签名强制重排（授权结果影响通知内容）。
   Future<void> _ensureInitialSystemNotificationPermission() async {
     if (_checkingInitialSystemPermission || _disposed) {
       return;
     }
     _checkingInitialSystemPermission = true;
     try {
-      final repository = ref.read(lunioRepositoryProvider);
-      final requested = await repository.getPreferenceValue(
-        'systemNotificationPermissionRequested',
-      );
+      final requestedNow = await ref
+          .read(notificationCoordinatorProvider)
+          .ensureInitialSystemNotificationPermission();
       if (_disposed) {
         return;
       }
-      if (requested == 'true') {
-        final enabled = await bridge.LunioNotificationService.instance
-            .notificationsEnabled();
-        if (_disposed) {
-          return;
-        }
-        final currentValue = await repository.getPreferenceValue(
-          'systemNotificationsEnabled',
-        );
-        if (_disposed) {
-          return;
-        }
-        if (currentValue != enabled.toString()) {
-          await repository.setPreferenceValue(
-            'systemNotificationsEnabled',
-            enabled.toString(),
-          );
-          if (_disposed) {
-            return;
-          }
-          invalidatePreferenceProviders(ref);
-        }
-        return;
+      if (requestedNow) {
+        _systemNotificationSignature = null;
+        syncFromProviders();
       }
-      final granted = await bridge.LunioNotificationService.instance
-          .requestNotificationPermission();
-      if (_disposed) {
-        return;
-      }
-      await repository.setPreferenceValue(
-        'systemNotificationPermissionRequested',
-        'true',
-      );
-      await repository.setPreferenceValue(
-        'systemNotificationsEnabled',
-        granted.toString(),
-      );
-      if (_disposed) {
-        return;
-      }
-      invalidatePreferenceProviders(ref);
-      _systemNotificationSignature = null;
-      syncFromProviders();
     } finally {
       _checkingInitialSystemPermission = false;
     }
@@ -273,10 +236,10 @@ class NotificationSyncController {
   ///    用最新数据重跑一轮；
   ///  - reschedule 前再查一次代数，变了就放弃（防止排队期间被作废）。
   ///
-  /// 执行链：开关关 → 全部取消；查系统权限（必要时补请求）→ 权限没了
-  /// 回写偏好并取消 → buildScheduledNotifications 组装通知（8000/8900）
-  /// → Android 申请精确闹钟 → rescheduleNotifications（内部先 cancel
-  /// 1000 个 id 再逐条 zonedSchedule，避开停车到点时刻）。
+  /// 执行链：开关关 → 全部取消；权限协议委托协调器（查系统开关、必要时
+  /// 补请求；权限没了回写偏好并取消）→ buildScheduledNotifications 组装
+  /// 通知（8000/8900）→ Android 申请精确闹钟 → rescheduleNotifications
+  /// （内部先 cancel 1000 个 id 再逐条 zonedSchedule，避开停车到点时刻）。
   Future<void> _applySystemNotificationSchedule({
     required LunioNotificationSettings settings,
     required Car car,
@@ -300,46 +263,19 @@ class NotificationSyncController {
             .cancelLunioNotifications();
         return;
       }
-      final repository = ref.read(lunioRepositoryProvider);
-      var notificationsEnabled = await bridge.LunioNotificationService.instance
-          .notificationsEnabled();
+      // 权限协议在协调器内：查系统真实开关、必要时补请求、仍不可用则
+      // 回写偏好为关并取消已排通知（此处直接返回即可）。
+      final coordinator = ref.read(notificationCoordinatorProvider);
+      final schedulable = await coordinator
+          .ensureSystemNotificationsSchedulable();
       if (_disposed) {
         return;
       }
-      if (!notificationsEnabled) {
-        final requested = await repository.getPreferenceValue(
-          'systemNotificationPermissionRequested',
-        );
-        if (_disposed) {
-          return;
-        }
-        if (requested != 'true') {
-          notificationsEnabled = await bridge.LunioNotificationService.instance
-              .requestNotificationPermission();
-          if (_disposed) {
-            return;
-          }
-          await repository.setPreferenceValue(
-            'systemNotificationPermissionRequested',
-            'true',
-          );
-        }
-      }
-      if (!notificationsEnabled) {
-        await repository.setPreferenceValue(
-          'systemNotificationsEnabled',
-          'false',
-        );
-        if (_disposed) {
-          return;
-        }
-        invalidatePreferenceProviders(ref);
-        await bridge.LunioNotificationService.instance
-            .cancelLunioNotifications();
+      if (!schedulable) {
         return;
       }
       final notifications = await bridge.buildScheduledNotifications(
-        ref: ref,
+        coordinator: coordinator,
         settings: settings,
         car: car,
         items: items,
@@ -389,10 +325,10 @@ class NotificationSyncController {
 
   /// ★ 应用内提醒弹窗（应用内签名变化时被调用）。
   ///
-  /// 收集两类到期提醒：保养项目（逐个查 snooze/当日 ack 偏好过滤）
-  /// + 里程更新（按推断频率判断是否到期）。有到期项则依次弹窗：
-  ///  - "知道了" → 写当日 ack 偏好（今天不再弹）；
-  ///  - "15 天内不再提醒" → 写 snooze 偏好（系统通知也一并静默）。
+  /// 收集两类到期提醒：保养项目（经协调器静默判定过滤）+ 里程更新
+  /// （按推断频率判断是否到期）。有到期项则依次弹窗：
+  ///  - "知道了" → 协调器写当日 ack 偏好（今天不再弹）；
+  ///  - "15 天内不再提醒" → 协调器写 snooze 偏好（系统通知也一并静默）。
   /// 弹窗有动作 → 清空两个签名并立即重跑同步（snooze 影响通知内容）。
   Future<void> _showDueInAppNotifications({
     required LunioNotificationSettings settings,
@@ -408,7 +344,7 @@ class NotificationSyncController {
     }
     _checkingInAppNotifications = true;
     try {
-      final repository = ref.read(lunioRepositoryProvider);
+      final coordinator = ref.read(notificationCoordinatorProvider);
       final dueNotices = <bridge.ReminderViewData>[];
       for (final notice in bridge.maintenanceNotices(
         car: car,
@@ -420,16 +356,10 @@ class NotificationSyncController {
         if (itemId == null) {
           continue;
         }
-        if (!await bridge.isSnoozed(
-              repository,
-              bridge.maintenanceReminderSnoozeKey(itemId),
-              today,
-            ) &&
-            !await bridge.isAcknowledgedToday(
-              repository,
-              bridge.maintenanceInAppReminderAcknowledgedKey(itemId),
-              today,
-            )) {
+        if (!await coordinator.isSilencedForInAppDialog(
+          MaintenanceItemTarget(itemId),
+          today,
+        )) {
           dueNotices.add(notice);
         }
         if (_disposed) {
@@ -439,14 +369,8 @@ class NotificationSyncController {
       final showMileageReminder =
           car.id != null &&
           bridge.mileageUpdateReminderDue(car: car, records: records, today: today) &&
-          !await bridge.isSnoozed(
-            repository,
-            bridge.mileageUpdateSnoozeKey(car.id!),
-            today,
-          ) &&
-          !await bridge.isAcknowledgedToday(
-            repository,
-            bridge.mileageUpdateInAppAcknowledgedKey(car.id!),
+          !await coordinator.isSilencedForInAppDialog(
+            MileageUpdateTarget(car.id!),
             today,
           );
       if (_disposed) {
@@ -463,7 +387,7 @@ class NotificationSyncController {
         }
         final action = await bridge.showMaintenanceReminderDialog(
           context: context,
-          ref: ref,
+          coordinator: coordinator,
           car: car,
           maintenanceNotices: dueNotices,
           today: today,
@@ -480,10 +404,7 @@ class NotificationSyncController {
             for (final notice in dueNotices) {
               final itemId = notice.item.id;
               if (itemId != null) {
-                await repository.setPreferenceValue(
-                  bridge.maintenanceInAppReminderAcknowledgedKey(itemId),
-                  today.toString(),
-                );
+                await coordinator.acknowledgeMaintenanceItem(itemId, today);
               }
             }
           }
@@ -496,7 +417,7 @@ class NotificationSyncController {
         }
         final action = await bridge.showMileageUpdateReminderDialog(
           context: context,
-          ref: ref,
+          coordinator: coordinator,
           car: car,
           today: today,
         );
@@ -511,10 +432,7 @@ class NotificationSyncController {
           final carId = car.id;
           if (action == bridge.ReminderDialogAction.acknowledged &&
               carId != null) {
-            await repository.setPreferenceValue(
-              bridge.mileageUpdateInAppAcknowledgedKey(carId),
-              today.toString(),
-            );
+            await coordinator.acknowledgeMileageUpdate(carId, today);
           }
         }
       }

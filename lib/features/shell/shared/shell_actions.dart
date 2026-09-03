@@ -1,14 +1,11 @@
 // shell 层通用动作（≈ 抽出来的几个 Controller 方法）：
 // 切换应用车辆、写主题偏好、删除车辆。被 vehicles/profile_page 复用。
-//
-// 通知同步代数在 providers.dart 里的
-// notificationSyncGenerationProvider（NotifierProvider），见 R8。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
-import '../../../core/notifications/lunio_notification_service.dart';
 import '../../../domain/entities/car.dart';
+import '../reminders/notification_coordinator.dart';
 import 'modal_feedback.dart';
 
 /// 切换当前应用车辆：写 appliedCarId 偏好 + 失效车辆类 provider。
@@ -39,11 +36,9 @@ Future<void> setThemeModePreference(
 /// 删除车辆：先弹确认对话框，确认后走 Repository 的级联删除事务，
 /// 再失效车辆类 provider（appliedCar 回退逻辑在 Repository 内处理）。
 ///
-/// 通知同步代数 bump + 显式取消 8000/8900 系系统通知（R1）：同步控制器
-/// 在无车时（car == null）直接短路不走重排，删除最后一辆车后旧调度
-/// 无人清理，必须在此显式取消；非最后一辆车的场景取消后也会随
-/// invalidate 触发的重排恢复，代价可忽略。停车 9001/9002 与车辆无关，
-/// 不在此处理（由倒计时保存/结束/清空数据路径负责）。
+/// 通知清扫委托协调器：runCarDeletion 内部先升同步代数作废在途任务
+/// （R8），删库后取消 8000/8900 系系统通知（R1：删最后一辆车后同步
+/// 控制器无车短路不重排，必须显式取消）。
 Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   final confirmed = await showConfirmDialog(
     context: context,
@@ -54,8 +49,10 @@ Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   if (confirmed != true || car.id == null) {
     return;
   }
-  ref.read(notificationSyncGenerationProvider.notifier).bump();
-  await ref.read(lunioRepositoryProvider).deleteCar(car.id!);
-  await LunioNotificationService.instance.cancelLunioNotifications();
+  await ref
+      .read(notificationCoordinatorProvider)
+      .runCarDeletion(
+        () => ref.read(lunioRepositoryProvider).deleteCar(car.id!),
+      );
   invalidateVehicleProviders(ref);
 }

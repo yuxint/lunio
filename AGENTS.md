@@ -30,7 +30,8 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案和小型 UI 组件。
   - `reminders/parking_countdown.dart`：停车倒计时卡片、表单、时间选择器、保存和清除逻辑。
   - `reminders/reminder_list.dart`：保养提醒列表、提醒行、记录详情 sheet 和进度环。
-  - `reminders/reminder_notifications.dart`、`reminders/reminder_dialogs.dart`：提醒 view data、系统通知调度 helper、snooze/ack key、应用内提醒弹窗。
+  - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。
+  - `reminders/reminder_notifications.dart`、`reminders/reminder_dialogs.dart`：提醒 view data、系统通知内容组装、应用内提醒弹窗（抑制读写经通知协调器）。
   - `profile/vehicles.dart`：车辆列表、车辆卡片、添加/编辑车辆、车型选择和车辆切换。
   - `profile/maintenance_items.dart`：保养项目 sheet、列表、卡片、项目表单和恢复默认草稿。
   - `profile/settings_data.dart`：备份导入导出、清空数据、通知设置、手动日期和个人中心设置行。

@@ -1,22 +1,20 @@
 // 提醒业务的 view-data 层：领域计算结果 → UI/通知 展示模型的转换
-// + 系统通知的内容组装 + snooze/ack 偏好机制。
+// + 系统通知的内容组装。
 //
 // 被三处消费（同一套计算保证口径一致）：
 //  1. 提醒列表 ReminderList（buildReminderRows）；
 //  2. 英雄卡"到期概览"文案（dueOverviewText）；
 //  3. 系统通知内容（buildScheduledNotifications，通知同步控制器调用）。
 //
-// ⚠ 本文件是 UI 目录却直接 import data 层的 LunioRepository
-// （isSnoozed/isAcknowledgedToday 直连数据库读偏好），跨层依赖点。
+// snooze/ack 抑制协议（"稍后提醒"/"知道了"）已收编进通知协调器
+// notification_coordinator.dart，本文件只经它的两个静默读方法过滤。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/notifications/lunio_notification_service.dart';
 import '../../../core/widgets/lunio_components.dart';
-import '../../../data/repositories/lunio_repository.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
@@ -25,6 +23,7 @@ import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/reminder.dart';
 import '../../../domain/rules/maintenance_rules.dart';
 import '../shared/shell_shared.dart';
+import 'notification_coordinator.dart';
 
 /// 单个保养项目的提醒展示模型（≈ 前端 ViewModel）：
 /// 项目 + 进度 + 最近记录，附展示用 getter（百分比/徽章文案/语义色/详情行）。
@@ -125,19 +124,18 @@ List<ReminderViewData> buildReminderRows({
 }
 
 /// 组装系统通知清单（通知同步控制器重排时调用）：
-///  - 到期项目 ≥1（snooze 过滤后）→ 一条汇总通知 id 8000"保养提醒"
+///  - 到期项目 ≥1（"稍后提醒"过滤后）→ 一条汇总通知 id 8000"保养提醒"
 ///    （正文=最紧急项 + 到期数量）；
-///  - 里程更新到期（且没 snooze）→ id 8900"更新车辆里程"（9:05 错峰）。
+///  - 里程更新到期（且没"稍后提醒"）→ id 8900"更新车辆里程"（9:05 错峰）。
 /// 无到期项返回空列表（重排等于全部取消）。
 Future<List<LunioScheduledNotification>> buildScheduledNotifications({
-  required WidgetRef ref,
+  required LunioNotificationCoordinator coordinator,
   required LunioNotificationSettings settings,
   required Car car,
   required List<MaintenanceItem> items,
   required List<MaintenanceRecord> records,
   required LocalDate today,
 }) async {
-  final repository = ref.read(lunioRepositoryProvider);
   final notifications = <LunioScheduledNotification>[];
   final activeMaintenanceNotices = <ReminderViewData>[];
   for (final notice in maintenanceNotices(
@@ -150,9 +148,8 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
     if (itemId == null) {
       continue;
     }
-    if (!await isSnoozed(
-      repository,
-      maintenanceReminderSnoozeKey(itemId),
+    if (!await coordinator.isSilencedForSystemNotification(
+      MaintenanceItemTarget(itemId),
       today,
     )) {
       activeMaintenanceNotices.add(notice);
@@ -172,7 +169,10 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   }
   if (car.id != null &&
       mileageUpdateReminderDue(car: car, records: records, today: today) &&
-      !await isSnoozed(repository, mileageUpdateSnoozeKey(car.id!), today)) {
+      !await coordinator.isSilencedForSystemNotification(
+        MileageUpdateTarget(car.id!),
+        today,
+      )) {
     notifications.add(
       LunioScheduledNotification(
         id: 8900,
@@ -330,73 +330,6 @@ String dueNoticeText(ReminderViewData row) {
     return dueReasonText(row);
   }
   return details.join(' · ');
-}
-
-// ---- snooze / ack 偏好 key 与判定 ----
-// snooze（15 天内不再提醒）：同时静默系统通知 + 应用内弹窗；
-// ack（知道了）：只静默当天的应用内弹窗，系统通知照发。
-// key 前缀引用 LunioRepository 上的静态常量（单一事实来源）：
-// 恢复备份时按同一组前缀清除抑制键，两处不会各自漂移。
-
-/// 里程更新 snooze key（按车辆）。
-String mileageUpdateSnoozeKey(int carId) {
-  return '${LunioRepository.mileageUpdateSnoozedUntilPrefix}$carId';
-}
-
-/// 里程更新当日 ack key。
-String mileageUpdateInAppAcknowledgedKey(int carId) {
-  return '${LunioRepository.mileageUpdateInAppAcknowledgedOnPrefix}$carId';
-}
-
-/// 保养项 snooze key（按项目）。
-String maintenanceReminderSnoozeKey(int itemId) {
-  return '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}$itemId';
-}
-
-/// 保养项当日 ack key。
-String maintenanceInAppReminderAcknowledgedKey(int itemId) {
-  return '${LunioRepository.maintenanceInAppReminderAcknowledgedOnPrefix}'
-      '$itemId';
-}
-
-/// snooze 截止日 = 今天 + 15 天（R34：改用 LocalDate 日历加减，
-/// 不再走 24 小时累加）。
-LocalDate snoozeUntilDate(LocalDate today) {
-  return today.addDays(15);
-}
-
-/// 是否处于 snooze 期（截止日 ≥ 今天）。
-Future<bool> isSnoozed(
-  LunioRepository repository,
-  String key,
-  LocalDate today,
-) async {
-  final value = await repository.getPreferenceValue(key);
-  if (value == null) {
-    return false;
-  }
-  final until = LocalDate.tryParse(value);
-  if (until == null) {
-    return false;
-  }
-  return until.compareTo(today) >= 0;
-}
-
-/// 今天是否已 ack 过。
-Future<bool> isAcknowledgedToday(
-  LunioRepository repository,
-  String key,
-  LocalDate today,
-) async {
-  final value = await repository.getPreferenceValue(key);
-  if (value == null) {
-    return false;
-  }
-  final acknowledgedOn = LocalDate.tryParse(value);
-  if (acknowledgedOn == null) {
-    return false;
-  }
-  return acknowledgedOn == today;
 }
 
 /// 到期项目清单（应用内弹窗与系统通知共用）。

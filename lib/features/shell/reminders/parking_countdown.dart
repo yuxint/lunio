@@ -21,13 +21,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
-import '../../../core/notifications/lunio_notification_service.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/reminder.dart';
 import '../../../domain/rules/parking_countdown_rules.dart';
 import '../shared/shell_shared.dart';
+import 'notification_coordinator.dart';
 import 'reminder_list.dart';
 
 /// 倒计时进行中的展示卡片（提醒页内嵌）：入场信息 + 进度环 +
@@ -614,70 +614,28 @@ Future<void> showParkingCountdownSheet(
 
 /// ★ 保存倒计时的完整动作链：
 ///  1. 写偏好 parkingCountdown + 失效 provider（卡片立即出现）；
-///  2. 系统通知开关关着 → 到此为止（只保留应用内倒计时）；
-///  3. 开着 → 请求通知权限（顺手把"已请求过"写库）→ 授权了再申请
-///     Android 精确闹钟 → scheduleParkingCountdownNotification
-///     （Android 常驻通知 + 到点闹钟）；被拒 → 回写"系统通知关闭"并失效。
-/// 每个 await 后检查页面 context 仍挂载（R13）；调度通知前比对通知同步
-/// 代数，保存期间发生恢复备份/清空数据就放弃（R8）。
+///  2. 通知尾巴委托协调器 onParkingCountdownSaved：请求权限（被拒回写
+///     "系统通知关闭"）、比对同步代数（R8）、申请精确闹钟、调度
+///     9001 到点闹钟 + 9002 Android 常驻通知。
+/// await 后检查页面 context 仍挂载（R13）；sheet 提前关闭时通知尾巴
+/// 照常走完（调度不依赖页面）。
 Future<void> saveParkingCountdown(
   BuildContext context,
   WidgetRef ref,
   ParkingCountdown countdown,
 ) async {
-  final syncGeneration = ref.read(notificationSyncGenerationProvider);
   await ref.read(lunioRepositoryProvider).saveParkingCountdown(countdown);
   if (!context.mounted) {
     return;
   }
   ref.invalidate(parkingCountdownProvider);
-  final settings = await ref.read(notificationSettingsProvider.future);
-  if (!context.mounted) {
-    return;
-  }
-  if (!settings.systemNotificationsEnabled) {
-    return;
-  }
-  final granted = await LunioNotificationService.instance
-      .requestNotificationPermission();
-  if (!context.mounted) {
-    return;
-  }
   await ref
-      .read(lunioRepositoryProvider)
-      .setPreferenceValue('systemNotificationPermissionRequested', 'true');
-  if (!context.mounted) {
-    return;
-  }
-  if (granted) {
-    // 调度前比对代数：保存链路期间发生恢复/清空（数据已被整体替换），
-    // 本次倒计时的通知就不再调度，避免排入一条指向已删除状态的通知。
-    if (ref.read(notificationSyncGenerationProvider) != syncGeneration) {
-      return;
-    }
-    final exactAlarmGranted = await LunioNotificationService.instance
-        .requestExactAlarmPermission();
-    if (!context.mounted) {
-      return;
-    }
-    await LunioNotificationService.instance
-        .scheduleParkingCountdownNotification(
-          countdown,
-          exactAlarm: exactAlarmGranted,
-        );
-  } else {
-    await ref
-        .read(lunioRepositoryProvider)
-        .setPreferenceValue('systemNotificationsEnabled', 'false');
-    if (!context.mounted) {
-      return;
-    }
-    invalidatePreferenceProviders(ref);
-  }
+      .read(notificationCoordinatorProvider)
+      .onParkingCountdownSaved(countdown);
 }
 
-/// ★ 结束倒计时：删偏好 + 失效 provider + 取消 9001/9002 两条系统通知
-/// （仅在系统通知开着时；关着时本来就没人调度过）。
+/// ★ 结束倒计时：删偏好 + 失效 provider + 通知收尾委托协调器
+/// （系统通知开着时取消 9001/9002 两条系统通知，关着时本来就没调度过）。
 /// await 后检查页面 context 仍挂载（R13）。
 Future<void> clearParkingCountdown(BuildContext context, WidgetRef ref) async {
   await ref.read(lunioRepositoryProvider).clearParkingCountdown();
@@ -685,14 +643,7 @@ Future<void> clearParkingCountdown(BuildContext context, WidgetRef ref) async {
     return;
   }
   ref.invalidate(parkingCountdownProvider);
-  final settings = await ref.read(notificationSettingsProvider.future);
-  if (!context.mounted) {
-    return;
-  }
-  if (settings.systemNotificationsEnabled) {
-    await LunioNotificationService.instance
-        .cancelParkingCountdownNotification();
-  }
+  await ref.read(notificationCoordinatorProvider).onParkingCountdownCleared();
 }
 
 // ---- 私有格式化函数 ----
