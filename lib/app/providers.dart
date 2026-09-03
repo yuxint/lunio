@@ -11,11 +11,13 @@
 //                    不会在 x 变化时触发任何刷新。
 //
 // ## 本 App 的状态管理约定（重要）
-// Repository 的写方法（增删改）**不会**主动刷新任何缓存，
-// 统一由 UI 层在写库成功后调用 invalidateVehicleProviders /
-// invalidatePreferenceProviders / invalidateAllAppDataProviders
-// 手动逐出相关缓存，触发 FutureProvider 重新查库 → UI 自动重建。
-// 这是"手动失效"模式：漏调 invalidate 会导致跨页面数据陈旧。
+// Repository 的写方法（增删改）**不会**主动刷新任何缓存。写库后的缓存
+// 逐出由"写库 → 失效 → 通知收尾"的编排统一收在保存动作层
+// shell_actions.dart（每个业务变更一个具名函数，见 docs/adr/0007）；
+// invalidateVehicleProviders / invalidatePreferenceProviders 降级为动作层
+// 与少数既有调用方（备份恢复、清空数据、通知协调器）的内部实现。
+// 这是"手动失效"模式：漏调 invalidate 会导致跨页面数据陈旧——因此
+// 新增保存路径时进动作层加函数，不要在 UI 里手排失效序列。
 //
 // ## 依赖关系图
 // ```text

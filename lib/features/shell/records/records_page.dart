@@ -969,7 +969,7 @@ Future<void> showMaintenanceRecordFormSheet(
   }
   showLunioModalSheet<void>(
     context: context,
-    builder: (context) {
+    builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: record == null ? '新增保养记录' : '编辑保养记录',
         subtitle: '${car!.brand} ${car.model}',
@@ -984,21 +984,12 @@ Future<void> showMaintenanceRecordFormSheet(
               .read(lunioRepositoryProvider)
               .listMaintenanceItemsForCar(car.id!),
           onSubmit: (value, itemUpdates) async {
-            final repository = ref.read(lunioRepositoryProvider);
-            if (value.id == null) {
-              await repository.saveMaintenanceRecordWithItemUpdates(
-                record: value,
-                itemUpdates: itemUpdates,
-              );
-            } else {
-              await repository.updateMaintenanceRecordWithItemUpdates(
-                record: value,
-                itemUpdates: itemUpdates,
-              );
+            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+            await saveMaintenanceRecord(ref, value, itemUpdates);
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
             }
-            invalidateVehicleProviders(ref);
             if (context.mounted) {
-              Navigator.of(context).pop();
               showStatusOverlay(context, '保养记录已保存', StatusOverlayTone.success);
             }
           },
@@ -1023,8 +1014,7 @@ Future<void> deleteMaintenanceRecord(
   if (confirmed != true || record.id == null) {
     return;
   }
-  await ref.read(lunioRepositoryProvider).deleteMaintenanceRecord(record.id!);
-  invalidateVehicleProviders(ref);
+  await removeMaintenanceRecord(ref, record.id!);
 }
 
 /// 从记录删除单个项目（按项目视图）：确认框（带项目名）→
@@ -1050,10 +1040,11 @@ Future<void> deleteMaintenanceRecordItem(
   if (confirmed != true || record.id == null) {
     return;
   }
-  await ref
-      .read(lunioRepositoryProvider)
-      .removeMaintenanceRecordItem(recordId: record.id!, itemId: itemId);
-  invalidateVehicleProviders(ref);
+  await removeMaintenanceRecordItem(
+    ref,
+    recordId: record.id!,
+    itemId: itemId,
+  );
 }
 
 // ---- 文件内私有组件与格式化（§5.2 回收：仅本页消费的不进共享层）----

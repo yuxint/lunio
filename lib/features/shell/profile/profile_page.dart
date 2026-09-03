@@ -83,7 +83,7 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
               onEdit: (car) => showEditCarSheet(context, ref, car),
               onManageItems: (car) =>
                   showMaintenanceItemsSheet(context, ref, car: car),
-              onApply: (carId) => applyCar(context, ref, carId),
+              onApply: (carId) => applyCar(ref, carId),
               onDelete: (car) => deleteCar(context, ref, car),
             ),
           ],
@@ -148,7 +148,7 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
                 data: (value) => value,
                 orElse: () => ThemeMode.system,
               ),
-              onChanged: (mode) => setThemeModePreference(context, ref, mode),
+              onChanged: (mode) => setThemeModePreference(ref, mode),
             ),
           ],
         ),
@@ -168,46 +168,33 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   /// 开 → 写 developerModeEnabled=true（"手动日期"设置行出现）；
   /// 关 → 同时清 manualDateEnabled / manualDate（回到系统日期）。
   /// 每次写库后 invalidate 偏好 provider 刷新 UI + toast 反馈。
+  /// 写哪些 key（关闭时连带关手动日期与加油预测）收在动作层。
   Future<void> _handleVersionTap(BuildContext context) async {
     versionTapCount += 1;
     if (versionTapCount < 5) {
       return;
     }
     versionTapCount = 0;
-    final repository = ref.read(lunioRepositoryProvider);
     final enabled = ref
         .read(developerModeProvider)
         .maybeWhen(data: (value) => value, orElse: () => false);
-    if (enabled) {
-      await repository.setPreferenceValue('developerModeEnabled', 'false');
-      await repository.setPreferenceValue('manualDateEnabled', 'false');
-      await repository.setPreferenceValue('manualDate', null);
-      // 开发者模式关闭时连带关掉加油预测（开关入口只在开发者模式可见，
-      // 留着偏好会让底部"加油"tab 无法关闭）。
-      await repository.setPreferenceValue('fuelPredictionEnabled', 'false');
-      invalidatePreferenceProviders(ref);
-      if (context.mounted) {
-        showStatusOverlay(context, '开发者模式已关闭', StatusOverlayTone.info);
-      }
-      return;
-    }
-    await repository.setPreferenceValue('developerModeEnabled', 'true');
-    invalidatePreferenceProviders(ref);
+    await setDeveloperModeEnabled(ref, !enabled);
     if (context.mounted) {
-      showStatusOverlay(context, '开发者模式已开启', StatusOverlayTone.info);
+      showStatusOverlay(
+        context,
+        enabled ? '开发者模式已关闭' : '开发者模式已开启',
+        StatusOverlayTone.info,
+      );
     }
   }
 
-  /// 加油预测开关：写 `fuelPredictionEnabled` 偏好 → 失效 provider。
+  /// 加油预测开关：动作层写偏好 + 失效 provider。
   /// AppShell watch 该 provider，底部"加油"tab 实时出现/消失（无需重启）。
   Future<void> _setFuelPredictionEnabled(
     BuildContext context,
     bool value,
   ) async {
-    await ref
-        .read(lunioRepositoryProvider)
-        .setPreferenceValue('fuelPredictionEnabled', '$value');
-    invalidatePreferenceProviders(ref);
+    await setFuelPredictionEnabled(ref, value);
     if (context.mounted) {
       showStatusOverlay(
         context,

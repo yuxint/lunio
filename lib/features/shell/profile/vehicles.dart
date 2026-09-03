@@ -1187,16 +1187,16 @@ Widget? carFormLoadGuard(
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
   showLunioModalSheet<void>(
     context: context,
-    builder: (context) {
+    builder: (sheetContext) {
       var isMaintenanceStep = false;
       return StatefulBuilder(
-        builder: (context, setSheetState) {
+        builder: (sheetContext, setSheetState) {
           return PrototypeSheetFrame(
             title: isMaintenanceStep ? '保养项目' : '添加车辆',
             subtitle: isMaintenanceStep ? '以下保养项目只做参考，具体以官方保养手册为准' : null,
-            bottomInset: MediaQuery.of(context).viewInsets.bottom,
+            bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
             child: Consumer(
-              builder: (context, ref, child) {
+              builder: (sheetContext, ref, child) {
                 final vehicleModels = ref.watch(vehicleModelsProvider);
                 final today = ref.watch(effectiveTodayProvider);
                 final guard = carFormLoadGuard(vehicleModels, today);
@@ -1243,14 +1243,12 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
                         });
                       },
                       onSubmit: (car, items) async {
-                        final repository = ref.read(lunioRepositoryProvider);
-                        await repository.createCarWithMaintenanceItems(
-                          car,
-                          items,
-                        );
-                        invalidateVehicleProviders(ref);
+                        // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+                        await createCar(ref, car, items);
+                        if (sheetContext.mounted) {
+                          Navigator.of(sheetContext).pop();
+                        }
                         if (context.mounted) {
-                          Navigator.of(context).pop();
                           showStatusOverlay(
                             context,
                             '车辆已保存',
@@ -1276,13 +1274,13 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   showLunioModalSheet<void>(
     context: context,
-    builder: (context) {
+    builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '编辑车辆',
         subtitle: '品牌车型保持稳定，可更新当前里程、上路日期和油箱容积',
-        bottomInset: MediaQuery.of(context).viewInsets.bottom,
+        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
         child: Consumer(
-          builder: (context, ref, child) {
+          builder: (sheetContext, ref, child) {
             final vehicleModels = ref.watch(vehicleModelsProvider);
             final today = ref.watch(effectiveTodayProvider);
             final guard = carFormLoadGuard(vehicleModels, today);
@@ -1313,10 +1311,12 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
                 today: today.value!,
                 initialCar: car,
                 onSubmit: (updatedCar) async {
-                  await ref.read(lunioRepositoryProvider).updateCar(updatedCar);
-                  invalidateVehicleProviders(ref);
+                  // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+                  await updateCar(ref, updatedCar);
+                  if (sheetContext.mounted) {
+                    Navigator.of(sheetContext).pop();
+                  }
                   if (context.mounted) {
-                    Navigator.of(context).pop();
                     showStatusOverlay(
                       context,
                       '车辆已保存',
@@ -1378,7 +1378,7 @@ Future<void> showVehicleSwitcher(BuildContext context, WidgetRef ref) async {
                 onTap: car.id == null
                     ? null
                     : () async {
-                        await applyCar(sheetContext, ref, car.id!);
+                        await applyCar(ref, car.id!);
                         if (sheetContext.mounted) {
                           Navigator.of(sheetContext).pop();
                         }

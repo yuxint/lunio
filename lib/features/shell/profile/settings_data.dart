@@ -339,15 +339,9 @@ Future<void> showNotificationSettingsSheet(
             }
           },
           onSubmit: (settings) async {
-            final coordinator = ref.read(notificationCoordinatorProvider);
-            final systemNotificationsEnabled = await coordinator
-                .reconcileSystemEnabled();
-            // 保存内部批量写 3 个偏好 key 并失效偏好缓存。
-            await coordinator.saveNotificationSettings(
-              settings.copyWith(
-                systemNotificationsEnabled: systemNotificationsEnabled,
-              ),
-            );
+            // 对账系统开关 + 批量写偏好收进动作层（ADR 0007），失效在
+            // 协调器内部完成，这里只留反馈薄壳。
+            await saveNotificationSettings(ref, settings);
             if (sheetContext.mounted) {
               Navigator.of(sheetContext).pop();
             }
@@ -547,18 +541,8 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
           initialDate: initialDate,
           fallbackDate: fallbackDate,
           onSubmit: (date) async {
-            final repository = ref.read(lunioRepositoryProvider);
-            if (date == null) {
-              await repository.setPreferenceValue('manualDateEnabled', 'false');
-              await repository.setPreferenceValue('manualDate', null);
-            } else {
-              await repository.setPreferenceValue('manualDateEnabled', 'true');
-              await repository.setPreferenceValue(
-                'manualDate',
-                date.toString(),
-              );
-            }
-            invalidatePreferenceProviders(ref);
+            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+            await saveManualDate(ref, date);
             if (sheetContext.mounted) {
               Navigator.of(sheetContext).pop();
             }

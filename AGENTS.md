@@ -36,6 +36,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
   - `profile/maintenance_items.dart`：保养项目 sheet、列表、卡片、项目表单和恢复默认草稿。
   - `profile/settings_data.dart`：备份导入导出、清空数据、通知设置、手动日期和个人中心设置行。
   - `shared/shell_shared.dart`：shell shared barrel；具体实现分别在 `shared_widgets.dart`、`date_picker.dart`、`modal_feedback.dart`、`formatters.dart`、`shell_actions.dart`。
+  - `shared/shell_actions.dart`：保存动作层（ADR 0007）——每个业务变更一个具名函数，内部固定编排"写库 → 失效 provider 家族 →（需要时）组合通知协调器"；只收 `WidgetRef`，确认框/pop/toast 留在调用方，异常穿透（例外：`deleteCar` 收 `BuildContext`，确认框在动作层内弹——删除是破坏性操作，确认文案属 UI 决策）。新增保存路径进动作层加函数，不要在 UI 里手排失效序列。
 - `lib/core/theme/lunio_tokens.dart`、`lib/core/theme/lunio_theme.dart`：全局视觉 token 和 ThemeData。做全局视觉调整优先改这里。
 - `DESIGN.md`：设计 token 与产品 UI 原则。改视觉、颜色、间距、反馈模式时要同步检查，必要时同步更新。
 

@@ -43,6 +43,7 @@ import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
 import '../shared/formatters.dart';
 import '../shared/modal_feedback.dart';
+import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
 
 /// 加油页入口（AppShell 底部导航，仅"加油预测"开关打开时显示）。
@@ -424,14 +425,13 @@ class _PriceCard extends ConsumerWidget {
           child: _ManualPriceForm(
             controller: controller,
             onSubmit: (price) async {
-              await ref
-                  .read(lunioRepositoryProvider)
-                  .setFuelManualPrice(
-                    province: province,
-                    grade: grade!,
-                    pricePerLiter: price,
-                  );
-              ref.invalidate(fuelManualPriceProvider);
+              // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+              await saveFuelManualPrice(
+                ref,
+                province: province,
+                grade: grade!,
+                pricePerLiter: price,
+              );
               if (sheetContext.mounted) {
                 Navigator.of(sheetContext).pop();
               }

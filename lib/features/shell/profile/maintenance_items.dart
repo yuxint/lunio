@@ -915,24 +915,21 @@ Future<bool?> showMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
-    builder: (context) {
+    builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: item == null ? '新增保养项目' : '编辑保养项目',
-        bottomInset: MediaQuery.of(context).viewInsets.bottom,
+        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
         child: MaintenanceItemForm(
           carId: carId,
           item: item,
           onSubmit: (value) async {
-            final repository = ref.read(lunioRepositoryProvider);
-            if (value.id == null) {
-              await repository.saveMaintenanceItem(value);
-            } else {
-              await repository.updateMaintenanceItem(value);
+            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+            await saveMaintenanceItem(ref, value);
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop(true);
             }
-            invalidateVehicleProviders(ref);
+            // 落库版才提示保存成功；向导里的草稿版不落库，不提示。
             if (context.mounted) {
-              Navigator.of(context).pop(true);
-              // 落库版才提示保存成功；向导里的草稿版不落库，不提示。
               showStatusOverlay(
                 context,
                 '保养项目已保存',
@@ -974,26 +971,15 @@ Future<bool?> showDraftMaintenanceItemFormSheet(
   );
 }
 
-/// 启停项目（项目卡按钮）：setMaintenanceItemEnabled → invalidate；
-/// 失败（如停用最后一个启用项）toast 展示中文错误。
+/// 启停项目（项目卡按钮）：动作层写库+失效；失败（如停用最后一个
+/// 启用项）toast 展示中文错误。
 Future<void> toggleMaintenanceItem(
   BuildContext context,
   WidgetRef ref,
   MaintenanceItem item,
 ) async {
-  final nextEnabled = !item.enabled;
   try {
-    await ref
-        .read(lunioRepositoryProvider)
-        .setMaintenanceItemEnabled(
-          itemId: item.id!,
-          enabled: nextEnabled,
-          sync: SyncMetadata(
-            status: SyncStatus.pendingUpdate,
-            updatedAt: DateTime.now(),
-          ),
-        );
-    invalidateVehicleProviders(ref);
+    await setMaintenanceItemEnabled(ref, item, !item.enabled);
   } catch (error) {
     if (context.mounted) {
       showStatusOverlay(context, friendlyError(error), StatusOverlayTone.error);
@@ -1001,8 +987,8 @@ Future<void> toggleMaintenanceItem(
   }
 }
 
-/// 删除项目（项目卡按钮）：确认框 → deleteMaintenanceItem（有历史记录
-/// 会抛错）→ invalidate；失败 toast。
+/// 删除项目（项目卡按钮）：确认框 → 动作层删除+失效（有历史记录会
+/// 抛错）→ 失败 toast。
 Future<void> deleteMaintenanceItem(
   BuildContext context,
   WidgetRef ref,
@@ -1018,8 +1004,7 @@ Future<void> deleteMaintenanceItem(
     return;
   }
   try {
-    await ref.read(lunioRepositoryProvider).deleteMaintenanceItem(item.id!);
-    invalidateVehicleProviders(ref);
+    await removeMaintenanceItem(ref, item.id!);
   } catch (error) {
     if (context.mounted) {
       showStatusOverlay(context, friendlyError(error), StatusOverlayTone.error);
