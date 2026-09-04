@@ -60,7 +60,6 @@ void main() {
     );
 
     expect(progress.percent, 100);
-    expect(progress.reason, 'time');
     expect(progress.status, ReminderStatus.warning);
     expect(progress.mileageRemainingKm, 5000);
     expect(progress.daysRemaining, 0);
@@ -89,7 +88,6 @@ void main() {
     );
 
     expect(progress.percent, 50);
-    expect(progress.reason, 'mileage-no-history');
     expect(progress.mileageRemainingKm, 5000);
   });
 
@@ -105,8 +103,6 @@ void main() {
       noHistoryBaselineDate: const LocalDate(2026, 1, 1),
       today: const LocalDate(2026, 1, 16),
     );
-
-    expect(progress.reason, 'time');
     expect(progress.percent, closeTo(48.38, 0.01));
   });
 

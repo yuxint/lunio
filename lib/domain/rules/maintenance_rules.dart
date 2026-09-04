@@ -107,7 +107,6 @@ class MaintenanceRules {
   ///
   /// 结果：里程/时间两维分别算百分比，取较大者作为展示进度；
   /// 但剩余公里/剩余天数分别来自各自维度（可能一正一负）。
-  /// reason 标记进度来源，供 UI 区分"有记录"与"无历史估算"。
   static ReminderProgress progressForItem({
     required MaintenanceItem item,
     required MaintenanceRecord? latestRecord,
@@ -137,7 +136,6 @@ class MaintenanceRules {
     return ReminderProgress(
       percent: progress.percent,
       status: _statusForItem(item, progress.percent),
-      reason: progress.reason,
       mileageRemainingKm: mileageProgress.remaining,
       daysRemaining: timeProgress.remaining,
     );
@@ -183,18 +181,14 @@ class MaintenanceRules {
     required int currentMileageKm,
   }) {
     if (!item.remindByMileage || item.mileageIntervalKm == null) {
-      return const _Progress(0, 'mileage-disabled');
+      return const _Progress(0);
     }
     // 无历史记录时里程基线按 0（PRD 口径，见 progressForItem 注释）。
     final baselineMileageKm = latestRecord?.mileageKm ?? 0;
     final usedKm = currentMileageKm - baselineMileageKm;
     final percent = usedKm <= 0 ? 0 : usedKm / item.mileageIntervalKm! * 100;
     final remaining = item.mileageIntervalKm! - (usedKm <= 0 ? 0 : usedKm);
-    return _Progress(
-      percent.toDouble(),
-      latestRecord == null ? 'mileage-no-history' : 'mileage',
-      remaining,
-    );
+    return _Progress(percent.toDouble(), remaining);
   }
 
   /// 时间维进度：基线日 = 最近记录日期（无记录则用车辆上路日期）；
@@ -208,7 +202,7 @@ class MaintenanceRules {
     required LocalDate today,
   }) {
     if (!item.remindByTime || item.timeIntervalMonths == null) {
-      return const _Progress(0, 'time-disabled');
+      return const _Progress(0);
     }
     final baselineDate = latestRecord?.date ?? noHistoryBaselineDate;
     final dueDate = baselineDate.addMonths(item.timeIntervalMonths!);
@@ -218,11 +212,7 @@ class MaintenanceRules {
     final percent = totalDays <= 0 || usedDays <= 0
         ? 0
         : usedDays / totalDays * 100;
-    return _Progress(
-      percent.toDouble(),
-      latestRecord == null ? 'time-no-history' : 'time',
-      remainingDays,
-    );
+    return _Progress(percent.toDouble(), remainingDays);
   }
 }
 
@@ -233,9 +223,8 @@ LocalDate _addDays(LocalDate date, int days) {
 
 /// 单维进度的中间结果（私有 DTO）。
 class _Progress {
-  const _Progress(this.percent, this.reason, [this.remaining]);
+  const _Progress(this.percent, [this.remaining]);
 
   final double percent;
-  final String reason;
   final int? remaining;
 }

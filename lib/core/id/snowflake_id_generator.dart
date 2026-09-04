@@ -9,6 +9,12 @@
 typedef NowProvider = DateTime Function();
 
 class SnowflakeIdGenerator {
+  /// 进程级共享单例：数据层的多个模块（主仓库、偏好、加油、备份）都从
+  /// 这里发号。全库主键必须来自同一个生成器实例——两个实例在节点号
+  /// 相同、同一毫秒内会发出重复 id。测试需要注入时钟时自行 new 实例，
+  /// 不要把被测实例与生产实例混用。
+  static final SnowflakeIdGenerator instance = SnowflakeIdGenerator();
+
   /// nodeId 0~1023（本单机 App 恒为 0）；now 可注入（测试时钟回拨）。
   SnowflakeIdGenerator({int nodeId = 0, NowProvider? now})
     : assert(nodeId >= 0 && nodeId <= _maxNodeId),

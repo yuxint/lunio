@@ -3,8 +3,9 @@
 // "应用车辆"= 当前被提醒页/记录页展示的那辆车，存在偏好 key
 // `appliedCarId` 里。本规则决定：当偏好值缺失/失效时该显示哪辆车。
 //
-// 调用点：Repository.getAppliedCar（读路径）与
-// _ensureAppliedCarInTransaction / deleteCar（写路径，同逻辑内联）。
+// 调用点：Repository 的读路径（getAppliedCar 回退分支）与写路径
+// （deleteCar 级联后的重指、_ensureAppliedCarInTransaction 恢复备份
+// 收尾）——三处共用本规则，回退语义只在这一份代码里。
 import '../entities/car.dart';
 
 class AppliedCarRules {
