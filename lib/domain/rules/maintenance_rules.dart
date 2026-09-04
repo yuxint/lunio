@@ -174,7 +174,7 @@ class MaintenanceRules {
 
   /// 里程维进度：基线里程 = 最近记录里程（无记录则用兜底基线）；
   /// 已用 = 当前里程 − 基线；百分比 = 已用/间隔×100（负数归 0）；
-  /// 剩余 = 间隔 − max(已用, 0)。未启用该维时进度 0、reason=disabled。
+  /// 剩余 = 间隔 − max(已用, 0)。未启用该维时进度 0。
   static _Progress _mileageProgress({
     required MaintenanceItem item,
     required MaintenanceRecord? latestRecord,
