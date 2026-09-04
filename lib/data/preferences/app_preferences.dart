@@ -216,6 +216,8 @@ class LunioPreferences {
     return await readRaw(developerModeEnabledKey) == 'true';
   }
 
+  /// 写开发者模式开关（'true'/'false'）。只写库，失效
+  /// developerModeProvider 由调用方负责。
   Future<void> setDeveloperModeEnabled(bool enabled) {
     return _writeRaw(developerModeEnabledKey, enabled ? 'true' : 'false');
   }
@@ -254,6 +256,8 @@ class LunioPreferences {
     };
   }
 
+  /// 写主题模式（编码见 [getThemeMode] 的反向映射）。只写库，失效
+  /// themeModePreferenceProvider 由调用方负责。
   Future<void> setThemeMode(ThemeMode mode) {
     return _writeRaw(themeModeKey, switch (mode) {
       ThemeMode.light => 'light',
@@ -300,6 +304,9 @@ class LunioPreferences {
     return await readRaw(systemNotificationsEnabledKey) != 'false';
   }
 
+  /// 写系统通知开关（编码同读取约定：开 'true' / 关 'false'）。只写库，
+  /// 失效 notificationSettingsProvider 由调用方负责；被拒时回写 false
+  /// 的场景见通知协调器。
   Future<void> setSystemNotificationsEnabled(bool enabled) {
     return _writeRaw(
       systemNotificationsEnabledKey,
@@ -312,6 +319,8 @@ class LunioPreferences {
     return await readRaw(inAppNotificationsEnabledKey) != 'false';
   }
 
+  /// 写应用内提醒弹窗开关（编码同上）。只写库，失效
+  /// notificationSettingsProvider 由调用方负责。
   Future<void> setInAppNotificationsEnabled(bool enabled) {
     return _writeRaw(inAppNotificationsEnabledKey, enabled ? 'true' : 'false');
   }
@@ -334,6 +343,8 @@ class LunioPreferences {
     return await readRaw(fuelPredictionEnabledKey) == 'true';
   }
 
+  /// 写加油预测功能开关。只写库，失效 fuelPredictionEnabledProvider 由
+  /// 调用方负责（开关变化决定底部"加油"tab 是否出现）。
   Future<void> setFuelPredictionEnabled(bool enabled) {
     return _writeRaw(fuelPredictionEnabledKey, enabled ? 'true' : 'false');
   }
@@ -343,6 +354,8 @@ class LunioPreferences {
     return readRaw(fuelProvinceKey);
   }
 
+  /// 写省份（原样存字符串，不校验取值——取值范围由数据源层保证）。
+  /// 进备份；只写库，失效 fuelProvinceProvider 由调用方负责。
   Future<void> setFuelProvince(String province) {
     return _writeRaw(fuelProvinceKey, province);
   }
@@ -353,6 +366,8 @@ class LunioPreferences {
     return domain.FuelGrade.tryParse(code ?? '') ?? domain.FuelGrade.gasoline92;
   }
 
+  /// 写油品（存 [domain.FuelGrade.code]）。进备份；只写库，失效
+  /// fuelGradeProvider 由调用方负责。
   Future<void> setFuelGrade(domain.FuelGrade grade) {
     return _writeRaw(fuelGradeKey, grade.code);
   }

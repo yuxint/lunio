@@ -128,13 +128,16 @@ domain.MaintenanceRecord maintenanceRecordFromRow(
 }
 
 /// 记录实体 + 指定 id → 插入用 Companion。
+/// [carId] 可选覆盖：恢复备份时实体的 carId 是备份里的旧库车辆 id，
+/// 须传重映射后的新雪花 id（手工录入路径不传，直接用实体原值）。
 MaintenanceRecordsCompanion maintenanceRecordCompanion(
   domain.MaintenanceRecord record,
-  int id,
-) {
+  int id, {
+  int? carId,
+}) {
   return MaintenanceRecordsCompanion.insert(
     id: Value(id),
-    carId: record.carId,
+    carId: carId ?? record.carId,
     date: record.date.toString(),
     mileageKm: record.mileageKm,
     costCents: record.costCents,

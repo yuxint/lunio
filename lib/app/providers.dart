@@ -24,8 +24,8 @@
 // appDatabaseProvider（惰性建库/连库）
 //   ├─ lunioPreferencesProvider（偏好 typed 门面）
 //   ├─ builtInCatalogRepositoryProvider（车型目录/默认模板 + bootstrap）
-//   ├─ fuelRepositoryProvider（加油域）
-//   │    └─ backupRepositoryProvider（备份导出/恢复/清空，复用偏好门面）
+//   ├─ fuelRepositoryProvider（加油域，另挂偏好门面）
+//   ├─ backupRepositoryProvider（备份导出/恢复/清空，另挂偏好门面）
 //   ├─ lunioRepositoryProvider（主仓库：车辆/项目/记录，组合偏好门面与加油仓库）
 //   │    ├─ developerModeProvider ──> manualDatePreferenceProvider
 //   │    ├─ themeModePreferenceProvider（主题）

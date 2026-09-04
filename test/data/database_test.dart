@@ -1734,6 +1734,20 @@ void main() {
     final restoredCar = (await database.select(database.cars).get()).single;
     expect(restoredCar.id, isNot(carId));
     expect(await preferences.getAppliedCarId(), restoredCar.id);
+    // 公开查询按新车辆 id 验证（此前回归：恢复循环主表插入漏换 carId，
+    // 记录挂在备份里的旧 id 下，行数断言拦不住，恢复后历史全部不可见）。
+    final restoredItems = await repository.listMaintenanceItemsForCar(
+      restoredCar.id,
+    );
+    expect(restoredItems, hasLength(1));
+    final restoredRecords = await repository.listMaintenanceRecordsForCar(
+      restoredCar.id,
+    );
+    expect(restoredRecords, hasLength(1));
+    expect(restoredRecords.single.date, const LocalDate(2026, 5, 19));
+    expect(restoredRecords.single.costCents, 10000);
+    // 关联表 itemIds 同样指向重映射后的新项目 id。
+    expect(restoredRecords.single.itemIds, [restoredItems.single.id]);
     // 偏好保留：恢复只替换三类业务数据。
     expect(await preferences.readRaw('themeMode'), 'dark');
     expect(await preferences.readRaw('manualDate'), '2026-05-23');

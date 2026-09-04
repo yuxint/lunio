@@ -56,19 +56,27 @@
 | `invalidatePreferenceProviders` (:214) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
 | `invalidateAllAppDataProviders` (:224) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
 
-**Provider 依赖图**（`lib/app/providers.dart`，文件头有注释版）：
+**Provider 依赖图**（`lib/app/providers.dart`，文件头有注释版；仓库按域拆分后：目录/加油/备份/主仓库各自独立挂数据库，偏好类 provider 统一挂偏好门面）：
 
-```
-appDatabaseProvider(:136) ─→ lunioRepositoryProvider(:144)
-    ├─ developerModeProvider(:58) ─→ manualDatePreferenceProvider(:67) ─┐
-    ├─ themeModePreferenceProvider(:86)                                 ├─→ effectiveTodayProvider(:127)
-    ├─ notificationSettingsProvider(:99)                                │
-    ├─ parkingCountdownProvider(:120)                                   │
-    └─ defaultMaintenanceBootstrapProvider(:150)                        │
-         ├─→ vehicleModelsProvider(:156)                                │
-         └─→ carsProvider(:164) ─→ appliedCarProvider(:173)             │
-                                   ├─→ appliedCarMaintenanceItemsProvider
-                                   └─→ appliedCarRecordsProvider
+```text
+appDatabaseProvider(:232)
+  ├─→ lunioPreferencesProvider(:240) ─ 偏好门面（下述偏好类 provider 的数据源）
+  │     ├─ developerModeProvider(:74) ─→ manualDatePreferenceProvider(:81) ─┐
+  │     ├─ themeModePreferenceProvider(:95)                                 │
+  │     ├─ notificationSettingsProvider(:102)                               ├─→ effectiveTodayProvider(:223)
+  │     ├─ parkingCountdownProvider(:110)                                   │   （另一输入 appDateContextProvider(:68)）
+  │     └─ 加油开关/省份/油品 provider(:120/:125/:131)                       │
+  ├─→ builtInCatalogRepositoryProvider(:245)
+  │     └─→ defaultMaintenanceBootstrapProvider(:279)
+  │           ├─→ vehicleModelsProvider(:287)（另挂目录仓库）
+  │           └─→ carsProvider(:295)（另挂主仓库）
+  │                 └─→ appliedCarProvider(:304)（另挂主仓库）
+  │                       ├─→ appliedCarMaintenanceItemsProvider(:310)（另挂主仓库）
+  │                       └─→ appliedCarRecordsProvider(:322)（另挂主仓库）
+  ├─→ fuelRepositoryProvider(:252)（另挂偏好门面）
+  │     └─ 当前车加油设置(:138)、手填价(:157)、油价控制器(:171)
+  ├─→ backupRepositoryProvider(:260)（另挂偏好门面）
+  └─→ lunioRepositoryProvider(:269)（另挂偏好门面 + 加油仓库）
 ```
 
 ---

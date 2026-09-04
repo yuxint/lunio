@@ -136,7 +136,12 @@ class BackupRepository {
         final recordId = SnowflakeIdGenerator.instance.next();
         await database
             .into(database.maintenanceRecords)
-            .insert(maintenanceRecordCompanion(record, recordId));
+            .insert(
+              // 备份里的 carId 是旧库的车辆 id，主表与关联表一样重映射
+              // 为新雪花 id（漏换会让恢复出的记录挂到不存在的旧 id 下，
+              // 公开查询查不到）。
+              maintenanceRecordCompanion(record, recordId, carId: carId),
+            );
         for (final itemId in RecordRules.uniqueItemIds(record.itemIds)) {
           final mappedItemId = itemIdMap[itemId];
           if (mappedItemId == null) {
