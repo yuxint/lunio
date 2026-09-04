@@ -313,12 +313,14 @@ The palette is a restrained service-tool palette that separates brand color from
 
 - **Primary Blue (#2563eb):** The light-mode brand and interaction color. Use it for the active tab, primary buttons, floating action button, current vehicle highlights, and high-emphasis selected states.
 - **Primary Deep Cyan (#0e7490):** The dark-mode brand and interaction color. It keeps the tool-like mechanical feel of the vehicle-care workflow while staying separate from green status semantics. Use it in the same places as primary blue when the app is in dark mode.
-- **Status Green (#22c55e):** Used only for normal vehicle health, positive maintenance status, and normal progress ranges.
+- **Status Green (#22c55e):** Used only for normal vehicle health, positive maintenance status, normal progress ranges, and the fuel price falling arrow on the fuel page (red-rise/green-fall convention, see below).
 - **Neutral Canvas (#f6f7f9):** The app background. It should read as a cool off-white, not pure white, beige, or cream.
 - **White Surface (#ffffff):** The main card and sheet surface. Use it for readable information containers and controls.
 - **Secondary Slate (#475569):** A secondary accent used sparingly for system variety and visual balance, not for primary actions.
 - **Warning Amber (#f59e0b):** Used only for due-soon maintenance states and cautionary progress ranges.
-- **Danger Red (#ef4444):** Used only for overdue states, destructive actions, and critical warning badges.
+- **Danger Red (#ef4444):** Used only for overdue states, destructive actions, critical warning badges, and the fuel price rising arrow on the fuel page.
+
+Fuel price trend arrow exception (red-rise/green-fall): the "预估下次油价" block uses Danger Red for a predicted rise and Status Green for a predicted fall, following the Chinese stock-market color convention users expect for prices. This is a price-direction semantic, not vehicle health — do not reuse red/green this way outside the fuel price block.
 
 Color usage should remain functional. Do not create multicolor decorative backgrounds. Green must not be used as a generic brand accent; reserve it for normal status so users can distinguish action from health.
 

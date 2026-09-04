@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
+import 'package:lunio/core/theme/lunio_tokens.dart';
 import 'package:lunio/features/shell/shared/shared_widgets.dart';
 
 import 'package:lunio/core/date/local_date.dart';
@@ -101,9 +102,11 @@ void main() {
     expect(find.text('92#'), findsOneWidget);
     // 油价来自测试假源，但界面不标注数据来源。
     expect(find.textContaining('示例数据'), findsNothing);
-    // 预估下次油价块：假源默认无调价预告，显示占位文案。
+    // 预估下次油价块：假源默认无调价预告，显示占位文案，无涨跌箭头。
     expect(find.text('预估下次油价'), findsOneWidget);
     expect(find.text('暂无调价预测'), findsOneWidget);
+    expect(find.byIcon(Icons.trending_up), findsNothing);
+    expect(find.byIcon(Icons.trending_down), findsNothing);
     // 档位列表：表头四列；已存的 50% 定位在第一行，窗口内往下可见
     // 48/46/44/42。
     expect(find.text('当前油量'), findsOneWidget);
@@ -187,9 +190,67 @@ void main() {
     // 预估下次油价块：预估价 + 调价日期，样式与当前油价行一致。
     expect(find.text('7.67 元/升'), findsOneWidget);
     expect(find.text('9月11日调价'), findsOneWidget);
+    // 涨跌箭头：预告上调 → 红色上行箭头（红涨绿跌），且无下行箭头。
+    expect(find.byIcon(Icons.trending_up), findsOneWidget);
+    expect(find.byIcon(Icons.trending_down), findsNothing);
+    final tokens = Theme.of(
+      tester.element(find.text('预估下次油价')),
+    ).extension<LunioTokens>()!;
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.trending_up)).color,
+      tokens.danger,
+    );
     // 调价后价格列：50% 档 27.5 × 7.67 = 210.93；当前价列不受影响。
     expect(find.text('¥209.28'), findsOneWidget);
     expect(find.text('¥210.93'), findsOneWidget);
+  });
+
+  testWidgets('fuel forecast down trend shows green falling arrow', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await createCarWithDefaultItems(
+      database,
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        sync: SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026)),
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    // 调价预告：9月11日下调 → 绿色下行箭头（红涨绿跌）。
+    await pumpApp(
+      tester,
+      database: database,
+      fuelForecast: const FuelAdjustmentForecast(
+        month: 9,
+        day: 11,
+        trend: FuelPriceTrend.down,
+        minChangePerLiter: 0.05,
+        maxChangePerLiter: 0.06,
+      ),
+    );
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('预估下次油价'), findsOneWidget);
+    expect(find.byIcon(Icons.trending_down), findsOneWidget);
+    expect(find.byIcon(Icons.trending_up), findsNothing);
+    final tokens = Theme.of(
+      tester.element(find.text('预估下次油价')),
+    ).extension<LunioTokens>()!;
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.trending_down)).color,
+      tokens.success,
+    );
   });
 
 
@@ -438,5 +499,65 @@ void main() {
     // 未填容积：空态引导出现（容积入口在车辆管理），不显示金额。
     expect(find.textContaining('填写油箱容积'), findsOneWidget);
     expect(find.textContaining('¥'), findsNothing);
+  });
+
+  testWidgets('fuel price row merges manual edit and reset into one button', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await createCarWithDefaultItems(
+      database,
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        sync: sync,
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    await pumpApp(tester, database: database);
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 数据源价状态：右侧按钮显示"手填"（进编辑），无"重置"。
+    expect(find.text('7.61 元/升'), findsOneWidget);
+    expect(find.text('手填'), findsOneWidget);
+    expect(find.text('重置'), findsNothing);
+
+    // 点价格文字不进编辑（入口已收掉），只有"手填"按钮能打开 sheet。
+    await tester.tap(find.text('7.61 元/升'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑油价'), findsNothing);
+
+    // 点"手填" → 编辑油价 sheet → 存一个手填价。
+    await tester.tap(find.text('手填'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑油价'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '7.88');
+    await tester.tap(find.widgetWithText(FilledButton, '保存手填价'));
+    await tester.pumpAndSettle();
+
+    // 手填价状态：手填价生效，按钮切成"重置"，"手填"消失。
+    expect(find.text('7.88 元/升'), findsOneWidget);
+    expect(find.text('重置'), findsOneWidget);
+    expect(find.text('手填'), findsNothing);
+
+    // 点"重置" → 恢复数据源价，按钮切回"手填"。
+    await tester.tap(find.text('重置'));
+    await tester.pumpAndSettle();
+    expect(find.text('7.61 元/升'), findsOneWidget);
+    expect(find.text('手填'), findsOneWidget);
+    expect(find.text('重置'), findsNothing);
   });
 }

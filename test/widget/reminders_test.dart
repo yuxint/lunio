@@ -535,4 +535,139 @@ void main() {
       }
     },
   );
+
+  testWidgets('quick mileage update saves higher mileage directly', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    final carId = await createCarWithDefaultItems(
+      database,
+      Car(
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 5, 19),
+        ),
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    await pumpApp(tester, database: database);
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('更新里程'), findsOneWidget);
+    await tester.tap(find.text('更新里程'));
+    await tester.pumpAndSettle();
+
+    // sheet 打开：副标题带当前里程；输入框默认留空 + autofocus 拿到焦点
+    // （数字键盘自动弹出），键盘是纯整数数字键盘。
+    expect(find.text('当前 10,000km，输入新的当前里程'), findsOneWidget);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller?.text, '');
+    expect(field.keyboardType.decimal, isFalse);
+    // autofocus 生效：输入连接已建立（数字键盘自动弹出）。
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+
+    // 调高里程：不弹确认框，直接保存并刷新英雄卡。
+    await tester.enterText(find.byType(TextField), '12500');
+    await tester.tap(find.widgetWithText(FilledButton, '保存里程'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilledButton, '保存里程'), findsNothing);
+    expect(find.text('里程已更新'), findsOneWidget);
+    expect(find.text('12,500'), findsOneWidget);
+    final cars = await repository.listCars();
+    expect(cars.single.currentMileageKm, 12500);
+  });
+
+  testWidgets('quick mileage update warns when mileage is not raised', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    final carId = await createCarWithDefaultItems(
+      database,
+      Car(
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 5, 19),
+        ),
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    await pumpApp(tester, database: database);
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('更新里程'));
+    await tester.pumpAndSettle();
+
+    // 未调高（10,000 → 9,999）：先弹确认框警示而不是直接保存。
+    await tester.enterText(find.byType(TextField), '9999');
+    await tester.tap(find.widgetWithText(FilledButton, '保存里程'));
+    await tester.pumpAndSettle();
+    expect(find.text('里程未调高'), findsOneWidget);
+    expect(find.textContaining('不高于当前里程'), findsOneWidget);
+
+    // 取消：对话框关掉，sheet 留着，库里里程不变。
+    await tester.tap(
+      find.descendant(of: find.byType(Dialog), matching: find.text('取消')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('里程未调高'), findsNothing);
+    expect(find.widgetWithText(FilledButton, '保存里程'), findsOneWidget);
+    expect((await repository.listCars()).single.currentMileageKm, 10000);
+
+    // 再保存并确认"仍要保存"：允许强保（与编辑车辆允许改小一致）。
+    await tester.tap(find.widgetWithText(FilledButton, '保存里程'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '仍要保存'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilledButton, '保存里程'), findsNothing);
+    expect((await repository.listCars()).single.currentMileageKm, 9999);
+  });
+
+  testWidgets('quick mileage update validates empty input', (tester) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    final carId = await createCarWithDefaultItems(
+      database,
+      Car(
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 5, 19),
+        ),
+      ),
+    );
+    await repository.setAppliedCarId(carId);
+    await pumpApp(tester, database: database);
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('更新里程'));
+    await tester.pumpAndSettle();
+
+    // 留空提交：行内校验错误，不进确认框，sheet 不关。
+    await tester.tap(find.widgetWithText(FilledButton, '保存里程'));
+    await tester.pumpAndSettle();
+    expect(find.text('请输入当前里程'), findsOneWidget);
+    expect(find.text('里程未调高'), findsNothing);
+    expect(find.widgetWithText(FilledButton, '保存里程'), findsOneWidget);
+    expect((await repository.listCars()).single.currentMileageKm, 10000);
+  });
 }

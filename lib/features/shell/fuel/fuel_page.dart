@@ -2,14 +2,16 @@
 //
 // 页面结构：
 //   1. 油价卡：当前省+油品的每升价（手填价 > 数据源价），右上角刷新；
-//      价格文字可点进编辑（输入框每次留空，保存后成为手填价），价格旁
-//      "重置"按钮只在存有手填价时可用（恢复数据源价）；没拉到数据时
-//      显示可点的"—"占位价，点击即进手填编辑；
+//      价格文字纯展示不可点；右侧动作按钮按状态切换：无手填价显示
+//      "手填"进编辑（输入框每次留空，保存后成为手填价），有手填价
+//      显示"重置"（恢复数据源价）；没拉到数据时显示"—"占位价，
+//      编辑同样走"手填"按钮；
 //      副标题"湖北 · 92#"的省份、油品两段各自可点弹出选择 sheet
 //      （设置很少改，不再单设设置区）；省份 31 项用列表 sheet 内部限高
 //      滚动，油品固定 4 项用一行胶囊单选（sheet 贴内容，很矮）。
 //      下方是"预估下次油价"块：按调价预告算出的调价后每升价 + 调价日期
-//      （见 docs/adr/0006），预告缺失时显示占位文案；
+//      （见 docs/adr/0006），价格旁带涨跌箭头（红涨绿跌），预告缺失时
+//      显示占位文案；
 //   2. 加满预估卡：表头四列（当前油量/可加油量/加满价格/调价后价格），
 //      全量档位列表（100%→0%，2% 一档共 51 档），窗口内可见 5 档，
 //      可上下滚动；滚动停稳后第一行所在的档位就是剩余油量（自动写库，
@@ -180,28 +182,28 @@ class _PriceCard extends ConsumerWidget {
         manualPrice ?? data?.priceFor(province: province, grade: grade);
     Widget priceLine;
     if (manualPrice != null) {
-      // 手填价行：点价格进编辑；有手填价才允许"重置"回数据源价。
+      // 手填价行：点价格进编辑；右侧按钮"重置"恢复数据源价。
       priceLine = _priceRow(
         context,
         ref,
         '${manualPrice.toStringAsFixed(2)} 元/升',
         '手填价',
         tokens.primary,
-        canReset: true,
+        hasManualPrice: true,
       );
     } else {
       if (priceState.isLoading && data == null) {
         priceLine = Text('油价获取中…', style: subtitleStyle);
       } else if (data == null || effectivePrice == null) {
-        // 没拉到数据（或该油品无报价）：显示可点的"—"占位价，
-        // 点击即进手填编辑——这是无数据状态下唯一的手填入口。
+        // 没拉到数据（或该油品无报价）：显示"—"占位价（纯展示），
+        // 编辑走右侧"手填"按钮。
         priceLine = _priceRow(
           context,
           ref,
           '— 元/升',
           '暂无数据',
           tokens.muted,
-          canReset: false,
+          hasManualPrice: false,
         );
       } else {
         final updatedText =
@@ -212,7 +214,7 @@ class _PriceCard extends ConsumerWidget {
           '${effectivePrice.toStringAsFixed(2)} 元/升',
           updatedText,
           tokens.ink,
-          canReset: false,
+          hasManualPrice: false,
         );
       }
     }
@@ -249,7 +251,9 @@ class _PriceCard extends ConsumerWidget {
     );
   }
 
-  /// 预估下次油价数值行：预估价 + "X月X日调价"日期胶囊。
+  /// 预估下次油价数值行：预估价 + 涨跌箭头（红涨绿跌，中国股市习惯色，
+  /// 复用 danger/success token）+ "X月X日调价"日期胶囊。方向取预告的
+  /// trend（与预估价计算的符号同源，见 FuelRules.predictedPricePerLiter）。
   /// 无预告或无基准价时显示占位文案（布局不跳动，不算错误）。
   Widget _buildForecastLine(
     BuildContext context, {
@@ -270,6 +274,7 @@ class _PriceCard extends ConsumerWidget {
       currentPricePerLiter: basePrice,
       forecast: forecast,
     );
+    final trendUp = forecast.trend == FuelPriceTrend.up;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -280,56 +285,58 @@ class _PriceCard extends ConsumerWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
+        const SizedBox(width: 6),
+        Icon(
+          trendUp ? Icons.trending_up : Icons.trending_down,
+          size: 20,
+          color: trendUp ? tokens.danger : tokens.success,
+          semanticLabel: trendUp ? '预计上调' : '预计下调',
+        ),
         const SizedBox(width: 8),
         _TagPill(label: '${forecast.month}月${forecast.day}日调价'),
       ],
     );
   }
 
-  /// 价格行：价格文字 + 标签胶囊可点（进入手填价编辑），右侧"重置"按钮。
-  /// 重置只在当前省+油品存有手填价时可用（点了恢复数据源价）；没有
-  /// 手填价时置灰。价格区加小编辑图标提示可点。
+  /// 价格行：价格文字 + 标签胶囊（纯展示，不可点），右侧一个动作按钮
+  /// 按状态切换——没有手填价显示"手填"（唯一的编辑入口，点了进编辑
+  /// sheet），有手填价显示"重置"（点了恢复数据源价；改手填价须先
+  /// 重置再重新手填）。原"点价格进编辑"入口已收掉（避免冗余入口）。
   Widget _priceRow(
     BuildContext context,
     WidgetRef ref,
     String priceText,
     String tagText,
     Color priceColor, {
-    required bool canReset,
+    required bool hasManualPrice,
   }) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: InkWell(
-            onTap: () => _editManualPrice(context, ref),
-            borderRadius: BorderRadius.circular(tokens.radiusSmall),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    priceText,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: priceColor,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _TagPill(label: tagText),
-                  const SizedBox(width: 4),
-                  Icon(Icons.edit_outlined, size: 14, color: tokens.muted),
-                ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                priceText,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: priceColor,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              _TagPill(label: tagText),
+            ],
           ),
         ),
+        // 合并按钮：主动作样式（同"刷新"）提示这是编辑入口；
+        // 重置是弱化的恢复动作，维持原 secondary 样式。
         SmallActionButton(
-          label: '重置',
-          secondary: true,
-          onPressed: canReset ? () => _resetManualPrice(context) : null,
+          label: hasManualPrice ? '重置' : '手填',
+          secondary: hasManualPrice,
+          onPressed: hasManualPrice
+              ? () => _resetManualPrice(context)
+              : () => _editManualPrice(context, ref),
         ),
       ],
     );
@@ -436,7 +443,7 @@ class _PriceCard extends ConsumerWidget {
   }
 
   /// 重置手填价：写 null 删该组合的键，恢复用数据源价格。
-  /// 只在存有手填价时可触发（见 _priceRow 的 canReset）。
+  /// 只在存有手填价时可触发（右侧按钮此状态下显示为"重置"）。
   Future<void> _resetManualPrice(BuildContext context) async {
     final ref = ProviderScope.containerOf(context, listen: false);
     final province = ref.read(fuelProvinceProvider).value;
