@@ -3,13 +3,12 @@
 // 权限真值对账、通知清扫的具体协议全部内聚在这里，调用方不再接触
 // 偏好 key 字符串、通知 id 分段和同步代数。
 //
-// 拥有的偏好 key（唯一写者，读侧 notificationSettingsProvider 的字符串
-// 必须与这里保持一致）：
-//  - systemNotificationsEnabled / systemNotificationPermissionRequested；
-//  - inAppNotificationsEnabled / maintenanceDueRepeat（经
-//    saveNotificationSettings 批量写）；
-//  - 抑制类 key（"稍后提醒"/"知道了"，前缀常量以 LunioRepository 为
-//    单一事实来源，恢复备份按同组前缀清除）。
+// 拥有的偏好 key（唯一写者，读侧 notificationSettingsProvider 走同一
+// 偏好门面）：systemNotificationsEnabled /
+// systemNotificationPermissionRequested / inAppNotificationsEnabled /
+// maintenanceDueRepeat（经 saveNotificationSettings 批量写）；
+// 以及抑制类 key（"稍后提醒"/"知道了"，前缀常量以 LunioPreferences 为
+// 单一事实来源，恢复备份按同组前缀清除）。
 //
 // 与 NotificationSyncController 的分工：controller 保留被动监听外壳
 // （订阅 provider、签名比对、三层防竞态），权限协议的执行体全部委托
@@ -20,7 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/notifications/lunio_notification_service.dart';
-import '../../../data/repositories/lunio_repository.dart';
+import '../../../data/preferences/app_preferences.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
 
@@ -46,14 +45,14 @@ class MileageUpdateTarget extends ReminderTarget {
 }
 
 /// 通知协调器的装配入口。依赖：主容器 [Ref]（读设置 provider、失效
-/// 偏好缓存）、[LunioRepository]（偏好读写）、通知服务单例。测试可用
+/// 偏好缓存）、[LunioPreferences]（偏好读写）、通知服务单例。测试可用
 /// 内存数据库 + mock 方法通道直接驱动。
 final notificationCoordinatorProvider = Provider<LunioNotificationCoordinator>(
   (ref) {
     return LunioNotificationCoordinator(
       ref: ref,
-      repository: ref.watch(lunioRepositoryProvider),
-      service: LunioNotificationService.instance,
+      preferences: ref.watch(lunioPreferencesProvider),
+      service: ref.watch(lunioNotificationServiceProvider),
     );
   },
 );
@@ -63,23 +62,15 @@ final notificationCoordinatorProvider = Provider<LunioNotificationCoordinator>(
 class LunioNotificationCoordinator {
   LunioNotificationCoordinator({
     required this.ref,
-    required this.repository,
+    required this.preferences,
     required this.service,
   });
 
   final Ref ref;
-  final LunioRepository repository;
+  final LunioPreferences preferences;
   final LunioNotificationService service;
 
-  // ---- 本模块拥有的偏好 key（写入口唯一）----
-
-  static const _systemNotificationsEnabledKey = 'systemNotificationsEnabled';
-  static const _inAppNotificationsEnabledKey = 'inAppNotificationsEnabled';
-  static const _maintenanceDueRepeatKey = 'maintenanceDueRepeat';
-  static const _systemNotificationPermissionRequestedKey =
-      'systemNotificationPermissionRequested';
-
-  // ---- 权限真值协议 ----
+  // ---- 权限真值协议（偏好 key 常量与编解码在 LunioPreferences 登记）----
 
   /// 查询系统真实通知开关并回写偏好（用户可能在系统设置里改过）。
   /// 不一致才写库 + 失效偏好缓存；查询失败打日志并回退为偏好当前值
@@ -87,16 +78,11 @@ class LunioNotificationCoordinator {
   ///
   /// 返回系统真实开关状态（查询失败时为按偏好推断的值）。
   Future<bool> reconcileSystemEnabled() async {
-    final currentValue = await repository.getPreferenceValue(
-      _systemNotificationsEnabledKey,
-    );
+    final currentValue = await preferences.getSystemNotificationsEnabled();
     try {
       final enabled = await service.notificationsEnabled();
-      if (currentValue != enabled.toString()) {
-        await repository.setPreferenceValue(
-          _systemNotificationsEnabledKey,
-          enabled.toString(),
-        );
+      if (currentValue != enabled) {
+        await preferences.setSystemNotificationsEnabled(enabled);
         invalidatePreferenceProvidersWithRef(ref);
       }
       return enabled;
@@ -104,7 +90,7 @@ class LunioNotificationCoordinator {
       debugPrint(
         'notification_coordinator: 查询系统通知开关失败($error)，回退为偏好当前值',
       );
-      return currentValue != 'false';
+      return currentValue;
     }
   }
 
@@ -116,10 +102,7 @@ class LunioNotificationCoordinator {
   /// 返回是否获得授权。
   Future<bool> requestPermission() async {
     final granted = await service.requestNotificationPermission();
-    await repository.setPreferenceValue(
-      _systemNotificationPermissionRequestedKey,
-      'true',
-    );
+    await preferences.markSystemNotificationPermissionRequested();
     if (!granted) {
       await markSystemNotificationsDisabled();
     }
@@ -129,10 +112,7 @@ class LunioNotificationCoordinator {
   /// 把系统通知开关偏好写为关并失效缓存（权限被拒 / 系统里被关后的
   /// 统一回写点）。
   Future<void> markSystemNotificationsDisabled() async {
-    await repository.setPreferenceValue(
-      _systemNotificationsEnabledKey,
-      'false',
-    );
+    await preferences.setSystemNotificationsEnabled(false);
     invalidatePreferenceProvidersWithRef(ref);
   }
 
@@ -144,10 +124,7 @@ class LunioNotificationCoordinator {
   /// 返回 true 表示本次真的弹了权限请求，调用方应清空系统通知签名并
   /// 立即重跑一轮同步（授权结果影响通知内容）。
   Future<bool> ensureInitialSystemNotificationPermission() async {
-    final requested = await repository.getPreferenceValue(
-      _systemNotificationPermissionRequestedKey,
-    );
-    if (requested == 'true') {
+    if (await preferences.isSystemNotificationPermissionRequested()) {
       await reconcileSystemEnabled();
       return false;
     }
@@ -163,10 +140,7 @@ class LunioNotificationCoordinator {
   Future<bool> ensureSystemNotificationsSchedulable() async {
     var enabled = await service.notificationsEnabled();
     if (!enabled) {
-      final requested = await repository.getPreferenceValue(
-        _systemNotificationPermissionRequestedKey,
-      );
-      if (requested != 'true') {
+      if (!await preferences.isSystemNotificationPermissionRequested()) {
         enabled = await requestPermission();
         if (enabled) {
           return true;
@@ -191,13 +165,7 @@ class LunioNotificationCoordinator {
   Future<void> saveNotificationSettings(
     LunioNotificationSettings settings,
   ) async {
-    await repository.updatePreferenceValues({
-      _systemNotificationsEnabledKey: settings.systemNotificationsEnabled
-          .toString(),
-      _inAppNotificationsEnabledKey: settings.inAppNotificationsEnabled
-          .toString(),
-      _maintenanceDueRepeatKey: settings.dueRepeatFrequency.value,
-    });
+    await preferences.saveNotificationSettings(settings);
     invalidatePreferenceProvidersWithRef(ref);
   }
 
@@ -288,7 +256,7 @@ class LunioNotificationCoordinator {
   // notification_sync_controller 三处，现收进模块，由两个读方法表达）：
   //  - "稍后提醒"：系统通知 + 应用内弹窗一起静默 15 天；
   //  - "知道了"：只静默当天的应用内弹窗，系统通知照发。
-  // key 前缀引用 LunioRepository 上的静态常量（单一事实来源）：恢复备份
+  // key 前缀引用 LunioPreferences 上的静态常量（单一事实来源）：恢复备份
   // 时按同一组前缀清除抑制记录，两处不会各自漂移。
 
   /// "稍后提醒"截止日 = 今天 + 15 天（R34：LocalDate 日历加减，不走
@@ -296,20 +264,20 @@ class LunioNotificationCoordinator {
   static LocalDate _snoozeUntilDate(LocalDate today) => today.addDays(15);
 
   String _maintenanceSnoozeKey(int itemId) =>
-      '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}$itemId';
+      '${LunioPreferences.maintenanceReminderSnoozedUntilPrefix}$itemId';
 
   String _mileageSnoozeKey(int carId) =>
-      '${LunioRepository.mileageUpdateSnoozedUntilPrefix}$carId';
+      '${LunioPreferences.mileageUpdateSnoozedUntilPrefix}$carId';
 
   String _maintenanceAcknowledgedKey(int itemId) =>
-      '${LunioRepository.maintenanceInAppReminderAcknowledgedOnPrefix}$itemId';
+      '${LunioPreferences.maintenanceInAppReminderAcknowledgedOnPrefix}$itemId';
 
   String _mileageAcknowledgedKey(int carId) =>
-      '${LunioRepository.mileageUpdateInAppAcknowledgedOnPrefix}$carId';
+      '${LunioPreferences.mileageUpdateInAppAcknowledgedOnPrefix}$carId';
 
   /// 是否处于"稍后提醒"期（截止日 ≥ 今天：截止日当天仍静默，次日恢复）。
   Future<bool> _isSnoozed(String key, LocalDate today) async {
-    final value = await repository.getPreferenceValue(key);
+    final value = await preferences.readRaw(key);
     if (value == null) {
       return false;
     }
@@ -322,7 +290,7 @@ class LunioNotificationCoordinator {
 
   /// 今天是否已点过"知道了"。
   Future<bool> _isAcknowledgedOn(String key, LocalDate today) async {
-    final value = await repository.getPreferenceValue(key);
+    final value = await preferences.readRaw(key);
     if (value == null) {
       return false;
     }
@@ -370,16 +338,13 @@ class LunioNotificationCoordinator {
   ) async {
     final until = _snoozeUntilDate(today).toString();
     for (final itemId in itemIds) {
-      await repository.setPreferenceValue(
-        _maintenanceSnoozeKey(itemId),
-        until,
-      );
+      await preferences.writeRaw(_maintenanceSnoozeKey(itemId), until);
     }
   }
 
   /// 记录"稍后提醒"（里程更新按车辆）。
   Future<void> snoozeMileageUpdate(int carId, LocalDate today) async {
-    await repository.setPreferenceValue(
+    await preferences.writeRaw(
       _mileageSnoozeKey(carId),
       _snoozeUntilDate(today).toString(),
     );
@@ -387,7 +352,7 @@ class LunioNotificationCoordinator {
 
   /// 记录"知道了"（保养项目）：写当日 ack 偏好，只静默当天的应用内弹窗。
   Future<void> acknowledgeMaintenanceItem(int itemId, LocalDate today) async {
-    await repository.setPreferenceValue(
+    await preferences.writeRaw(
       _maintenanceAcknowledgedKey(itemId),
       today.toString(),
     );
@@ -395,7 +360,7 @@ class LunioNotificationCoordinator {
 
   /// 记录"知道了"（里程更新按车辆）。
   Future<void> acknowledgeMileageUpdate(int carId, LocalDate today) async {
-    await repository.setPreferenceValue(
+    await preferences.writeRaw(
       _mileageAcknowledgedKey(carId),
       today.toString(),
     );

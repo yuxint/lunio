@@ -17,10 +17,10 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/format/clock.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/parking_countdown.dart';
@@ -237,11 +237,10 @@ class ParkingCountdownForm extends StatefulWidget {
   State<ParkingCountdownForm> createState() => ParkingCountdownFormState();
 }
 
-class ParkingCountdownFormState extends State<ParkingCountdownForm> {
+class ParkingCountdownFormState extends State<ParkingCountdownForm>
+    with LunioFormSubmit {
   late DateTime entryTime;
   late final TextEditingController durationMinutesController;
-  bool saving = false;
-  String? errorText;
 
   @override
   void initState() {
@@ -269,19 +268,12 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
           onTap: saving ? null : _pickEntryTime,
         ),
         const SizedBox(height: 10),
-        TextField(
+        LunioNumberField(
           controller: durationMinutesController,
           enabled: !saving,
-          // 数字输入统一用数字键盘（与油箱容积同款方式）。
-          keyboardType: const TextInputType.numberWithOptions(),
-          textInputAction: TextInputAction.done,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          onChanged: (_) => setState(() => errorText = null),
-          onSubmitted: (_) => FocusScope.of(context).unfocus(),
-          decoration: const InputDecoration(
-            labelText: '免费时长',
-            suffixText: '分钟',
-          ),
+          labelText: '免费时长',
+          suffixText: '分钟',
+          onChanged: (_) => setFormError(null),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -330,10 +322,8 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
     if (selected == null || !mounted) {
       return;
     }
-    setState(() {
-      entryTime = selected;
-      errorText = null;
-    });
+    setState(() => entryTime = selected);
+    setFormError(null);
   }
 
   int? get _durationMinutes {
@@ -341,25 +331,20 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
   }
 
   void _setDurationMinutes(int minutes) {
-    setState(() {
-      durationMinutesController.text = minutes.toString();
-      errorText = null;
-    });
+    setState(() => durationMinutesController.text = minutes.toString());
+    setFormError(null);
   }
 
   /// 提交：校验免费时长为正整数 → 构造 ParkingCountdown（分钟→秒）→
-  /// onSubmit（保存+通知）→ 成功关 sheet；失败在表单内展示中文错误。
+  /// onSubmit（保存+通知）→ 成功关 sheet；失败经提交运行器在表单内
+  /// 展示中文错误。
   Future<void> _submit() async {
     final durationMinutes = _durationMinutes;
     if (durationMinutes == null || durationMinutes <= 0) {
-      setState(() => errorText = '免费时长必须填写正整数分钟');
+      setFormError('免费时长必须填写正整数分钟');
       return;
     }
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
-    try {
+    await runSubmit(() async {
       await widget.onSubmit(
         ParkingCountdown(
           startedAt: entryTime,
@@ -369,15 +354,7 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm> {
       if (mounted) {
         Navigator.of(context).pop();
       }
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+    });
   }
 }
 
@@ -624,7 +601,7 @@ Future<void> saveParkingCountdown(
   WidgetRef ref,
   ParkingCountdown countdown,
 ) async {
-  await ref.read(lunioRepositoryProvider).saveParkingCountdown(countdown);
+  await ref.read(lunioPreferencesProvider).saveParkingCountdown(countdown);
   if (!context.mounted) {
     return;
   }
@@ -638,7 +615,7 @@ Future<void> saveParkingCountdown(
 /// （系统通知开着时取消 9001/9002 两条系统通知，关着时本来就没调度过）。
 /// await 后检查页面 context 仍挂载（R13）。
 Future<void> clearParkingCountdown(BuildContext context, WidgetRef ref) async {
-  await ref.read(lunioRepositoryProvider).clearParkingCountdown();
+  await ref.read(lunioPreferencesProvider).clearParkingCountdown();
   if (!context.mounted) {
     return;
   }
@@ -695,16 +672,7 @@ String _formatParkingDurationOption(int seconds) {
   };
 }
 
-/// 提醒三态 → UI 语义色枚举（停车与保养共用一套颜色语义）。
-LunioStatusTone _parkingStatusTone(ReminderStatus status) {
-  return switch (status) {
-    ReminderStatus.normal => LunioStatusTone.normal,
-    ReminderStatus.warning => LunioStatusTone.warning,
-    ReminderStatus.danger => LunioStatusTone.danger,
-  };
-}
-
 /// 提醒三态 → token 颜色。
 Color _parkingStatusColor(LunioTokens tokens, ReminderStatus status) {
-  return _parkingStatusTone(status).statusForeground(tokens);
+  return status.tone.statusForeground(tokens);
 }

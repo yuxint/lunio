@@ -38,12 +38,10 @@ class ReminderList extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
     if (items.hasError) {
-      return LunioCard(child: Text('保养项目加载失败：${friendlyError(items.error!)}'));
+      return LunioEmptyCard('保养项目加载失败：${friendlyError(items.error!)}');
     }
     if (records.hasError) {
-      return LunioCard(
-        child: Text('保养记录加载失败：${friendlyError(records.error!)}'),
-      );
+      return LunioEmptyCard('保养记录加载失败：${friendlyError(records.error!)}');
     }
     if ((records.value ?? const <MaintenanceRecord>[]).isEmpty) {
       return LunioCard(

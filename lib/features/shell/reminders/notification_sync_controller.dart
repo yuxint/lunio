@@ -49,6 +49,10 @@ class NotificationSyncController {
   final BuildContext? Function() shellContext;
   final bool Function() isAlive;
 
+  /// 通知服务经 provider 获取（生产=全局单例；测试逐用例覆盖为新实例）。
+  bridge.LunioNotificationService get _notificationService =>
+      ref.read(lunioNotificationServiceProvider);
+
   /// listenManual 订阅句柄（dispose 时统一关闭）。
   final List<ProviderSubscription> _subscriptions = [];
 
@@ -262,8 +266,7 @@ class NotificationSyncController {
         return;
       }
       if (!settings.systemNotificationsEnabled) {
-        await bridge.LunioNotificationService.instance
-            .cancelLunioNotifications();
+        await _notificationService.cancelLunioNotifications();
         return;
       }
       // 权限协议在协调器内：查系统真实开关、必要时补请求、仍不可用则
@@ -289,16 +292,15 @@ class NotificationSyncController {
         return;
       }
       if (notifications.isEmpty) {
-        await bridge.LunioNotificationService.instance
-            .rescheduleNotifications(
-              notifications,
-              reservedDateTimes: bridge.reservedNotificationDateTimes(
-                parkingCountdown,
-              ),
-            );
+        await _notificationService.rescheduleNotifications(
+          notifications,
+          reservedDateTimes: bridge.reservedNotificationDateTimes(
+            parkingCountdown,
+          ),
+        );
         return;
       }
-      final exactAlarmGranted = await bridge.LunioNotificationService.instance
+      final exactAlarmGranted = await _notificationService
           .requestExactAlarmPermission();
       if (_disposed) {
         return;
@@ -308,7 +310,7 @@ class NotificationSyncController {
       if (ref.read(notificationSyncGenerationProvider) != syncGeneration) {
         return;
       }
-      await bridge.LunioNotificationService.instance.rescheduleNotifications(
+      await _notificationService.rescheduleNotifications(
         notifications,
         exactAlarm: exactAlarmGranted,
         reservedDateTimes: bridge.reservedNotificationDateTimes(

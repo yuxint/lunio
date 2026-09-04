@@ -13,7 +13,6 @@
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
@@ -158,11 +157,11 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
     List<MaintenanceItem> items,
   ) {
     if (car == null) {
-      return const SliverToBoxAdapter(child: LunioCard(child: Text('请先新增车辆')));
+      return const SliverToBoxAdapter(child: LunioEmptyCard('请先新增车辆'));
     }
     if (records.isEmpty) {
       return const SliverToBoxAdapter(
-        child: LunioCard(child: Text('暂无保养记录，可在提醒页点「新增保养记录」。')),
+        child: LunioEmptyCard('暂无保养记录，可在提醒页点「新增保养记录」。'),
       );
     }
     final selections = _validSelections(records, items);
@@ -173,7 +172,7 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
     );
     if (filteredRecords.isEmpty) {
       return const SliverToBoxAdapter(
-        child: LunioCard(child: Text('没有符合筛选条件的记录')),
+        child: LunioEmptyCard('没有符合筛选条件的记录'),
       );
     }
     if (selectedMode == 0) {
@@ -224,7 +223,7 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
     }
     if (rows.isEmpty) {
       return const SliverToBoxAdapter(
-        child: LunioCard(child: Text('没有符合筛选条件的记录')),
+        child: LunioEmptyCard('没有符合筛选条件的记录'),
       );
     }
     return SliverList.builder(
@@ -482,7 +481,8 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
       MaintenanceRecordFormState();
 }
 
-class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
+class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
+    with LunioFormSubmit {
   // ---- 第一步的字段 ----
   late LocalDate recordDate;
   late final TextEditingController mileageController;
@@ -500,8 +500,6 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
 
   /// 第二步每个项目的间隔输入草稿（含各自的 controller）。
   final intervalDrafts = <RecordIntervalDraft>[];
-  bool saving = false;
-  String? errorText;
 
   bool get isEditing => widget.record != null;
 
@@ -556,40 +554,25 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
         Row(
           children: [
             Expanded(
-              child: TextField(
+              child: LunioNumberField(
                 controller: mileageController,
                 enabled: !saving,
-                // 数字输入统一用数字键盘（与油箱容积同款方式）。
-                keyboardType: const TextInputType.numberWithOptions(),
-                textInputAction: TextInputAction.done,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                onTap: () {
-                  if (!isEditing) {
-                    _clearZero(mileageController);
-                  }
-                },
-                onSubmitted: (_) => FocusScope.of(context).unfocus(),
-                decoration: numberInputDecoration(labelText: '保养里程'),
+                labelText: '保养里程',
+                onTap: isEditing
+                    ? null
+                    : () => LunioNumberField.clearLeadingZero(mileageController),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: TextField(
+              child: LunioNumberField(
                 controller: costController,
                 enabled: !saving,
-                // 费用可带小数 → 数字键盘带小数点。
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                textInputAction: TextInputAction.done,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                ],
-                onTap: () {
-                  _clearZero(costController);
-                },
-                onSubmitted: (_) => FocusScope.of(context).unfocus(),
-                decoration: numberInputDecoration(labelText: '费用'),
+                // 费用小数不限位（历史行为保留）。
+                decimals: null,
+                labelText: '费用',
+                onTap: () =>
+                    LunioNumberField.clearLeadingZero(costController),
               ),
             ),
           ],
@@ -661,15 +644,15 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     final mileage = int.tryParse(mileageController.text);
     final cost = double.tryParse(costController.text);
     if (mileage == null || mileage < 0) {
-      setState(() => errorText = '保养里程必须是非负整数');
+      setFormError('保养里程必须是非负整数');
       return null;
     }
     if (cost == null || cost < 0) {
-      setState(() => errorText = '费用必须是非负数字');
+      setFormError('费用必须是非负数字');
       return null;
     }
     if (selectedItemIds.isEmpty) {
-      setState(() => errorText = '至少选择一个保养项目');
+      setFormError('至少选择一个保养项目');
       return null;
     }
 
@@ -700,17 +683,15 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
         .where((item) => item.id != null && selectedItemIds.contains(item.id))
         .toList();
     if (selectedItems.isEmpty) {
-      setState(() => errorText = '至少选择一个保养项目');
+      setFormError('至少选择一个保养项目');
       return;
     }
     _disposeIntervalDrafts();
     intervalDrafts.addAll(
       selectedItems.map((item) => RecordIntervalDraft(item: item)),
     );
-    setState(() {
-      recordDraft = draft;
-      errorText = null;
-    });
+    setState(() => recordDraft = draft);
+    setFormError(null);
   }
 
   /// 第二步 UI：逐项目展示"按里程/按时间"间隔输入行（预填当前间隔，
@@ -759,10 +740,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           confirmLabel: '保存记录',
           onCancel: () {
             _disposeIntervalDrafts();
-            setState(() {
-              recordDraft = null;
-              errorText = null;
-            });
+            setState(() => recordDraft = null);
+            setFormError(null);
           },
           onConfirm: _submit,
           saving: saving,
@@ -783,21 +762,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     if (itemUpdates == null) {
       return;
     }
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
-    try {
-      await widget.onSubmit(draft, itemUpdates);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+    await runSubmit(() => widget.onSubmit(draft, itemUpdates));
   }
 
   /// 把第二步的间隔输入整理成"待更新的项目实体"列表：
@@ -815,11 +780,11 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
 
       if (item.remindByMileage &&
           (mileageInterval == null || mileageInterval <= 0)) {
-        setState(() => errorText = '${item.name} 的里程间隔必须填写正整数');
+        setFormError('${item.name} 的里程间隔必须填写正整数');
         return null;
       }
       if (item.remindByTime && (timeInterval == null || timeInterval <= 0)) {
-        setState(() => errorText = '${item.name} 的时间间隔必须填写正整数');
+        setFormError('${item.name} 的时间间隔必须填写正整数');
         return null;
       }
       if (mileageInterval == item.mileageIntervalKm &&
@@ -878,13 +843,6 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
         selectedItemIds.add(newItem!.id!);
       }
     });
-  }
-
-  /// 点输入框时清掉占位的 "0"/"0.00"，方便直接输入。
-  void _clearZero(TextEditingController controller) {
-    if (controller.text == '0' || controller.text == '0.00') {
-      controller.clear();
-    }
   }
 
   /// 释放第二步所有间隔草稿的 controller。

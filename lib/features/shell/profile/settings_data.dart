@@ -170,7 +170,7 @@ class ThemeModeSettingRow extends StatelessWidget {
 Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
   try {
     final payload = await ref
-        .read(lunioRepositoryProvider)
+        .read(backupRepositoryProvider)
         .exportBackupPayload();
     const codec = BackupCodec();
     final json = codec.encode(payload);
@@ -219,7 +219,7 @@ Future<void> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
         .read(notificationCoordinatorProvider)
         .runBackupRestore(
           () => ref
-              .read(lunioRepositoryProvider)
+              .read(backupRepositoryProvider)
               .restoreBackupPayload(payload),
         );
     invalidateAllAppDataProviders(ref);
@@ -276,7 +276,7 @@ Future<void> clearAllData(BuildContext context, WidgetRef ref) async {
     await ref
         .read(notificationCoordinatorProvider)
         .runAllDataClear(
-          () => ref.read(lunioRepositoryProvider).clearAllData(),
+          () => ref.read(backupRepositoryProvider).clearAllData(),
         );
     invalidateAllAppDataProviders(ref);
     if (context.mounted) {
@@ -576,11 +576,10 @@ class ManualDateForm extends StatefulWidget {
   State<ManualDateForm> createState() => ManualDateFormState();
 }
 
-class ManualDateFormState extends State<ManualDateForm> {
+class ManualDateFormState extends State<ManualDateForm>
+    with LunioFormSubmit {
   late LocalDate selectedDate;
   late bool enabled;
-  bool saving = false;
-  String? errorText;
 
   @override
   void initState() {
@@ -629,23 +628,9 @@ class ManualDateFormState extends State<ManualDateForm> {
   }
 
   /// 提交：开关关 = null（清除），开 = 所选日期。
-  Future<void> _submit() async {
+  Future<void> _submit() {
     final date = enabled ? selectedDate : null;
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
-    try {
-      await widget.onSubmit(date);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+    return runSubmit(() => widget.onSubmit(date));
   }
 
   Future<void> _pickDate() async {

@@ -6,9 +6,10 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
-import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
-import '../helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
+import 'package:lunio/data/repositories/backup_repository.dart';
+import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
@@ -19,18 +20,20 @@ import 'package:lunio/domain/entities/sync_metadata.dart';
 void main() {
   late AppDatabase database;
   late LunioRepository repository;
+  late LunioPreferences preferences;
+  late BackupRepository backupRepository;
+  late FuelRepository fuelRepository;
   late SyncMetadata sync;
-  late BuiltInVehicleCatalog builtInCatalog;
-
-  setUpAll(() {
-    builtInCatalog = loadBuiltInVehicleCatalogForTest();
-  });
 
   setUp(() {
     database = AppDatabase.inMemory();
+    preferences = LunioPreferences(database);
+    backupRepository = BackupRepository(database, preferences);
+    fuelRepository = FuelRepository(database, preferences);
     repository = LunioRepository(
       database,
-      loadBuiltInVehicleCatalog: () async => builtInCatalog,
+      preferences: preferences,
+      fuel: fuelRepository,
     );
     sync = SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026));
   });
@@ -72,17 +75,17 @@ void main() {
   group('加油预测设置表', () {
     test('save 后 get 读回，重复 save 走更新不新增行', () async {
       final carId = await seedCar();
-      await repository.saveFuelPrediction(
+      await fuelRepository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
       );
-      final saved = await repository.getFuelPredictionForCar(carId);
+      final saved = await fuelRepository.getFuelPredictionForCar(carId);
       expect(saved?.fuelPercent, 50);
 
       // 第二次保存：同车 upsert，只改字段不加行。
-      await repository.saveFuelPrediction(
+      await fuelRepository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 48, sync: sync),
       );
-      final updated = await repository.getFuelPredictionForCar(carId);
+      final updated = await fuelRepository.getFuelPredictionForCar(carId);
       expect(updated?.fuelPercent, 48);
       expect(
         await database.select(database.fuelPredictions).get(),
@@ -92,7 +95,7 @@ void main() {
 
     test('没保存过返回 null（页面按默认 50% 展示）', () async {
       final carId = await seedCar();
-      expect(await repository.getFuelPredictionForCar(carId), isNull);
+      expect(await fuelRepository.getFuelPredictionForCar(carId), isNull);
     });
 
     test('油箱容积随车存取：建车可带、编辑可改、非法值拒绝', () async {
@@ -126,7 +129,7 @@ void main() {
     test('非法油量被实体校验拒绝', () async {
       final carId = await seedCar();
       expect(
-        () => repository.saveFuelPrediction(
+        () => fuelRepository.saveFuelPrediction(
           FuelPrediction(carId: carId, fuelPercent: 101, sync: sync),
         ),
         throwsArgumentError,
@@ -135,7 +138,7 @@ void main() {
 
     test('删除车辆级联删除加油设置', () async {
       final carId = await seedCar();
-      await repository.saveFuelPrediction(
+      await fuelRepository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 50),
       );
       await repository.deleteCar(carId);
@@ -147,10 +150,10 @@ void main() {
 
     test('清空数据同时清掉加油设置和油价/手填价偏好', () async {
       final carId = await seedCar();
-      await repository.saveFuelPrediction(
+      await fuelRepository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 50),
       );
-      await repository.saveFuelPriceCache(
+      await fuelRepository.saveFuelPriceCache(
         FuelPriceData(
           fetchedAt: DateTime(2026, 8, 31),
           pricesByProvince: {
@@ -158,25 +161,25 @@ void main() {
           },
         ),
       );
-      await repository.setFuelManualPrice(
+      await fuelRepository.setFuelManualPrice(
         province: '湖北',
         grade: FuelGrade.gasoline92,
         pricePerLiter: 7.6,
       );
-      await repository.clearAllData();
+      await backupRepository.clearAllData();
 
       expect(
         await database.select(database.fuelPredictions).get(),
         isEmpty,
       );
-      expect(await repository.getFuelPriceCache(), isNull);
-      expect(await repository.getFuelManualPrices(), isEmpty);
+      expect(await fuelRepository.getFuelPriceCache(), isNull);
+      expect(await fuelRepository.getFuelManualPrices(), isEmpty);
     });
   });
 
   group('油价缓存与手填价偏好', () {
     test('缓存 JSON 往返（全国价表 + 调价预告）', () async {
-      expect(await repository.getFuelPriceCache(), isNull);
+      expect(await fuelRepository.getFuelPriceCache(), isNull);
       final data = FuelPriceData(
         fetchedAt: DateTime(2026, 8, 31, 9),
         pricesByProvince: {
@@ -194,9 +197,9 @@ void main() {
           maxChangePerLiter: 0.06,
         ),
       );
-      await repository.saveFuelPriceCache(data);
+      await fuelRepository.saveFuelPriceCache(data);
       // FuelPriceData 未重写 ==，按字段比较（与备份 sync 时间戳还原一致）。
-      final restored = await repository.getFuelPriceCache();
+      final restored = await fuelRepository.getFuelPriceCache();
       expect(restored?.fetchedAt, data.fetchedAt);
       expect(
         restored?.priceFor(province: '湖北', grade: FuelGrade.gasoline92),
@@ -213,33 +216,33 @@ void main() {
 
     test('旧版单省缓存 JSON 按损坏处理（无缓存，触发重新拉取）', () async {
       // 旧结构：province + prices 平铺，不符合当前全国价表契约。
-      await repository.setPreferenceValue(
+      await preferences.writeRaw(
         'fuelPriceCache',
         '{"province":"湖北","fetchedAt":"2026-08-31T00:00:00.000","prices":{"92":7.45}}',
       );
-      expect(await repository.getFuelPriceCache(), isNull);
+      expect(await fuelRepository.getFuelPriceCache(), isNull);
     });
 
     test('缓存 JSON 损坏按无缓存处理', () async {
-      await repository.setPreferenceValue('fuelPriceCache', '{bad json');
-      expect(await repository.getFuelPriceCache(), isNull);
+      await preferences.writeRaw('fuelPriceCache', '{bad json');
+      expect(await fuelRepository.getFuelPriceCache(), isNull);
     });
 
     test('手填价按"省+油品"组合存取与清除', () async {
       expect(
-        await repository.getFuelManualPrice(
+        await fuelRepository.getFuelManualPrice(
           province: '湖北',
           grade: FuelGrade.gasoline92,
         ),
         isNull,
       );
-      await repository.setFuelManualPrice(
+      await fuelRepository.setFuelManualPrice(
         province: '湖北',
         grade: FuelGrade.gasoline92,
         pricePerLiter: 7.6,
       );
       expect(
-        await repository.getFuelManualPrice(
+        await fuelRepository.getFuelManualPrice(
           province: '湖北',
           grade: FuelGrade.gasoline92,
         ),
@@ -247,27 +250,27 @@ void main() {
       );
       // 其他组合不受影响。
       expect(
-        await repository.getFuelManualPrice(
+        await fuelRepository.getFuelManualPrice(
           province: '湖北',
           grade: FuelGrade.gasoline95,
         ),
         isNull,
       );
       // 清除后回到无手填状态，且偏好 key 一并删除（不留空壳）。
-      await repository.setFuelManualPrice(
+      await fuelRepository.setFuelManualPrice(
         province: '湖北',
         grade: FuelGrade.gasoline92,
         pricePerLiter: null,
       );
       expect(
-        await repository.getFuelManualPrice(
+        await fuelRepository.getFuelManualPrice(
           province: '湖北',
           grade: FuelGrade.gasoline92,
         ),
         isNull,
       );
       expect(
-        await repository.getPreferenceValue('fuelManualPrices'),
+        await preferences.readRaw('fuelManualPrices'),
         isNull,
       );
     });
@@ -276,12 +279,12 @@ void main() {
   group('备份', () {
     test('导出包含车辆容积与剩余油量，油价缓存与手填价不进备份', () async {
       final carId = await seedCar(tankCapacityLiters: 55);
-      await repository.saveFuelPrediction(
+      await fuelRepository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
       );
-      await repository.setPreferenceValue('fuelProvince', '湖北');
-      await repository.setPreferenceValue('fuelGrade', '95');
-      await repository.saveFuelPriceCache(
+      await preferences.writeRaw('fuelProvince', '湖北');
+      await preferences.writeRaw('fuelGrade', '95');
+      await fuelRepository.saveFuelPriceCache(
         FuelPriceData(
           fetchedAt: DateTime(2026, 8, 31),
           pricesByProvince: {
@@ -289,13 +292,13 @@ void main() {
           },
         ),
       );
-      await repository.setFuelManualPrice(
+      await fuelRepository.setFuelManualPrice(
         province: '湖北',
         grade: FuelGrade.gasoline92,
         pricePerLiter: 7.6,
       );
 
-      final backup = await repository.exportBackupPayload();
+      final backup = await backupRepository.exportBackupPayload();
       final json = const BackupCodec().encode(backup);
       // 车带动力类型、加油设置进备份。
       expect(backup.schemaVersion, 1);
@@ -323,34 +326,39 @@ void main() {
 
     test('恢复备份：加油设置按新车 id 重插并覆盖省份/油品偏好', () async {
       final carId = await seedCar(tankCapacityLiters: 55);
-      await repository.saveFuelPrediction(
+      await fuelRepository.saveFuelPrediction(
         FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
       );
-      await repository.setPreferenceValue('fuelProvince', '湖北');
-      await repository.setPreferenceValue('fuelGrade', '95');
-      final backup = await repository.exportBackupPayload();
+      await preferences.writeRaw('fuelProvince', '湖北');
+      await preferences.writeRaw('fuelGrade', '95');
+      final backup = await backupRepository.exportBackupPayload();
 
       await database.close();
       database = AppDatabase.inMemory();
+      // 换新连接后全部模块实例同步重建（模块无状态，但握着连接）。
+      preferences = LunioPreferences(database);
+      backupRepository = BackupRepository(database, preferences);
+      fuelRepository = FuelRepository(database, preferences);
       repository = LunioRepository(
         database,
-        loadBuiltInVehicleCatalog: () async => builtInCatalog,
+        preferences: preferences,
+        fuel: fuelRepository,
       );
       // 恢复前预置不同省份/油品：备份应覆盖它们。
-      await repository.setPreferenceValue('fuelProvince', '广东');
-      await repository.setPreferenceValue('fuelGrade', '98');
+      await preferences.writeRaw('fuelProvince', '广东');
+      await preferences.writeRaw('fuelGrade', '98');
 
-      await repository.restoreBackupPayload(backup);
+      await backupRepository.restoreBackupPayload(backup);
 
       expect(
-        await repository.getPreferenceValue('fuelProvince'),
+        await preferences.readRaw('fuelProvince'),
         '湖北',
       );
-      expect(await repository.getPreferenceValue('fuelGrade'), '95');
+      expect(await preferences.readRaw('fuelGrade'), '95');
       // 容积随车辆条目恢复；加油条目只恢复油量。
       final restoredCar = (await database.select(database.cars).get()).single;
       expect(restoredCar.tankCapacityLiters, 55);
-      final restoredFuel = await repository.getFuelPredictionForCar(
+      final restoredFuel = await fuelRepository.getFuelPredictionForCar(
         restoredCar.id,
       );
       expect(restoredFuel?.fuelPercent, 50);

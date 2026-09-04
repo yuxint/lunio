@@ -117,7 +117,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
                   error: (error, stackTrace) =>
-                      LunioCard(child: Text('日期加载失败：${friendlyError(error)}')),
+                      LunioEmptyCard('日期加载失败：${friendlyError(error)}'),
                   data: (value) => ReminderList(
                     car: car,
                     items: items,

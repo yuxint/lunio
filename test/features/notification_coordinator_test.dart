@@ -15,7 +15,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/notifications/lunio_notification_service.dart';
 import 'package:lunio/data/database/app_database.dart';
-import 'package:lunio/data/repositories/lunio_repository.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/features/shell/reminders/notification_coordinator.dart';
@@ -30,7 +30,7 @@ void main() {
 
   late AppDatabase database;
   late ProviderContainer container;
-  late LunioRepository repository;
+  late LunioPreferences preferences;
   late LunioNotificationCoordinator coordinator;
   late List<MethodCall> notificationCalls;
 
@@ -92,12 +92,17 @@ void main() {
   setUp(() {
     // 通知服务是进程级单例：重置初始化状态，避免上一个用例的初始化结果
     //（可用/不可用）影响本用例的 mock 行为。
-    LunioNotificationService.instance.resetForTest();
     database = AppDatabase.inMemory();
     container = ProviderContainer(
-      overrides: [appDatabaseProvider.overrideWithValue(database)],
+      overrides: [
+        appDatabaseProvider.overrideWithValue(database),
+        // 服务逐用例新建，替代原 resetForTest 的单例状态重置。
+        lunioNotificationServiceProvider.overrideWithValue(
+          LunioNotificationService(),
+        ),
+      ],
     );
-    repository = container.read(lunioRepositoryProvider);
+    preferences = container.read(lunioPreferencesProvider);
     coordinator = container.read(notificationCoordinatorProvider);
     notificationCalls = <MethodCall>[];
   });
@@ -124,7 +129,7 @@ void main() {
 
       expect(result, isFalse);
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
       // 偏好缓存已被失效：设置 provider 重算后反映系统真实状态。
@@ -135,14 +140,14 @@ void main() {
     test('does not write when the preference already matches the system',
         () async {
       mockAndroidNotifications(notificationsEnabled: false);
-      await repository.setPreferenceValue('systemNotificationsEnabled', 'false');
+      await preferences.writeRaw('systemNotificationsEnabled', 'false');
 
       final result = await coordinator.reconcileSystemEnabled();
 
       expect(result, isFalse);
       // 偏好与系统真值一致：不发生回写，值保持不变。
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
     });
@@ -150,14 +155,14 @@ void main() {
     test('falls back to the preference value when the system query fails',
         () async {
       mockSystemQueryFailure();
-      await repository.setPreferenceValue('systemNotificationsEnabled', 'true');
+      await preferences.writeRaw('systemNotificationsEnabled', 'true');
 
       final result = await coordinator.reconcileSystemEnabled();
 
       expect(result, isTrue);
       // 查询失败不写偏好。
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'true',
       );
     });
@@ -172,13 +177,13 @@ void main() {
 
       expect(granted, isTrue);
       expect(
-        await repository.getPreferenceValue(
+        await preferences.readRaw(
           'systemNotificationPermissionRequested',
         ),
         'true',
       );
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         isNull,
       );
     });
@@ -191,13 +196,13 @@ void main() {
 
       expect(granted, isFalse);
       expect(
-        await repository.getPreferenceValue(
+        await preferences.readRaw(
           'systemNotificationPermissionRequested',
         ),
         'true',
       );
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
       final settings = await container.read(notificationSettingsProvider.future);
@@ -222,7 +227,7 @@ void main() {
 
     test('only reconciles on later runs without asking again', () async {
       mockAndroidNotifications(notificationsEnabled: false);
-      await repository.setPreferenceValue(
+      await preferences.writeRaw(
         'systemNotificationPermissionRequested',
         'true',
       );
@@ -237,7 +242,7 @@ void main() {
       );
       // reconcile 已把偏好对齐系统真值。
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
     });
@@ -270,7 +275,7 @@ void main() {
         contains('requestNotificationsPermission'),
       );
       expect(
-        await repository.getPreferenceValue(
+        await preferences.readRaw(
           'systemNotificationPermissionRequested',
         ),
         'true',
@@ -289,7 +294,7 @@ void main() {
 
       expect(schedulable, isFalse);
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
       expect(
@@ -301,7 +306,7 @@ void main() {
     test('reconciles to off and cancels when previously requested but still off',
         () async {
       mockAndroidNotifications(notificationsEnabled: false);
-      await repository.setPreferenceValue(
+      await preferences.writeRaw(
         'systemNotificationPermissionRequested',
         'true',
       );
@@ -315,7 +320,7 @@ void main() {
         isNot(contains('requestNotificationsPermission')),
       );
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
       expect(
@@ -338,7 +343,7 @@ void main() {
         ),
       );
 
-      final values = await repository.getPreferenceValues([
+      final values = await preferences.readRawAll([
         'systemNotificationsEnabled',
         'inAppNotificationsEnabled',
         'maintenanceDueRepeat',
@@ -435,7 +440,7 @@ void main() {
     test('returns early without asking when system notifications are off',
         () async {
       mockAndroidNotifications(notificationsEnabled: false);
-      await repository.setPreferenceValue('systemNotificationsEnabled', 'false');
+      await preferences.writeRaw('systemNotificationsEnabled', 'false');
 
       await coordinator.onParkingCountdownSaved(countdown());
 
@@ -472,7 +477,7 @@ void main() {
       await coordinator.onParkingCountdownSaved(countdown());
 
       expect(
-        await repository.getPreferenceValue('systemNotificationsEnabled'),
+        await preferences.readRaw('systemNotificationsEnabled'),
         'false',
       );
       expect(
@@ -519,7 +524,7 @@ void main() {
     test('does not cancel anything while system notifications are off',
         () async {
       mockAndroidNotifications(notificationsEnabled: false);
-      await repository.setPreferenceValue('systemNotificationsEnabled', 'false');
+      await preferences.writeRaw('systemNotificationsEnabled', 'false');
 
       await coordinator.onParkingCountdownCleared();
 

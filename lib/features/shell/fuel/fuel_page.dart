@@ -29,19 +29,17 @@
 import 'package:flutter/material.dart';
 // FrictionSimulation/SpringSimulation 在 physics 包里，material 不带。
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../data/fuel/qiyoujiage_fuel_price_source.dart';
-import '../../../data/repositories/lunio_repository.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
-import '../shared/formatters.dart';
+import '../shared/form_submit.dart';
 import '../shared/modal_feedback.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
@@ -59,7 +57,7 @@ class FuelPreviewPage extends ConsumerWidget {
       title: '加油预测',
       children: [
         if (car == null)
-          const LunioCard(child: Text('请先新增车辆'))
+          const LunioEmptyCard('请先新增车辆')
         else
           _FuelContent(car: car),
       ],
@@ -85,7 +83,7 @@ class _FuelContent extends ConsumerWidget {
         const SizedBox(height: 12),
         predictionAsync.when(
           skipLoadingOnReload: true,
-          loading: () => const LunioCard(child: Text('读取中')),
+          loading: () => const LunioEmptyCard('读取中'),
           error: (error, stackTrace) => _TierListCard(
             carId: car.id!,
             capacity: car.tankCapacityLiters,
@@ -355,13 +353,7 @@ class _PriceCard extends ConsumerWidget {
             labels: QiyouJiaFuelPriceSource.provinces,
             selectedIndex: initialIndex,
             onSelected: (name) async {
-              await ref
-                  .read(lunioRepositoryProvider)
-                  .setPreferenceValue(
-                    LunioRepository.fuelProvincePreferenceKey,
-                    name,
-                  );
-              invalidateFuelPreferenceProviders(ref);
+              await saveFuelProvince(ref, name);
             },
           ),
         );
@@ -392,13 +384,7 @@ class _PriceCard extends ConsumerWidget {
                   selected: grade == current,
                   onTap: () async {
                     Navigator.of(sheetContext).pop();
-                    await ref
-                        .read(lunioRepositoryProvider)
-                        .setPreferenceValue(
-                          LunioRepository.fuelGradePreferenceKey,
-                          grade.code,
-                        );
-                    invalidateFuelPreferenceProviders(ref);
+                    await saveFuelGrade(ref, grade);
                   },
                 ),
             ],
@@ -459,7 +445,7 @@ class _PriceCard extends ConsumerWidget {
       return;
     }
     await ref
-        .read(lunioRepositoryProvider)
+        .read(fuelRepositoryProvider)
         .setFuelManualPrice(province: province, grade: grade, pricePerLiter: null);
     ref.invalidate(fuelManualPriceProvider);
     if (context.mounted) {
@@ -710,27 +696,22 @@ class _ManualPriceForm extends StatefulWidget {
   State<_ManualPriceForm> createState() => _ManualPriceFormState();
 }
 
-class _ManualPriceFormState extends State<_ManualPriceForm> {
-  bool saving = false;
-  String? errorText;
-
+class _ManualPriceFormState extends State<_ManualPriceForm>
+    with LunioFormSubmit {
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
+        LunioNumberField(
           controller: widget.controller,
           enabled: !saving,
           autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d{0,2}\.?\d{0,2}')),
-          ],
+          decimals: 2,
+          maxIntegerDigits: 2,
+          suffixText: '元/升',
           onSubmitted: (_) => saving ? null : _submit(),
-          decoration: numberInputDecoration(suffixText: '元/升'),
         ),
         if (errorText != null) ...[
           const SizedBox(height: 10),
@@ -751,28 +732,14 @@ class _ManualPriceFormState extends State<_ManualPriceForm> {
     final text = widget.controller.text.trim();
     final price = double.tryParse(text);
     if (text.isEmpty) {
-      setState(() => errorText = '请输入价格');
+      setFormError('请输入价格');
       return;
     }
     if (price == null || price <= 0 || price > 99.99) {
-      setState(() => errorText = '请输入 0.01–99.99 之间的价格');
+      setFormError('请输入 0.01–99.99 之间的价格');
       return;
     }
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
-    try {
-      await widget.onSubmit(price);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+    await runSubmit(() => widget.onSubmit(price));
   }
 }
 
@@ -1048,7 +1015,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     _lastSavedPercent = percent;
     try {
       await ref
-          .read(lunioRepositoryProvider)
+          .read(fuelRepositoryProvider)
           .saveFuelPrediction(
             FuelPrediction(carId: widget.carId, fuelPercent: percent),
           );

@@ -161,6 +161,21 @@ class LunioCard extends StatelessWidget {
   }
 }
 
+/// 区块级空态/占位卡：一行说明文字的 LunioCard（"请先新增车辆"、
+/// "暂无保养记录"、"读取中"等）。页面级的加载/错误占位是
+/// LoadingPage / ErrorPage；这是它们在内容区块内的同族小组件，
+/// 过去 9 处手写的 LunioCard(child: Text(...)) 收拢于此。
+class LunioEmptyCard extends StatelessWidget {
+  const LunioEmptyCard(this.message, {super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return LunioCard(child: Text(message));
+  }
+}
+
 /// 内容分组：小节标题（+ 可选右侧动作）+ 子项列表。
 class LunioSection extends StatelessWidget {
   const LunioSection({

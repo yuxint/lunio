@@ -26,10 +26,9 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../domain/entities/notification_settings.dart';
 import '../../domain/entities/parking_countdown.dart';
-// ⚠ 跨层依赖：core 服务引用 features 层的 formatClock（§5.3.3 合并
-// HH:mm:ss 双实现后的取舍——两端共用一份，方向问题记录在案）。
-// ignore: always_use_package_imports
-import '../../features/shell/shared/formatters.dart' show formatClock;
+// HH:mm:ss 时刻格式化在 core 内部（core/format/clock.dart），
+// 与停车倒计时卡片共用，不再反向依赖 features 层。
+import '../format/clock.dart' show formatClock;
 
 /// 一条"待调度的提醒通知"的描述（由 reminder_notifications.dart 组装）。
 class LunioScheduledNotification {
@@ -62,8 +61,10 @@ class LunioScheduledNotification {
 }
 
 class LunioNotificationService {
-  /// 私有构造 + static instance：饿汉单例（≈ Java 的 Singleton）。
-  LunioNotificationService._();
+  /// 公有构造：服务是普通可实例化类（依赖注入的插件连接封装），
+  /// 测试每个用例 new 一个，互不污染。生产代码统一走 [instance]
+  /// 单例（≈ Spring 里一个默认单例 Bean，类本身仍可 new）。
+  LunioNotificationService();
 
   static const _androidNotificationIcon = 'ic_lunio_notification';
 
@@ -79,7 +80,7 @@ class LunioNotificationService {
   static const _reminderBaseNotificationIds = [8000, 8900];
   static const _reminderOccurrenceCount = 8;
 
-  static final LunioNotificationService instance = LunioNotificationService._();
+  static final LunioNotificationService instance = LunioNotificationService();
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -127,14 +128,6 @@ class LunioNotificationService {
   /// 显式标记服务不可用（main.dart 对 initialize 兜底 try/catch 时调用）。
   void markInitializationFailed() {
     _available = false;
-  }
-
-  /// 仅测试用：单例状态跨测试用例共享，widget 测试每个用例开头重置，
-  /// 避免上一个用例的初始化结果污染下一个用例。
-  @visibleForTesting
-  void resetForTest() {
-    _initialized = false;
-    _available = true;
   }
 
   /// 请求通知权限（iOS 弹系统对话框；Android 13+ 运行时权限）。

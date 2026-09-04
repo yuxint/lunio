@@ -13,7 +13,6 @@
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
@@ -265,7 +264,7 @@ class AddCarForm extends StatefulWidget {
   State<AddCarForm> createState() => AddCarFormState();
 }
 
-class AddCarFormState extends State<AddCarForm> {
+class AddCarFormState extends State<AddCarForm> with LunioFormSubmit {
   late String selectedBrand;
   late String selectedModel;
 
@@ -275,8 +274,6 @@ class AddCarFormState extends State<AddCarForm> {
   late final TextEditingController mileageController;
   late final TextEditingController capacityController;
   late LocalDate roadDate;
-  String? errorText;
-  bool saving = false;
 
   bool get isEditing => widget.initialCar?.id != null;
 
@@ -373,20 +370,13 @@ class AddCarFormState extends State<AddCarForm> {
             }),
           ),
         const SizedBox(height: 10),
-        TextField(
+        LunioNumberField(
           controller: mileageController,
           enabled: !saving,
-          // 数字输入统一用数字键盘（与油箱容积同款方式）。
-          keyboardType: const TextInputType.numberWithOptions(),
-          textInputAction: TextInputAction.done,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          onTap: () {
-            if (!isEditing) {
-              _clearZero(mileageController);
-            }
-          },
-          onSubmitted: (_) => FocusScope.of(context).unfocus(),
-          decoration: numberInputDecoration(labelText: '当前里程'),
+          labelText: '当前里程',
+          onTap: isEditing
+              ? null
+              : () => LunioNumberField.clearLeadingZero(mileageController),
         ),
         const SizedBox(height: 10),
         LunioPickerTile(
@@ -396,22 +386,17 @@ class AddCarFormState extends State<AddCarForm> {
           onTap: _pickRoadDate,
         ),
         const SizedBox(height: 10),
-        TextField(
+        LunioNumberField(
           controller: capacityController,
           enabled: !saving,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          inputFormatters: [
-            // 最多四位小数：整数部分至多 3 位 + 可选小数点 + 至多 4 位小数。
-            FilteringTextInputFormatter.allow(RegExp(r'^\d{0,3}\.?\d{0,4}')),
-          ],
-          onSubmitted: (_) => FocusScope.of(context).unfocus(),
+          // 最多四位小数，整数部分至多 3 位。
+          decimals: 4,
+          maxIntegerDigits: 3,
+          labelText: '油箱容积（选填）',
+          suffixText: '升',
           // 标签始终浮在框顶：默认行为下空值未聚焦时标签会落进输入框
           // 中间（占位符位置），与上方字段（标签都在框顶）不一致。
-          decoration: numberInputDecoration(
-            labelText: '油箱容积（选填）',
-            suffixText: '升',
-          ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.always),
+          alwaysFloatLabel: true,
         ),
         if (errorText != null) ...[
           const SizedBox(height: 10),
@@ -433,12 +418,6 @@ class AddCarFormState extends State<AddCarForm> {
         .where((model) => model.brand == brand)
         .map((model) => model.model)
         .toList();
-  }
-
-  void _clearZero(TextEditingController controller) {
-    if (controller.text == '0') {
-      controller.clear();
-    }
   }
 
   /// 选上路日期：1990-01-01 ~ 生效今天+365。
@@ -465,7 +444,7 @@ class AddCarFormState extends State<AddCarForm> {
   Future<void> _submit() async {
     final mileage = int.tryParse(mileageController.text);
     if (mileage == null || mileage < 0) {
-      setState(() => errorText = '当前里程必须是非负整数');
+      setFormError('当前里程必须是非负整数');
       return;
     }
     final capacityText = capacityController.text.trim();
@@ -481,17 +460,13 @@ class AddCarFormState extends State<AddCarForm> {
         }
       }
       if (!valid) {
-        setState(() => errorText = '油箱容积需在 1–999 升之间，最多四位小数');
+        setFormError('油箱容积需在 1–999 升之间，最多四位小数');
         return;
       }
       tankCapacity = parsed;
     }
     final initialCar = widget.initialCar;
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
-    try {
+    await runSubmit(() async {
       await widget.onSubmit(
         Car(
           id: initialCar?.id,
@@ -511,18 +486,8 @@ class AddCarFormState extends State<AddCarForm> {
           ),
         ),
       );
-      if (mounted) {
-        setState(() => saving = false);
-      }
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+      // 成功不关 sheet（由外层向导控制），saving 由运行器复位。
+    });
   }
 }
 
@@ -1096,10 +1061,12 @@ class PickerOption extends StatelessWidget {
 
 /// 自定义车型弹窗：品牌/车型两个必填输入框，确认返回 (brand, model)。
 /// 目录（懂车帝命名）覆盖不到的车型从这里手输；取消/校验失败返回 null。
+/// 走 showLunioDialog seam（毛玻璃底/动画/收键盘与全局弹层一致），
+/// 卡片样式与其余弹窗同族（surface + radiusLarge + line）。
 Future<(String, String)?> _showCustomModelDialog(BuildContext context) {
   final brandController = TextEditingController();
   final modelController = TextEditingController();
-  return showDialog<(String, String)>(
+  return showLunioDialog<(String, String)>(
     context: context,
     builder: (dialogContext) {
       String? errorText;
@@ -1115,44 +1082,76 @@ Future<(String, String)?> _showCustomModelDialog(BuildContext context) {
             Navigator.of(dialogContext).pop((brand, model));
           }
 
-          return AlertDialog(
-            title: const Text('自定义车型'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: brandController,
-                  autofocus: true,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: '品牌'),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: modelController,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => submit(),
-                  decoration: const InputDecoration(labelText: '车型'),
-                ),
-                if (errorText != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    errorText!,
-                    style: TextStyle(
-                      color: Theme.of(dialogContext)
-                          .extension<LunioTokens>()!
-                          .danger,
-                    ),
+          final tokens = Theme.of(dialogContext).extension<LunioTokens>()!;
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+            backgroundColor: Colors.transparent,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: tokens.surface,
+                borderRadius: BorderRadius.circular(tokens.radiusLarge),
+                border: Border.all(color: tokens.line),
+                boxShadow: [
+                  BoxShadow(
+                    color: tokens.ink.withValues(alpha: 0.16),
+                    blurRadius: 36,
+                    offset: const Offset(0, 16),
                   ),
                 ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('取消'),
               ),
-              TextButton(onPressed: submit, child: const Text('确定')),
-            ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('自定义车型',
+                      style: Theme.of(dialogContext).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: brandController,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(labelText: '品牌'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: modelController,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => submit(),
+                    decoration: const InputDecoration(labelText: '车型'),
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorText!,
+                      style: Theme.of(dialogContext)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: tokens.danger),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LunioSecondaryButton(
+                          label: '取消',
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: submit,
+                          child: const Text('确定'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           );
         },
       );
@@ -1163,20 +1162,52 @@ Future<(String, String)?> _showCustomModelDialog(BuildContext context) {
 /// 添加/编辑车辆 sheet 共用的数据前置检查（R32 提取，替代两份重复的
 /// "车型/日期加载失败"检查块）：任一数据在加载中显示加载圈、任一出错
 /// 给对应行内提示。返回 null 表示数据就绪，调用方继续渲染表单。
-Widget? carFormLoadGuard(
+/// 车辆表单装载结果（密封类 ≈ Java 的 sealed interface）：未就绪给占位，
+/// 就绪直接携带数据——调用方不再自己再 when 一遍。
+sealed class CarFormLoad {
+  const CarFormLoad();
+}
+
+/// 车型目录或生效日期仍在加载。
+class CarFormLoading extends CarFormLoad {
+  const CarFormLoading();
+}
+
+/// 加载失败（message 为用户可读中文）。
+class CarFormLoadError extends CarFormLoad {
+  const CarFormLoadError(this.message);
+
+  final String message;
+}
+
+/// 就绪：车型目录 + 生效今天。
+class CarFormData extends CarFormLoad {
+  const CarFormData({required this.vehicleModels, required this.today});
+
+  final List<VehicleModel> vehicleModels;
+  final LocalDate today;
+}
+
+/// 汇总车辆表单的两个前置依赖（车型目录、生效今天）的装载状态。
+CarFormLoad carFormLoadGuard(
   AsyncValue<List<VehicleModel>> vehicleModels,
   AsyncValue<LocalDate> today,
 ) {
   if (vehicleModels.isLoading || today.isLoading) {
-    return const Center(child: CircularProgressIndicator());
+    return const CarFormLoading();
   }
   if (vehicleModels.hasError) {
-    return const LunioInlineMessage(message: '车型加载失败，请稍后重试');
+    return const CarFormLoadError('车型加载失败，请稍后重试');
   }
   if (today.hasError) {
-    return const LunioInlineMessage(message: '日期加载失败，请稍后重试');
+    return const CarFormLoadError('日期加载失败，请稍后重试');
   }
-  return null;
+  final models = vehicleModels.value;
+  final todayValue = today.value;
+  if (models == null || todayValue == null) {
+    return const CarFormLoading();
+  }
+  return CarFormData(vehicleModels: models, today: todayValue);
 }
 
 /// ★ 添加车辆 sheet 入口（我的页"添加"/空卡片"新增车辆"/提醒页空卡片）。
@@ -1199,64 +1230,61 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
               builder: (sheetContext, ref, child) {
                 final vehicleModels = ref.watch(vehicleModelsProvider);
                 final today = ref.watch(effectiveTodayProvider);
-                final guard = carFormLoadGuard(vehicleModels, today);
-                if (guard != null) {
-                  return guard;
+                final load = carFormLoadGuard(vehicleModels, today);
+                if (load is CarFormLoading) {
+                  return const Center(child: CircularProgressIndicator());
                 }
-                return vehicleModels.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (error, stackTrace) =>
-                      LunioInlineMessage(message: '车型加载失败，请稍后重试'),
-                  data: (models) {
-                    if (models.isEmpty) {
-                      return const LunioInlineMessage(message: '暂无可选车型');
-                    }
-                    return AddCarWizard(
-                      vehicleModels: models,
-                      today: today.value!,
-                      loadDefaultItems: (car) async {
-                        final repository = ref.read(lunioRepositoryProvider);
-                        await repository.ensureBootstrapData();
-                        // 车型专属模板优先（如思域的 civicFuel，ADR 0004）；
-                        // 未命中（非目录车型/无专属模板/改选了其他动力类型）
-                        // 回退动力类型通用模板。
-                        final vehicleSpecific =
-                            await repository.listDefaultItemsForVehicleModel(
-                          brand: car.brand,
-                          model: car.model,
-                          selectedPowertrain: car.powertrainType,
-                        );
-                        if (vehicleSpecific != null) {
-                          return vehicleSpecific;
-                        }
-                        return repository.listDefaultItemsForPowertrain(
-                          powertrainType: car.powertrainType,
-                        );
-                      },
-                      onMaintenanceStepChanged: (nextValue) {
-                        if (isMaintenanceStep == nextValue) {
-                          return;
-                        }
-                        setSheetState(() {
-                          isMaintenanceStep = nextValue;
-                        });
-                      },
-                      onSubmit: (car, items) async {
-                        // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-                        await createCar(ref, car, items);
-                        if (sheetContext.mounted) {
-                          Navigator.of(sheetContext).pop();
-                        }
-                        if (context.mounted) {
-                          showStatusOverlay(
-                            context,
-                            '车辆已保存',
-                            StatusOverlayTone.success,
-                          );
-                        }
-                      },
+                if (load is CarFormLoadError) {
+                  return LunioInlineMessage(message: load.message);
+                }
+                final data = load as CarFormData;
+                if (data.vehicleModels.isEmpty) {
+                  return const LunioInlineMessage(message: '暂无可选车型');
+                }
+                return AddCarWizard(
+                  vehicleModels: data.vehicleModels,
+                  today: data.today,
+                  loadDefaultItems: (car) async {
+                    final catalogRepository =
+                        ref.read(builtInCatalogRepositoryProvider);
+                    await catalogRepository.ensureBootstrapData();
+                    // 车型专属模板优先（如思域的 civicFuel，ADR 0004）；
+                    // 未命中（非目录车型/无专属模板/改选了其他动力类型）
+                    // 回退动力类型通用模板。
+                    final vehicleSpecific =
+                        await catalogRepository.listDefaultItemsForVehicleModel(
+                      brand: car.brand,
+                      model: car.model,
+                      selectedPowertrain: car.powertrainType,
                     );
+                    if (vehicleSpecific != null) {
+                      return vehicleSpecific;
+                    }
+                    return catalogRepository.listDefaultItemsForPowertrain(
+                      powertrainType: car.powertrainType,
+                    );
+                  },
+                  onMaintenanceStepChanged: (nextValue) {
+                    if (isMaintenanceStep == nextValue) {
+                      return;
+                    }
+                    setSheetState(() {
+                      isMaintenanceStep = nextValue;
+                    });
+                  },
+                  onSubmit: (car, items) async {
+                    // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+                    await createCar(ref, car, items);
+                    if (sheetContext.mounted) {
+                      Navigator.of(sheetContext).pop();
+                    }
+                    if (context.mounted) {
+                      showStatusOverlay(
+                        context,
+                        '车辆已保存',
+                        StatusOverlayTone.success,
+                      );
+                    }
                   },
                 );
               },
@@ -1283,48 +1311,47 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
           builder: (sheetContext, ref, child) {
             final vehicleModels = ref.watch(vehicleModelsProvider);
             final today = ref.watch(effectiveTodayProvider);
-            final guard = carFormLoadGuard(vehicleModels, today);
-            if (guard != null) {
-              return guard;
+            final load = carFormLoadGuard(vehicleModels, today);
+            if (load is CarFormLoading) {
+              return const Center(child: CircularProgressIndicator());
             }
-            return vehicleModels.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stackTrace) =>
-                  LunioInlineMessage(message: '车型加载失败，请稍后重试'),
-              data: (models) => AddCarForm(
-                vehicleModels: models.isEmpty
-                    ? [
-                        // 目录为空时兜底用当前车拼一个假选项（表单不炸）；
-                        // 推荐动力类型用当前车自己的。
-                        VehicleModel(
-                          brand: car.brand,
-                          model: car.model,
-                          template: car.powertrainType,
-                          sortOrder: 0,
-                          sync: SyncMetadata(
-                            status: SyncStatus.synced,
-                            updatedAt: DateTime.now(),
-                          ),
+            if (load is CarFormLoadError) {
+              return LunioInlineMessage(message: load.message);
+            }
+            final data = load as CarFormData;
+            return AddCarForm(
+              vehicleModels: data.vehicleModels.isEmpty
+                  ? [
+                      // 目录为空时兜底用当前车拼一个假选项（表单不炸）；
+                      // 推荐动力类型用当前车自己的。
+                      VehicleModel(
+                        brand: car.brand,
+                        model: car.model,
+                        template: car.powertrainType,
+                        sortOrder: 0,
+                        sync: SyncMetadata(
+                          status: SyncStatus.synced,
+                          updatedAt: DateTime.now(),
                         ),
-                      ]
-                    : models,
-                today: today.value!,
-                initialCar: car,
-                onSubmit: (updatedCar) async {
-                  // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-                  await updateCar(ref, updatedCar);
-                  if (sheetContext.mounted) {
-                    Navigator.of(sheetContext).pop();
-                  }
-                  if (context.mounted) {
-                    showStatusOverlay(
-                      context,
-                      '车辆已保存',
-                      StatusOverlayTone.success,
-                    );
-                  }
-                },
-              ),
+                      ),
+                    ]
+                  : data.vehicleModels,
+              today: data.today,
+              initialCar: car,
+              onSubmit: (updatedCar) async {
+                // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
+                await updateCar(ref, updatedCar);
+                if (sheetContext.mounted) {
+                  Navigator.of(sheetContext).pop();
+                }
+                if (context.mounted) {
+                  showStatusOverlay(
+                    context,
+                    '车辆已保存',
+                    StatusOverlayTone.success,
+                  );
+                }
+              },
             );
           },
         ),

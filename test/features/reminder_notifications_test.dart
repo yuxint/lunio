@@ -13,14 +13,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
-import 'package:lunio/data/repositories/lunio_repository.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/rules/maintenance_rules.dart';
 import 'package:lunio/features/shell/reminders/notification_coordinator.dart';
 
 void main() {
   late AppDatabase database;
   late ProviderContainer container;
-  late LunioRepository repository;
+  late LunioPreferences preferences;
   late LunioNotificationCoordinator coordinator;
 
   setUp(() {
@@ -28,7 +28,7 @@ void main() {
     container = ProviderContainer(
       overrides: [appDatabaseProvider.overrideWithValue(database)],
     );
-    repository = container.read(lunioRepositoryProvider);
+    preferences = container.read(lunioPreferencesProvider);
     coordinator = container.read(notificationCoordinatorProvider);
   });
 
@@ -113,7 +113,7 @@ void main() {
   test('silence reads return false without or with unparsable preference', () async {
     // 直接用 Repository 写入脏数据（模拟不可解析的偏好值），协调器读为 false。
     const unparsableKey =
-        '${LunioRepository.maintenanceReminderSnoozedUntilPrefix}2';
+        '${LunioPreferences.maintenanceReminderSnoozedUntilPrefix}2';
     expect(
       await coordinator.isSilencedForSystemNotification(
         const MaintenanceItemTarget(2),
@@ -122,7 +122,7 @@ void main() {
       isFalse,
     );
 
-    await repository.setPreferenceValue(unparsableKey, 'not-a-date');
+    await preferences.writeRaw(unparsableKey, 'not-a-date');
     expect(
       await coordinator.isSilencedForSystemNotification(
         const MaintenanceItemTarget(2),

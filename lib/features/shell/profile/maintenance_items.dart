@@ -761,15 +761,14 @@ class MaintenanceItemForm extends StatefulWidget {
   State<MaintenanceItemForm> createState() => MaintenanceItemFormState();
 }
 
-class MaintenanceItemFormState extends State<MaintenanceItemForm> {
+class MaintenanceItemFormState extends State<MaintenanceItemForm>
+    with LunioFormSubmit {
   late final TextEditingController nameController;
   late final TextEditingController mileageController;
   late final TextEditingController monthsController;
   bool remindByMileage = true;
   bool remindByTime = true;
   bool enabled = true;
-  bool saving = false;
-  String? errorText;
 
   bool get isEditing => widget.item != null;
 
@@ -850,27 +849,23 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
     final mileageInterval = int.tryParse(mileageController.text);
     final timeInterval = int.tryParse(monthsController.text);
     if (name.isEmpty) {
-      setState(() => errorText = '项目名称不能为空');
+      setFormError('项目名称不能为空');
       return;
     }
     if (!remindByMileage && !remindByTime) {
-      setState(() => errorText = '至少选择一种提醒方式');
+      setFormError('至少选择一种提醒方式');
       return;
     }
     if (remindByMileage && (mileageInterval == null || mileageInterval <= 0)) {
-      setState(() => errorText = '里程间隔必须填写正整数');
+      setFormError('里程间隔必须填写正整数');
       return;
     }
     if (remindByTime && (timeInterval == null || timeInterval <= 0)) {
-      setState(() => errorText = '时间间隔必须填写正整数');
+      setFormError('时间间隔必须填写正整数');
       return;
     }
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
     final item = widget.item;
-    try {
+    await runSubmit(() async {
       await widget.onSubmit(
         MaintenanceItem(
           id: item?.id,
@@ -892,15 +887,7 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm> {
           ),
         ),
       );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+    });
   }
 }
 

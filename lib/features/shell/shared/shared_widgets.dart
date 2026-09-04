@@ -312,7 +312,98 @@ class ErrorPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return LunioPage(
       title: title,
-      children: [LunioCard(child: Text('加载失败：${friendlyError(error)}'))],
+      children: [LunioEmptyCard('加载失败：${friendlyError(error)}')],
+    );
+  }
+}
+
+
+/// 数字输入框：数字键盘 + "完成"收起键盘 + 小数位约束 + 标准外观的五件套。
+/// 过去 6 个表单各手写一遍这五件（键盘类型/收键盘/格式约束/外观/禁用态），
+/// 小数位正则还各处不同——现在只有这里一份。
+class LunioNumberField extends StatelessWidget {
+  const LunioNumberField({
+    super.key,
+    required this.controller,
+    this.labelText,
+    this.suffixText,
+    this.decimals = 0,
+    this.maxIntegerDigits,
+    this.enabled = true,
+    this.autofocus = false,
+    this.alwaysFloatLabel = false,
+    this.onTap,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String? labelText;
+  final String? suffixText;
+
+  /// 允许的小数位：0 = 纯整数（digitsOnly，默认）；null = 不限位数
+  /// （费用输入的历史行为）；n = 最多 n 位小数（可配合
+  /// [maxIntegerDigits] 限整数部分位数，如油箱容积 3 位整数 4 位小数）。
+  final int? decimals;
+
+  /// 整数部分最大位数（null = 不限；仅在 decimals > 0 时生效）。
+  final int? maxIntegerDigits;
+  final bool enabled;
+  final bool autofocus;
+
+  /// 标签是否始终浮在框顶（油箱容积用：空值时标签不落回占位位置）。
+  final bool alwaysFloatLabel;
+
+  /// 点击输入框（记录/车辆表单的"点进来清 0"交互）。
+  final VoidCallback? onTap;
+
+  final ValueChanged<String>? onChanged;
+
+  /// 键盘"完成"回调；null 时默认只收起键盘。
+  final ValueChanged<String>? onSubmitted;
+
+  /// 清掉纯 0 / 0.00 占位值（新增表单预填占位，点进来即清空方便直接输入）。
+  static void clearLeadingZero(TextEditingController controller) {
+    if (controller.text == '0' || controller.text == '0.00') {
+      controller.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      autofocus: autofocus,
+      keyboardType: TextInputType.numberWithOptions(
+        decimal: decimals == null || decimals! > 0,
+      ),
+      textInputAction: TextInputAction.done,
+      inputFormatters: [
+        if (decimals != null && decimals == 0)
+          FilteringTextInputFormatter.digitsOnly
+        else if (decimals == null)
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+        else
+          FilteringTextInputFormatter.allow(
+            RegExp('^\\d{0,${maxIntegerDigits ?? ''}}\\.?\\d{0,$decimals}'),
+          ),
+      ],
+      onTap: onTap,
+      onChanged: onChanged,
+      onSubmitted: (value) {
+        // 各表单"完成"都不换行：默认收起键盘，回调可选追加。
+        FocusScope.of(context).unfocus();
+        onSubmitted?.call(value);
+      },
+      decoration: numberInputDecoration(
+        labelText: labelText,
+        suffixText: suffixText,
+      ).copyWith(
+        floatingLabelBehavior: alwaysFloatLabel
+            ? FloatingLabelBehavior.always
+            : null,
+      ),
     );
   }
 }

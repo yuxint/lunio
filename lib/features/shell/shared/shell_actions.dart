@@ -33,7 +33,7 @@ import 'modal_feedback.dart';
 
 /// 切换当前应用车辆：写 appliedCarId 偏好 + 失效车辆类 provider。
 Future<void> applyCar(WidgetRef ref, int carId) async {
-  await ref.read(lunioRepositoryProvider).setAppliedCarId(carId);
+  await ref.read(lunioPreferencesProvider).setAppliedCarId(carId);
   invalidateVehicleProviders(ref);
 }
 
@@ -161,32 +161,18 @@ Future<void> removeMaintenanceItem(WidgetRef ref, int itemId) async {
 
 // ---- 偏好 ----
 
-/// 写主题偏好（'light'/'dark'/'system'）+ 失效偏好类 provider。
-/// themeModePreferenceProvider 重算 → LunioApp 重建（router 单例不变，
-/// 当前页面保持）。
+/// 写主题偏好 + 失效偏好类 provider。themeModePreferenceProvider 重算
+/// → LunioApp 重建（router 单例不变，当前页面保持）。
 Future<void> setThemeModePreference(WidgetRef ref, ThemeMode mode) async {
-  final value = switch (mode) {
-    ThemeMode.light => 'light',
-    ThemeMode.dark => 'dark',
-    ThemeMode.system => 'system',
-  };
-  await ref
-      .read(lunioRepositoryProvider)
-      .setPreferenceValue('themeMode', value);
+  await ref.read(lunioPreferencesProvider).setThemeMode(mode);
   invalidatePreferenceProviders(ref);
 }
 
 /// 保存手动日期（null = 关闭）：manualDateEnabled 与 manualDate 两个
-/// 偏好 key 一起写 → 失效偏好家族（生效日期上下文随 provider 重算）。
+/// key 的成对写收在偏好门面 saveManualDateOverride 里 → 失效偏好家族
+/// （生效日期上下文随 provider 重算）。
 Future<void> saveManualDate(WidgetRef ref, LocalDate? date) async {
-  final repository = ref.read(lunioRepositoryProvider);
-  if (date == null) {
-    await repository.setPreferenceValue('manualDateEnabled', 'false');
-    await repository.setPreferenceValue('manualDate', null);
-  } else {
-    await repository.setPreferenceValue('manualDateEnabled', 'true');
-    await repository.setPreferenceValue('manualDate', date.toString());
-  }
+  await ref.read(lunioPreferencesProvider).saveManualDateOverride(date);
   invalidatePreferenceProviders(ref);
 }
 
@@ -194,14 +180,13 @@ Future<void> saveManualDate(WidgetRef ref, LocalDate? date) async {
 /// 开关入口只在开发者模式里可见，留着偏好会让底部"加油"tab 无法
 /// 关闭。这条连带规则收在本函数，UI 不再各自记得写哪些 key。
 Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
-  final repository = ref.read(lunioRepositoryProvider);
+  final preferences = ref.read(lunioPreferencesProvider);
   if (enabled) {
-    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await preferences.setDeveloperModeEnabled(true);
   } else {
-    await repository.setPreferenceValue('developerModeEnabled', 'false');
-    await repository.setPreferenceValue('manualDateEnabled', 'false');
-    await repository.setPreferenceValue('manualDate', null);
-    await repository.setPreferenceValue('fuelPredictionEnabled', 'false');
+    await preferences.setDeveloperModeEnabled(false);
+    await preferences.saveManualDateOverride(null);
+    await preferences.setFuelPredictionEnabled(false);
   }
   invalidatePreferenceProviders(ref);
 }
@@ -209,13 +194,24 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
 /// 开关加油预测（底部"加油"tab 的显隐开关，AppShell watch 该 provider
 /// 实时增删 tab）。
 Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {
-  await ref
-      .read(lunioRepositoryProvider)
-      .setPreferenceValue('fuelPredictionEnabled', '$value');
+  await ref.read(lunioPreferencesProvider).setFuelPredictionEnabled(value);
   invalidatePreferenceProviders(ref);
 }
 
 // ---- 加油 ----
+
+/// 保存省份选择：写全局偏好 + 整族失效加油相关缓存（换省后缓存里的
+/// 价格、手填价、预估金额全部随 provider 重算）。
+Future<void> saveFuelProvince(WidgetRef ref, String province) async {
+  await ref.read(lunioPreferencesProvider).setFuelProvince(province);
+  invalidateFuelPreferenceProviders(ref);
+}
+
+/// 保存油品选择：写全局偏好 + 整族失效（同上）。
+Future<void> saveFuelGrade(WidgetRef ref, FuelGrade grade) async {
+  await ref.read(lunioPreferencesProvider).setFuelGrade(grade);
+  invalidateFuelPreferenceProviders(ref);
+}
 
 /// 保存手填油价（pricePerLiter 传 null 表示重置回数据源价格）：写临时
 /// 偏好 + 单点失效手填价缓存。加油域的失效粒度与偏好家族不同，只需
@@ -226,7 +222,7 @@ Future<void> saveFuelManualPrice(
   required FuelGrade grade,
   required double? pricePerLiter,
 }) async {
-  await ref.read(lunioRepositoryProvider).setFuelManualPrice(
+  await ref.read(fuelRepositoryProvider).setFuelManualPrice(
         province: province,
         grade: grade,
         pricePerLiter: pricePerLiter,

@@ -48,13 +48,7 @@ class ReminderViewData {
 
   String get percentText => formatPercent(displayPercent);
 
-  LunioStatusTone get tone {
-    return switch (progress.status) {
-      ReminderStatus.normal => LunioStatusTone.normal,
-      ReminderStatus.warning => LunioStatusTone.warning,
-      ReminderStatus.danger => LunioStatusTone.danger,
-    };
-  }
+  LunioStatusTone get tone => progress.status.tone;
 
   String get badge {
     return switch (progress.status) {

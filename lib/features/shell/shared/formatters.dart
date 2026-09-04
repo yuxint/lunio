@@ -15,6 +15,7 @@ import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/entities/vehicle_default_maintenance_item.dart';
+import '../../../domain/errors/lunio_error.dart';
 
 /// 数字输入框的标准外观。
 InputDecoration numberInputDecoration({String? labelText, String? suffixText}) {
@@ -116,40 +117,18 @@ bool isUniqueConstraintError(Object error) {
       message.contains('SqliteException(2067)');
 }
 
-/// 统一错误翻译（≈ ExceptionHandler 的消息转换）：把 Repository 抛的
-/// ArgumentError/StateError/SqliteException 文本映射为用户可读中文。
-/// 全部表单的 catch 分支都走它；未匹配的异常兜底"操作失败，请稍后重试"
-/// （⚠ 兜底会掩盖真实错误信息，调试时可先看日志再回来补映射）。
+/// 统一错误翻译（≈ ExceptionHandler 的消息转换）：业务规则失败认
+/// [LunioErrorException] 类型，直接透出 throw 点书写的中文文案；
+/// 数据库驱动层的唯一约束冲突（无法在 throw 点包装）按文本识别兜底；
+/// 其余异常兜底"操作失败，请稍后重试"。全部表单的 catch 分支都走它。
 String friendlyError(Object error) {
-  final message = error.toString();
-  if (message.contains('这辆车当天')) {
-    return message.replaceFirst('Bad state: ', '');
+  if (error is LunioErrorException) {
+    return error.message;
   }
-  if (message.contains('UNIQUE constraint') ||
-      message.contains('SqliteException(2067')) {
+  if (isUniqueConstraintError(error)) {
     return '这条数据已经保存过了';
   }
-  if (message.contains('At least one maintenance item must stay enabled')) {
-    return '至少保留一个可用保养项目';
-  }
-  if (message.contains('Maintenance item has history records')) {
-    return '已有保养记录的项目不能删除';
-  }
-  if (message.contains('contains missing items')) {
-    return '选择的保养项目不存在，请重新选择';
-  }
-  if (message.contains('items from another car')) {
-    return '保养项目不属于当前车辆，请重新选择';
-  }
   return '操作失败，请稍后重试';
-}
-
-/// 时刻格式化 HH:mm:ss（停车倒计时卡片/表单与常驻通知共用）。
-String formatClock(DateTime dateTime) {
-  final hour = dateTime.hour.toString().padLeft(2, '0');
-  final minute = dateTime.minute.toString().padLeft(2, '0');
-  final second = dateTime.second.toString().padLeft(2, '0');
-  return '$hour:$minute:$second';
 }
 
 /// 日期的中文展示："2026年8月25日"。

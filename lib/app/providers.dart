@@ -22,25 +22,35 @@
 // ## 依赖关系图
 // ```text
 // appDatabaseProvider（惰性建库/连库）
-//   └─ lunioRepositoryProvider（唯一 Repository ≈ Service+DAO）
-//        ├─ developerModeProvider ──> manualDatePreferenceProvider
-//        ├─ themeModePreferenceProvider（主题）
-//        ├─ notificationSettingsProvider（4 个通知偏好串行读）
-//        ├─ parkingCountdownProvider（停车倒计时，存偏好表）
-//        ├─ effectiveTodayProvider（手动日期 ?? 系统今天）
-//        └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
-//             ├─ vehicleModelsProvider
-//             └─ carsProvider ──> appliedCarProvider
-//                                  ├─ appliedCarMaintenanceItemsProvider
-//                                  └─ appliedCarRecordsProvider
+//   ├─ lunioPreferencesProvider（偏好 typed 门面）
+//   ├─ builtInCatalogRepositoryProvider（车型目录/默认模板 + bootstrap）
+//   ├─ fuelRepositoryProvider（加油域）
+//   │    └─ backupRepositoryProvider（备份导出/恢复/清空，复用偏好门面）
+//   ├─ lunioRepositoryProvider（主仓库：车辆/项目/记录，组合偏好门面与加油仓库）
+//   │    ├─ developerModeProvider ──> manualDatePreferenceProvider
+//   │    ├─ themeModePreferenceProvider（主题）
+//   │    ├─ notificationSettingsProvider（3 个通知偏好一条 IN 查询）
+//   │    ├─ parkingCountdownProvider（停车倒计时，存偏好表）
+//   │    ├─ effectiveTodayProvider（手动日期 ?? 系统今天）
+//   │    ├─ carsProvider ──> appliedCarProvider
+//   │    │                    ├─ appliedCarMaintenanceItemsProvider
+//   │    │                    └─ appliedCarRecordsProvider
+//   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
+//   │         └─ vehicleModelsProvider
+//   └─ 加油域 provider（开关/省份/油品/手填价/油价控制器）挂 fuelRepositoryProvider
 // ```
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/date/app_date_context.dart';
+import '../core/notifications/lunio_notification_service.dart';
 import '../core/date/local_date.dart';
 import '../data/database/app_database.dart';
 import '../data/fuel/qiyoujiage_fuel_price_source.dart';
+import '../data/preferences/app_preferences.dart';
+import '../data/repositories/backup_repository.dart';
+import '../data/repositories/built_in_catalog_repository.dart';
+import '../data/repositories/fuel_repository.dart';
 import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
 import '../domain/entities/fuel_prediction.dart';
@@ -59,104 +69,67 @@ final appDateContextProvider = Provider<AppDateContext>(
   (ref) => AppDateContext.system(),
 );
 
-/// 开发者模式开关（Boolean 存字符串 'true'/'false'）。
-/// 入口在"我的"页版本号连点 5 次（profile_page.dart），控制手动日期行是否显示。
+/// 开发者模式开关。入口在"我的"页版本号连点 5 次（profile_page.dart），
+/// 控制手动日期行是否显示。
 final developerModeProvider = FutureProvider<bool>((ref) async {
-  final repository = ref.watch(lunioRepositoryProvider);
-  final value = await repository.getPreferenceValue('developerModeEnabled');
-  return value == 'true';
+  return ref.watch(lunioPreferencesProvider).getDeveloperModeEnabled();
 });
 
 /// 手动覆盖日期（开发者模式专属）。三层条件全满足才生效：
 /// 开发者模式开 → 手动日期开关开 → manualDate 偏好存在且可解析。
 /// 任何一层不满足返回 null（即使用系统真实日期）。
 final manualDatePreferenceProvider = FutureProvider<LocalDate?>((ref) async {
-  final repository = ref.watch(lunioRepositoryProvider);
   final developerModeEnabled = await ref.watch(developerModeProvider.future);
   if (!developerModeEnabled) {
     return null;
   }
-  final enabled = await repository.getPreferenceValue('manualDateEnabled');
-  if (enabled != 'true') {
+  final preferences = ref.watch(lunioPreferencesProvider);
+  if (!await preferences.isManualDateEnabled()) {
     return null;
   }
-  final value = await repository.getPreferenceValue('manualDate');
-  if (value == null) {
-    return null;
-  }
-  return LocalDate.tryParse(value);
+  return preferences.getManualDate();
 });
 
 /// 主题模式偏好：'light' / 'dark' / 其他（含 null）都按 system 处理。
 /// 被 LunioApp.watch，写入后经 invalidatePreferenceProviders 刷新。
-final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) async {
-  final repository = ref.watch(lunioRepositoryProvider);
-  final value = await repository.getPreferenceValue('themeMode');
-  return switch (value) {
-    'light' => ThemeMode.light,
-    'dark' => ThemeMode.dark,
-    _ => ThemeMode.system,
-  };
+final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) {
+  return ref.watch(lunioPreferencesProvider).getThemeMode();
 });
 
-/// 通知设置：3 个偏好 key 批量读取（单条 IN 查询，R27）。
-/// 取值约定：`!= 'false'` ——即从未设置过时默认开启。
-/// 保养到期提醒是产品核心能力，设计上不提供关闭入口（R5，原
-/// maintenanceDueEnabled 偏好已移除）。
+/// 通知设置：3 个偏好 key 一条 IN 查询（R27），取值约定与默认值在
+/// 偏好门面里。保养到期提醒是产品核心能力，设计上不提供关闭入口
+/// （R5，原 maintenanceDueEnabled 偏好已移除）。
 final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
   ref,
-) async {
-  final repository = ref.watch(lunioRepositoryProvider);
-  final values = await repository.getPreferenceValues([
-    'systemNotificationsEnabled',
-    'inAppNotificationsEnabled',
-    'maintenanceDueRepeat',
-  ]);
-  return LunioNotificationSettings(
-    systemNotificationsEnabled:
-        values['systemNotificationsEnabled'] != 'false',
-    inAppNotificationsEnabled:
-        values['inAppNotificationsEnabled'] != 'false',
-    dueRepeatFrequency: ReminderRepeatFrequencyCodec.parse(
-      values['maintenanceDueRepeat'],
-    ),
-  );
+) {
+  return ref.watch(lunioPreferencesProvider).readNotificationSettings();
 });
 
 /// 停车倒计时：临时状态，以 JSON 存在偏好表 `parkingCountdown` key 下，
 /// 不进入 JSON 备份（备份契约见 backup_codec.dart）。
 final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
-  return ref.watch(lunioRepositoryProvider).getParkingCountdown();
+  return ref.watch(lunioPreferencesProvider).getParkingCountdown();
 });
 
 // ---------------- 加油预测 ----------------
 
-/// 加油预测功能开关（偏好 `fuelPredictionEnabled`，'true' 才算开）。
-/// 只在开发者模式里提供开关入口（入口见 profile_page.dart）；
-/// 开发者模式关闭时入口会顺手清掉该偏好，所以这里不用叠加判断。
-/// 被 AppShell watch：开关变化 → 底部"加油"tab 实时出现/消失。
-final fuelPredictionEnabledProvider = FutureProvider<bool>((ref) async {
-  final repository = ref.watch(lunioRepositoryProvider);
-  final value = await repository.getPreferenceValue('fuelPredictionEnabled');
-  return value == 'true';
+/// 加油预测功能开关。只在开发者模式里提供开关入口（入口见
+/// profile_page.dart）；开发者模式关闭时入口会顺手清掉该偏好，所以
+/// 这里不用叠加判断。被 AppShell watch：开关变化 → 底部"加油"tab
+/// 实时出现/消失。
+final fuelPredictionEnabledProvider = FutureProvider<bool>((ref) {
+  return ref.watch(lunioPreferencesProvider).getFuelPredictionEnabled();
 });
 
 /// 加油预测的省份（全局一份，默认湖北，产品确认）。
 final fuelProvinceProvider = FutureProvider<String>((ref) async {
-  final repository = ref.watch(lunioRepositoryProvider);
-  return await repository.getPreferenceValue(
-        LunioRepository.fuelProvincePreferenceKey,
-      ) ??
+  return await ref.watch(lunioPreferencesProvider).getFuelProvince() ??
       QiyouJiaFuelPriceSource.defaultProvince;
 });
 
-/// 加油预测的油品编号（全局一份，单选，默认 92#）。
-final fuelGradeProvider = FutureProvider<FuelGrade>((ref) async {
-  final repository = ref.watch(lunioRepositoryProvider);
-  final code = await repository.getPreferenceValue(
-    LunioRepository.fuelGradePreferenceKey,
-  );
-  return FuelGrade.tryParse(code ?? '') ?? FuelGrade.gasoline92;
+/// 加油预测的油品编号（全局一份，单选，默认 92#；解析与默认值在门面）。
+final fuelGradeProvider = FutureProvider<FuelGrade>((ref) {
+  return ref.watch(lunioPreferencesProvider).getFuelGrade();
 });
 
 /// 当前应用车辆的加油预测设置（剩余油量 = 加满预估基准档，按车一条；
@@ -169,7 +142,7 @@ final appliedCarFuelPredictionProvider =
         return null;
       }
       return ref
-          .watch(lunioRepositoryProvider)
+          .watch(fuelRepositoryProvider)
           .getFuelPredictionForCar(car!.id!);
     });
 
@@ -180,12 +153,12 @@ final fuelPriceSourceProvider = Provider<FuelPriceSource>(
 );
 
 /// 当前"省+油品"的手填价（用户手填的每升价，优先于数据源价格）。
-/// 无手填返回 null。写入口在 fuel_page.dart（手填/清除手填）。
+/// 无手填返回 null。写入口在动作层 saveFuelManualPrice（手填/重置）。
 final fuelManualPriceProvider = FutureProvider<double?>((ref) async {
   final province = await ref.watch(fuelProvinceProvider.future);
   final grade = await ref.watch(fuelGradeProvider.future);
   return ref
-      .watch(lunioRepositoryProvider)
+      .watch(fuelRepositoryProvider)
       .getFuelManualPrice(province: province, grade: grade);
 });
 
@@ -203,8 +176,8 @@ final fuelPriceControllerProvider =
 class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
   @override
   Future<FuelPriceData?> build() async {
-    final repository = ref.watch(lunioRepositoryProvider);
-    final cache = await repository.getFuelPriceCache();
+    final fuelRepository = ref.watch(fuelRepositoryProvider);
+    final cache = await fuelRepository.getFuelPriceCache();
     final fresh = !FuelRules.shouldRefreshFuelPrices(
       lastFetchedAt: cache?.fetchedAt,
       now: DateTime.now(),
@@ -214,11 +187,11 @@ class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
     }
     try {
       final data = await ref.watch(fuelPriceSourceProvider).fetchPrices();
-      await repository.saveFuelPriceCache(data);
+      await fuelRepository.saveFuelPriceCache(data);
       return data;
     } catch (error) {
       // 拉取失败退回旧缓存（可能为 null → 页面显示"暂无油价数据"）。
-      // 缓存损坏已被 Repository 按 null 处理，这里不会把坏数据透出。
+      // 缓存损坏已被 FuelRepository 按 null 处理，这里不会把坏数据透出。
       return cache;
     }
   }
@@ -229,12 +202,14 @@ class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
     state = const AsyncLoading<FuelPriceData?>();
     try {
       final data = await ref.read(fuelPriceSourceProvider).fetchPrices();
-      await ref.read(lunioRepositoryProvider).saveFuelPriceCache(data);
+      await ref
+          .read(fuelRepositoryProvider)
+          .saveFuelPriceCache(data);
       state = AsyncData(data);
       return true;
     } catch (error) {
       final previous = await ref
-          .read(lunioRepositoryProvider)
+          .read(fuelRepositoryProvider)
           .getFuelPriceCache();
       state = AsyncData(previous);
       return false;
@@ -260,23 +235,58 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
   return database;
 });
 
-/// 唯一 Repository：所有数据库读写、事务、备份恢复的出口。
-/// Java 对照：一个兼具 Service 与 DAO 职责的 Bean。
+/// 偏好门面：app_preferences 表的唯一读写出口（key/编解码/默认值都在
+/// 模块内，调用方只见 typed 方法）。
+final lunioPreferencesProvider = Provider<LunioPreferences>((ref) {
+  return LunioPreferences(ref.watch(appDatabaseProvider));
+});
+
+/// 车型目录仓库：车型目录与默认模板两张内置表 + 首启 bootstrap 对账。
+final builtInCatalogRepositoryProvider = Provider<BuiltInCatalogRepository>((
+  ref,
+) {
+  return BuiltInCatalogRepository(ref.watch(appDatabaseProvider));
+});
+
+/// 加油仓库：加油预测设置、油价缓存、手填油价。
+final fuelRepositoryProvider = Provider<FuelRepository>((ref) {
+  return FuelRepository(
+    ref.watch(appDatabaseProvider),
+    ref.watch(lunioPreferencesProvider),
+  );
+});
+
+/// 备份仓库：备份导出、恢复、清空数据（数据生命周期域）。
+final backupRepositoryProvider = Provider<BackupRepository>((ref) {
+  return BackupRepository(
+    ref.watch(appDatabaseProvider),
+    ref.watch(lunioPreferencesProvider),
+  );
+});
+
+/// 主仓库：车辆/保养项目/保养记录核心域（组合偏好门面与加油仓库，
+/// 删车级联时借道加油仓库删预测行）。
 final lunioRepositoryProvider = Provider<LunioRepository>((ref) {
-  return LunioRepository(ref.watch(appDatabaseProvider));
+  return LunioRepository(
+    ref.watch(appDatabaseProvider),
+    preferences: ref.watch(lunioPreferencesProvider),
+    fuel: ref.watch(fuelRepositoryProvider),
+  );
 });
 
 /// 首启/升级引导：把 asset 里的内置车型目录与默认保养项目模板
 /// 同步进数据库（幂等，按 catalogId upsert）。AppShell 首帧 watch 触发。
 final defaultMaintenanceBootstrapProvider = FutureProvider<void>((ref) {
-  return ref.watch(lunioRepositoryProvider).ensureBootstrapData();
+  return ref
+      .watch(builtInCatalogRepositoryProvider)
+      .ensureBootstrapData();
 });
 
 /// 车型库（约 190 个车型），供添加车辆向导的品牌/车型选择器使用。
 /// 注意这里显式 await bootstrap 完成，保证车型目录已入库。
 final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) async {
   await ref.watch(defaultMaintenanceBootstrapProvider.future);
-  return ref.watch(lunioRepositoryProvider).listVehicleModels();
+  return ref.watch(builtInCatalogRepositoryProvider).listVehicleModels();
 });
 
 /// 当前用户所有车辆列表。显式 await bootstrap 完成（依赖显式化，R29）：
@@ -319,6 +329,14 @@ final appliedCarRecordsProvider = FutureProvider<List<MaintenanceRecord>>((
   return ref
       .watch(lunioRepositoryProvider)
       .listMaintenanceRecordsForCar(car!.id!);
+});
+
+/// 通知服务：生产装配为全局单例；测试可整体覆盖为新实例
+/// （服务是普通可实例化类，实例间不共享状态）。
+final lunioNotificationServiceProvider = Provider<LunioNotificationService>((
+  ref,
+) {
+  return LunioNotificationService.instance;
 });
 
 /// 通知同步代数（≈ 乐观锁的版本号）：恢复备份/清空数据时 bump()，
