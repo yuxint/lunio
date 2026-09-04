@@ -809,7 +809,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 - 提醒和频率：`flutter test test/domain/maintenance_rules_test.dart`。
 - 记录、车辆、备份：`flutter test test/data/database_test.dart test/data/backup_codec_test.dart`。
-- App 内通知和关键交互：`flutter test test/widget_test.dart`。
+- App 内通知和关键交互：`flutter test test/widget`。
 - 普通 Dart/Flutter 改动：先跑 `flutter analyze`。
 
 ## 16. 当前代码来源
@@ -831,6 +831,6 @@ App 内通知在壳层根据当前数据即时检查。
 - `lib/data/repositories/lunio_repository.dart`
 - `lib/data/backup/backup_codec.dart`
 - `test/domain/maintenance_rules_test.dart`
-- `test/widget_test.dart`
+- `test/widget/`（widget 测试，按页面域拆分，共享夹具在 `test/helpers/widget_app.dart`）
 
 如果本文档与代码冲突，以已经审阅确认的最新代码事实为准，并同步更新文档。

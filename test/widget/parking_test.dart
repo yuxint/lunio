@@ -1,5 +1,4 @@
-// parking 域 widget 测试（自原 widget_test.dart 按页面域拆分，
-// 共享夹具见 test/helpers/widget_app.dart）。
+// parking 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）。
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -291,7 +290,7 @@ void main() {
             .whereType<int>()
             .toSet();
         expect(cancelledIds, containsAll([9001, 9002]));
-        // R10 收紧：取消只发 16 个在用 id，不再整段扫 8000~8999。
+        // 清空只取消 16 个在用通知 id（8000~8999 段内），不整段扫 8000~8999。
         expect(
           cancelledIds.where((id) => id >= 8000 && id < 9000),
           <int>{

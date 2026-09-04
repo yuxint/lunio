@@ -1,9 +1,6 @@
 // widget 测试共享夹具（≈ Java 测试里的 AbstractIntegrationTest 基类 +
 // 测试工厂）：pumpApp、仓库装配门面、通知/原生通道 mock、常用造数函数。
 //
-// 从原 2939 行单文件 widget_test.dart 提升而来——夹具长在 main() 局部
-// 作用域里时无法被其他测试文件复用，是拆分的直接动因。
-//
 // 约定：
 //  - pumpApp 负责装配：内存数据库 + 测试目录（built_in_catalog_loader）
 //    + 固定"今天" + 假油价源 + 每用例全新通知服务实例；
@@ -25,7 +22,6 @@ import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/core/notifications/lunio_notification_service.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
-import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
 import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
@@ -41,8 +37,8 @@ import 'built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 
 /// 油价源测试替身：固定全国价表（湖北 92# = 7.61，与 55 升 50% 档
 /// 组合出 ¥209.28 便于断言），可选带调价预告。替换真源避免测试触网。
-class FakeFuelPriceSource implements FuelPriceSource {
-  FakeFuelPriceSource({this.forecast});
+class _FakeFuelPriceSource implements FuelPriceSource {
+  _FakeFuelPriceSource({this.forecast});
 
   final FuelAdjustmentForecast? forecast;
 
@@ -175,17 +171,13 @@ class TestRepositories {
       : preferences = LunioPreferences(database),
         // 目录加载器必须注入测试版（纯 async 闭包，微任务即完成）：默认
         // 加载器走 rootBundle 资产通道，在第二个用例的假异步区里等不到
-        // 通道回包会把用例挂到 10 分钟超时（且真目录 1223 条也不是本套
-        // 测试的夹具口径）。
+        // 通道回包会把用例挂到 10 分钟超时。注入的加载器读的也是同一份
+        // assets/data/catalog/ 真实分片（见 built_in_catalog_loader.dart）。
         catalogRepository = BuiltInCatalogRepository(
           database,
           loadBuiltInVehicleCatalog: () async => loadBuiltInVehicleCatalogForTest(),
         ),
-        fuelRepository = FuelRepository(database, LunioPreferences(database)),
-        backupRepository = BackupRepository(
-          database,
-          LunioPreferences(database),
-        ) {
+        fuelRepository = FuelRepository(database, LunioPreferences(database)) {
     repository = LunioRepository(
       database,
       preferences: preferences,
@@ -197,60 +189,72 @@ class TestRepositories {
   final LunioPreferences preferences;
   final BuiltInCatalogRepository catalogRepository;
   final FuelRepository fuelRepository;
-  final BackupRepository backupRepository;
   late final LunioRepository repository;
 
-  // ---- 各域转发（用例体见名知意，不再关心模块归属）----
+  // ---- 各域转发（用例体经门面播种/断言，不直接关心模块归属）----
 
+  /// 转发目录仓库：灌入内置车型目录与默认模板（按 catalogId 幂等对账，
+  /// 写 vehicle_models / vehicle_default_maintenance_items 两表）。
   Future<void> ensureBootstrapData() => catalogRepository.ensureBootstrapData();
 
+  /// 转发偏好门面原语读：按 key 读原始字符串值（断言偏好状态用）。
   Future<String?> getPreferenceValue(String key) => preferences.readRaw(key);
 
+  /// 转发偏好门面原语写：按 key 写原始字符串值（null 删键）。
   Future<void> setPreferenceValue(String key, String? value) =>
       preferences.writeRaw(key, value);
 
-  Future<int?> getAppliedCarId() => preferences.getAppliedCarId();
-
+  /// 转发偏好门面：写当前应用车辆 id（null 清空；只写偏好，不失效 provider）。
   Future<void> setAppliedCarId(int? carId) =>
       preferences.setAppliedCarId(carId);
 
+  /// 转发偏好门面：读停车倒计时偏好（JSON 解码，未设置返回 null）。
   Future<ParkingCountdown?> getParkingCountdown() =>
       preferences.getParkingCountdown();
 
+  /// 转发偏好门面：写停车倒计时偏好（JSON 编码）。
   Future<void> saveParkingCountdown(ParkingCountdown countdown) =>
       preferences.saveParkingCountdown(countdown);
 
+  /// 转发加油仓库：读某车的加油预测设置行（无则 null）。
   Future<FuelPrediction?> getFuelPredictionForCar(int carId) =>
       fuelRepository.getFuelPredictionForCar(carId);
 
+  /// 转发加油仓库：写某车的加油预测设置行（写 fuel_predictions 表）。
   Future<void> saveFuelPrediction(FuelPrediction prediction) =>
       fuelRepository.saveFuelPrediction(prediction);
 
+  /// 转发主仓库：单事务建车带项目（写 cars + maintenance_items，
+  /// 无应用车辆时把新车设为当前）。
   Future<int> createCarWithMaintenanceItems(
     Car car,
     List<MaintenanceItem> items,
   ) => repository.createCarWithMaintenanceItems(car, items);
 
+  /// 转发主仓库：列全部车辆。
   Future<List<Car>> listCars() => repository.listCars();
 
+  /// 转发主仓库：列某车的保养项目。
   Future<List<MaintenanceItem>> listMaintenanceItemsForCar(int carId) =>
       repository.listMaintenanceItemsForCar(carId);
 
+  /// 转发主仓库：列某车的保养记录。
   Future<List<MaintenanceRecord>> listMaintenanceRecordsForCar(int carId) =>
       repository.listMaintenanceRecordsForCar(carId);
 
+  /// 转发主仓库：保存单条保养记录（写 records 表）。
   Future<int> saveMaintenanceRecord(MaintenanceRecord record) =>
       repository.saveMaintenanceRecord(record);
 
+  /// 转发主仓库：保存单条保养项目（写 maintenance_items 表）。
   Future<int> saveMaintenanceItem(MaintenanceItem item) =>
       repository.saveMaintenanceItem(item);
 }
 
-/// 用例体播种/断言入口（原 widget_test.dart 的同名局部函数）。
+/// 用例体播种/断言入口：按数据库装配一份 TestRepositories。
 TestRepositories testRepository(AppDatabase database) => TestRepositories(database);
 
-/// 等价已删除的 createCarWithDefaultItems（R26 清理）——按车的动力类型
-/// 查当前库里的模板 → 转车辆级项目实体 → 建车。
+/// 按车的动力类型查当前库里的默认模板 → 转车辆级项目实体 → 建车（单事务）。
 /// 注意不主动 bootstrap：目录由调用方（一般经 pumpApp）按需灌入。
 Future<int> createCarWithDefaultItems(
   AppDatabase database,
@@ -277,7 +281,7 @@ Future<void> pumpUntilFound(WidgetTester tester, Finder finder) async {
 }
 
 /// 装配完整 App：内存数据库 + 测试目录 + 固定"今天"（2026-05-19）+
-/// 假油价源 + 全新通知服务实例（替代原 resetForTest 的单例重置）。
+/// 假油价源 + 全新通知服务实例（用例间不共享通知服务状态）。
 /// 返回数据库供用例体播种/断言。
 Future<AppDatabase> pumpApp(
   WidgetTester tester, {
@@ -324,7 +328,7 @@ Future<AppDatabase> pumpApp(
         ),
         // 油价真源会发网络请求，统一替换为固定假源。
         fuelPriceSourceProvider.overrideWithValue(
-          FakeFuelPriceSource(forecast: fuelForecast),
+          _FakeFuelPriceSource(forecast: fuelForecast),
         ),
       ],
       child: LunioApp(routerConfig: buildAppRouter()),

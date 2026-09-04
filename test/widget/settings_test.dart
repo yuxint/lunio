@@ -1,5 +1,4 @@
-// settings 域 widget 测试（自原 widget_test.dart 按页面域拆分，
-// 共享夹具见 test/helpers/widget_app.dart）。
+// settings 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）。
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -109,7 +108,7 @@ void main() {
       final database = await pumpApp(tester);
       await createDefaultCar(tester);
 
-      // 行标题现在是"恢复数据"（不可点的纯文本），点它不会打开确认弹窗；
+      // 行标题"恢复数据"是不可点的纯文本，点它不会打开确认弹窗；
       // 弹窗标题也是"恢复数据"，所以用弹窗副标题区分弹窗是否出现。
       await tester.tap(find.text('恢复数据').first);
       await tester.pumpAndSettle();

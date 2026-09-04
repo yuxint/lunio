@@ -1,5 +1,4 @@
-// reminders 域 widget 测试（自原 widget_test.dart 按页面域拆分，
-// 共享夹具见 test/helpers/widget_app.dart）。
+// reminders 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -443,93 +442,97 @@ void main() {
     (tester) async {
       final notificationCalls = <MethodCall>[];
       final cleanupNotifications = mockAndroidNotifications(notificationCalls);
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final repository = testRepository(database);
-      await repository.ensureBootstrapData();
-      final sync = SyncMetadata(
-        status: SyncStatus.pendingCreate,
-        updatedAt: DateTime(2026, 4, 1),
-      );
-      final carId = await createCarWithDefaultItems(database, 
-        Car(
-          brand: '本田',
-          model: '思域（燃油版）',
-          currentMileageKm: 0,
-          roadDate: const LocalDate(2026, 5, 19),
-          sync: sync,
-        ),
-      );
-      await repository.setAppliedCarId(carId);
-      final car = (await repository.listCars()).single;
-      final item = (await repository.listMaintenanceItemsForCar(
-        car.id!,
-      )).firstWhere((item) => item.remindByTime);
-      await repository.saveMaintenanceRecord(
-        MaintenanceRecord(
-          carId: car.id!,
-          date: const LocalDate(2025, 5, 19),
-          itemIds: [item.id!],
-          costCents: 0,
-          mileageKm: 0,
-          sync: sync,
-        ),
-      );
-      await repository.setPreferenceValue('inAppNotificationsEnabled', 'true');
+      try {
+        final database = AppDatabase.inMemory();
+        addTearDown(database.close);
+        final repository = testRepository(database);
+        await repository.ensureBootstrapData();
+        final sync = SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 4, 1),
+        );
+        final carId = await createCarWithDefaultItems(
+          database,
+          Car(
+            brand: '本田',
+            model: '思域（燃油版）',
+            currentMileageKm: 0,
+            roadDate: const LocalDate(2026, 5, 19),
+            sync: sync,
+          ),
+        );
+        await repository.setAppliedCarId(carId);
+        final car = (await repository.listCars()).single;
+        final item = (await repository.listMaintenanceItemsForCar(
+          car.id!,
+        )).firstWhere((item) => item.remindByTime);
+        await repository.saveMaintenanceRecord(
+          MaintenanceRecord(
+            carId: car.id!,
+            date: const LocalDate(2025, 5, 19),
+            itemIds: [item.id!],
+            costCents: 0,
+            mileageKm: 0,
+            sync: sync,
+          ),
+        );
+        await repository.setPreferenceValue('inAppNotificationsEnabled', 'true');
 
-      await pumpApp(
-        tester,
-        database: database,
-        systemNotificationsEnabled: true,
-        inAppNotificationsEnabled: true,
-      );
-      await tester.pumpAndSettle();
+        await pumpApp(
+          tester,
+          database: database,
+          systemNotificationsEnabled: true,
+          inAppNotificationsEnabled: true,
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('保养提醒'), findsWidgets);
-      notificationCalls.clear();
-      await tester.tap(find.widgetWithText(FilledButton, '知道了'));
-      await tester.pumpAndSettle();
-      expect(
-        await repository.getPreferenceValue(
-          'maintenanceInAppReminderAcknowledgedOn:${item.id}',
-        ),
-        '2026-05-19',
-      );
-      expect(find.text('更新当前里程'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, '知道了'));
-      await tester.pumpAndSettle();
-      expect(
-        await repository.getPreferenceValue(
-          'mileageUpdateInAppAcknowledgedOn:${car.id}',
-        ),
-        '2026-05-19',
-      );
-      expect(
-        notificationCalls
-            .where((call) => call.method == 'zonedSchedule')
-            .map((call) => call.arguments as Map<Object?, Object?>)
-            .map((arguments) => arguments['title']),
-        contains('保养提醒'),
-      );
+        expect(find.text('保养提醒'), findsWidgets);
+        notificationCalls.clear();
+        await tester.tap(find.widgetWithText(FilledButton, '知道了'));
+        await tester.pumpAndSettle();
+        expect(
+          await repository.getPreferenceValue(
+            'maintenanceInAppReminderAcknowledgedOn:${item.id}',
+          ),
+          '2026-05-19',
+        );
+        expect(find.text('更新当前里程'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, '知道了'));
+        await tester.pumpAndSettle();
+        expect(
+          await repository.getPreferenceValue(
+            'mileageUpdateInAppAcknowledgedOn:${car.id}',
+          ),
+          '2026-05-19',
+        );
+        expect(
+          notificationCalls
+              .where((call) => call.method == 'zonedSchedule')
+              .map((call) => call.arguments as Map<Object?, Object?>)
+              .map((arguments) => arguments['title']),
+          contains('保养提醒'),
+        );
 
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      await tester.pump();
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpAndSettle();
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump();
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(FilledButton, '知道了'), findsNothing);
-      expect(find.text('更新当前里程'), findsNothing);
+        expect(find.widgetWithText(FilledButton, '知道了'), findsNothing);
+        expect(find.text('更新当前里程'), findsNothing);
 
-      await pumpApp(
-        tester,
-        database: database,
-        inAppNotificationsEnabled: true,
-      );
-      await tester.pumpAndSettle();
+        await pumpApp(
+          tester,
+          database: database,
+          inAppNotificationsEnabled: true,
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(FilledButton, '知道了'), findsNothing);
-      expect(find.text('更新当前里程'), findsNothing);
-      cleanupNotifications();
+        expect(find.widgetWithText(FilledButton, '知道了'), findsNothing);
+        expect(find.text('更新当前里程'), findsNothing);
+      } finally {
+        cleanupNotifications();
+      }
     },
   );
 }

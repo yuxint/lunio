@@ -2,7 +2,7 @@
 //
 // LunioNotificationCoordinator 的依赖（容器 Ref、Repository、通知服务）
 // 全部可替换：这里用内存数据库 + override 后的 ProviderContainer 驱动
-// 真实装配，通知插件用 mock 方法通道（与 widget_test 同一手法），锁死：
+// 真实装配，通知插件用 mock 方法通道（与 test/widget 共享夹具同一手法），锁死：
 //  - reconcileSystemEnabled：真值回写只在不一致时发生，查询失败回退偏好值；
 //  - requestPermission：记"已请求过"，被拒回写"系统通知关闭"；
 //  - run* 清扫模板：先升代数再删库再清扫，删库失败不清扫（异常上抛）；

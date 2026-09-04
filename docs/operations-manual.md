@@ -1,12 +1,12 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-03 · 基于 schemaVersion 1 / 备份 schemaVersion 1 代码快照（同日数据层按域拆分，见 docs/adr/0008）
+> 版本：2026-09-05 · 基于 schemaVersion 1 / 备份 schemaVersion 1 代码快照（数据层按域拆分见 docs/adr/0008）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
 > **锚点约定**：引用格式为 `文件路径 : 行号 → 函数/类名`。代码改动后行号会漂移，**以"文件 + 函数名"为主锚点**，行号仅辅助；只改函数内部实现时通常无需更新本手册，改了流程/入口/数据写点才必须同步维护。
 >
-> **读法提示**（Java 背景）：`Repository` ≈ Service+DAO；`Provider` ≈ Spring Bean；`ref.invalidate` ≈ 缓存逐出。所有写操作的固定模式是：**UI 事件 → 动作层（shell_actions）写库 + invalidate → FutureProvider 重新查库 → UI 自动刷新**。
+> **读法提示**（Java 背景）：`Repository` ≈ Service+DAO；`Provider` ≈ Spring Bean；`ref.invalidate` ≈ 缓存逐出。多数写操作的固定模式是：**UI 事件 → 动作层（shell_actions）写库 + invalidate → FutureProvider 重新查库 → UI 自动刷新**。少数旁路不走动作层：停车倒计时保存是 `parking_countdown.dart` 本地函数（1.4）、油价手填价重置由加油页直呼仓库（5.7）、备份导出/恢复/清空走通知协调器 + 备份仓库（5.4/5.5）。
 
 数据层按域拆成仓库家族（ADR 0008）：**主仓库** `LunioRepository`（车辆/项目/记录核心域）、`BuiltInCatalogRepository`（车型目录+bootstrap）、`FuelRepository`（加油域）、`BackupRepository`（备份/恢复/清空）、`LunioPreferences`（偏好门面，全部偏好 key 与编解码的唯一出口）。各域在 providers.dart 装配；表插入路径共享 `entity_row_codec.dart` 的 Companion 构造。
 
@@ -102,7 +102,7 @@ appDatabaseProvider(:232)
 | 1 | `lib/app/providers.dart:150 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
 | 2 | `lib/data/repositories/built_in_catalog_repository.dart → BuiltInCatalogRepository.ensureBootstrapData()` → `_ensureVehicleModels` + `_ensureDefaultMaintenanceItems` | 从 asset `assets/data/catalog/`（templates.json + vehicles_a–z.json 字母分片）加载目录（**2026-09-01 动力类型改版后为 1675 条：懂车帝在售 1645 + 停售 30，车系名用懂车帝原名，每条带推荐动力类型；默认保养模板按动力类型分五组；同日起精简为每品牌最多 10 款热门车型，现共 1223 条**，见 ADR 0003），**按 catalogId 幂等对账**写入两张内置表 | `vehicle_models`、`vehicle_default_maintenance_items` 两表灌入/更新 |
 | 3 | `lib/features/shell/reminders/reminder_page.dart:102 → EmptyVehicleCard` | appliedCarProvider 返回 null → 显示"还没有车辆"卡片 | 无 |
-| 4 | `lib/features/shell/app_shell.dart:244 → _syncReminderNotifications` | 系统通知开关为默认开 → postFrame 触发首启权限请求 | 见 1.3 |
+| 4 | `lib/features/shell/app_shell.dart:69-74 → NotificationSyncController` + `start()`（`reminders/notification_sync_controller.dart`，对 6 个数据 provider `listenManual` 且首拍即触发） | 系统通知开关为默认开 → 同步链对账系统真值并触发首启权限请求 | 见 1.3 |
 
 **首启不会创建默认车辆**——必须用户手动走添加向导；车辆级保养项目也是添加车辆时才从模板复制。
 
@@ -284,7 +284,7 @@ appDatabaseProvider(:232)
 我的页"恢复数据" → `settings_data.dart → restoreBackupFromFile`：
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
-2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本≠2 抛 UnsupportedError）；
+2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本≠1 抛 UnsupportedError）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）再执行恢复；
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord`，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 4 张业务表 + 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records 逐行插入（id 全换新雪花 id，旧→新映射）→ 应用车辆指向第一辆；任何一行失败整体回滚；
 5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001/9002 不动——停车倒计时偏好保留且其通知仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
@@ -323,7 +323,7 @@ appDatabaseProvider(:232)
 
 页面：`fuel/fuel_page.dart → FuelPreviewPage`。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006）：
 
-1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格文字本身可点**（价格+标签胶囊旁有小编辑图标）→ `showLunioModalSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理），保存走 `shell_actions.dart → saveFuelManualPrice`（动作层：写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ 单点失效 `fuelManualPriceProvider`）+ toast"手填油价已保存"；价格行右侧"重置"按钮（**只有存有手填价时可用**，无手填价置灰）→ 重置走 `shell_actions.dart → saveFuelManualPrice`（pricePerLiter 传 null 删该组合键恢复数据源价；该处拿到的是 ProviderContainer，动作层签名只收 WidgetRef，故由加油仓库直呼 + 单点失效，语义与动作层一致）+ toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示可点的"— 元/升"占位价 + "暂无数据"胶囊，点它即进上述手填编辑**（无数据状态下唯一的手填入口；油价获取中的加载态不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，一次拉全国 31 省 + 调价预告，见 ADR 0006；`fuelPriceSourceProvider` 注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是全国价表，换省不重新拉），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
+1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格文字本身可点**（价格+标签胶囊旁有小编辑图标）→ `showLunioModalSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理），保存走 `shell_actions.dart → saveFuelManualPrice`（动作层：写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ 单点失效 `fuelManualPriceProvider`）+ toast"手填油价已保存"；价格行右侧"重置"按钮（**只有存有手填价时可用**，无手填价置灰）→ 重置不经动作层，由加油页 `fuel_page.dart → _resetManualPrice` 直呼 `FuelRepository.setFuelManualPrice`（pricePerLiter 传 null 删该组合键恢复数据源价；调用方持有 ProviderContainer，动作层签名只收 WidgetRef，ADR 0007 明确此路径不收编）+ 单点失效 `fuelManualPriceProvider` + toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示可点的"— 元/升"占位价 + "暂无数据"胶囊，点它即进上述手填编辑**（无数据状态下唯一的手填入口；油价获取中的加载态不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，一次拉全国 31 省 + 调价预告，见 ADR 0006；`fuelPriceSourceProvider` 注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`，缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是全国价表，换省不重新拉），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
 2. **预估下次油价块**（油价卡内，价格行下方）：标题"预估下次油价"（与"当前油价"同字号）；数值 = 生效价（手填优先）+ 调价预告变动中值（`FuelRules.predictedPricePerLiter`，先取整到分），右侧日期胶囊"X月X日调价"；展示样式与价格行一致（`_TagPill` 复用）。无预告/无基准价时显示"暂无调价预测"占位，不算错误。
 3. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，`QiyouJiaFuelPriceSource.provinces` 31 项限高 320 可滚动、打开时定位到当前项）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
 4. **加满预估卡（滚动定档）**：表头四列"当前油量 / 可加油量 / 加满价格 / 调价后价格"（`_TierHeaderRow`，列宽比例与 `_TierRow` 一致）。全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 吸附整行边界（**按父物理自然弹道投射停点再取最近整行**，照搬官方 `FixedExtentScrollPhysics` 模式——快速甩动可连滚多档、慢速就近弹回，停点严格对齐整行），`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。当前油量 = 档位/100 × 容积（`FuelRules.litersInTank`）；可加油量 =（100−档位）/100 × 容积（`FuelRules.litersToFill`）；加满价格 = 可加油量 × 生效价（`FuelRules.fullTankCostCents`，分存储）；调价后价格 = 可加油量 × 预估价（`_predictedPriceProvider`，无预告时显示"—"）；第一行档位高亮、无"（当前）"文字。

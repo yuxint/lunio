@@ -1,5 +1,4 @@
-// app_shell 域 widget 测试（自原 widget_test.dart 按页面域拆分，
-// 共享夹具见 test/helpers/widget_app.dart）。
+// app_shell 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）。
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -102,8 +101,8 @@ void main() {
     await tester.tap(find.text('我的'));
     await pumpUntilFound(tester, find.text('个人中心'));
     expect(find.text('个人中心'), findsOneWidget);
-    // LunioPage 现为 CustomScrollView + SliverPadding（R25），页面级
-    // padding 断言改查 SliverPadding。
+    // LunioPage 是 CustomScrollView + SliverPadding 结构，页面级
+    // padding 断言查 SliverPadding。
     final profilePadding = tester.widget<SliverPadding>(
       find.byType(SliverPadding).first,
     );

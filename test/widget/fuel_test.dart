@@ -1,5 +1,4 @@
-// fuel 域 widget 测试（自原 widget_test.dart 按页面域拆分，
-// 共享夹具见 test/helpers/widget_app.dart）。
+// fuel 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
