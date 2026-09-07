@@ -834,8 +834,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
         ),
         if (detailMode) ...[
           const SizedBox(height: 12),
-          for (final item in availableItems) ...[
-            if (item.id != null && costDrafts.containsKey(item.id))
+          // 间隔只加在真实渲染的行后面：未勾选的项目不渲染行也不插空隙，
+          // 否则勾选不相邻的项目时行距会在 10/20 之间交替、间隔不一致。
+          for (final item in availableItems)
+            if (item.id != null && costDrafts.containsKey(item.id)) ...[
               _ItemCostRow(
                 draft: costDrafts[item.id]!,
                 enabled: !saving,
@@ -845,8 +847,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
                 onAnyChanged: _onCostInputChanged,
                 onCostChanged: () => _onItemCostInputChanged(item.id!),
               ),
-            const SizedBox(height: 10),
-          ],
+              const SizedBox(height: 10),
+            ],
         ],
         if (errorText != null) ...[
           const SizedBox(height: 10),
