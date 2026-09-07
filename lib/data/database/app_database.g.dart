@@ -3431,6 +3431,39 @@ class $MaintenanceRecordItemsTable extends MaintenanceRecordItems
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _materialCostCentsMeta = const VerificationMeta(
+    'materialCostCents',
+  );
+  @override
+  late final GeneratedColumn<int> materialCostCents = GeneratedColumn<int>(
+    'material_cost_cents',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _laborCostCentsMeta = const VerificationMeta(
+    'laborCostCents',
+  );
+  @override
+  late final GeneratedColumn<int> laborCostCents = GeneratedColumn<int>(
+    'labor_cost_cents',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _costCentsMeta = const VerificationMeta(
+    'costCents',
+  );
+  @override
+  late final GeneratedColumn<int> costCents = GeneratedColumn<int>(
+    'cost_cents',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3438,6 +3471,9 @@ class $MaintenanceRecordItemsTable extends MaintenanceRecordItems
     carId,
     itemId,
     date,
+    materialCostCents,
+    laborCostCents,
+    costCents,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3489,6 +3525,30 @@ class $MaintenanceRecordItemsTable extends MaintenanceRecordItems
     } else if (isInserting) {
       context.missing(_dateMeta);
     }
+    if (data.containsKey('material_cost_cents')) {
+      context.handle(
+        _materialCostCentsMeta,
+        materialCostCents.isAcceptableOrUnknown(
+          data['material_cost_cents']!,
+          _materialCostCentsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('labor_cost_cents')) {
+      context.handle(
+        _laborCostCentsMeta,
+        laborCostCents.isAcceptableOrUnknown(
+          data['labor_cost_cents']!,
+          _laborCostCentsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cost_cents')) {
+      context.handle(
+        _costCentsMeta,
+        costCents.isAcceptableOrUnknown(data['cost_cents']!, _costCentsMeta),
+      );
+    }
     return context;
   }
 
@@ -3525,6 +3585,18 @@ class $MaintenanceRecordItemsTable extends MaintenanceRecordItems
         DriftSqlType.string,
         data['${effectivePrefix}date'],
       )!,
+      materialCostCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}material_cost_cents'],
+      ),
+      laborCostCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}labor_cost_cents'],
+      ),
+      costCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cost_cents'],
+      ),
     );
   }
 
@@ -3541,12 +3613,18 @@ class MaintenanceRecordItemRow extends DataClass
   final int carId;
   final int itemId;
   final String date;
+  final int? materialCostCents;
+  final int? laborCostCents;
+  final int? costCents;
   const MaintenanceRecordItemRow({
     required this.id,
     required this.maintenanceRecordId,
     required this.carId,
     required this.itemId,
     required this.date,
+    this.materialCostCents,
+    this.laborCostCents,
+    this.costCents,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3556,6 +3634,15 @@ class MaintenanceRecordItemRow extends DataClass
     map['car_id'] = Variable<int>(carId);
     map['item_id'] = Variable<int>(itemId);
     map['date'] = Variable<String>(date);
+    if (!nullToAbsent || materialCostCents != null) {
+      map['material_cost_cents'] = Variable<int>(materialCostCents);
+    }
+    if (!nullToAbsent || laborCostCents != null) {
+      map['labor_cost_cents'] = Variable<int>(laborCostCents);
+    }
+    if (!nullToAbsent || costCents != null) {
+      map['cost_cents'] = Variable<int>(costCents);
+    }
     return map;
   }
 
@@ -3566,6 +3653,15 @@ class MaintenanceRecordItemRow extends DataClass
       carId: Value(carId),
       itemId: Value(itemId),
       date: Value(date),
+      materialCostCents: materialCostCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(materialCostCents),
+      laborCostCents: laborCostCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(laborCostCents),
+      costCents: costCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(costCents),
     );
   }
 
@@ -3582,6 +3678,9 @@ class MaintenanceRecordItemRow extends DataClass
       carId: serializer.fromJson<int>(json['carId']),
       itemId: serializer.fromJson<int>(json['itemId']),
       date: serializer.fromJson<String>(json['date']),
+      materialCostCents: serializer.fromJson<int?>(json['materialCostCents']),
+      laborCostCents: serializer.fromJson<int?>(json['laborCostCents']),
+      costCents: serializer.fromJson<int?>(json['costCents']),
     );
   }
   @override
@@ -3593,6 +3692,9 @@ class MaintenanceRecordItemRow extends DataClass
       'carId': serializer.toJson<int>(carId),
       'itemId': serializer.toJson<int>(itemId),
       'date': serializer.toJson<String>(date),
+      'materialCostCents': serializer.toJson<int?>(materialCostCents),
+      'laborCostCents': serializer.toJson<int?>(laborCostCents),
+      'costCents': serializer.toJson<int?>(costCents),
     };
   }
 
@@ -3602,12 +3704,22 @@ class MaintenanceRecordItemRow extends DataClass
     int? carId,
     int? itemId,
     String? date,
+    Value<int?> materialCostCents = const Value.absent(),
+    Value<int?> laborCostCents = const Value.absent(),
+    Value<int?> costCents = const Value.absent(),
   }) => MaintenanceRecordItemRow(
     id: id ?? this.id,
     maintenanceRecordId: maintenanceRecordId ?? this.maintenanceRecordId,
     carId: carId ?? this.carId,
     itemId: itemId ?? this.itemId,
     date: date ?? this.date,
+    materialCostCents: materialCostCents.present
+        ? materialCostCents.value
+        : this.materialCostCents,
+    laborCostCents: laborCostCents.present
+        ? laborCostCents.value
+        : this.laborCostCents,
+    costCents: costCents.present ? costCents.value : this.costCents,
   );
   MaintenanceRecordItemRow copyWithCompanion(
     MaintenanceRecordItemsCompanion data,
@@ -3620,6 +3732,13 @@ class MaintenanceRecordItemRow extends DataClass
       carId: data.carId.present ? data.carId.value : this.carId,
       itemId: data.itemId.present ? data.itemId.value : this.itemId,
       date: data.date.present ? data.date.value : this.date,
+      materialCostCents: data.materialCostCents.present
+          ? data.materialCostCents.value
+          : this.materialCostCents,
+      laborCostCents: data.laborCostCents.present
+          ? data.laborCostCents.value
+          : this.laborCostCents,
+      costCents: data.costCents.present ? data.costCents.value : this.costCents,
     );
   }
 
@@ -3630,13 +3749,25 @@ class MaintenanceRecordItemRow extends DataClass
           ..write('maintenanceRecordId: $maintenanceRecordId, ')
           ..write('carId: $carId, ')
           ..write('itemId: $itemId, ')
-          ..write('date: $date')
+          ..write('date: $date, ')
+          ..write('materialCostCents: $materialCostCents, ')
+          ..write('laborCostCents: $laborCostCents, ')
+          ..write('costCents: $costCents')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, maintenanceRecordId, carId, itemId, date);
+  int get hashCode => Object.hash(
+    id,
+    maintenanceRecordId,
+    carId,
+    itemId,
+    date,
+    materialCostCents,
+    laborCostCents,
+    costCents,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3645,7 +3776,10 @@ class MaintenanceRecordItemRow extends DataClass
           other.maintenanceRecordId == this.maintenanceRecordId &&
           other.carId == this.carId &&
           other.itemId == this.itemId &&
-          other.date == this.date);
+          other.date == this.date &&
+          other.materialCostCents == this.materialCostCents &&
+          other.laborCostCents == this.laborCostCents &&
+          other.costCents == this.costCents);
 }
 
 class MaintenanceRecordItemsCompanion
@@ -3655,12 +3789,18 @@ class MaintenanceRecordItemsCompanion
   final Value<int> carId;
   final Value<int> itemId;
   final Value<String> date;
+  final Value<int?> materialCostCents;
+  final Value<int?> laborCostCents;
+  final Value<int?> costCents;
   const MaintenanceRecordItemsCompanion({
     this.id = const Value.absent(),
     this.maintenanceRecordId = const Value.absent(),
     this.carId = const Value.absent(),
     this.itemId = const Value.absent(),
     this.date = const Value.absent(),
+    this.materialCostCents = const Value.absent(),
+    this.laborCostCents = const Value.absent(),
+    this.costCents = const Value.absent(),
   });
   MaintenanceRecordItemsCompanion.insert({
     this.id = const Value.absent(),
@@ -3668,6 +3808,9 @@ class MaintenanceRecordItemsCompanion
     required int carId,
     required int itemId,
     required String date,
+    this.materialCostCents = const Value.absent(),
+    this.laborCostCents = const Value.absent(),
+    this.costCents = const Value.absent(),
   }) : maintenanceRecordId = Value(maintenanceRecordId),
        carId = Value(carId),
        itemId = Value(itemId),
@@ -3678,6 +3821,9 @@ class MaintenanceRecordItemsCompanion
     Expression<int>? carId,
     Expression<int>? itemId,
     Expression<String>? date,
+    Expression<int>? materialCostCents,
+    Expression<int>? laborCostCents,
+    Expression<int>? costCents,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3686,6 +3832,9 @@ class MaintenanceRecordItemsCompanion
       if (carId != null) 'car_id': carId,
       if (itemId != null) 'item_id': itemId,
       if (date != null) 'date': date,
+      if (materialCostCents != null) 'material_cost_cents': materialCostCents,
+      if (laborCostCents != null) 'labor_cost_cents': laborCostCents,
+      if (costCents != null) 'cost_cents': costCents,
     });
   }
 
@@ -3695,6 +3844,9 @@ class MaintenanceRecordItemsCompanion
     Value<int>? carId,
     Value<int>? itemId,
     Value<String>? date,
+    Value<int?>? materialCostCents,
+    Value<int?>? laborCostCents,
+    Value<int?>? costCents,
   }) {
     return MaintenanceRecordItemsCompanion(
       id: id ?? this.id,
@@ -3702,6 +3854,9 @@ class MaintenanceRecordItemsCompanion
       carId: carId ?? this.carId,
       itemId: itemId ?? this.itemId,
       date: date ?? this.date,
+      materialCostCents: materialCostCents ?? this.materialCostCents,
+      laborCostCents: laborCostCents ?? this.laborCostCents,
+      costCents: costCents ?? this.costCents,
     );
   }
 
@@ -3723,6 +3878,15 @@ class MaintenanceRecordItemsCompanion
     if (date.present) {
       map['date'] = Variable<String>(date.value);
     }
+    if (materialCostCents.present) {
+      map['material_cost_cents'] = Variable<int>(materialCostCents.value);
+    }
+    if (laborCostCents.present) {
+      map['labor_cost_cents'] = Variable<int>(laborCostCents.value);
+    }
+    if (costCents.present) {
+      map['cost_cents'] = Variable<int>(costCents.value);
+    }
     return map;
   }
 
@@ -3733,7 +3897,10 @@ class MaintenanceRecordItemsCompanion
           ..write('maintenanceRecordId: $maintenanceRecordId, ')
           ..write('carId: $carId, ')
           ..write('itemId: $itemId, ')
-          ..write('date: $date')
+          ..write('date: $date, ')
+          ..write('materialCostCents: $materialCostCents, ')
+          ..write('laborCostCents: $laborCostCents, ')
+          ..write('costCents: $costCents')
           ..write(')'))
         .toString();
   }
@@ -6228,6 +6395,9 @@ typedef $$MaintenanceRecordItemsTableCreateCompanionBuilder =
       required int carId,
       required int itemId,
       required String date,
+      Value<int?> materialCostCents,
+      Value<int?> laborCostCents,
+      Value<int?> costCents,
     });
 typedef $$MaintenanceRecordItemsTableUpdateCompanionBuilder =
     MaintenanceRecordItemsCompanion Function({
@@ -6236,6 +6406,9 @@ typedef $$MaintenanceRecordItemsTableUpdateCompanionBuilder =
       Value<int> carId,
       Value<int> itemId,
       Value<String> date,
+      Value<int?> materialCostCents,
+      Value<int?> laborCostCents,
+      Value<int?> costCents,
     });
 
 class $$MaintenanceRecordItemsTableFilterComposer
@@ -6269,6 +6442,21 @@ class $$MaintenanceRecordItemsTableFilterComposer
 
   ColumnFilters<String> get date => $composableBuilder(
     column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get materialCostCents => $composableBuilder(
+    column: $table.materialCostCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get laborCostCents => $composableBuilder(
+    column: $table.laborCostCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get costCents => $composableBuilder(
+    column: $table.costCents,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -6306,6 +6494,21 @@ class $$MaintenanceRecordItemsTableOrderingComposer
     column: $table.date,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get materialCostCents => $composableBuilder(
+    column: $table.materialCostCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get laborCostCents => $composableBuilder(
+    column: $table.laborCostCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get costCents => $composableBuilder(
+    column: $table.costCents,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MaintenanceRecordItemsTableAnnotationComposer
@@ -6333,6 +6536,19 @@ class $$MaintenanceRecordItemsTableAnnotationComposer
 
   GeneratedColumn<String> get date =>
       $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<int> get materialCostCents => $composableBuilder(
+    column: $table.materialCostCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get laborCostCents => $composableBuilder(
+    column: $table.laborCostCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get costCents =>
+      $composableBuilder(column: $table.costCents, builder: (column) => column);
 }
 
 class $$MaintenanceRecordItemsTableTableManager
@@ -6386,12 +6602,18 @@ class $$MaintenanceRecordItemsTableTableManager
                 Value<int> carId = const Value.absent(),
                 Value<int> itemId = const Value.absent(),
                 Value<String> date = const Value.absent(),
+                Value<int?> materialCostCents = const Value.absent(),
+                Value<int?> laborCostCents = const Value.absent(),
+                Value<int?> costCents = const Value.absent(),
               }) => MaintenanceRecordItemsCompanion(
                 id: id,
                 maintenanceRecordId: maintenanceRecordId,
                 carId: carId,
                 itemId: itemId,
                 date: date,
+                materialCostCents: materialCostCents,
+                laborCostCents: laborCostCents,
+                costCents: costCents,
               ),
           createCompanionCallback:
               ({
@@ -6400,12 +6622,18 @@ class $$MaintenanceRecordItemsTableTableManager
                 required int carId,
                 required int itemId,
                 required String date,
+                Value<int?> materialCostCents = const Value.absent(),
+                Value<int?> laborCostCents = const Value.absent(),
+                Value<int?> costCents = const Value.absent(),
               }) => MaintenanceRecordItemsCompanion.insert(
                 id: id,
                 maintenanceRecordId: maintenanceRecordId,
                 carId: carId,
                 itemId: itemId,
                 date: date,
+                materialCostCents: materialCostCents,
+                laborCostCents: laborCostCents,
+                costCents: costCents,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

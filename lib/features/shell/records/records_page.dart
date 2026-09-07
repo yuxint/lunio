@@ -5,11 +5,15 @@
 //      第一格"全部"= 清空筛选）——固定头部 sliver；
 //   2. 记录列表：SliverList.builder 懒加载（每项 ValueKey）；
 //      按周期 = 每条记录一张卡；按项目 = 记录×项目展开成行；
-//   3. 卡片上的编辑/删除按钮。
+//   3. 卡片整卡可点 → 记录详情弹窗（按周期看全部项目费用、按项目只看
+//      该项目，ADR 0010）；卡上的编辑/删除按钮。
 //
 // 新增/编辑表单是两步流：第一步填日期/里程/费用/备注/选项目（可行内
 // 新增项目并自动勾选）→ 第二步确认所选项目的提醒间隔（可改，保存时
 // 一并更新项目）。入口在提醒页按钮和记录卡"编辑"。
+// 第一步带"详细模式"开关（ADR 0010，默认关）：开启后每个勾选项目展开
+// 材料费/工时费/项目费用输入行，自动算链 = 材料+工时→项目费用→合计→
+// 总费用；自动值可手改，不一致时红字 + 黄色警告角标，纯提示不拦保存。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -23,6 +27,7 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
+import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 
@@ -267,76 +272,91 @@ class RecordCycleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    // 整卡可点 → 记录详情弹窗（ADR 0010）；编辑/删除按钮在卡内，
+    // 点击按钮不会触发整卡 onTap（InkWell 子级按钮优先消费手势）。
     return LunioCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                record.date.toString(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const Spacer(),
-              const SizedBox(width: 10),
-              Text(
-                _formatMoney(record.costCents),
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: tokens.primary,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Row(
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        child: InkWell(
+          onTap: () =>
+              showRecordDetailSheet(context, record: record, items: items),
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
                     Text(
-                      '${formatNumber(record.mileageKm)} km',
+                      record.date.toString(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                    if ((record.note ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          record.note!.trim(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                    const Spacer(),
+                    const SizedBox(width: 10),
+                    Text(
+                      _formatMoney(record.costCents),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: tokens.primary,
+                        fontWeight: FontWeight.w800,
                       ),
-                    ],
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SmallActionButton(
-                    label: '编辑',
-                    onPressed: () => onEdit(record),
-                  ),
-                  const SizedBox(width: 8),
-                  SmallActionButton(
-                    label: '删除',
-                    danger: true,
-                    onPressed: () => onDelete(record),
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(
+                            '${formatNumber(record.mileageKm)} km',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          if ((record.note ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                record.note!.trim(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SmallActionButton(
+                          label: '编辑',
+                          onPressed: () => onEdit(record),
+                        ),
+                        const SizedBox(width: 8),
+                        SmallActionButton(
+                          label: '删除',
+                          danger: true,
+                          onPressed: () => onDelete(record),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ItemPills(labels: recordItemNameList(record, items)),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          ItemPills(labels: recordItemNameList(record, items)),
-        ],
+        ),
       ),
     );
   }
@@ -361,39 +381,58 @@ class RecordItemRowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    // 整行可点 → 该项目的费用详情（按项目视图只看这一个项目，ADR 0010）。
     return LunioCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item?.name ?? '未知项目',
-            style: Theme.of(context).textTheme.titleMedium,
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        child: InkWell(
+          onTap: () => showRecordDetailSheet(
+            context,
+            record: record,
+            items: [?item],
+            focusItemId: itemId,
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${record.date} · ${formatNumber(record.mileageKm)} km',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item?.name ?? '未知项目',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-              ),
-              const SizedBox(width: 10),
-              SmallActionButton(
-                label: '编辑',
-                onPressed: () => onEdit(record, itemId),
-              ),
-              const SizedBox(width: 8),
-              SmallActionButton(
-                label: '删除',
-                danger: true,
-                onPressed: () => onDelete(record, itemId),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${record.date} · ${formatNumber(record.mileageKm)} km',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SmallActionButton(
+                      label: '编辑',
+                      onPressed: () => onEdit(record, itemId),
+                    ),
+                    const SizedBox(width: 8),
+                    SmallActionButton(
+                      label: '删除',
+                      danger: true,
+                      onPressed: () => onDelete(record, itemId),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -495,6 +534,23 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
   /// 表单当前可见的项目列表（行内新增后会刷新）。
   late List<MaintenanceItem> formItems;
 
+  /// 是否详细模式（ADR 0010）：开启后按项目填材料费/工时费/项目费用。
+  /// 开关不持久化，每次打开默认简洁；编辑带项目费用的记录自动进入。
+  bool detailMode = false;
+
+  /// 每个选中项目的费用输入草稿（key = 项目 id）。与 detailMode 无关
+  /// 始终维护——切换模式不删已填费用，简洁模式保存时原样保留。
+  final costDrafts = <int, RecordCostDraft>{};
+
+  /// 总费用是否被手动改过（改过后不再被项目费用合计自动覆盖；
+  /// 清空视为放弃手改、恢复自动跟随）。编辑历史不一致记录（如优惠）
+  /// 打开即视为手改，避免自动合计冲掉用户存的数。
+  bool totalTouched = false;
+
+  /// 自动回填的递归保护：程序写 controller 文本会再次触发 onChanged，
+  /// 置位期间回调直接返回，也不改"手改"标记。
+  bool _applyingAutoFill = false;
+
   /// 第二步的记录草稿（非 null 表示已进入第二步）。
   MaintenanceRecord? recordDraft;
 
@@ -517,15 +573,141 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
     noteController = TextEditingController(text: record?.note ?? '');
     selectedItemIds = {...?record?.itemIds};
     formItems = widget.items;
+    detailMode = record?.itemCosts.isNotEmpty ?? false;
+    totalTouched = record != null &&
+        record.costCents != RecordRules.sumItemCostCents(record.itemCosts);
+    _syncCostDrafts();
   }
 
   @override
   void dispose() {
     _disposeIntervalDrafts();
+    _disposeCostDrafts();
     mileageController.dispose();
     costController.dispose();
     noteController.dispose();
     super.dispose();
+  }
+
+  /// 把费用草稿同步到当前勾选的项目集合：取消勾选的草稿销毁（其费用
+  /// 从本次提交里消失），新勾选的建草稿并预填该记录的历史费用。
+  void _syncCostDrafts() {
+    costDrafts.removeWhere((itemId, draft) {
+      if (selectedItemIds.contains(itemId)) {
+        return false;
+      }
+      draft.dispose();
+      return true;
+    });
+    for (final item in formItems) {
+      final itemId = item.id;
+      if (itemId == null ||
+          !selectedItemIds.contains(itemId) ||
+          costDrafts.containsKey(itemId)) {
+        continue;
+      }
+      RecordItemCost? initial;
+      for (final cost in widget.record?.itemCosts ?? const <RecordItemCost>[]) {
+        if (cost.itemId == itemId) {
+          initial = cost;
+          break;
+        }
+      }
+      costDrafts[itemId] = RecordCostDraft(item: item, initial: initial);
+    }
+  }
+
+  /// 当前输入态的项目费用列表（金额从文本解析，空/非法 = 未填）。
+  /// 供合计与不一致判定使用。
+  List<RecordItemCost> _currentItemCosts() {
+    return [
+      for (final draft in costDrafts.values) _draftToCost(draft),
+    ];
+  }
+
+  /// 单个草稿 → 输入态项目费用（金额从文本解析，空/非法 = 未填）。
+  RecordItemCost _draftToCost(RecordCostDraft draft) {
+    return RecordItemCost(
+      itemId: draft.item.id ?? 0,
+      materialCents: parseMoneyCents(draft.materialController.text),
+      laborCents: parseMoneyCents(draft.laborController.text),
+      costCents: parseMoneyCents(draft.costController.text),
+    );
+  }
+
+  /// 项目费用输入回调：维护该项目的手改标记（清空 = 放弃手改）→
+  /// 跑自动算链 → 重建（红字/角标实时变化）。
+  void _onItemCostInputChanged(int itemId) {
+    if (!_applyingAutoFill) {
+      final draft = costDrafts[itemId];
+      if (draft != null) {
+        draft.costTouched = draft.costController.text.trim().isNotEmpty;
+      }
+    }
+    _applyAutoFill();
+    setState(() {});
+  }
+
+  /// 材料费/工时费输入回调：跑自动算链 + 重建。
+  void _onCostInputChanged() {
+    _applyAutoFill();
+    setState(() {});
+  }
+
+  /// 总费用输入回调：键入内容视为手改（不再自动跟随合计），清空视为
+  /// 放弃手改（下次合计变化会重新填入）。
+  void _onTotalInputChanged() {
+    if (!_applyingAutoFill) {
+      totalTouched = costController.text.trim().isNotEmpty;
+    }
+    _applyAutoFill();
+    setState(() {});
+  }
+
+  /// 自动算链（ADR 0010）：材料>0 且工时>0 → 项目费用 = 两者之和
+  /// （已被手改的不覆盖）；有项目费用 → 总费用 = 合计（已被手改的不
+  /// 覆盖）。只在详细模式生效，简洁模式总费用纯手填。
+  void _applyAutoFill() {
+    if (_applyingAutoFill) {
+      return;
+    }
+    _applyingAutoFill = true;
+    try {
+      if (!detailMode) {
+        return;
+      }
+      for (final draft in costDrafts.values) {
+        final material = parseMoneyCents(draft.materialController.text);
+        final labor = parseMoneyCents(draft.laborController.text);
+        if (material != null &&
+            material > 0 &&
+            labor != null &&
+            labor > 0 &&
+            !draft.costTouched) {
+          final text = formatMoneyText(material + labor);
+          if (draft.costController.text != text) {
+            draft.costController.text = text;
+          }
+        }
+      }
+      final sum = RecordRules.sumItemCostCents(_currentItemCosts());
+      if (sum > 0 && !totalTouched) {
+        final text = formatMoneyText(sum);
+        if (costController.text != text) {
+          costController.text = text;
+        }
+      }
+    } finally {
+      _applyingAutoFill = false;
+    }
+  }
+
+  /// 释放全部费用草稿的 controller。
+  void _disposeCostDrafts() {
+    for (final draft in costDrafts.values) {
+      draft.dispose();
+    }
+    costDrafts.clear();
   }
 
   @override
@@ -540,6 +722,13 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
                 (item) => item.enabled || selectedItemIds.contains(item.id),
               )
               .toList();
+    // 总费用不一致只在详细模式提示：简洁模式看不到项目费用，
+    // 单独把总费用标红只会让人困惑（ADR 0010）。
+    final totalMismatch = detailMode &&
+        RecordRules.totalCostMismatch(
+          totalCostCents: parseMoneyCents(costController.text) ?? 0,
+          itemCosts: _currentItemCosts(),
+        );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -571,8 +760,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
                 // 费用小数不限位（历史行为保留）。
                 decimals: null,
                 labelText: '费用',
+                warning: totalMismatch,
                 onTap: () =>
                     LunioNumberField.clearLeadingZero(costController),
+                onChanged: (_) => _onTotalInputChanged(),
               ),
             ),
           ],
@@ -586,6 +777,23 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
           decoration: const InputDecoration(labelText: '备注'),
         ),
         const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '详细模式',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            Switch(
+              value: detailMode,
+              onChanged: saving
+                  ? null
+                  : (value) => setState(() => detailMode = value),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
@@ -619,10 +827,27 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
                       selectedItemIds.add(item.id!);
                     }
                   });
+                  _syncCostDrafts();
                 },
               ),
           ],
         ),
+        if (detailMode) ...[
+          const SizedBox(height: 12),
+          for (final item in availableItems) ...[
+            if (item.id != null && costDrafts.containsKey(item.id))
+              _ItemCostRow(
+                draft: costDrafts[item.id]!,
+                enabled: !saving,
+                mismatch: RecordRules.itemCostMismatch(
+                  _draftToCost(costDrafts[item.id]!),
+                ),
+                onAnyChanged: _onCostInputChanged,
+                onCostChanged: () => _onItemCostInputChanged(item.id!),
+              ),
+            const SizedBox(height: 10),
+          ],
+        ],
         if (errorText != null) ...[
           const SizedBox(height: 10),
           LunioInlineMessage(message: errorText!, tone: LunioStatusTone.danger),
@@ -661,6 +886,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       carId: widget.car.id!,
       date: recordDate,
       itemIds: selectedItemIds.toList(),
+      itemCosts: _buildItemCosts(),
       costCents: (cost * 100).round(),
       mileageKm: mileage,
       note: noteController.text.trim().isEmpty
@@ -671,6 +897,35 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
         updatedAt: DateTime.now(),
       ),
     );
+  }
+
+  /// 把费用草稿整理成提交用的项目费用列表（ADR 0010）：只收勾选中的
+  /// 项目；三个金额全空的草稿跳过；金额元→分四舍五入，空/非法 = 未填。
+  /// 不一致（项目费用 ≠ 材料+工时、总费用 ≠ 合计）在这里不做校验——
+  /// 按产品规则不一致是合法数据（如优惠），由界面红字黄三角提示。
+  List<RecordItemCost> _buildItemCosts() {
+    final costs = <RecordItemCost>[];
+    for (final draft in costDrafts.values) {
+      final itemId = draft.item.id;
+      if (itemId == null || !selectedItemIds.contains(itemId)) {
+        continue;
+      }
+      final material = parseMoneyCents(draft.materialController.text);
+      final labor = parseMoneyCents(draft.laborController.text);
+      final cost = parseMoneyCents(draft.costController.text);
+      if (material == null && labor == null && cost == null) {
+        continue;
+      }
+      costs.add(
+        RecordItemCost(
+          itemId: itemId,
+          materialCents: material,
+          laborCents: labor,
+          costCents: cost,
+        ),
+      );
+    }
+    return costs;
   }
 
   /// "下一步"：校验通过后为每个选中项目建间隔输入草稿，进入第二步。
@@ -842,6 +1097,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       if (newItem?.id != null) {
         selectedItemIds.add(newItem!.id!);
       }
+      _syncCostDrafts();
     });
   }
 
@@ -893,6 +1149,53 @@ class RecordIntervalDraft {
   void dispose() {
     mileageController.dispose();
     monthsController.dispose();
+  }
+}
+
+/// 详细模式下单个项目的费用输入草稿（ADR 0010）：材料/工时/项目费用
+/// 三个 controller + 项目费用手改标记。编辑记录时从历史费用预填，
+/// 金额文本与费用输入框同格式（两位小数）。
+class RecordCostDraft {
+  RecordCostDraft({required this.item, this.initial})
+    : materialController = TextEditingController(
+        text: initial?.materialCents == null
+            ? ''
+            : formatMoneyText(initial!.materialCents!),
+      ),
+      laborController = TextEditingController(
+        text: initial?.laborCents == null
+            ? ''
+            : formatMoneyText(initial!.laborCents!),
+      ),
+      costController = TextEditingController(
+        text: initial?.costCents == null
+            ? ''
+            : formatMoneyText(initial!.costCents!),
+      ) {
+    // 存量项目费用与"材料+工时"不一致（如优惠改价）说明是手改值：
+    // 打开即视为手改，避免编辑材料/工时时被自动算链冲掉。与 initState
+    // 里总费用的 totalTouched 保护同一策略（ADR 0010：手改后不再被
+    // 自动覆盖）；一致的存量值（可能只是上次自动算的结果）仍保持自动跟随。
+    final initialCost = initial;
+    costTouched = initialCost != null &&
+        RecordRules.itemCostMismatch(initialCost);
+  }
+
+  final MaintenanceItem item;
+  final RecordItemCost? initial;
+  final TextEditingController materialController;
+  final TextEditingController laborController;
+  final TextEditingController costController;
+
+  /// 项目费用是否被手动改过（改过后不再被"材料+工时"自动覆盖；
+  /// 清空视为放弃手改，恢复自动计算）。编辑记录打开时，存量项目费用
+  /// 与"材料+工时"不一致（优惠价）即预置为已手改（见构造函数）。
+  bool costTouched = false;
+
+  void dispose() {
+    materialController.dispose();
+    laborController.dispose();
+    costController.dispose();
   }
 }
 
@@ -1010,6 +1313,363 @@ Future<void> deleteMaintenanceRecordItem(
 /// 金额（分 → ¥xx.xx）。仅记录列表使用。
 String _formatMoney(int costCents) {
   return '¥${(costCents / 100).toStringAsFixed(2)}';
+}
+
+/// 金额输入文本 → 分（四舍五入）。空/非法文本返回 null（= 未填）。
+/// 文件内多处使用（表单草稿解析、不一致判定），故不带下划线前缀命名
+/// 为顶层函数——仅本文件可见。
+int? parseMoneyCents(String text) {
+  final value = double.tryParse(text.trim());
+  return value == null ? null : (value * 100).round();
+}
+
+/// 分 → 金额输入框文本（两位小数，与费用输入框历史格式一致）。
+String formatMoneyText(int cents) => (cents / 100).toStringAsFixed(2);
+
+/// ★ 记录详情弹窗（记录页两种视图的整卡点击入口，ADR 0010）：
+///  - focusItemId 为空（按周期视图）：看整条记录——日期/里程/总费用
+///    指标格 + 备注 + 全部项目费用清单；
+///  - focusItemId 非空（按项目视图）：只看该项目——日期/里程 + 项目
+///    费用（含材料/工时小字）+ 整条记录总费用。
+/// 展示永远取存储值（单项目以项目费用为准、整条以总费用为准），
+/// 不一致的项目费用/总费用加黄色警告角标，不做读时修正。
+void showRecordDetailSheet(
+  BuildContext context, {
+  required MaintenanceRecord record,
+  required List<MaintenanceItem> items,
+  int? focusItemId,
+}) {
+  showLunioModalSheet<void>(
+    context: context,
+    builder: (sheetContext) {
+      final costsByItemId = <int, RecordItemCost>{
+        for (final cost in record.itemCosts) cost.itemId: cost,
+      };
+      final focusCost = focusItemId == null
+          ? null
+          : costsByItemId[focusItemId];
+      final totalMismatch = RecordRules.totalCostMismatch(
+        totalCostCents: record.costCents,
+        itemCosts: record.itemCosts,
+      );
+      final Widget content;
+      if (focusItemId == null) {
+        content = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _RecordMetricTile(
+                    label: '保养日期',
+                    value: record.date.toString(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _RecordMetricTile(
+                    label: '保养里程',
+                    value: '${formatNumber(record.mileageKm)} km',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _RecordMetricTile(
+              label: '总费用',
+              value: _formatMoney(record.costCents),
+              warning: totalMismatch,
+            ),
+            if ((record.note ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _RecordNoteBlock(note: record.note!.trim()),
+            ],
+            const SizedBox(height: 14),
+            Text('项目费用', style: Theme.of(sheetContext).textTheme.labelLarge),
+            const SizedBox(height: 8),
+            for (final itemId in record.itemIds)
+              _ItemCostListRow(
+                name: itemById(items, itemId)?.name ?? '未知项目',
+                cost: costsByItemId[itemId],
+              ),
+          ],
+        );
+      } else {
+        final materialText = focusCost?.materialCents;
+        final laborText = focusCost?.laborCents;
+        final splitParts = <String>[
+          if (materialText != null) '材料 ${_formatMoney(materialText)}',
+          if (laborText != null) '工时 ${_formatMoney(laborText)}',
+        ];
+        content = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _RecordMetricTile(
+                    label: '保养日期',
+                    value: record.date.toString(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _RecordMetricTile(
+                    label: '保养里程',
+                    value: '${formatNumber(record.mileageKm)} km',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _RecordMetricTile(
+              label: '项目费用',
+              value: focusCost?.costCents == null
+                  ? '—'
+                  : _formatMoney(focusCost!.costCents!),
+              warning: focusCost != null &&
+                  RecordRules.itemCostMismatch(focusCost),
+            ),
+            const SizedBox(height: 10),
+            _RecordMetricTile(
+              label: '总费用',
+              value: _formatMoney(record.costCents),
+            ),
+            if (splitParts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                splitParts.join(' / '),
+                style: Theme.of(sheetContext).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        );
+      }
+      return PrototypeSheetFrame(
+        title: focusItemId == null
+            ? '保养记录'
+            : itemById(items, focusItemId)?.name ?? '未知项目',
+        subtitle: '整条记录总费用 ${_formatMoney(record.costCents)}',
+        child: content,
+      );
+    },
+  );
+}
+
+/// 详情弹窗里的指标格（标签 + 值，风格与提醒页详情一致）。
+/// warning 为 true 时值旁加黄色警告角标（费用不一致提示，ADR 0010）。
+class _RecordMetricTile extends StatelessWidget {
+  const _RecordMetricTile({
+    required this.label,
+    required this.value,
+    this.warning = false,
+  });
+
+  final String label;
+  final String value;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.surface2,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: tokens.muted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (warning)
+            Icon(Icons.warning_amber_rounded, size: 20, color: tokens.warning),
+        ],
+      ),
+    );
+  }
+}
+
+/// 详情弹窗的备注块（surface2 容器整行展示）。
+class _RecordNoteBlock extends StatelessWidget {
+  const _RecordNoteBlock({required this.note});
+
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tokens.surface2,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+      ),
+      child: Text(note, style: Theme.of(context).textTheme.bodyMedium),
+    );
+  }
+}
+
+/// 详情弹窗项目费用清单的一行：项目名 + 项目费用（未填显示占位 —），
+/// 填了材料/工时的用小字标注；项目费用与材料+工时不一致时加黄色
+/// 警告角标（ADR 0010）。
+class _ItemCostListRow extends StatelessWidget {
+  const _ItemCostListRow({required this.name, this.cost});
+
+  final String name;
+  final RecordItemCost? cost;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final splitParts = <String>[
+      if (cost?.materialCents != null)
+        '材料 ${_formatMoney(cost!.materialCents!)}',
+      if (cost?.laborCents != null) '工时 ${_formatMoney(cost!.laborCents!)}',
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (splitParts.isNotEmpty)
+                  Text(
+                    splitParts.join(' / '),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: tokens.muted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (cost != null && RecordRules.itemCostMismatch(cost!))
+            Icon(Icons.warning_amber_rounded, size: 18, color: tokens.warning),
+          const SizedBox(width: 6),
+          Text(
+            cost?.costCents == null ? '—' : _formatMoney(cost!.costCents!),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: tokens.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 详细模式下单个项目的费用输入行（ADR 0010）：项目名 + 材料/工时/
+/// 项目费用三个紧凑数字框。项目费用与材料+工时不一致时项目费用红字
+/// 并带黄色警告角标（以项目费用为准，纯提示不拦截保存）。
+class _ItemCostRow extends StatelessWidget {
+  const _ItemCostRow({
+    required this.draft,
+    required this.enabled,
+    required this.mismatch,
+    required this.onAnyChanged,
+    required this.onCostChanged,
+  });
+
+  final RecordCostDraft draft;
+  final bool enabled;
+  final bool mismatch;
+
+  /// 材料费/工时费输入回调。
+  final VoidCallback onAnyChanged;
+
+  /// 项目费用输入回调（要额外维护手改标记，所以单独给）。
+  final VoidCallback onCostChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                draft.item.enabled
+                    ? draft.item.name
+                    : '${draft.item.name}（已禁用）',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            if (mismatch)
+              Icon(Icons.warning_amber_rounded, size: 18, color: tokens.warning),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: LunioNumberField(
+                controller: draft.materialController,
+                enabled: enabled,
+                decimals: 2,
+                labelText: '材料费',
+                onChanged: (_) => onAnyChanged(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: LunioNumberField(
+                controller: draft.laborController,
+                enabled: enabled,
+                decimals: 2,
+                labelText: '工时费',
+                onChanged: (_) => onAnyChanged(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: LunioNumberField(
+                controller: draft.costController,
+                enabled: enabled,
+                decimals: 2,
+                labelText: '项目费用',
+                warning: mismatch,
+                onChanged: (_) => onCostChanged(),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 /// 横向可滚动的多选筛选条（chip 选中态 + 右下角小对勾）。

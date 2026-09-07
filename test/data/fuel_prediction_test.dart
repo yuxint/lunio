@@ -300,8 +300,8 @@ void main() {
 
       final backup = await backupRepository.exportBackupPayload();
       final json = const BackupCodec().encode(backup);
-      // 车带动力类型、加油设置进备份。
-      expect(backup.schemaVersion, 1);
+      // 车带动力类型、加油设置进备份（版本号用契约常量，不手写）。
+      expect(backup.schemaVersion, BackupCodec.currentSchemaVersion);
       expect(json, contains('fuelPrediction'));
       expect(json, contains('fuelPredictions'));
       expect(json, contains('湖北'));
@@ -369,7 +369,9 @@ void main() {
       expect(
         () => codec.decode(
           jsonEncode({
-            'schemaVersion': 2,
+            // v2 是当前版本（v1 是唯一兼容读的旧版本，ADR 0010），
+            // 用版本号之外的值验证拒绝路径。
+            'schemaVersion': BackupCodec.currentSchemaVersion + 1,
             'cars': [],
             'maintenanceItems': [],
             'records': [],

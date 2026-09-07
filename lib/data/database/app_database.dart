@@ -175,6 +175,10 @@ class MaintenanceRecords extends Table {
 /// 冗余存了 carId/date（与主表同值），方便按车按天查询。
 /// maintenanceRecordId 普通索引：组装记录 itemIds 时按记录 id 批量查
 /// （原全表扫描，R16）。
+/// 项目费用三列（ADR 0010）：材料费/工时费/项目费用，单位分，可空 =
+/// 未填。一行 = 一条记录 × 一个项目（≈ 订单明细行），同一个项目每次
+/// 价格不同由行天然区分。三列允许合法的不一致（如优惠改价后项目费用
+/// ≠ 材料+工时），读取方原样展示并按规则标提示，不做读时修正。
 @TableIndex(
   name: 'idx_maintenance_record_items_record_id',
   columns: {#maintenanceRecordId},
@@ -186,6 +190,9 @@ class MaintenanceRecordItems extends Table {
   IntColumn get carId => integer()();
   IntColumn get itemId => integer()();
   TextColumn get date => text()();
+  IntColumn get materialCostCents => integer().nullable()();
+  IntColumn get laborCostCents => integer().nullable()();
+  IntColumn get costCents => integer().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -265,11 +272,11 @@ class AppDatabase extends _$AppDatabase {
   /// 测试构造：内存库（每个测试用例独立、不落盘）。
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
-  /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion=1，两者独立演进）。
+  /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion=2，两者独立演进）。
   /// 改表结构必须 +1：版本与库文件不一致时按 ADR 0005 删库重建，
   /// 不写升级分支。改完跑 build_runner。
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   /// 迁移策略（ADR 0005）：库文件版本与代码不一致（升或降）时，
   /// 删光全部表再重建，不保留任何升级路径。

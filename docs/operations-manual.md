@@ -1,6 +1,6 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-05 · 基于 schemaVersion 1 / 备份 schemaVersion 1 代码快照（数据层按域拆分见 docs/adr/0008）
+> 版本：2026-09-06 · 基于 schemaVersion 2 / 备份 schemaVersion 2 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
@@ -202,30 +202,40 @@ appDatabaseProvider(:232)
 |---|---|---|
 | 切换"按周期/按项目" | `records_page.dart:56`（LunioSegmentedControl） | `selectedMode` 0/1 |
 | 年份/项目多选筛选 | `records_page.dart`（两个 `_FilterBar`，已回收为页面私有） | `selectedYears`/`selectedItemIds` 集合仅由用户点击变更；渲染与过滤用派生集合 `_validSelections`（自动忽略已失效的年份/项目） |
-| 按周期视图 | `records_page.dart → RecordCycleCard`（SliverList.builder 逐条懒加载，ValueKey('record-<id>')） | 一条记录一张卡（日期+金额+里程+备注+项目 pills+编辑/删除） |
-| 按项目视图 | `records_page.dart → RecordItemRowCard`（同样懒加载） | 记录×项目展开成行，可单独删某项 |
+| 按周期视图 | `records_page.dart → RecordCycleCard`（SliverList.builder 逐条懒加载，ValueKey('record-<id>')） | 一条记录一张卡（日期+金额+里程+备注+项目 pills+编辑/删除）；**整卡可点 → 记录详情弹窗（§4.4，ADR 0010）** |
+| 按项目视图 | `records_page.dart → RecordItemRowCard`（同样懒加载） | 记录×项目展开成行，可单独删某项；**整行可点 → 只看该项目的详情弹窗（§4.4）** |
 
 ### 4.2 新增 / 编辑保养记录（两步表单）
 
-**入口**：提醒页"新增保养记录"按钮（reminder_page.dart:126）或记录卡"编辑" → `records_page.dart:997 → showMaintenanceRecordFormSheet`。
+**入口**：提醒页"新增保养记录"按钮（reminder_page.dart:126）或记录卡"编辑" → `records_page.dart:1199 → showMaintenanceRecordFormSheet`。
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 0 | `showMaintenanceRecordFormSheet` 开头 | await 车/项目/今天三个 provider；无车或无可用项目 → toast 拦截 | — |
-| 1 | `MaintenanceRecordForm`（:455 起）第一步 | 日期（范围=上路日期~今天+365）、里程（默认车辆当前里程）、费用（元输入）、备注、项目多选 chip；编辑态可见"已禁用但被选过"的项目 | — |
-| 1a | 行内"新增"项目 | `records_page.dart:850 → _addMaintenanceItem` → 弹项目表单（§5.2.2）→ 重拉列表 → **diff 出新 id 自动勾选** | 新项目已落库 |
-| 2 | `_buildRecordDraft()`（:660 附近）+ `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项）→ 构造记录草稿 → 为每个选中项目建间隔输入草稿 | — |
+| 1 | `MaintenanceRecordForm`（:520 起）第一步 | 日期（范围=上路日期~今天+365）、里程（默认车辆当前里程）、费用（元输入）、备注、**详细模式开关（ADR 0010，默认简洁、不持久化；编辑带项目费用的记录自动开启，`initState → detailMode`）**、项目多选 chip；编辑态可见"已禁用但被选过"的项目 | — |
+| 1a | 详细模式费用行（`_ItemCostRow`，勾选项目 chip 下方逐项展开） | 每个项目"材料费/工时费/项目费用"三个数字框。**自动算链 `_applyAutoFill`**：材料>0 且工时>0 → 项目费用=两者之和；已填项目费用 → 总费用=合计。自动值可手改，**手改后不再自动覆盖**（清空=恢复自动；编辑记录打开时，存量项目费用≠材料+工时或存量总费用≠合计即视为已手改，避免预填的优惠价被自动算链冲掉——`RecordCostDraft` 构造 + `initState → totalTouched`）；**不一致纯提示**：项目费用≠材料+工时（两者都>0 时）或总费用≠合计（有项目费用时）→ 该数字红字+框尾/行首黄色警告角标，不拦截保存（优惠等差异合法）。判定纯函数在 `record_rules.dart`（`itemCostMismatch`/`totalCostMismatch`/`sumItemCostCents`） | — |
+| 1b | 行内"新增"项目 | `records_page.dart → _addMaintenanceItem` → 弹项目表单（§5.2.2）→ 重拉列表 → **diff 出新 id 自动勾选**（`_syncCostDrafts` 同步费用草稿） | 新项目已落库 |
+| 2 | `_buildRecordDraft()`（:868）+ `_buildItemCosts()` + `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项；费用不一致**不做**校验）→ 构造记录草稿（含项目费用列表；全空草稿跳过）→ 为每个选中项目建间隔输入草稿 | — |
 | 3 | 第二步 `_buildIntervalStep` | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步） | — |
 | 4 | `_submit()` → `_buildItemUpdates()` | 间隔校验；**有变化的项目**才生成 update 实体 | — |
-| 5 | onSubmit（sheet 入口处）→ `shell_actions.dart → saveMaintenanceRecord`（动作层，ADR 0007） | 内部按 id 分流：新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:667）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:721)。**单事务**：项目归属校验 → 同日唯一校验（`:1227 → _ensureRecordIsUnique`，**R4 收紧后同车同日只允许一条记录**，已有记录即抛"这辆车当天已有保养记录，请编辑原记录"，不再区分项目是否相同）→ 插/改主表+关联表 → 车辆里程只增同步 → 更新项目间隔；写完失效车辆家族 | `maintenance_records` + `maintenance_record_items`；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |
+| 5 | onSubmit（sheet 入口处）→ `shell_actions.dart → saveMaintenanceRecord`（动作层，ADR 0007） | 内部按 id 分流：新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:343）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:395)。**单事务**：项目归属校验 → 同日唯一校验（`_ensureRecordIsUnique`，**R4 收紧后同车同日只允许一条记录**，已有记录即抛"这辆车当天已有保养记录，请编辑原记录"，不再区分项目是否相同）→ 插/改主表+关联表（**费用三列按 itemId 从 `record.itemCosts` 取，`_insertRecordItemRowsInTransaction`**）→ 车辆里程只增同步 → 更新项目间隔；写完失效车辆家族 | `maintenance_records` + `maintenance_record_items`（含费用三列）；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |
 | 6 | 反馈薄壳：关 sheet（sheetContext）+ toast"保养记录已保存"（外层 context） | 记录页/提醒页/通知签名全部刷新 | — |
 
 ### 4.3 删除记录
 
 | 操作 | 代码位置 | 数据变化 |
 |---|---|---|
-| 按周期删整条 | `records_page.dart → deleteMaintenanceRecord` → 确认框 → `shell_actions.dart → removeMaintenanceRecord`（动作层：`repository.deleteMaintenanceRecord`(:784，事务删主表+关联) + 失效） | 删 1 条记录 + N 条关联 |
-| 按项目删单项 | `records_page.dart → deleteMaintenanceRecordItem` → 确认框（带项目名）→ `shell_actions.dart → removeMaintenanceRecordItem`（动作层：`repository.removeMaintenanceRecordItem`(:802)：**只剩这一项时连记录一起删**（返回 true），否则只删关联行 + 失效） | 删关联行（或整条记录） |
+| 按周期删整条 | `records_page.dart → deleteMaintenanceRecord` → 确认框 → `shell_actions.dart → removeMaintenanceRecord`（动作层：`repository.deleteMaintenanceRecord`，事务删主表+关联 + 失效） | 删 1 条记录 + N 条关联（含费用） |
+| 按项目删单项 | `records_page.dart → deleteMaintenanceRecordItem` → 确认框（带项目名）→ `shell_actions.dart → removeMaintenanceRecordItem`（动作层：`repository.removeMaintenanceRecordItem`(:486)：**只剩这一项时连记录一起删**（返回 true），否则只删关联行 + 失效） | 删关联行（该项目的费用随行删除，总费用不动；或整条记录） |
+
+### 4.4 记录详情弹窗（ADR 0010）
+
+**入口**：按周期视图点记录卡任意位置（`RecordCycleCard` 内 `InkWell`）或按项目视图点项目行（`RecordItemRowCard`）→ `records_page.dart → showRecordDetailSheet`。
+
+| 视图 | 内容 | 展示规则 |
+|---|---|---|
+| 按周期（整条记录） | 标题"保养记录" + 副标题"整条记录总费用 ¥xx" + 日期/里程/总费用指标格 + 备注（有才显示）+ 项目费用清单（每勾选项目一行：项目名 + 项目费用，未填显示"—"，填了材料/工时的加小字"材料 xx / 工时 xx"） | 展示永远取存储值：单项目以项目费用为准、整条记录以总费用为准；不一致的项目费用/总费用加黄色警告角标，**不做读时修正** |
+| 按项目（单项目） | 标题=项目名 + 日期/里程指标格 + 该项目费用（含材料/工时小字）+ 整条记录总费用 | 同上 |
 
 ---
 
@@ -286,7 +296,7 @@ appDatabaseProvider(:232)
 
 我的页"备份数据" → `settings_data.dart:170 → exportBackup`：
 
-1. `backupRepository.exportBackupPayload`——4 张业务表 + 加油设置全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 1（只认当前版本，不做旧备份兼容，见 docs/adr/0005）；
+1. `backupRepository.exportBackupPayload`——4 张业务表 + 加油设置全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 2（v2 条目含记录的项目费用 `itemCosts`，ADR 0010）；
 2. `BackupCodec().encode`（lib/data/backup/backup_codec.dart）——手写 JSON 序列化；
 3. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`；
 4. 成功/失败 toast。
@@ -296,9 +306,9 @@ appDatabaseProvider(:232)
 我的页"恢复数据" → `settings_data.dart → restoreBackupFromFile`：
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
-2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本≠1 抛 UnsupportedError）；
+2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2} 抛 UnsupportedError；**v1 备份兼容导入**——没有 `itemCosts` 字段等于项目费用全空，ADR 0010）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）再执行恢复；
-4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord`，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 4 张业务表 + 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records 逐行插入（id 全换新雪花 id，旧→新映射）→ 应用车辆指向第一辆；任何一行失败整体回滚；
+4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 4 张业务表 + 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
 5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001/9002 不动——停车倒计时偏好保留且其通知仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
 6. `invalidateAllAppDataProviders` → 全量刷新（车型目录由 bootstrap 自动重灌）；
 7. 失败分支：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框；其他 → toast。
@@ -407,7 +417,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 
 ## 7. 数据与偏好速查表
 
-### 7.1 数据库表（schemaVersion = 1，`lib/data/database/app_database.dart`）
+### 7.1 数据库表（schemaVersion = 2，`lib/data/database/app_database.dart`）
 
 | 表 | 内容 | 关键唯一约束 |
 |---|---|---|
@@ -416,7 +426,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | vehicle_default_maintenance_items | 默认项目模板，**按动力类型分组**（五组共 46 项，bootstrap 灌入） | {catalogId}, {powertrainType, itemName} |
 | maintenance_items | 车辆保养项目 | {carsId, name}；普通索引 cars_id |
 | maintenance_records | 保养记录主表 | **{carId, date}（一天一条）**；普通索引 car_id |
-| maintenance_record_items | 记录-项目关联 | {carId, date, itemId}；普通索引 maintenance_record_id |
+| maintenance_record_items | 记录-项目关联 + **项目费用三列**（材料/工时/项目费用，单位分可空，ADR 0010） | {carId, date, itemId}；普通索引 maintenance_record_id |
 | app_preferences | 偏好 KV | {key} |
 | fuel_predictions | 加油预测设置（剩余油量=基准档，容积在 cars） | {carId} |
 

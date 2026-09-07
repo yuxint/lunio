@@ -45,7 +45,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/domain/entities/`：领域实体，保持纯 Dart 数据结构与基础校验。
 - `lib/domain/rules/`：业务规则，例如保养进度、记录校验、当前应用车辆回退规则。优先把可测试的业务判断放这里。
 - `lib/domain/errors/lunio_error.dart`：表单提交路径的业务错误类型（`LunioErrorException` + kind 枚举）。Repository 抛它、`friendlyError` 按类型翻译，不再靠异常文本猜（错误文案在 throw 点书写）。
-- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 1。
+- `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 2。
 - `lib/data/database/app_database.g.dart`：Drift 生成文件。改表结构后用 build_runner 生成，不要手写。
 - `lib/data/repositories/`：数据层按域拆分的仓库家族（共享行↔实体↔Companion 编解码在 `entity_row_codec.dart`，一张表的字段清单全库只有一份）：
   - `lunio_repository.dart`：主仓库——车辆/保养项目/保养记录核心域的事务与校验（应用车辆回退统一走 AppliedCarRules）；
@@ -53,7 +53,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
   - `fuel_repository.dart`：加油预测设置表 + 油价缓存/手填油价（临时偏好经偏好门面原语存取）；
   - `backup_repository.dart`：备份导出/恢复/清空数据（恢复与手工录入共用同一份 Companion 字段清单）。
 - `lib/data/preferences/app_preferences.dart`：偏好门面（`LunioPreferences`）——全部偏好 key 常量、编解码与 typed 读写的唯一出口，新偏好进这里加 typed 方法，不要在调用方拼 key 字符串。停车倒计时偏好与提醒抑制 key 前缀也登记在此。
-- `lib/data/backup/backup_codec.dart`：`schemaVersion: 1` JSON 备份契约编码/解码（只认当前版本，不兼容旧版）。
+- `lib/data/backup/backup_codec.dart`：`schemaVersion: 2` JSON 备份契约编码/解码（接受 v1 兼容读——缺 `itemCosts` 等于项目费用全空，ADR 0010；其余版本直接拒绝）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
@@ -69,8 +69,9 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 ## 数据与契约注意点
 
-- 产品/文档版本、数据库 `schemaVersion`、备份 JSON `schemaVersion`、车型目录 asset `schemaVersion` 当前均为 1。数据库与备份只服务全新安装：库文件版本与代码不一致时删库重建，备份解码只认当前版本，不写任何升级/兼容分支（见 `docs/adr/0005`）。改 Drift 表结构必须把数据库 `schemaVersion` +1。
+- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 2、备份 JSON `schemaVersion` 为 2（ADR 0010）。数据库只服务全新安装：库文件版本与代码不一致时删库重建，不写任何升级分支（见 `docs/adr/0005`）。备份解码接受 v1 兼容读（纯增量缺失按空处理，唯一例外）+ v2，其余版本直接拒绝。改 Drift 表结构必须把数据库 `schemaVersion` +1。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同步考虑版本号、测试和文档。
+- 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。
 - 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`、`fuelPredictionEnabled`、`fuelProvince`（默认湖北）、`fuelGrade`、`fuelPriceCache`、`fuelManualPrices`（后两个是临时数据，不进备份）。不要把展示文案当作稳定标识。（`maintenanceDueEnabled` 已于 2026-08-29 移除：保养到期提醒是产品核心能力，不提供关闭入口，审查报告 R5；老库残留 key 无人读取，无害。）
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用主仓库（`LunioRepository`）与 `providers.dart` 里的现有模式。读偏好/写偏好走 `LunioPreferences` typed 方法。
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。

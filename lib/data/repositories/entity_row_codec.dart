@@ -106,16 +106,18 @@ MaintenanceItemsCompanion maintenanceItemCompanion(
 
 // ---------------- maintenance_records + 关联表 ----------------
 
-/// 记录表行 + 关联 itemIds → 实体。
+/// 记录表行 + 关联行派生的 itemIds / itemCosts → 实体。
 domain.MaintenanceRecord maintenanceRecordFromRow(
   MaintenanceRecordRow row,
   List<int> itemIds,
+  List<domain.RecordItemCost> itemCosts,
 ) {
   return domain.MaintenanceRecord(
     id: row.id,
     carId: row.carId,
     date: LocalDate.parse(row.date),
     itemIds: itemIds,
+    itemCosts: itemCosts,
     costCents: row.costCents,
     mileageKm: row.mileageKm,
     note: row.note,
@@ -148,14 +150,29 @@ MaintenanceRecordsCompanion maintenanceRecordCompanion(
   );
 }
 
+/// 记录关联行 → 项目费用实体（ADR 0010）。三个金额全空的行返回 null
+/// （实体侧 itemCosts 只收有内容条目，空费用 = 项目不在列表里）。
+domain.RecordItemCost? recordItemCostFromRow(MaintenanceRecordItemRow row) {
+  final cost = domain.RecordItemCost(
+    itemId: row.itemId,
+    materialCents: row.materialCostCents,
+    laborCents: row.laborCostCents,
+    costCents: row.costCents,
+  );
+  return cost.isEmpty ? null : cost;
+}
+
 /// 记录关联行 → 插入用 Companion（手工录入、编辑重建关联、恢复备份
-/// 三条路径共用）。
+/// 三条路径共用）。费用三列可空（null = 未填，ADR 0010）。
 MaintenanceRecordItemsCompanion maintenanceRecordItemCompanion({
   required int id,
   required int recordId,
   required int carId,
   required int itemId,
   required LocalDate date,
+  int? materialCostCents,
+  int? laborCostCents,
+  int? costCents,
 }) {
   return MaintenanceRecordItemsCompanion.insert(
     id: Value(id),
@@ -163,6 +180,9 @@ MaintenanceRecordItemsCompanion maintenanceRecordItemCompanion({
     carId: carId,
     itemId: itemId,
     date: date.toString(),
+    materialCostCents: Value(materialCostCents),
+    laborCostCents: Value(laborCostCents),
+    costCents: Value(costCents),
   );
 }
 

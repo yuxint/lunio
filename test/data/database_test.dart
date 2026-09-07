@@ -1280,6 +1280,130 @@ void main() {
     );
   });
 
+  test('saves lists and updates record item costs', () async {
+    final (carId, oilId) = await seedCarAndItem();
+    final filterId = await saveItem(carId, '机滤', 2);
+    final recordId = await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [oilId, filterId],
+        itemCosts: [
+          RecordItemCost(
+            itemId: oilId,
+            materialCents: 15000,
+            laborCents: 8000,
+            costCents: 23000,
+          ),
+          RecordItemCost(itemId: filterId, costCents: 5000),
+        ],
+        costCents: 28000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+
+    final stored = (await repository.listMaintenanceRecordsForCar(
+      carId,
+    )).single;
+    expect(stored.itemCosts, hasLength(2));
+    expect(stored.itemCosts.first.materialCents, 15000);
+    expect(stored.itemCosts.first.laborCents, 8000);
+    expect(stored.itemCosts.first.costCents, 23000);
+    expect(stored.itemCosts.last.costCents, 5000);
+
+    // 编辑：机油费用清空（重新落库为三列 null）、机滤改成不一致价
+    // （项目费用 2000 ≠ 材料 3000，合法数据原样落库，ADR 0010）。
+    await repository.updateMaintenanceRecord(
+      MaintenanceRecord(
+        id: recordId,
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [oilId, filterId],
+        itemCosts: [
+          RecordItemCost(itemId: filterId, materialCents: 3000, costCents: 2000),
+        ],
+        costCents: 28000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+    final updated = (await repository.listMaintenanceRecordsForCar(
+      carId,
+    )).single;
+    expect(updated.itemCosts, hasLength(1));
+    expect(updated.itemCosts.single.itemId, filterId);
+    expect(updated.itemCosts.single.materialCents, 3000);
+    expect(updated.itemCosts.single.costCents, 2000);
+    // 关联行还在两行（费用清空 ≠ 项目被移除）。
+    expect(
+      await database.select(database.maintenanceRecordItems).get(),
+      hasLength(2),
+    );
+  });
+
+  test('backup restore keeps record item costs with remapped item ids',
+      () async {
+    final (carId, oilId) = await seedCarAndItem();
+    final filterId = await saveItem(carId, '机滤', 2);
+    await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [oilId, filterId],
+        itemCosts: [
+          RecordItemCost(
+            itemId: oilId,
+            materialCents: 15000,
+            laborCents: 8000,
+            costCents: 23000,
+          ),
+          RecordItemCost(itemId: filterId, costCents: 5000),
+        ],
+        costCents: 28000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+
+    final backup = await backupRepository.exportBackupPayload();
+    // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
+    await database.close();
+    database = AppDatabase.inMemory();
+    preferences = LunioPreferences(database);
+    backupRepository = BackupRepository(database, preferences);
+    fuelRepository = FuelRepository(database, preferences);
+    repository = LunioRepository(
+      database,
+      preferences: preferences,
+      fuel: fuelRepository,
+    );
+    await backupRepository.restoreBackupPayload(backup);
+
+    final restoredCar = (await database.select(database.cars).get()).single;
+    final restoredItems = await repository.listMaintenanceItemsForCar(
+      restoredCar.id,
+    );
+    final restoredRecords = await repository.listMaintenanceRecordsForCar(
+      restoredCar.id,
+    );
+    expect(restoredRecords, hasLength(1));
+    // itemId 已重映射、金额原样保留（项目费用为准，不做推导修正）。
+    final costs = restoredRecords.single.itemCosts;
+    expect(costs, hasLength(2));
+    expect(
+      costs.map((cost) => cost.itemId).toSet(),
+      restoredItems.map((item) => item.id).toSet(),
+    );
+    expect(
+      costs.map((cost) => cost.costCents).toSet(),
+      {23000, 5000},
+    );
+    final oilCost = costs.firstWhere((cost) => cost.costCents == 23000);
+    expect(oilCost.materialCents, 15000);
+    expect(oilCost.laborCents, 8000);
+  });
+
   test(
     'saves maintenance record and item intervals in one transaction',
     () async {

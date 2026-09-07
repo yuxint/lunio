@@ -6,13 +6,15 @@
 // 手工录入路径用同一份字段清单（R35 的不变量"恢复的数据过和手工
 // 录入同样的规则"在插入层也成立），给表加字段不再需要改恢复循环。
 //
-// 恢复流程（ADR 0005：只认当前 schemaVersion，不做旧版兼容）：
+// 恢复流程（ADR 0010：接受 v1 与 v2——v1 条目缺项目费用按"全部未填"
+// 读入；v1/v2 之外的版本拒收）：
 //  1. 版本校验；2. 事务外两层预校验（引用完整性 + 业务规则）；3. 单一
 //  大事务清业务表 → 逐行插入（id 全换新雪花，旧→新映射）；4. 应用车辆
 //  指向恢复出的第一辆车；5. 备份带全局加油设置时覆盖省份/油品偏好。
 import 'package:drift/drift.dart';
 
 import '../../core/id/snowflake_id_generator.dart';
+import '../../domain/entities/maintenance_record.dart' show RecordItemCost;
 import '../../domain/rules/applied_car_rules.dart';
 import '../../domain/rules/fuel_rules.dart';
 import '../../domain/rules/record_rules.dart';
@@ -43,13 +45,24 @@ class BackupRepository {
         .select(database.maintenanceRecordItems)
         .get();
     final itemIdsByRecordId = <int, List<int>>{};
+    final itemCostsByRecordId = <int, List<RecordItemCost>>{};
     for (final row in recordItemRows) {
       itemIdsByRecordId
           .putIfAbsent(row.maintenanceRecordId, () => [])
           .add(row.itemId);
+      final cost = recordItemCostFromRow(row);
+      if (cost != null) {
+        itemCostsByRecordId
+            .putIfAbsent(row.maintenanceRecordId, () => [])
+            .add(cost);
+      }
     }
     final records = recordRows.map((row) {
-      return maintenanceRecordFromRow(row, itemIdsByRecordId[row.id] ?? const []);
+      return maintenanceRecordFromRow(
+        row,
+        itemIdsByRecordId[row.id] ?? const [],
+        itemCostsByRecordId[row.id] ?? const [],
+      );
     }).toList();
     final fuelPredictionRows = await database.select(
       database.fuelPredictions,
@@ -78,8 +91,9 @@ class BackupRepository {
 
   /// 恢复备份（导入）。流程见文件头。任何一行违反约束抛错则整体回滚
   /// （UI 提示"未写入任何数据"）。
+  /// 版本检查与 codec 一致：接受 v1（无项目费用）与 v2（ADR 0010）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
-    if (payload.schemaVersion != BackupCodec.currentSchemaVersion) {
+    if (!BackupCodec.supportedSchemaVersions.contains(payload.schemaVersion)) {
       throw UnsupportedError(
         'Unsupported backup schemaVersion: ${payload.schemaVersion}',
       );
@@ -142,6 +156,9 @@ class BackupRepository {
               // 公开查询查不到）。
               maintenanceRecordCompanion(record, recordId, carId: carId),
             );
+        final costsByItemId = <int, RecordItemCost>{
+          for (final cost in record.itemCosts) cost.itemId: cost,
+        };
         for (final itemId in RecordRules.uniqueItemIds(record.itemIds)) {
           final mappedItemId = itemIdMap[itemId];
           if (mappedItemId == null) {
@@ -149,6 +166,9 @@ class BackupRepository {
               'Backup maintenance record references missing item',
             );
           }
+          // 项目费用按备份里的旧 itemId 取值，随行恢复（金额本身不需要
+          // 重映射，只有 itemId 要换成新雪花 id）。
+          final cost = costsByItemId[itemId];
           await database
               .into(database.maintenanceRecordItems)
               .insert(
@@ -158,6 +178,9 @@ class BackupRepository {
                   carId: carId,
                   itemId: mappedItemId,
                   date: record.date,
+                  materialCostCents: cost?.materialCents,
+                  laborCostCents: cost?.laborCents,
+                  costCents: cost?.costCents,
                 ),
               );
         }

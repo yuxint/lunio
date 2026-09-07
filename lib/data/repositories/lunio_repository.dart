@@ -424,7 +424,7 @@ class LunioRepository {
   }
 
   /// 某车辆全部记录（日期倒序）。两次查询组装：主表 + 关联表按
-  /// maintenanceRecordId 分组拼 itemIds，避免 N+1。
+  /// maintenanceRecordId 分组拼 itemIds 与项目费用，避免 N+1。
   /// 无分页——记录页全量载入内存过滤。
   Future<List<domain.MaintenanceRecord>> listMaintenanceRecordsForCar(
     int carId,
@@ -441,15 +441,25 @@ class LunioRepository {
             database.maintenanceRecordItems,
           )..where((row) => row.maintenanceRecordId.isIn(recordIds))).get();
     final itemIdsByRecordId = <int, List<int>>{};
+    final itemCostsByRecordId = <int, List<domain.RecordItemCost>>{};
     for (final row in itemRows) {
       itemIdsByRecordId
           .putIfAbsent(row.maintenanceRecordId, () => [])
           .add(row.itemId);
+      final cost = recordItemCostFromRow(row);
+      if (cost != null) {
+        itemCostsByRecordId
+            .putIfAbsent(row.maintenanceRecordId, () => [])
+            .add(cost);
+      }
     }
     return recordRows
         .map(
-          (row) =>
-              maintenanceRecordFromRow(row, itemIdsByRecordId[row.id] ?? const []),
+          (row) => maintenanceRecordFromRow(
+            row,
+            itemIdsByRecordId[row.id] ?? const [],
+            itemCostsByRecordId[row.id] ?? const [],
+          ),
         )
         .toList();
   }
@@ -576,19 +586,11 @@ class LunioRepository {
     await (database.delete(
       database.maintenanceRecordItems,
     )..where((row) => row.maintenanceRecordId.equals(recordId))).go();
-    for (final itemId in uniqueItemIds) {
-      await database
-          .into(database.maintenanceRecordItems)
-          .insert(
-            maintenanceRecordItemCompanion(
-              id: SnowflakeIdGenerator.instance.next(),
-              recordId: recordId,
-              carId: record.carId,
-              itemId: itemId,
-              date: record.date,
-            ),
-          );
-    }
+    await _insertRecordItemRowsInTransaction(
+      recordId: recordId,
+      record: record,
+      uniqueItemIds: uniqueItemIds,
+    );
     await _syncCarMileageInTransaction(
       carId: record.carId,
       recordMileageKm: record.mileageKm,
@@ -605,7 +607,31 @@ class LunioRepository {
         .into(database.maintenanceRecords)
         .insert(maintenanceRecordCompanion(record, recordId));
 
+    await _insertRecordItemRowsInTransaction(
+      recordId: recordId,
+      record: record,
+      uniqueItemIds: uniqueItemIds,
+    );
+
+    await _syncCarMileageInTransaction(
+      carId: record.carId,
+      recordMileageKm: record.mileageKm,
+    );
+    return recordId;
+  }
+
+  /// 事务内重建记录关联行：每个选中项目一行，费用按 itemId 从
+  /// record.itemCosts 里取（没有费用条目的项目三列为 null，ADR 0010）。
+  Future<void> _insertRecordItemRowsInTransaction({
+    required int recordId,
+    required domain.MaintenanceRecord record,
+    required List<int> uniqueItemIds,
+  }) async {
+    final costsByItemId = <int, domain.RecordItemCost>{
+      for (final cost in record.itemCosts) cost.itemId: cost,
+    };
     for (final itemId in uniqueItemIds) {
+      final cost = costsByItemId[itemId];
       await database
           .into(database.maintenanceRecordItems)
           .insert(
@@ -615,15 +641,12 @@ class LunioRepository {
               carId: record.carId,
               itemId: itemId,
               date: record.date,
+              materialCostCents: cost?.materialCents,
+              laborCostCents: cost?.laborCents,
+              costCents: cost?.costCents,
             ),
           );
     }
-
-    await _syncCarMileageInTransaction(
-      carId: record.carId,
-      recordMileageKm: record.mileageKm,
-    );
-    return recordId;
   }
 
   /// 事务内更新项目提醒间隔（记录表单第二步提交的间隔修改）。

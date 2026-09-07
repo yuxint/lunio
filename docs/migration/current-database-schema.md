@@ -1,15 +1,16 @@
 # 当前数据库表结构
 
-本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、数据库
-`schemaVersion`、备份 JSON `schemaVersion`、车型目录 asset `schemaVersion`
-当前均为 `1`（起点归一，见 docs/adr/0005）。
+本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、车型目录
+asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `2`
+（ADR 0010）；备份 JSON `schemaVersion` 为 `2`（解码兼容读 v1，见下文
+"备份契约边界"）。
 
 本文只记录当前代码事实，不记录历史版本演变。事实源是
 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
 ## 版本和升级策略（ADR 0005）
 
-- 当前数据库：`schemaVersion = 1`。
+- 当前数据库：`schemaVersion = 2`。
 - 只服务全新安装：新装走 `createAll` 建全部表，然后 bootstrap 从 asset
   目录灌入车型目录与默认保养模板。
 - 库文件版本与代码不一致（无论升或降）时，`migration` 返回 Drift 的
@@ -165,7 +166,9 @@
 
 ### `maintenance_record_items`
 
-保养记录和保养项目关联表，用于表达一条记录包含多个项目。
+保养记录和保养项目关联表，用于表达一条记录包含多个项目。一行 =
+一条记录 × 一个项目（≈ 订单明细行），项目费用三列挂在该行上
+（docs/adr/0010），同一个项目每次保养的价格不同由行天然区分。
 
 字段：
 
@@ -174,6 +177,9 @@
 - `car_id`：所属车辆 ID，冗余保存。
 - `item_id`：保养项目 ID，来源于 `maintenance_items.id`。
 - `date`：保养日期，冗余保存，格式 `yyyy-MM-dd`。
+- `material_cost_cents`：该项目本次的材料费，单位分，可空（未填）。
+- `labor_cost_cents`：该项目本次的工时费，单位分，可空（未填）。
+- `cost_cents`：该项目本次的项目费用，单位分，可空（未填）。
 
 约束：
 
@@ -186,6 +192,11 @@
 
 - Repository 保存记录时会校验项目存在且属于同一车辆。
 - 同一车辆同一天同一项目只能出现一次。
+- 费用三列允许合法的不一致（如优惠改价后项目费用 ≠ 材料+工时），
+  读取方原样展示并按规则标提示（红字 + 黄色警告角标），不做读时修正。
+- 单个项目的权威值是 `cost_cents`（求和与展示都取它）；单条记录的
+  权威值是 `maintenance_records.cost_cents`。
+- 从记录删除单个项目时，该项目的费用随关联行一起删除。
 
 ### `fuel_predictions`
 
@@ -255,15 +266,18 @@
 
 ## 备份契约边界
 
-当前 JSON 备份契约版本为 `schemaVersion = 1`，由
-`lib/data/backup/backup_codec.dart` 编码/解码。解码只认版本 1，其他版本
-直接拒绝，不做旧版本字段回退（docs/adr/0005）。
+当前 JSON 备份契约版本为 `schemaVersion = 2`，由
+`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1 与 v2——
+v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没有它就
+等于"项目费用全部未填"，按空读入（docs/adr/0010 修订）；除此之外的
+版本直接拒绝，不做旧版本字段回退（docs/adr/0005）。
 
 备份导出包含：
 
 - `cars`（含 `powertrainType`；含 `tankCapacityLiters`，可空）
 - `maintenanceItems`
-- `records`
+- `records`（v2 条目含 `itemCosts`：`{ itemId, materialCents, laborCents, costCents }`，
+  三个金额可空，只写有内容的项目）
 - `fuelPrediction`（全局加油设置：省份 + 油品编号，用户改过才有值）
 - `fuelPredictions`（每车加油预测设置：剩余油量）
 

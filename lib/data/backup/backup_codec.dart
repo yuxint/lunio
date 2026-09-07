@@ -1,18 +1,23 @@
 // 备份 JSON 的编解码器（≈ Java 里的 Jackson 手写 Serializer/Deserializer）。
 //
-// 备份契约（schemaVersion = 1，与数据库 schemaVersion=1 是两套独立版本号）：
+// 备份契约（schemaVersion = 2，与数据库 schemaVersion 是两套独立版本号）：
 // {
-//   "schemaVersion": 1,
+//   "schemaVersion": 2,
 //   "cars": [ { id, brand, model, powertrainType, currentMileageKm, roadDate,
 //               tankCapacityLiters, sync } ],
 //   "maintenanceItems": [ { id, carsId, name, ..., sync } ],
-//   "records": [ { id, carId, date, itemIds[], costCents, mileageKm, note, sync } ],
+//   "records": [ { id, carId, date, itemIds[], itemCosts[], costCents,
+//                  mileageKm, note, sync } ],
 //   "fuelPrediction": { "province": "湖北", "gradeCode": "92" },
 //   "fuelPredictions": [ { carId, fuelPercent, sync } ]
 // }
+// itemCosts 条目：{ itemId, materialCents, laborCents, costCents }，
+// 三个金额都可空（null = 未填），只写有内容的项目（ADR 0010）。
 //
-// 解码只认 schemaVersion=1，其他版本直接拒绝，不做旧版本字段回退
-// （ADR 0005）。油价缓存与手填油价是临时数据，不进备份。
+// 版本兼容（ADR 0010 修订）：解码接受 v1 与 v2——v2 只比 v1 多了纯增量
+// 的 itemCosts 字段，v1 条目没有它就等于"全部项目费用未填"，按空读入
+// 即可；这不是 ADR 0005 禁止的"旧字段语义变化回退"。除此之外的版本
+// 直接拒绝，不做字段回退。油价缓存与手填油价是临时数据，不进备份。
 //
 // ⚠ 契约边界（改字段前必读）：
 //  - 不包含偏好（主题/应用车辆/通知设置/snooze 等）；
@@ -29,7 +34,6 @@ import '../../domain/entities/maintenance_item.dart';
 import '../../domain/entities/maintenance_record.dart';
 import '../../domain/entities/powertrain_type.dart';
 import '../../domain/entities/sync_metadata.dart';
-
 /// 备份载荷对象：待编码/已解码的全量业务数据。
 class BackupPayload {
   const BackupPayload({
@@ -41,7 +45,7 @@ class BackupPayload {
     this.fuelPredictions = const [],
   });
 
-  /// 备份契约版本（ADR 0005：只认 1，不做旧版本兼容）。
+  /// 备份契约版本（v1 = 旧版无项目费用；v2 = 当前，见 ADR 0010）。
   final int schemaVersion;
   final List<Car> cars;
   final List<MaintenanceItem> maintenanceItems;
@@ -63,11 +67,14 @@ class BackupFuelPreference {
 }
 
 /// 编解码器。无状态，UI 层（settings_data.dart）直接实例化使用。
-class BackupCodec {
+final class BackupCodec {
   const BackupCodec();
 
-  /// 当前写入的备份契约版本（ADR 0005）。
-  static const int currentSchemaVersion = 1;
+  /// 当前写入的备份契约版本。
+  static const int currentSchemaVersion = 2;
+
+  /// 解码接受的版本：当前版本 + 纯增量兼容的 v1（缺 itemCosts = 费用全空）。
+  static const List<int> supportedSchemaVersions = [1, 2];
 
   /// 编码为 JSON 字符串（导出文件内容）。
   String encode(BackupPayload payload) {
@@ -90,14 +97,15 @@ class BackupCodec {
 
   /// 从 JSON 字符串解码（导入文件内容）。
   ///
-  /// 只接受当前版本，其他版本抛 UnsupportedError，UI 提示"不支持的备份
-  /// 文件"（ADR 0005：不做旧版本兼容）。引用完整性由
+  /// 接受 v1/v2（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
+  /// UI 提示"不支持的备份文件"（ADR 0005：不做版本分支兼容；ADR 0010：
+  /// v1 是纯增量缺失，按"项目费用全空"读入）。引用完整性由
   /// Repository._validateBackupReferences 负责，业务规则（金额/里程非负
   /// 等）恢复时不校验（审查报告 R35）。
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;
-    if (version != currentSchemaVersion) {
+    if (!supportedSchemaVersions.contains(version)) {
       throw UnsupportedError('Unsupported backup schemaVersion: $version');
     }
     final fuelPreferenceMap = map['fuelPrediction'] as Map<String, Object?>?;
@@ -198,10 +206,20 @@ class BackupCodec {
       'carId': record.carId,
       'date': record.date.toString(),
       'itemIds': record.itemIds,
+      'itemCosts': record.itemCosts.map(_itemCostToJson).toList(),
       'costCents': record.costCents,
       'mileageKm': record.mileageKm,
       'note': record.note,
       'sync': record.sync.toJson(),
+    };
+  }
+
+  Map<String, Object?> _itemCostToJson(RecordItemCost cost) {
+    return {
+      'itemId': cost.itemId,
+      'materialCents': cost.materialCents,
+      'laborCents': cost.laborCents,
+      'costCents': cost.costCents,
     };
   }
 
@@ -211,12 +229,27 @@ class BackupCodec {
       carId: json['carId'] as int,
       date: LocalDate.parse(json['date'] as String),
       itemIds: (json['itemIds'] as List).cast<int>(),
+      // v1 备份没有 itemCosts 字段 = 全部项目费用未填，按空列表读入
+      // （ADR 0010 的纯增量兼容）。
+      itemCosts: ((json['itemCosts'] as List?) ?? const [])
+          .cast<Map<String, Object?>>()
+          .map(_itemCostFromJson)
+          .toList(),
       costCents: json['costCents'] as int,
       mileageKm: json['mileageKm'] as int,
       note: json['note'] as String?,
       sync: SyncMetadata.fromJson(
         (json['sync'] as Map).cast<String, Object?>(),
       ),
+    );
+  }
+
+  RecordItemCost _itemCostFromJson(Map<String, Object?> json) {
+    return RecordItemCost(
+      itemId: json['itemId'] as int,
+      materialCents: json['materialCents'] as int?,
+      laborCents: json['laborCents'] as int?,
+      costCents: json['costCents'] as int?,
     );
   }
 

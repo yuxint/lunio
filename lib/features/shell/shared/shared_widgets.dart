@@ -332,6 +332,7 @@ class LunioNumberField extends StatelessWidget {
     this.enabled = true,
     this.autofocus = false,
     this.alwaysFloatLabel = false,
+    this.warning = false,
     this.onTap,
     this.onChanged,
     this.onSubmitted,
@@ -354,6 +355,10 @@ class LunioNumberField extends StatelessWidget {
   /// 标签是否始终浮在框顶（油箱容积用：空值时标签不落回占位位置）。
   final bool alwaysFloatLabel;
 
+  /// 警告态（费用不一致提示，ADR 0010）：数字红字 + 框尾黄色警告角标。
+  /// 纯展示，不影响输入。
+  final bool warning;
+
   /// 点击输入框（记录/车辆表单的"点进来清 0"交互）。
   final VoidCallback? onTap;
 
@@ -371,10 +376,17 @@ class LunioNumberField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
     return TextField(
       controller: controller,
       enabled: enabled,
       autofocus: autofocus,
+      style: warning
+          ? TextStyle(
+              color: tokens.danger,
+              fontWeight: FontWeight.w800,
+            )
+          : null,
       keyboardType: TextInputType.numberWithOptions(
         decimal: decimals == null || decimals! > 0,
       ),
@@ -402,6 +414,13 @@ class LunioNumberField extends StatelessWidget {
       ).copyWith(
         floatingLabelBehavior: alwaysFloatLabel
             ? FloatingLabelBehavior.always
+            : null,
+        suffixIcon: warning
+            ? Icon(
+                Icons.warning_amber_rounded,
+                size: 20,
+                color: tokens.warning,
+              )
             : null,
       ),
     );

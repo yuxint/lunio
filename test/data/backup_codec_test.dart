@@ -113,11 +113,104 @@ void main() {
     final badJson = encoded.replaceFirst('"powertrainType":"ev"', '"powertrainType":"nuclear"');
     expect(() => codec.decode(badJson), throwsArgumentError);
 
-    // 其他版本号直接拒绝（ADR 0005：不做旧版本兼容）。
-    final v2Json = encoded.replaceFirst(
+    // v1/v2 之外的版本号直接拒绝（ADR 0005：不做版本分支兼容；
+    // ADR 0010：v1 是唯一例外，纯增量缺失按空读入）。
+    final v99Json = encoded.replaceFirst(
       '"schemaVersion":${BackupCodec.currentSchemaVersion}',
-      '"schemaVersion":2',
+      '"schemaVersion":99',
     );
-    expect(() => codec.decode(v2Json), throwsUnsupportedError);
+    expect(() => codec.decode(v99Json), throwsUnsupportedError);
+  });
+
+  test('backup round-trips item costs and accepts v1 files', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    const codec = BackupCodec();
+    final payload = BackupPayload(
+      schemaVersion: BackupCodec.currentSchemaVersion,
+      cars: [
+        Car(
+          id: 1,
+          brand: '本田',
+          model: '思域',
+          powertrainType: PowertrainType.fuel,
+          currentMileageKm: 38600,
+          roadDate: const LocalDate(2023, 8, 12),
+          sync: sync,
+        ),
+      ],
+      maintenanceItems: [
+        MaintenanceItem(
+          id: 1,
+          carsId: 1,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: true,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: 6,
+          sortOrder: 1,
+          sync: sync,
+        ),
+        MaintenanceItem(
+          id: 2,
+          carsId: 1,
+          name: '机滤',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: true,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: 6,
+          sortOrder: 2,
+          sync: sync,
+        ),
+      ],
+      records: [
+        MaintenanceRecord(
+          id: 1,
+          carId: 1,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: const [1, 2],
+          // 项目费用 23000 + 5000 = 28000 与总费用一致；机滤只填项目费用。
+          itemCosts: const [
+            RecordItemCost(
+              itemId: 1,
+              materialCents: 15000,
+              laborCents: 8000,
+              costCents: 23000,
+            ),
+            RecordItemCost(itemId: 2, costCents: 5000),
+          ],
+          costCents: 28000,
+          mileageKm: 38600,
+          sync: sync,
+        ),
+      ],
+    );
+
+    final encoded = codec.encode(payload);
+    expect(encoded, contains('"itemCosts"'));
+
+    final decoded = codec.decode(encoded);
+    final decodedCosts = decoded.records.single.itemCosts;
+    expect(decodedCosts, hasLength(2));
+    expect(decodedCosts.first.materialCents, 15000);
+    expect(decodedCosts.first.laborCents, 8000);
+    expect(decodedCosts.first.costCents, 23000);
+    expect(decodedCosts.last.costCents, 5000);
+    expect(decodedCosts.last.laborCents, isNull);
+
+    // v1 备份（没有 itemCosts 字段）可以导入：项目费用按全空读入
+    // （ADR 0010 的纯增量兼容，v1 文件的语义就是"费用未填"）。
+    final v1Json = encoded
+        .replaceFirst('"schemaVersion":2', '"schemaVersion":1')
+        .replaceAll(RegExp(r'"itemCosts":\[[^\]]*\],'), '');
+    final v1 = codec.decode(v1Json);
+    expect(v1.schemaVersion, 1);
+    expect(v1.records.single.itemIds, [1, 2]);
+    expect(v1.records.single.itemCosts, isEmpty);
+    expect(v1.records.single.costCents, 28000);
   });
 }
