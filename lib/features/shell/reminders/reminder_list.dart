@@ -168,7 +168,8 @@ class ReminderRow extends StatelessWidget {
   }
 }
 
-/// 点击提醒行弹出的详情 sheet：上次保养日期/里程（无记录显示占位卡）。
+/// 点击提醒行弹出的详情 sheet：上次保养日期/里程 + 距上次时间/里程
+/// （参照点 = 今天 / 车辆当前里程；无记录显示占位卡）。
 void showReminderRecordDetail(BuildContext context, ReminderViewData row) {
   final record = row.latestRecord;
   showLunioModalSheet<void>(
@@ -211,6 +212,26 @@ void showReminderRecordDetail(BuildContext context, ReminderViewData row) {
                         child: ReminderRecordMetric(
                           label: '上次保养里程',
                           value: '${formatNumber(record.mileageKm)} km',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // 距上次（参照点 = 今天 / 当前里程）：无上一条或差值为负
+                  // 时由格式化函数兜底显示 —。
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ReminderRecordMetric(
+                          label: '距上次时间',
+                          value: formatDaysSinceLast(row.daysSinceLatest),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ReminderRecordMetric(
+                          label: '距上次里程',
+                          value: formatKmSinceLast(row.kmSinceLatest),
                         ),
                       ),
                     ],

@@ -308,6 +308,12 @@ void main() {
     expect(find.text('2026-05-19'), findsOneWidget);
     expect(find.text('上次保养里程'), findsOneWidget);
     expect(find.text('13,000 km'), findsOneWidget);
+    // 距上次时间 = 2026-05-19 → 手动日期 2027-05-19 共 365 天 → "1年"。
+    expect(find.text('距上次时间'), findsOneWidget);
+    expect(find.text('1年'), findsOneWidget);
+    // 记录保存时车辆里程被同步提升到 13,000（里程只增规则）→ 差值 0。
+    expect(find.text('距上次里程'), findsOneWidget);
+    expect(find.text('0 km'), findsOneWidget);
   });
 
 

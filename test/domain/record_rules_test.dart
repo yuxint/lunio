@@ -174,4 +174,80 @@ void main() {
       ]),
     );
   });
+
+  test('previous record for item is the latest one strictly before date', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    MaintenanceRecord record(LocalDate date, int mileageKm, List<int> itemIds) =>
+        MaintenanceRecord(
+          carId: 1,
+          date: date,
+          itemIds: itemIds,
+          itemCosts: const [],
+          costCents: 0,
+          mileageKm: mileageKm,
+          sync: sync,
+        );
+    final records = [
+      record(const LocalDate(2026, 1, 10), 5000, [1]),
+      // 含项目 2 的记录也算项目 2 的历史（只要 itemIds 包含即可）。
+      record(const LocalDate(2026, 3, 20), 8000, [1, 2]),
+      record(const LocalDate(2026, 5, 19), 12000, [1]),
+    ];
+
+    // 上一条 = 严格早于本条日期的最新一条（同车同日唯一，可唯一定位）。
+    final previous = RecordRules.previousRecordForItem(
+      records: records,
+      itemId: 1,
+      beforeDate: const LocalDate(2026, 5, 19),
+    );
+    expect(previous?.date, const LocalDate(2026, 3, 20));
+    expect(previous?.mileageKm, 8000);
+
+    // 本条自身不算上一条（同日被排除）：项目首条无上一条 → null。
+    expect(
+      RecordRules.previousRecordForItem(
+        records: records,
+        itemId: 1,
+        beforeDate: const LocalDate(2026, 1, 10),
+      ),
+      isNull,
+    );
+
+    // 某项目首条之前的记录都不含该项目 → null。
+    expect(
+      RecordRules.previousRecordForItem(
+        records: records,
+        itemId: 2,
+        beforeDate: const LocalDate(2026, 3, 20),
+      ),
+      isNull,
+    );
+
+    // 列表乱序传入同样取最新（不依赖列表顺序）。
+    final shuffled = [records[2], records[0], records[1]];
+    expect(
+      RecordRules.previousRecordForItem(
+        records: shuffled,
+        itemId: 1,
+        beforeDate: const LocalDate(2026, 5, 19),
+      )?.date,
+      const LocalDate(2026, 3, 20),
+    );
+
+    // 本条日期之后才出现的记录不算上一条（严格早于，不含当天）。
+    expect(
+      RecordRules.previousRecordForItem(
+        records: [
+          ...records,
+          record(const LocalDate(2026, 8, 1), 20000, [1]),
+        ],
+        itemId: 1,
+        beforeDate: const LocalDate(2026, 5, 19),
+      )?.date,
+      const LocalDate(2026, 3, 20),
+    );
+  });
 }

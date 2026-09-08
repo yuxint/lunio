@@ -437,11 +437,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('机油'), findsWidgets);
+    // 夹具只有一条记录（该项目首条），距上次两格无参照点 → 占位 —。
+    expect(find.text('距上次时间'), findsOneWidget);
+    expect(find.text('距上次里程'), findsOneWidget);
+    expect(find.text('—'), findsNWidgets(2));
+    // 项目费用拆两行：材料费/工时费一行 + 项目费用一行。
+    expect(find.text('材料费'), findsOneWidget);
+    expect(find.text('工时费'), findsOneWidget);
+    expect(find.text('¥150.00'), findsOneWidget);
+    expect(find.text('¥80.00'), findsOneWidget);
     expect(find.text('项目费用'), findsOneWidget);
     expect(find.text('¥230.00'), findsOneWidget);
-    expect(find.text('总费用'), findsOneWidget);
-    expect(find.text('¥280.00'), findsOneWidget);
-    expect(find.textContaining('材料 ¥150.00 / 工时 ¥80.00'), findsOneWidget);
+    // 按项目弹窗不再展示整条记录总费用（格子和副标题都已移除）。
+    expect(find.text('总费用'), findsNothing);
+    expect(find.text('¥280.00'), findsNothing);
+    expect(find.textContaining('整条记录总费用'), findsNothing);
     // 单项目费用本身一致（230 = 150 + 80），无警告角标。
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
   });

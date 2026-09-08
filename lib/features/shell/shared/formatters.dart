@@ -109,6 +109,24 @@ String formatReminderDuration(int days) {
   return '$years年$restMonths个月';
 }
 
+/// 「距上次时间」文案（提醒页详情与按项目记录详情共用）：天数转
+/// 友好时长；没有可算的上一条（null）或差值为负（补录乱序）显示占位 —。
+String formatDaysSinceLast(int? days) {
+  if (days == null || days < 0) {
+    return '—';
+  }
+  return formatReminderDuration(days);
+}
+
+/// 「距上次里程」文案（两个详情弹窗共用）：里程差千分位 + km；
+/// 没有可算的上一条（null）或差值为负显示占位 —。
+String formatKmSinceLast(int? km) {
+  if (km == null || km < 0) {
+    return '—';
+  }
+  return '${formatNumber(km)} km';
+}
+
 /// 识别 SQLite 唯一约束冲突（消息文本匹配 2067），
 /// 备份恢复冲突弹窗靠它区分文案。
 bool isUniqueConstraintError(Object error) {

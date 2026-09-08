@@ -193,6 +193,8 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
             child: RecordCycleCard(
               record: record,
               items: items,
+              // 详情弹窗的"距上次"要用未筛选的全量记录找上一条。
+              carRecords: records,
               onEdit: (record) =>
                   showMaintenanceRecordFormSheet(context, ref, record: record),
               onDelete: (record) =>
@@ -202,12 +204,22 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
         },
       );
     }
-    return _buildItemRowsSliver(filteredRecords, items, selections.itemIds);
+    // 第二个列表参数是未筛选的全量记录：按项目视图找"上一条"必须用
+    // 它，筛选后的列表在按年份过滤时会把上一条筛掉导致误显示 —。
+    return _buildItemRowsSliver(
+      filteredRecords,
+      records,
+      items,
+      selections.itemIds,
+    );
   }
 
   /// 按项目视图：记录×项目展开成行，同样走 SliverList.builder。
+  /// [records] 是筛选后的展示列表，[allRecords] 是该车全量记录
+  /// （仅用于详情弹窗定位同项目上一条记录）。
   Widget _buildItemRowsSliver(
     List<MaintenanceRecord> records,
+    List<MaintenanceRecord> allRecords,
     List<MaintenanceItem> items,
     Set<int> validSelectedItemIds,
   ) {
@@ -242,6 +254,7 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
             record: row.record,
             itemId: row.itemId,
             item: row.item,
+            carRecords: allRecords,
             onEdit: (record, itemId) =>
                 showMaintenanceRecordFormSheet(context, ref, record: record),
             onDelete: (record, itemId) =>
@@ -260,12 +273,16 @@ class RecordCycleCard extends StatelessWidget {
   const RecordCycleCard({
     required this.record,
     required this.items,
+    required this.carRecords,
     required this.onEdit,
     required this.onDelete,
   });
 
   final MaintenanceRecord record;
   final List<MaintenanceItem> items;
+
+  /// 该车全量记录（未筛选），原样传给详情弹窗。
+  final List<MaintenanceRecord> carRecords;
   final ValueChanged<MaintenanceRecord> onEdit;
   final ValueChanged<MaintenanceRecord> onDelete;
 
@@ -280,8 +297,12 @@ class RecordCycleCard extends StatelessWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
         child: InkWell(
-          onTap: () =>
-              showRecordDetailSheet(context, record: record, items: items),
+          onTap: () => showRecordDetailSheet(
+            context,
+            record: record,
+            items: items,
+            carRecords: carRecords,
+          ),
           borderRadius: BorderRadius.circular(tokens.radiusLarge),
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -369,6 +390,7 @@ class RecordItemRowCard extends StatelessWidget {
     required this.record,
     required this.itemId,
     required this.item,
+    required this.carRecords,
     required this.onEdit,
     required this.onDelete,
   });
@@ -376,6 +398,9 @@ class RecordItemRowCard extends StatelessWidget {
   final MaintenanceRecord record;
   final int itemId;
   final MaintenanceItem? item;
+
+  /// 该车全量记录（未筛选）：详情弹窗定位该项目上一条记录用。
+  final List<MaintenanceRecord> carRecords;
   final void Function(MaintenanceRecord record, int itemId) onEdit;
   final void Function(MaintenanceRecord record, int itemId) onDelete;
 
@@ -393,6 +418,7 @@ class RecordItemRowCard extends StatelessWidget {
             context,
             record: record,
             items: [?item],
+            carRecords: carRecords,
             focusItemId: itemId,
           ),
           borderRadius: BorderRadius.circular(tokens.radiusLarge),
@@ -1331,14 +1357,16 @@ String formatMoneyText(int cents) => (cents / 100).toStringAsFixed(2);
 /// ★ 记录详情弹窗（记录页两种视图的整卡点击入口，ADR 0010）：
 ///  - focusItemId 为空（按周期视图）：看整条记录——日期/里程/总费用
 ///    指标格 + 备注 + 全部项目费用清单；
-///  - focusItemId 非空（按项目视图）：只看该项目——日期/里程 + 项目
-///    费用（含材料/工时小字）+ 整条记录总费用。
+///  - focusItemId 非空（按项目视图）：只看该项目——日期/里程 + 距上次
+///    时间/里程（参照点 = 该项目上一条记录 → 本条）+ 材料费/工时费
+///    一行 + 项目费用格。
 /// 展示永远取存储值（单项目以项目费用为准、整条以总费用为准），
 /// 不一致的项目费用/总费用加黄色警告角标，不做读时修正。
 void showRecordDetailSheet(
   BuildContext context, {
   required MaintenanceRecord record,
   required List<MaintenanceItem> items,
+  required List<MaintenanceRecord> carRecords,
   int? focusItemId,
 }) {
   showLunioModalSheet<void>(
@@ -1398,12 +1426,17 @@ void showRecordDetailSheet(
           ],
         );
       } else {
-        final materialText = focusCost?.materialCents;
-        final laborText = focusCost?.laborCents;
-        final splitParts = <String>[
-          if (materialText != null) '材料 ${_formatMoney(materialText)}',
-          if (laborText != null) '工时 ${_formatMoney(laborText)}',
-        ];
+        // 距上次参照点 = 该项目上一条记录 → 本条（从全量记录里找，
+        // 严格早于本条日期的最新一条）；项目首条或差值为负显示 —。
+        final previousRecord = RecordRules.previousRecordForItem(
+          records: carRecords,
+          itemId: focusItemId,
+          beforeDate: record.date,
+        );
+        final materialCents = focusCost?.materialCents;
+        final laborCents = focusCost?.laborCents;
+        // 材料费/工时费都未填时整行不显示；只填一格另一格显示 —。
+        final hasSplitCosts = materialCents != null || laborCents != null;
         content = Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1426,6 +1459,54 @@ void showRecordDetailSheet(
               ],
             ),
             const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _RecordMetricTile(
+                    label: '距上次时间',
+                    value: formatDaysSinceLast(
+                      previousRecord?.date.daysUntil(record.date),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _RecordMetricTile(
+                    label: '距上次里程',
+                    value: formatKmSinceLast(
+                      previousRecord == null
+                          ? null
+                          : record.mileageKm - previousRecord.mileageKm,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (hasSplitCosts) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _RecordMetricTile(
+                      label: '材料费',
+                      value: materialCents == null
+                          ? '—'
+                          : _formatMoney(materialCents),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _RecordMetricTile(
+                      label: '工时费',
+                      value: laborCents == null
+                          ? '—'
+                          : _formatMoney(laborCents),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 10),
             _RecordMetricTile(
               label: '项目费用',
               value: focusCost?.costCents == null
@@ -1434,18 +1515,6 @@ void showRecordDetailSheet(
               warning: focusCost != null &&
                   RecordRules.itemCostMismatch(focusCost),
             ),
-            const SizedBox(height: 10),
-            _RecordMetricTile(
-              label: '总费用',
-              value: _formatMoney(record.costCents),
-            ),
-            if (splitParts.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                splitParts.join(' / '),
-                style: Theme.of(sheetContext).textTheme.bodySmall,
-              ),
-            ],
           ],
         );
       }
@@ -1453,7 +1522,10 @@ void showRecordDetailSheet(
         title: focusItemId == null
             ? '保养记录'
             : itemById(items, focusItemId)?.name ?? '未知项目',
-        subtitle: '整条记录总费用 ${_formatMoney(record.costCents)}',
+        // 副标题只在按周期视图显示总费用；按项目视图没有总费用概念。
+        subtitle: focusItemId == null
+            ? '整条记录总费用 ${_formatMoney(record.costCents)}'
+            : null,
         child: content,
       );
     },

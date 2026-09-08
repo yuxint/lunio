@@ -32,11 +32,21 @@ class ReminderViewData {
     required this.item,
     required this.progress,
     required this.latestRecord,
+    this.daysSinceLatest,
+    this.kmSinceLatest,
   });
 
   final MaintenanceItem item;
   final ReminderProgress progress;
   final MaintenanceRecord? latestRecord;
+
+  /// 距上次时间：最近记录 → 今天的天数（今天在记录之前为负，
+  /// 详情弹窗显示占位 —）；无最近记录为 null。
+  final int? daysSinceLatest;
+
+  /// 距上次里程：车辆当前里程 − 最近记录里程（记录里程更大时为负，
+  /// 详情弹窗显示占位 —）；无最近记录为 null。
+  final int? kmSinceLatest;
 
   String get title => item.name;
 
@@ -96,6 +106,11 @@ List<ReminderViewData> buildReminderRows({
         item: item,
         progress: progress,
         latestRecord: latestRecord,
+        // 距上次（提醒页参照点 = 今天 / 车辆当前里程），详情弹窗直接读。
+        daysSinceLatest: latestRecord?.date.daysUntil(today),
+        kmSinceLatest: latestRecord == null
+            ? null
+            : car.currentMileageKm - latestRecord.mileageKm,
       ),
     );
   }

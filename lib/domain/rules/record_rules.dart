@@ -1,6 +1,7 @@
 // 保养记录校验与派生规则（纯静态工具类）。
 //
 // 由 Repository 的 4 个保存/更新入口在写库前调用（fail-fast）。
+import '../../core/date/local_date.dart';
 import '../entities/maintenance_record.dart';
 
 class RecordRules {
@@ -110,5 +111,31 @@ class RecordRules {
     return recordMileageKm > currentMileageKm
         ? recordMileageKm
         : currentMileageKm;
+  }
+
+  /// 某项目在 [beforeDate] 之前（严格早于，不含当天）的最新一条记录，
+  /// 即按项目记录详情里"距上次"的参照点（上一条 → 本条）。
+  /// 同车同日唯一约束保证日期相同必为同一条，按日期可唯一定位；
+  /// 没有更早的记录（该项目首条）返回 null。
+  /// ⚠ [records] 必须传该车全部记录：按年份/项目筛选后的子集会把
+  /// 上一条筛掉，导致弹窗误显示占位 —。
+  static MaintenanceRecord? previousRecordForItem({
+    required List<MaintenanceRecord> records,
+    required int itemId,
+    required LocalDate beforeDate,
+  }) {
+    MaintenanceRecord? previous;
+    for (final record in records) {
+      if (!record.itemIds.contains(itemId)) {
+        continue;
+      }
+      if (record.date.compareTo(beforeDate) >= 0) {
+        continue;
+      }
+      if (previous == null || record.date.compareTo(previous.date) > 0) {
+        previous = record;
+      }
+    }
+    return previous;
   }
 }
