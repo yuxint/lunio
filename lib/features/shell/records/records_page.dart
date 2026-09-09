@@ -1258,7 +1258,10 @@ void showRecordDetailSheet(
                   child: _RecordMetricTile(
                     label: '距上次时间',
                     value: formatDaysSinceLast(
-                      previousRecord?.date.daysUntil(record.date),
+                      RecordRules.daysSinceLast(
+                        baselineRecord: previousRecord,
+                        untilDate: record.date,
+                      ),
                     ),
                   ),
                 ),
@@ -1267,9 +1270,10 @@ void showRecordDetailSheet(
                   child: _RecordMetricTile(
                     label: '距上次里程',
                     value: formatKmSinceLast(
-                      previousRecord == null
-                          ? null
-                          : record.mileageKm - previousRecord.mileageKm,
+                      RecordRules.kmSinceLast(
+                        baselineRecord: previousRecord,
+                        untilMileageKm: record.mileageKm,
+                      ),
                     ),
                   ),
                 ),

@@ -250,4 +250,117 @@ void main() {
       const LocalDate(2026, 3, 20),
     );
   });
+
+  test('latest record for item is the newest one containing the item', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    MaintenanceRecord record(LocalDate date, int mileageKm, List<int> itemIds) =>
+        MaintenanceRecord(
+          carId: 1,
+          date: date,
+          itemIds: itemIds,
+          itemCosts: const [],
+          costCents: 0,
+          mileageKm: mileageKm,
+          sync: sync,
+        );
+    final records = [
+      record(const LocalDate(2026, 1, 10), 5000, [1]),
+      record(const LocalDate(2026, 3, 20), 8000, [1, 2]),
+      // 不含项目 1 的记录不参与比较。
+      record(const LocalDate(2026, 9, 1), 30000, [2]),
+    ];
+
+    // 最近一次 = 含该项目的记录里日期最新的一条。
+    final latest = RecordRules.latestRecordForItem(
+      records: records,
+      itemId: 1,
+    );
+    expect(latest?.date, const LocalDate(2026, 3, 20));
+    expect(latest?.mileageKm, 8000);
+
+    // 列表乱序传入同样取最新（不依赖列表顺序）。
+    final shuffled = [records[2], records[0], records[1]];
+    expect(
+      RecordRules.latestRecordForItem(records: shuffled, itemId: 1)?.date,
+      const LocalDate(2026, 3, 20),
+    );
+
+    // 没有任何含该项目的记录 → null。
+    expect(
+      RecordRules.latestRecordForItem(records: records, itemId: 99),
+      isNull,
+    );
+  });
+
+  test('days/km since last fold no-baseline and negative into null', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    final baseline = MaintenanceRecord(
+      carId: 1,
+      date: const LocalDate(2026, 5, 19),
+      itemIds: const [1],
+      itemCosts: const [],
+      costCents: 0,
+      mileageKm: 12000,
+      sync: sync,
+    );
+
+    // 无基线（该项目首条）→ null。
+    expect(
+      RecordRules.daysSinceLast(
+        baselineRecord: null,
+        untilDate: const LocalDate(2026, 8, 18),
+      ),
+      isNull,
+    );
+    expect(
+      RecordRules.kmSinceLast(baselineRecord: null, untilMileageKm: 15000),
+      isNull,
+    );
+
+    // 正常可算：基线 → 参照点的差值。
+    expect(
+      RecordRules.daysSinceLast(
+        baselineRecord: baseline,
+        untilDate: const LocalDate(2026, 8, 18),
+      ),
+      91,
+    );
+    expect(
+      RecordRules.kmSinceLast(baselineRecord: baseline, untilMileageKm: 15000),
+      3000,
+    );
+
+    // 差值为负（补录乱序：基线在参照点之后 / 基线里程更大）→ null，
+    // 负值不参与提醒计算（CONTEXT.md「距上次」）。
+    expect(
+      RecordRules.daysSinceLast(
+        baselineRecord: baseline,
+        untilDate: const LocalDate(2026, 5, 18),
+      ),
+      isNull,
+    );
+    expect(
+      RecordRules.kmSinceLast(baselineRecord: baseline, untilMileageKm: 11000),
+      isNull,
+    );
+
+    // 差值为 0 是合法可算值（当天同日 / 里程相同），不折叠。
+    expect(
+      RecordRules.daysSinceLast(
+        baselineRecord: baseline,
+        untilDate: const LocalDate(2026, 5, 19),
+      ),
+      0,
+    );
+    expect(
+      RecordRules.kmSinceLast(baselineRecord: baseline, untilMileageKm: 12000),
+      0,
+    );
+  });
 }

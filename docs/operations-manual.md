@@ -169,10 +169,10 @@ appDatabaseProvider(:232)
 | 步骤 | 代码位置 | 做了什么 |
 |---|---|---|
 | 1 | `reminder_list.dart:22 → ReminderList` | 空态处理：无任何记录 → "记录首保后再生成保养提醒"（产品口径：无记录不产生提醒）；无启用项目 → 引导去"我的"配置 |
-| 2 | `reminder_notifications.dart:85 → buildReminderRows` | 只取启用项目 → 逐项找最近记录（`:455 → latestRecordForItem`，先比日期同日比里程）→ 调 **进度计算**（见下）→ 排序（状态→百分比→sortOrder） |
+| 2 | `reminder_notifications.dart:88 → buildReminderRows` | 只取启用项目 → 逐项找最近记录（`RecordRules.latestRecordForItem`，domain 层；同项目同日唯一约束保证按日期可唯一定位，无"同日多条"并列）→ 调 **进度计算**（见下）→ 排序（状态→百分比→sortOrder） |
 | 3 | `lib/domain/rules/maintenance_rules.dart:120 → progressForItem` | 里程维（当前里程−基线）/间隔、时间维（今天−基线日）/总天数，**双维取大**为展示进度；状态按项目阈值（默认 100 黄 / 125 红） |
 | 4 | `reminder_list.dart:88 → ReminderRow` | 进度环（`ReminderProgressRingPainter`）+ 状态徽章 + 剩余里程/时间文案 |
-| 5 | 点击行 → `reminder_list.dart:173 → showReminderRecordDetail` | 弹上次保养日期/里程 + 距上次时间/里程 sheet（距上次字段在 `buildReminderRows` 构造 `ReminderViewData` 时算好：`latestRecord.date.daysUntil(today)` / 车辆当前里程 − 记录里程；无记录或差值为负显示"—"） |
+| 5 | 点击行 → `reminder_list.dart:173 → showReminderRecordDetail` | 弹上次保养日期/里程 + 距上次时间/里程 sheet（距上次字段在 `buildReminderRows` 构造 `ReminderViewData` 时经 `RecordRules.daysSinceLast` / `kmSinceLast` 算好：基线记录 → 今天 / 当前里程；无记录或差值为负（补录乱序）已在 domain 折叠成 null，格式层只把 null 显示"—"） |
 
 ---
 
@@ -235,7 +235,7 @@ appDatabaseProvider(:232)
 | 视图 | 内容 | 展示规则 |
 |---|---|---|
 | 按周期（整条记录） | 标题"保养记录" + 副标题"整条记录总费用 ¥xx" + 日期/里程/总费用指标格 + 备注（有才显示）+ 项目费用清单（每勾选项目一行：项目名 + 项目费用，未填显示"—"，填了材料/工时的加小字"材料 xx / 工时 xx"） | 展示永远取存储值：单项目以项目费用为准、整条记录以总费用为准；不一致的项目费用/总费用加黄色警告角标，**不做读时修正** |
-| 按项目（单项目） | 标题=项目名（无副标题）+ 日期/里程指标格 + 距上次时间/里程指标格 + 材料费/工时费一行（两者都未填整行不显示，只填一格另一格显示"—"）+ 项目费用格（保留不一致黄三角）。距上次参照点 = 该项目**上一条记录 → 本条**（`RecordRules.previousRecordForItem`：严格早于本条日期的最新一条，同车同日唯一保证可唯一定位；项目首条无上一条 → 两格都显示"—"） | 同上；距上次差值为负（补录乱序）也显示"—"，格式复用 `formatters.dart → formatDaysSinceLast` / `formatKmSinceLast` |
+| 按项目（单项目） | 标题=项目名（无副标题）+ 日期/里程指标格 + 距上次时间/里程指标格 + 材料费/工时费一行（两者都未填整行不显示，只填一格另一格显示"—"）+ 项目费用格（保留不一致黄三角）。距上次参照点 = 该项目**上一条记录 → 本条**（`RecordRules.previousRecordForItem`：严格早于本条日期的最新一条，同车同日唯一保证可唯一定位；项目首条无上一条 → 两格都显示"—"） | 同上；差值经 `RecordRules.daysSinceLast` / `kmSinceLast` 计算，负值（补录乱序）/无上一条在 domain 折叠成 null，`formatters.dart → formatDaysSinceLast` / `formatKmSinceLast` 只把 null 显示"—" |
 
 ---
 

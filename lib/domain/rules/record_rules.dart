@@ -113,6 +113,24 @@ class RecordRules {
         : currentMileageKm;
   }
 
+  /// 某项目最近一次记录（提醒进度与"距上次"的基线，含当天）。
+  /// 同车同项目同日的唯一约束（maintenance_record_items 的
+  /// {carId, date, itemId}）保证该项目一天最多一条记录，按日期比较
+  /// 即可唯一定位——不存在"同日多条取哪条"的并列问题；
+  /// 没有任何含该项目的记录返回 null。
+  static MaintenanceRecord? latestRecordForItem({
+    required List<MaintenanceRecord> records,
+    required int itemId,
+  }) {
+    MaintenanceRecord? latest;
+    for (final record in _recordsForItem(records, itemId)) {
+      if (latest == null || record.date.compareTo(latest.date) > 0) {
+        latest = record;
+      }
+    }
+    return latest;
+  }
+
   /// 某项目在 [beforeDate] 之前（严格早于，不含当天）的最新一条记录，
   /// 即按项目记录详情里"距上次"的参照点（上一条 → 本条）。
   /// 同车同日唯一约束保证日期相同必为同一条，按日期可唯一定位；
@@ -125,10 +143,7 @@ class RecordRules {
     required LocalDate beforeDate,
   }) {
     MaintenanceRecord? previous;
-    for (final record in records) {
-      if (!record.itemIds.contains(itemId)) {
-        continue;
-      }
+    for (final record in _recordsForItem(records, itemId)) {
       if (record.date.compareTo(beforeDate) >= 0) {
         continue;
       }
@@ -137,5 +152,41 @@ class RecordRules {
       }
     }
     return previous;
+  }
+
+  /// 含 [itemId] 的记录（latest / previous 两个查询共用的过滤）。
+  static Iterable<MaintenanceRecord> _recordsForItem(
+    List<MaintenanceRecord> records,
+    int itemId,
+  ) {
+    return records.where((record) => record.itemIds.contains(itemId));
+  }
+
+  /// 距上次时间（天）：基线记录 → 参照日。CONTEXT.md「距上次（时间）」：
+  /// 无基线（该项目首条）或差值为负（补录乱序，负值不参与提醒计算）
+  /// 一律折叠成 null——"可算不可算"的判定只在这里做一次，
+  /// 调用方与格式化层只需处理 null 与非负值。
+  static int? daysSinceLast({
+    required MaintenanceRecord? baselineRecord,
+    required LocalDate untilDate,
+  }) {
+    if (baselineRecord == null) {
+      return null;
+    }
+    final days = baselineRecord.date.daysUntil(untilDate);
+    return days < 0 ? null : days;
+  }
+
+  /// 距上次里程（km）：参照里程 − 基线记录里程。
+  /// 折叠规则（无基线 / 负值 → null）与 [daysSinceLast] 相同。
+  static int? kmSinceLast({
+    required MaintenanceRecord? baselineRecord,
+    required int untilMileageKm,
+  }) {
+    if (baselineRecord == null) {
+      return null;
+    }
+    final km = untilMileageKm - baselineRecord.mileageKm;
+    return km < 0 ? null : km;
   }
 }

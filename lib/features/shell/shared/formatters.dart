@@ -110,18 +110,19 @@ String formatReminderDuration(int days) {
 }
 
 /// 「距上次时间」文案（提醒页详情与按项目记录详情共用）：天数转
-/// 友好时长；没有可算的上一条（null）或差值为负（补录乱序）显示占位 —。
+/// 友好时长；null 显示占位 —（无上一条 / 补录乱序负值两种"不可算"
+/// 已在 RecordRules 折叠成 null，这里收到的非空值必为非负）。
 String formatDaysSinceLast(int? days) {
-  if (days == null || days < 0) {
+  if (days == null) {
     return '—';
   }
   return formatReminderDuration(days);
 }
 
 /// 「距上次里程」文案（两个详情弹窗共用）：里程差千分位 + km；
-/// 没有可算的上一条（null）或差值为负显示占位 —。
+/// null 显示占位 —（折叠规则同 [formatDaysSinceLast]）。
 String formatKmSinceLast(int? km) {
-  if (km == null || km < 0) {
+  if (km == null) {
     return '—';
   }
   return '${formatNumber(km)} km';

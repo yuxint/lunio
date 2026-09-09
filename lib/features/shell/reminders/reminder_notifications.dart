@@ -22,6 +22,7 @@ import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/reminder.dart';
 import '../../../domain/rules/maintenance_rules.dart';
+import '../../../domain/rules/record_rules.dart';
 import '../shared/shell_shared.dart';
 import 'notification_coordinator.dart';
 
@@ -40,12 +41,11 @@ class ReminderViewData {
   final ReminderProgress progress;
   final MaintenanceRecord? latestRecord;
 
-  /// 距上次时间：最近记录 → 今天的天数（今天在记录之前为负，
-  /// 详情弹窗显示占位 —）；无最近记录为 null。
+  /// 距上次时间：最近记录 → 今天的天数。无最近记录，或差值为负
+  /// （补录乱序，已在 RecordRules 折叠成 null）时为 null，详情弹窗显示占位 —。
   final int? daysSinceLatest;
 
-  /// 距上次里程：车辆当前里程 − 最近记录里程（记录里程更大时为负，
-  /// 详情弹窗显示占位 —）；无最近记录为 null。
+  /// 距上次里程：车辆当前里程 − 最近记录里程。折叠规则同 [daysSinceLatest]。
   final int? kmSinceLatest;
 
   String get title => item.name;
@@ -93,7 +93,10 @@ List<ReminderViewData> buildReminderRows({
 }) {
   final rows = <ReminderViewData>[];
   for (final item in items.where((item) => item.enabled && item.id != null)) {
-    final latestRecord = latestRecordForItem(records, item.id!);
+    final latestRecord = RecordRules.latestRecordForItem(
+      records: records,
+      itemId: item.id!,
+    );
     final progress = MaintenanceRules.progressForItem(
       item: item,
       latestRecord: latestRecord,
@@ -106,11 +109,16 @@ List<ReminderViewData> buildReminderRows({
         item: item,
         progress: progress,
         latestRecord: latestRecord,
-        // 距上次（提醒页参照点 = 今天 / 车辆当前里程），详情弹窗直接读。
-        daysSinceLatest: latestRecord?.date.daysUntil(today),
-        kmSinceLatest: latestRecord == null
-            ? null
-            : car.currentMileageKm - latestRecord.mileageKm,
+        // 距上次（提醒页参照点 = 今天 / 车辆当前里程），详情弹窗直接读；
+        // 无基线或差值为负已在 domain 折叠成 null。
+        daysSinceLatest: RecordRules.daysSinceLast(
+          baselineRecord: latestRecord,
+          untilDate: today,
+        ),
+        kmSinceLatest: RecordRules.kmSinceLast(
+          baselineRecord: latestRecord,
+          untilMileageKm: car.currentMileageKm,
+        ),
       ),
     );
   }
@@ -374,25 +382,6 @@ List<ReminderViewData> maintenanceNotices({
 bool noticeDueForRow(ReminderViewData row) {
   return row.progress.status == ReminderStatus.warning ||
       row.progress.status == ReminderStatus.danger;
-}
-
-/// 某项目最近一次记录：先比日期，同日比里程（取更大者作基线）。
-MaintenanceRecord? latestRecordForItem(
-  List<MaintenanceRecord> records,
-  int itemId,
-) {
-  MaintenanceRecord? latest;
-  for (final record in records) {
-    if (!record.itemIds.contains(itemId)) {
-      continue;
-    }
-    if (latest == null ||
-        record.date.compareTo(latest.date) > 0 ||
-        (record.date == latest.date && record.mileageKm > latest.mileageKm)) {
-      latest = record;
-    }
-  }
-  return latest;
 }
 
 /// 状态排序权重（越大越紧急）。
