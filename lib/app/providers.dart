@@ -33,8 +33,9 @@
 //   │    ├─ parkingCountdownProvider（停车倒计时，存偏好表）
 //   │    ├─ effectiveTodayProvider（手动日期 ?? 系统今天）
 //   │    ├─ carsProvider ──> appliedCarProvider
-//   │    │                    ├─ appliedCarMaintenanceItemsProvider
+//   │    │                    ├─ appliedCarMaintenanceItemsProvider（派生自下面的 family）
 //   │    │                    └─ appliedCarRecordsProvider
+//   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   └─ 加油域 provider（开关/省份/油品/手填价/油价控制器）挂 fuelRepositoryProvider
@@ -306,16 +307,26 @@ final appliedCarProvider = FutureProvider<Car?>((ref) async {
   return ref.watch(lunioRepositoryProvider).getAppliedCar();
 });
 
-/// 应用车辆的保养项目列表（含启用/停用状态）。无应用车辆时空列表。
+/// 某辆车的保养项目列表（含启用/停用状态），按车 id 缓存的 family。
+/// 项目管理 sheet（可管任意一辆车，不限当前应用车辆）与记录表单行内
+/// 新增共用这一份拉取逻辑；加载、竞态、缓存、逐出由 Riverpod 接管，
+/// 写库后经 [invalidateVehicleProviders] 整族失效（家族实例无人监听
+/// 即销毁，下次 watch 重查）。
+final maintenanceItemsForCarProvider =
+    FutureProvider.family<List<MaintenanceItem>, int>((ref, carId) {
+  return ref.watch(lunioRepositoryProvider).listMaintenanceItemsForCar(carId);
+});
+
+/// 应用车辆的保养项目列表（含启用/停用状态）。只承载"当前应用车辆
+/// 解析 + 无车返回空列表"两条规则，数据拉取统一走
+/// [maintenanceItemsForCarProvider]。
 final appliedCarMaintenanceItemsProvider =
     FutureProvider<List<MaintenanceItem>>((ref) async {
       final car = await ref.watch(appliedCarProvider.future);
       if (car?.id == null) {
         return const [];
       }
-      return ref
-          .watch(lunioRepositoryProvider)
-          .listMaintenanceItemsForCar(car!.id!);
+      return ref.watch(maintenanceItemsForCarProvider(car!.id!).future);
     });
 
 /// 应用车辆的保养记录全量列表（记录页与提醒计算共用，无分页）。
@@ -366,6 +377,9 @@ void invalidateVehicleProviders(WidgetRef ref) {
   ref.invalidate(appliedCarProvider);
   ref.invalidate(appliedCarMaintenanceItemsProvider);
   ref.invalidate(appliedCarRecordsProvider);
+  // family 整体逐出：项目 sheet 可能正看着非当前应用车辆（车辆卡入口），
+  // 写库/删车/恢复备份后所有按车实例都要重查。
+  ref.invalidate(maintenanceItemsForCarProvider);
 }
 
 /// 偏好类缓存整体失效的共用实现。WidgetRef 和容器 Ref 是两个没有共同

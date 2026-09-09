@@ -1077,9 +1077,8 @@ Future<void> showMaintenanceRecordFormSheet(
           initialDate: today,
           today: today,
           record: record,
-          reloadItems: () => ref
-              .read(lunioRepositoryProvider)
-              .listMaintenanceItemsForCar(car.id!),
+          reloadItems: () =>
+              ref.read(maintenanceItemsForCarProvider(car.id!).future),
           onSubmit: (value, itemUpdates) async {
             // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
             await saveMaintenanceRecord(ref, value, itemUpdates);

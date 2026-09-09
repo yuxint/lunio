@@ -82,7 +82,7 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
               onAdd: () => showAddCarSheet(context, ref),
               onEdit: (car) => showEditCarSheet(context, ref, car),
               onManageItems: (car) =>
-                  showMaintenanceItemsSheet(context, ref, car: car),
+                  showMaintenanceItemsSheet(context, car: car),
               onApply: (carId) => applyCar(ref, carId),
               onDelete: (car) => deleteCar(context, ref, car),
             ),

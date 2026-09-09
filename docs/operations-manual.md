@@ -279,16 +279,16 @@ appDatabaseProvider(:232)
 
 #### 5.2.1 打开项目 sheet
 
-车辆卡"项目" → `maintenance_items.dart:364 → showMaintenanceItemsSheet`（car 为空时管当前应用车辆）。sheet 内部是**手写局部状态机**（`:415 → MaintenanceItemsSheetContent`，自管 loading/error/代数防乱序，不走全局 provider），每次操作后 `_reload` 重拉列表。
+车辆卡"项目" → `maintenance_items.dart:364 → showMaintenanceItemsSheet`（car 为空时管当前应用车辆）。sheet 项目列表 watch `providers.dart → maintenanceItemsForCarProvider`（**按车 family**，加载/竞态/缓存由 Riverpod 接管；`appliedCarMaintenanceItemsProvider` 也是它的派生），增删改经动作层失效车辆家族（含 family 整族失效）后列表自动重算，sheet 无本地刷新通道；重载中/重载失败保留旧列表（滚动位置不丢），失败时列表下方红条提示。
 
 #### 5.2.2 各操作
 
 | 操作 | 代码位置 | 数据变化 |
 |---|---|---|
-| 新增项目 | 卡片区"新增" → `:969 → showMaintenanceItemFormSheet`（表单：名称+里程/时间开关行+间隔，数字键盘）→ `shell_actions.dart → saveMaintenanceItem`（动作层，内部按 id 分流 `repository.saveMaintenanceItem`（lunio_repository.dart:516））→ 成功 toast"保养项目已保存" | `maintenance_items` +1 |
+| 新增项目 | 卡片区"新增" → `:759 → showMaintenanceItemFormSheet`（表单：名称+里程/时间开关行+间隔，数字键盘）→ `shell_actions.dart → saveMaintenanceItem`（动作层，内部按 id 分流 `repository.saveMaintenanceItem`（lunio_repository.dart:516））→ 成功 toast"保养项目已保存" | `maintenance_items` +1 |
 | 编辑项目 | 卡片"编辑" → 同上表单 → 同上动作层函数（`repository.updateMaintenanceItem`（:556）；停用态先过"至少一个启用"校验）→ 成功 toast"保养项目已保存" | 更新该行 |
-| 启停项目 | 卡片"已启用/已禁用"按钮 → `:1038 → toggleMaintenanceItem` → `shell_actions.dart → setMaintenanceItemEnabled`（动作层：`repository.setMaintenanceItemEnabled`（:590）+ 失效） | 更新 enabled |
-| 删除项目 | 卡片"删除" → 确认框 → `:1065 → deleteMaintenanceItem` → `shell_actions.dart → removeMaintenanceItem`（动作层：`repository.deleteMaintenanceItem`（:626，**有历史记录直接抛错**拒绝删除）+ 失效） | 删该行（或报错 toast） |
+| 启停项目 | 卡片"已启用/已禁用"按钮 → `:825 → toggleMaintenanceItem` → `shell_actions.dart → setMaintenanceItemEnabled`（动作层：`repository.setMaintenanceItemEnabled`（:590）+ 失效） | 更新 enabled |
+| 删除项目 | 卡片"删除" → 确认框 → `:841 → deleteMaintenanceItem` → `shell_actions.dart → removeMaintenanceItem`（动作层：`repository.deleteMaintenanceItem`（:626，**有历史记录直接抛错**拒绝删除）+ 失效） | 删该行（或报错 toast） |
 
 > "恢复默认"只存在于**添加向导草稿**内；已保存车辆没有该功能。
 

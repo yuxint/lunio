@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 
+import 'package:lunio/core/date/local_date.dart';
+import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import '../helpers/widget_app.dart';
@@ -141,18 +144,32 @@ void main() {
   testWidgets('maintenance item sheet keeps scroll after editing an item', (
     tester,
   ) async {
-    final database = await pumpApp(tester);
-    await createDefaultCar(tester);
-    final car = (await database.select(database.cars).get()).single;
+    // 播种必须在 pumpApp 之前完成：项目列表统一走
+    // maintenanceItemsForCarProvider family，提醒页从启动就 watch 应用
+    // 车辆的列表，App 起来后再直写数据库不会进入已缓存的列表——与其
+    // 他页面"provider + 失效"的缓存模型一致，直写库等于绕过失效契约。
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
     final repository = testRepository(database);
+    await repository.ensureBootstrapData();
     final sync = SyncMetadata(
       status: SyncStatus.pendingCreate,
       updatedAt: DateTime(2026, 5, 19),
     );
+    final carId = await createCarWithDefaultItems(
+      database,
+      Car(
+        brand: '奥迪',
+        model: '奥迪A3',
+        currentMileageKm: 0,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: sync,
+      ),
+    );
     for (var index = 0; index < 24; index++) {
       await repository.saveMaintenanceItem(
         MaintenanceItem(
-          carsId: car.id,
+          carsId: carId,
           name: '测试项目 ${index.toString().padLeft(2, '0')}',
           enabled: true,
           remindByMileage: true,
@@ -164,6 +181,9 @@ void main() {
       );
     }
 
+    await pumpApp(tester, database: database);
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
     final scrollView = find.byType(SingleChildScrollView).last;

@@ -4,14 +4,12 @@
 // 两处使用场景：
 //  1. AddCarMaintenanceItemsStep：向导草稿模式（纯内存列表，未落库，
 //     编辑走 showDraftMaintenanceItemFormSheet，仅替换内存草稿）；
-//  2. showMaintenanceItemsSheet：已保存车辆的项目 sheet（自管加载状态，
-//     编辑/启停/删除直接写库后 invalidate + 内部重载）。
+//  2. showMaintenanceItemsSheet：已保存车辆的项目 sheet（项目列表走
+//     maintenanceItemsForCarProvider family，动作层写库失效后自动重算）。
 //
 // 业务约束（UI 侧前置拦截，Repository 侧兜底）：
 // 至少保留一个启用项目；有历史记录的项目不能删除。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
-
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -363,62 +361,30 @@ class RestoreDefaultItemRow extends StatelessWidget {
 }
 
 /// ★ 项目管理 sheet 入口（车辆卡"项目"按钮）。car 为空时管当前应用车辆。
-void showMaintenanceItemsSheet(
-  BuildContext context,
-  WidgetRef ref, {
-  Car? car,
-}) {
+void showMaintenanceItemsSheet(BuildContext context, {Car? car}) {
   showLunioModalSheet<void>(
     context: context,
-    builder: (context) => MaintenanceItemsSheetRoute(car: car),
+    builder: (context) => PrototypeSheetFrame(
+      title: '保养项目',
+      child: MaintenanceItemsSheetContent(initialCar: car),
+    ),
   );
 }
 
-/// sheet 路由壳：持有 refreshListenable（ValueNotifier≈可监听的信号量），
-/// 内部子表单保存成功后 value+1 通知本层重载列表。
-class MaintenanceItemsSheetRoute extends StatefulWidget {
-  const MaintenanceItemsSheetRoute({required this.car});
-
-  final Car? car;
-
-  @override
-  State<MaintenanceItemsSheetRoute> createState() =>
-      MaintenanceItemsSheetRouteState();
-}
-
-class MaintenanceItemsSheetRouteState
-    extends State<MaintenanceItemsSheetRoute> {
-  final refreshListenable = ValueNotifier<int>(0);
-
-  @override
-  void dispose() {
-    refreshListenable.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PrototypeSheetFrame(
-      title: '保养项目',
-      child: MaintenanceItemsSheetContent(
-        initialCar: widget.car,
-        refreshListenable: refreshListenable,
-      ),
-    );
-  }
-}
-
-/// 项目 sheet 主体：自管 loading/error/items 状态（不走全局 provider，
-/// 直接 Repository 读），带代数防乱序 + 外部刷新监听。
-/// 与其他页面"provider + invalidate"模式不同，这里是手写局部状态机。
+/// 项目 sheet 主体：项目列表数据统一走 [maintenanceItemsForCarProvider]
+/// family（加载/竞态/逐出由 Riverpod 接管，与其他页面同属 ADR 0008 的
+/// "provider + invalidate"模式）；增删改只调动作层函数，失效后本组件
+/// 自动重算，不再自管刷新通道。State 只保留滚动控制器的家。
+///
+/// AsyncValue 分支手写以保持既有展示语义：
+///  - 首次加载（无旧值）：转圈；
+///  - 首次加载失败：'加载失败'文案（无列表可保留）；
+///  - 重载中/重载失败（有旧值）：旧列表原地渲染（滚动位置不丢），
+///    失败时列表下方追加红色'刷新失败'提示。
 class MaintenanceItemsSheetContent extends ConsumerStatefulWidget {
-  const MaintenanceItemsSheetContent({
-    required this.initialCar,
-    required this.refreshListenable,
-  });
+  const MaintenanceItemsSheetContent({required this.initialCar});
 
   final Car? initialCar;
-  final ValueNotifier<int> refreshListenable;
 
   @override
   ConsumerState<MaintenanceItemsSheetContent> createState() =>
@@ -428,33 +394,9 @@ class MaintenanceItemsSheetContent extends ConsumerStatefulWidget {
 class MaintenanceItemsSheetContentState
     extends ConsumerState<MaintenanceItemsSheetContent> {
   final scrollController = ScrollController();
-  List<MaintenanceItem>? items;
-  bool itemsLoading = false;
-  String? itemsError;
-  int? loadedCarId;
-
-  /// 加载代数：只接受最新一次加载的结果（防快速切换车辆时旧结果覆盖）。
-  int loadGeneration = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.refreshListenable.addListener(_handleExternalRefresh);
-  }
-
-  @override
-  void didUpdateWidget(MaintenanceItemsSheetContent oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.refreshListenable == widget.refreshListenable) {
-      return;
-    }
-    oldWidget.refreshListenable.removeListener(_handleExternalRefresh);
-    widget.refreshListenable.addListener(_handleExternalRefresh);
-  }
 
   @override
   void dispose() {
-    widget.refreshListenable.removeListener(_handleExternalRefresh);
     scrollController.dispose();
     super.dispose();
   }
@@ -469,9 +411,10 @@ class MaintenanceItemsSheetContentState
     if (targetCar?.id == null) {
       return const LunioInlineMessage(message: '请先新增车辆');
     }
-    _ensureItemsLoaded(targetCar!.id!);
+    final itemsAsync = ref.watch(
+      maintenanceItemsForCarProvider(targetCar!.id!),
+    );
     final maxListHeight = MediaQuery.sizeOf(context).height * 0.54;
-    final currentItems = items;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,130 +429,49 @@ class MaintenanceItemsSheetContentState
             const SizedBox(width: 12),
             SmallActionButton(
               label: '新增',
-              onPressed: () async {
-                final saved = await showMaintenanceItemFormSheet(
-                  context,
-                  ref,
-                  carId: targetCar.id!,
-                );
-                if (saved == true) {
-                  widget.refreshListenable.value += 1;
-                }
-              },
+              // 表单内部经动作层写库+失效，这里不需要再管刷新。
+              onPressed: () =>
+                  showMaintenanceItemFormSheet(context, ref, carId: targetCar.id!),
               primary: true,
             ),
           ],
         ),
         const SizedBox(height: 12),
-        if (itemsLoading && currentItems == null)
+        if (!itemsAsync.hasValue && itemsAsync.isLoading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 28),
             child: Center(child: CircularProgressIndicator()),
           )
-        else if (itemsError != null && currentItems == null)
-          Text('加载失败：$itemsError')
+        else if (!itemsAsync.hasValue && itemsAsync.hasError)
+          Text('加载失败：${friendlyError(itemsAsync.error!)}')
         else ...[
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxListHeight),
             child: SingleChildScrollView(
               controller: scrollController,
               child: MaintenanceItemList(
-                items: currentItems ?? const [],
-                onEdit: (item) async {
-                  final saved = await showMaintenanceItemFormSheet(
-                    context,
-                    ref,
-                    carId: item.carsId,
-                    item: item,
-                  );
-                  if (saved == true) {
-                    await _reload(targetCar.id!);
-                  }
-                },
-                onToggle: (item) async {
-                  await toggleMaintenanceItem(context, ref, item);
-                  await _reload(targetCar.id!);
-                },
-                onDelete: (item) async {
-                  await deleteMaintenanceItem(context, ref, item);
-                  await _reload(targetCar.id!);
-                },
+                items: itemsAsync.requireValue,
+                onEdit: (item) => showMaintenanceItemFormSheet(
+                  context,
+                  ref,
+                  carId: item.carsId,
+                  item: item,
+                ),
+                onToggle: (item) => toggleMaintenanceItem(context, ref, item),
+                onDelete: (item) => deleteMaintenanceItem(context, ref, item),
               ),
             ),
           ),
-          if (itemsError != null) ...[
+          if (itemsAsync.hasError) ...[
             const SizedBox(height: 10),
             LunioInlineMessage(
-              message: '刷新失败：$itemsError',
+              message: '刷新失败：${friendlyError(itemsAsync.error!)}',
               tone: LunioStatusTone.danger,
             ),
           ],
         ],
       ],
     );
-  }
-
-  /// 首次加载守卫（build 里调用，同车且已加载/加载中则跳过）。
-  void _ensureItemsLoaded(int carId) {
-    if (loadedCarId == carId && (items != null || itemsLoading)) {
-      return;
-    }
-    loadedCarId = carId;
-    items = null;
-    itemsError = null;
-    itemsLoading = true;
-    _loadItems(carId, resetScroll: true);
-  }
-
-  /// 操作后重载列表。
-  Future<void> _reload(int carId) async {
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      loadedCarId = carId;
-      itemsError = null;
-      itemsLoading = items == null;
-    });
-    await _loadItems(carId);
-  }
-
-  /// 外部刷新信号（子表单保存成功）→ 重载当前车项目。
-  void _handleExternalRefresh() {
-    final carId = loadedCarId;
-    if (carId == null) {
-      return;
-    }
-    unawaited(_reload(carId));
-  }
-
-  /// 拉取项目列表（代数 + mounted + 车辆一致性三重校验后 setState）。
-  Future<void> _loadItems(int carId, {bool resetScroll = false}) async {
-    final generation = ++loadGeneration;
-    try {
-      final nextItems = await ref
-          .read(lunioRepositoryProvider)
-          .listMaintenanceItemsForCar(carId);
-      if (!mounted || generation != loadGeneration || loadedCarId != carId) {
-        return;
-      }
-      setState(() {
-        items = nextItems;
-        itemsError = null;
-        itemsLoading = false;
-      });
-      if (resetScroll && scrollController.hasClients) {
-        scrollController.jumpTo(0);
-      }
-    } catch (error) {
-      if (!mounted || generation != loadGeneration || loadedCarId != carId) {
-        return;
-      }
-      setState(() {
-        itemsError = friendlyError(error);
-        itemsLoading = false;
-      });
-    }
   }
 }
 
