@@ -60,5 +60,8 @@ wiring bug 在历次审查中反复出现（R1/R8/R13 都涉及编排顺序）�
   `BuildContext` 参数（调用点 3 处同步更新）。
 - 加油页 `_resetManualPrice`（重置手填价）因调用方持有的是
   `ProviderContainer` 而非 `WidgetRef`，保持原有三行手写，未强行收编。
+  **（2026-09-09 更新：该例外已消除**——`ref` 改由 `_priceRow` 正常传入，
+  重置走 `saveFuelManualPrice(pricePerLiter: null)`，"写库+失效"重新
+  单一出口。）
 - 测试面不变：widget 测试（`test/widget/`）已锁 toast 文案、落库结果
   与跨页刷新，行为等价改造应全绿；不为纯编排搬家新增独立测试层。

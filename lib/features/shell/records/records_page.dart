@@ -14,6 +14,8 @@
 // 第一步带"详细模式"开关（ADR 0010，默认关）：开启后每个勾选项目展开
 // 材料费/工时费/项目费用输入行，自动算链 = 材料+工时→项目费用→合计→
 // 总费用；自动值可手改，不一致时红字 + 黄色警告角标，纯提示不拦保存。
+// 算链与手改标记的实现收在 record_cost_form_controller.dart（ADR 0010
+// 的唯一实现点），本文件只做接线与渲染。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -30,6 +32,7 @@ import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
+import 'record_cost_form_controller.dart';
 
 /// 记录页主组件。
 class RecordsPreviewPage extends ConsumerStatefulWidget {
@@ -320,7 +323,7 @@ class RecordCycleCard extends StatelessWidget {
                     const Spacer(),
                     const SizedBox(width: 10),
                     Text(
-                      _formatMoney(record.costCents),
+                      formatMoneyCents(record.costCents),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: tokens.primary,
                         fontWeight: FontWeight.w800,
@@ -551,7 +554,6 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
   // ---- 第一步的字段 ----
   late LocalDate recordDate;
   late final TextEditingController mileageController;
-  late final TextEditingController costController;
   late final TextEditingController noteController;
 
   /// 已勾选的项目 id。
@@ -560,22 +562,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
   /// 表单当前可见的项目列表（行内新增后会刷新）。
   late List<MaintenanceItem> formItems;
 
-  /// 是否详细模式（ADR 0010）：开启后按项目填材料费/工时费/项目费用。
-  /// 开关不持久化，每次打开默认简洁；编辑带项目费用的记录自动进入。
-  bool detailMode = false;
-
-  /// 每个选中项目的费用输入草稿（key = 项目 id）。与 detailMode 无关
-  /// 始终维护——切换模式不删已填费用，简洁模式保存时原样保留。
-  final costDrafts = <int, RecordCostDraft>{};
-
-  /// 总费用是否被手动改过（改过后不再被项目费用合计自动覆盖；
-  /// 清空视为放弃手改、恢复自动跟随）。编辑历史不一致记录（如优惠）
-  /// 打开即视为手改，避免自动合计冲掉用户存的数。
-  bool totalTouched = false;
-
-  /// 自动回填的递归保护：程序写 controller 文本会再次触发 onChanged，
-  /// 置位期间回调直接返回，也不改"手改"标记。
-  bool _applyingAutoFill = false;
+  /// 费用区控制器（ADR 0010 自动算链与手改标记的唯一实现，见
+  /// record_cost_form_controller.dart）：总费用输入框、详细模式开关、
+  /// 各项目费用草稿、手改标记与不一致状态都在里面。
+  late final RecordCostFormController costForm;
 
   /// 第二步的记录草稿（非 null 表示已进入第二步）。
   MaintenanceRecord? recordDraft;
@@ -593,147 +583,44 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
     mileageController = TextEditingController(
       text: (record?.mileageKm ?? widget.car.currentMileageKm).toString(),
     );
-    costController = TextEditingController(
-      text: record == null ? '0' : (record.costCents / 100).toStringAsFixed(2),
-    );
     noteController = TextEditingController(text: record?.note ?? '');
     selectedItemIds = {...?record?.itemIds};
     formItems = widget.items;
-    detailMode = record?.itemCosts.isNotEmpty ?? false;
-    totalTouched = record != null &&
-        record.costCents != RecordRules.sumItemCostCents(record.itemCosts);
-    _syncCostDrafts();
+    costForm = RecordCostFormController(
+      record: record,
+      formItems: formItems,
+      selectedItemIds: selectedItemIds,
+      // 编辑带项目费用的记录自动进入详细模式（ADR 0010）。
+      detailMode: record?.itemCosts.isNotEmpty ?? false,
+    );
   }
 
   @override
   void dispose() {
     _disposeIntervalDrafts();
-    _disposeCostDrafts();
+    costForm.dispose();
     mileageController.dispose();
-    costController.dispose();
     noteController.dispose();
     super.dispose();
   }
 
-  /// 把费用草稿同步到当前勾选的项目集合：取消勾选的草稿销毁（其费用
-  /// 从本次提交里消失），新勾选的建草稿并预填该记录的历史费用。
-  void _syncCostDrafts() {
-    costDrafts.removeWhere((itemId, draft) {
-      if (selectedItemIds.contains(itemId)) {
-        return false;
-      }
-      draft.dispose();
-      return true;
-    });
-    for (final item in formItems) {
-      final itemId = item.id;
-      if (itemId == null ||
-          !selectedItemIds.contains(itemId) ||
-          costDrafts.containsKey(itemId)) {
-        continue;
-      }
-      RecordItemCost? initial;
-      for (final cost in widget.record?.itemCosts ?? const <RecordItemCost>[]) {
-        if (cost.itemId == itemId) {
-          initial = cost;
-          break;
-        }
-      }
-      costDrafts[itemId] = RecordCostDraft(item: item, initial: initial);
-    }
-  }
-
-  /// 当前输入态的项目费用列表（金额从文本解析，空/非法 = 未填）。
-  /// 供合计与不一致判定使用。
-  List<RecordItemCost> _currentItemCosts() {
-    return [
-      for (final draft in costDrafts.values) _draftToCost(draft),
-    ];
-  }
-
-  /// 单个草稿 → 输入态项目费用（金额从文本解析，空/非法 = 未填）。
-  RecordItemCost _draftToCost(RecordCostDraft draft) {
-    return RecordItemCost(
-      itemId: draft.item.id ?? 0,
-      materialCents: parseMoneyCents(draft.materialController.text),
-      laborCents: parseMoneyCents(draft.laborController.text),
-      costCents: parseMoneyCents(draft.costController.text),
-    );
-  }
-
-  /// 项目费用输入回调：维护该项目的手改标记（清空 = 放弃手改）→
-  /// 跑自动算链 → 重建（红字/角标实时变化）。
+  /// 项目费用输入：控制器维护手改标记 + 跑算链，这里只负责重建
+  /// （红字/角标实时变化）。
   void _onItemCostInputChanged(int itemId) {
-    if (!_applyingAutoFill) {
-      final draft = costDrafts[itemId];
-      if (draft != null) {
-        draft.costTouched = draft.costController.text.trim().isNotEmpty;
-      }
-    }
-    _applyAutoFill();
+    costForm.onItemCostChanged(itemId);
     setState(() {});
   }
 
-  /// 材料费/工时费输入回调：跑自动算链 + 重建。
+  /// 材料费/工时费输入：控制器跑算链，这里只负责重建。
   void _onCostInputChanged() {
-    _applyAutoFill();
+    costForm.onSplitCostChanged();
     setState(() {});
   }
 
-  /// 总费用输入回调：键入内容视为手改（不再自动跟随合计），清空视为
-  /// 放弃手改（下次合计变化会重新填入）。
+  /// 总费用输入：控制器维护"手改"标记 + 跑算链，这里只负责重建。
   void _onTotalInputChanged() {
-    if (!_applyingAutoFill) {
-      totalTouched = costController.text.trim().isNotEmpty;
-    }
-    _applyAutoFill();
+    costForm.onTotalChanged();
     setState(() {});
-  }
-
-  /// 自动算链（ADR 0010）：材料>0 且工时>0 → 项目费用 = 两者之和
-  /// （已被手改的不覆盖）；有项目费用 → 总费用 = 合计（已被手改的不
-  /// 覆盖）。只在详细模式生效，简洁模式总费用纯手填。
-  void _applyAutoFill() {
-    if (_applyingAutoFill) {
-      return;
-    }
-    _applyingAutoFill = true;
-    try {
-      if (!detailMode) {
-        return;
-      }
-      for (final draft in costDrafts.values) {
-        final material = parseMoneyCents(draft.materialController.text);
-        final labor = parseMoneyCents(draft.laborController.text);
-        if (material != null &&
-            material > 0 &&
-            labor != null &&
-            labor > 0 &&
-            !draft.costTouched) {
-          final text = formatMoneyText(material + labor);
-          if (draft.costController.text != text) {
-            draft.costController.text = text;
-          }
-        }
-      }
-      final sum = RecordRules.sumItemCostCents(_currentItemCosts());
-      if (sum > 0 && !totalTouched) {
-        final text = formatMoneyText(sum);
-        if (costController.text != text) {
-          costController.text = text;
-        }
-      }
-    } finally {
-      _applyingAutoFill = false;
-    }
-  }
-
-  /// 释放全部费用草稿的 controller。
-  void _disposeCostDrafts() {
-    for (final draft in costDrafts.values) {
-      draft.dispose();
-    }
-    costDrafts.clear();
   }
 
   @override
@@ -749,12 +636,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
               )
               .toList();
     // 总费用不一致只在详细模式提示：简洁模式看不到项目费用，
-    // 单独把总费用标红只会让人困惑（ADR 0010）。
-    final totalMismatch = detailMode &&
-        RecordRules.totalCostMismatch(
-          totalCostCents: parseMoneyCents(costController.text) ?? 0,
-          itemCosts: _currentItemCosts(),
-        );
+    // 单独把总费用标红只会让人困惑（ADR 0010）。判定在控制器里。
+    final totalMismatch = costForm.totalMismatch;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -781,14 +664,15 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
             const SizedBox(width: 10),
             Expanded(
               child: LunioNumberField(
-                controller: costController,
+                controller: costForm.totalController,
                 enabled: !saving,
                 // 费用小数不限位（历史行为保留）。
                 decimals: null,
                 labelText: '费用',
                 warning: totalMismatch,
-                onTap: () =>
-                    LunioNumberField.clearLeadingZero(costController),
+                onTap: () => LunioNumberField.clearLeadingZero(
+                  costForm.totalController,
+                ),
                 onChanged: (_) => _onTotalInputChanged(),
               ),
             ),
@@ -812,10 +696,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
               ),
             ),
             Switch(
-              value: detailMode,
+              value: costForm.detailMode,
               onChanged: saving
                   ? null
-                  : (value) => setState(() => detailMode = value),
+                  : (value) => setState(() => costForm.detailMode = value),
             ),
           ],
         ),
@@ -853,23 +737,21 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
                       selectedItemIds.add(item.id!);
                     }
                   });
-                  _syncCostDrafts();
+                  costForm.syncSelection(selectedItemIds, formItems);
                 },
               ),
           ],
         ),
-        if (detailMode) ...[
+        if (costForm.detailMode) ...[
           const SizedBox(height: 12),
           // 间隔只加在真实渲染的行后面：未勾选的项目不渲染行也不插空隙，
           // 否则勾选不相邻的项目时行距会在 10/20 之间交替、间隔不一致。
           for (final item in availableItems)
-            if (item.id != null && costDrafts.containsKey(item.id)) ...[
+            if (item.id != null && costForm.drafts.containsKey(item.id)) ...[
               _ItemCostRow(
-                draft: costDrafts[item.id]!,
+                draft: costForm.drafts[item.id]!,
                 enabled: !saving,
-                mismatch: RecordRules.itemCostMismatch(
-                  _draftToCost(costDrafts[item.id]!),
-                ),
+                mismatch: costForm.itemMismatch(item.id!),
                 onAnyChanged: _onCostInputChanged,
                 onCostChanged: () => _onItemCostInputChanged(item.id!),
               ),
@@ -893,9 +775,11 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
 
   /// 第一步校验 + 构造记录草稿：里程非负整数、费用非负数字、
   /// 至少选一个项目。费用元→分四舍五入。失败返回 null 并设置错误文案。
+  /// 项目费用清单由控制器生成（全空草稿跳过；不一致是合法数据不校验，
+  /// ADR 0010）。
   MaintenanceRecord? _buildRecordDraft() {
     final mileage = int.tryParse(mileageController.text);
-    final cost = double.tryParse(costController.text);
+    final cost = double.tryParse(costForm.totalController.text);
     if (mileage == null || mileage < 0) {
       setFormError('保养里程必须是非负整数');
       return null;
@@ -914,7 +798,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       carId: widget.car.id!,
       date: recordDate,
       itemIds: selectedItemIds.toList(),
-      itemCosts: _buildItemCosts(),
+      itemCosts: costForm.buildItemCosts(),
       costCents: (cost * 100).round(),
       mileageKm: mileage,
       note: noteController.text.trim().isEmpty
@@ -925,35 +809,6 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
         updatedAt: DateTime.now(),
       ),
     );
-  }
-
-  /// 把费用草稿整理成提交用的项目费用列表（ADR 0010）：只收勾选中的
-  /// 项目；三个金额全空的草稿跳过；金额元→分四舍五入，空/非法 = 未填。
-  /// 不一致（项目费用 ≠ 材料+工时、总费用 ≠ 合计）在这里不做校验——
-  /// 按产品规则不一致是合法数据（如优惠），由界面红字黄三角提示。
-  List<RecordItemCost> _buildItemCosts() {
-    final costs = <RecordItemCost>[];
-    for (final draft in costDrafts.values) {
-      final itemId = draft.item.id;
-      if (itemId == null || !selectedItemIds.contains(itemId)) {
-        continue;
-      }
-      final material = parseMoneyCents(draft.materialController.text);
-      final labor = parseMoneyCents(draft.laborController.text);
-      final cost = parseMoneyCents(draft.costController.text);
-      if (material == null && labor == null && cost == null) {
-        continue;
-      }
-      costs.add(
-        RecordItemCost(
-          itemId: itemId,
-          materialCents: material,
-          laborCents: labor,
-          costCents: cost,
-        ),
-      );
-    }
-    return costs;
   }
 
   /// "下一步"：校验通过后为每个选中项目建间隔输入草稿，进入第二步。
@@ -1125,7 +980,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       if (newItem?.id != null) {
         selectedItemIds.add(newItem!.id!);
       }
-      _syncCostDrafts();
+      costForm.syncSelection(selectedItemIds, formItems);
     });
   }
 
@@ -1177,53 +1032,6 @@ class RecordIntervalDraft {
   void dispose() {
     mileageController.dispose();
     monthsController.dispose();
-  }
-}
-
-/// 详细模式下单个项目的费用输入草稿（ADR 0010）：材料/工时/项目费用
-/// 三个 controller + 项目费用手改标记。编辑记录时从历史费用预填，
-/// 金额文本与费用输入框同格式（两位小数）。
-class RecordCostDraft {
-  RecordCostDraft({required this.item, this.initial})
-    : materialController = TextEditingController(
-        text: initial?.materialCents == null
-            ? ''
-            : formatMoneyText(initial!.materialCents!),
-      ),
-      laborController = TextEditingController(
-        text: initial?.laborCents == null
-            ? ''
-            : formatMoneyText(initial!.laborCents!),
-      ),
-      costController = TextEditingController(
-        text: initial?.costCents == null
-            ? ''
-            : formatMoneyText(initial!.costCents!),
-      ) {
-    // 存量项目费用与"材料+工时"不一致（如优惠改价）说明是手改值：
-    // 打开即视为手改，避免编辑材料/工时时被自动算链冲掉。与 initState
-    // 里总费用的 totalTouched 保护同一策略（ADR 0010：手改后不再被
-    // 自动覆盖）；一致的存量值（可能只是上次自动算的结果）仍保持自动跟随。
-    final initialCost = initial;
-    costTouched = initialCost != null &&
-        RecordRules.itemCostMismatch(initialCost);
-  }
-
-  final MaintenanceItem item;
-  final RecordItemCost? initial;
-  final TextEditingController materialController;
-  final TextEditingController laborController;
-  final TextEditingController costController;
-
-  /// 项目费用是否被手动改过（改过后不再被"材料+工时"自动覆盖；
-  /// 清空视为放弃手改，恢复自动计算）。编辑记录打开时，存量项目费用
-  /// 与"材料+工时"不一致（优惠价）即预置为已手改（见构造函数）。
-  bool costTouched = false;
-
-  void dispose() {
-    materialController.dispose();
-    laborController.dispose();
-    costController.dispose();
   }
 }
 
@@ -1336,23 +1144,9 @@ Future<void> deleteMaintenanceRecordItem(
   );
 }
 
-// ---- 文件内私有组件与格式化（§5.2 回收：仅本页消费的不进共享层）----
-
-/// 金额（分 → ¥xx.xx）。仅记录列表使用。
-String _formatMoney(int costCents) {
-  return '¥${(costCents / 100).toStringAsFixed(2)}';
-}
-
-/// 金额输入文本 → 分（四舍五入）。空/非法文本返回 null（= 未填）。
-/// 文件内多处使用（表单草稿解析、不一致判定），故不带下划线前缀命名
-/// 为顶层函数——仅本文件可见。
-int? parseMoneyCents(String text) {
-  final value = double.tryParse(text.trim());
-  return value == null ? null : (value * 100).round();
-}
-
-/// 分 → 金额输入框文本（两位小数，与费用输入框历史格式一致）。
-String formatMoneyText(int cents) => (cents / 100).toStringAsFixed(2);
+// ---- 文件内私有组件（§5.2 回收：仅本页消费的不进共享层）----
+// 金额展示/解析（formatMoneyCents/parseMoneyCents/formatMoneyText）
+// 已升入共享 formatters.dart，经 shell_shared.dart barrel 使用。
 
 /// ★ 记录详情弹窗（记录页两种视图的整卡点击入口，ADR 0010）：
 ///  - focusItemId 为空（按周期视图）：看整条记录——日期/里程/总费用
@@ -1408,7 +1202,7 @@ void showRecordDetailSheet(
             const SizedBox(height: 10),
             _RecordMetricTile(
               label: '总费用',
-              value: _formatMoney(record.costCents),
+              value: formatMoneyCents(record.costCents),
               warning: totalMismatch,
             ),
             if ((record.note ?? '').trim().isNotEmpty) ...[
@@ -1491,7 +1285,7 @@ void showRecordDetailSheet(
                       label: '材料费',
                       value: materialCents == null
                           ? '—'
-                          : _formatMoney(materialCents),
+                          : formatMoneyCents(materialCents),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1500,7 +1294,7 @@ void showRecordDetailSheet(
                       label: '工时费',
                       value: laborCents == null
                           ? '—'
-                          : _formatMoney(laborCents),
+                          : formatMoneyCents(laborCents),
                     ),
                   ),
                 ],
@@ -1511,7 +1305,7 @@ void showRecordDetailSheet(
               label: '项目费用',
               value: focusCost?.costCents == null
                   ? '—'
-                  : _formatMoney(focusCost!.costCents!),
+                  : formatMoneyCents(focusCost!.costCents!),
               warning: focusCost != null &&
                   RecordRules.itemCostMismatch(focusCost),
             ),
@@ -1524,7 +1318,7 @@ void showRecordDetailSheet(
             : itemById(items, focusItemId)?.name ?? '未知项目',
         // 副标题只在按周期视图显示总费用；按项目视图没有总费用概念。
         subtitle: focusItemId == null
-            ? '整条记录总费用 ${_formatMoney(record.costCents)}'
+            ? '整条记录总费用 ${formatMoneyCents(record.costCents)}'
             : null,
         child: content,
       );
@@ -1621,8 +1415,8 @@ class _ItemCostListRow extends StatelessWidget {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final splitParts = <String>[
       if (cost?.materialCents != null)
-        '材料 ${_formatMoney(cost!.materialCents!)}',
-      if (cost?.laborCents != null) '工时 ${_formatMoney(cost!.laborCents!)}',
+        '材料 ${formatMoneyCents(cost!.materialCents!)}',
+      if (cost?.laborCents != null) '工时 ${formatMoneyCents(cost!.laborCents!)}',
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -1652,7 +1446,7 @@ class _ItemCostListRow extends StatelessWidget {
             Icon(Icons.warning_amber_rounded, size: 18, color: tokens.warning),
           const SizedBox(width: 6),
           Text(
-            cost?.costCents == null ? '—' : _formatMoney(cost!.costCents!),
+            cost?.costCents == null ? '—' : formatMoneyCents(cost!.costCents!),
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w800,
               color: tokens.primary,

@@ -42,6 +42,7 @@ import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
 import '../shared/form_submit.dart';
+import '../shared/formatters.dart';
 import '../shared/modal_feedback.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
@@ -119,6 +120,10 @@ class _PriceCard extends ConsumerWidget {
     final manualPrice = ref
         .watch(fuelManualPriceProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
+    // 当前生效价（手填价优先，其次数据源价）统一从 provider 取——
+    // 它也是档位列表与预估调价后金额的同一份实现，不再在油价卡
+    // 手拼第二遍。
+    final effectivePrice = ref.watch(_effectivePriceProvider);
 
     return LunioCard(
       child: Column(
@@ -148,6 +153,7 @@ class _PriceCard extends ConsumerWidget {
             grade,
             priceState,
             manualPrice,
+            effectivePrice,
           ),
         ],
       ),
@@ -165,6 +171,7 @@ class _PriceCard extends ConsumerWidget {
     FuelGrade? grade,
     AsyncValue<FuelPriceData?> priceState,
     double? manualPrice,
+    double? effectivePrice,
   ) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     if (province == null || grade == null) {
@@ -177,9 +184,6 @@ class _PriceCard extends ConsumerWidget {
       data: (value) => value,
       orElse: () => null,
     );
-    // 当前生效价（手填优先），也是预估下次油价的计算基准。
-    final effectivePrice =
-        manualPrice ?? data?.priceFor(province: province, grade: grade);
     Widget priceLine;
     if (manualPrice != null) {
       // 手填价行：点价格进编辑；右侧按钮"重置"恢复数据源价。
@@ -335,7 +339,7 @@ class _PriceCard extends ConsumerWidget {
           label: hasManualPrice ? '重置' : '手填',
           secondary: hasManualPrice,
           onPressed: hasManualPrice
-              ? () => _resetManualPrice(context)
+              ? () => _resetManualPrice(context, ref)
               : () => _editManualPrice(context, ref),
         ),
       ],
@@ -442,19 +446,22 @@ class _PriceCard extends ConsumerWidget {
     );
   }
 
-  /// 重置手填价：写 null 删该组合的键，恢复用数据源价格。
+  /// 重置手填价：写 null 删该组合的键，恢复用数据源价格。写库+失效
+  /// 走动作层 saveFuelManualPrice（pricePerLiter 传 null 即重置，
+  /// ADR 0007；ref 由 _priceRow 正常传入）。
   /// 只在存有手填价时可触发（右侧按钮此状态下显示为"重置"）。
-  Future<void> _resetManualPrice(BuildContext context) async {
-    final ref = ProviderScope.containerOf(context, listen: false);
+  Future<void> _resetManualPrice(BuildContext context, WidgetRef ref) async {
     final province = ref.read(fuelProvinceProvider).value;
     final grade = ref.read(fuelGradeProvider).value;
     if (province == null || grade == null) {
       return;
     }
-    await ref
-        .read(fuelRepositoryProvider)
-        .setFuelManualPrice(province: province, grade: grade, pricePerLiter: null);
-    ref.invalidate(fuelManualPriceProvider);
+    await saveFuelManualPrice(
+      ref,
+      province: province,
+      grade: grade,
+      pricePerLiter: null,
+    );
     if (context.mounted) {
       showStatusOverlay(context, '已恢复数据源价', StatusOverlayTone.success);
     }
@@ -1145,7 +1152,7 @@ class _TierRow extends StatelessWidget {
         _cell(
           context,
           flex: 4,
-          '¥${(costCents / 100).toStringAsFixed(2)}',
+          formatMoneyCents(costCents),
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: isCurrent ? tokens.primary : tokens.ink,
             fontWeight: FontWeight.w800,
@@ -1154,9 +1161,7 @@ class _TierRow extends StatelessWidget {
         _cell(
           context,
           flex: 4,
-          costAfterCents == null
-              ? '—'
-              : '¥${(costAfterCents! / 100).toStringAsFixed(2)}',
+          costAfterCents == null ? '—' : formatMoneyCents(costAfterCents!),
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: costAfterCents == null
                 ? tokens.muted

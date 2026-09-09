@@ -6,7 +6,7 @@
 //     翻成中文）、唯一约束识别。
 //
 // 只保留"多文件复用"的函数（§5.2 回收口径）：单文件消费的格式化
-// （金额、项目规则文案、提醒详情文案、项目名归一化等）已移回各自的
+// （项目规则文案、提醒详情文案、项目名归一化等）已移回各自的
 // 消费文件，避免这里的公共面无限膨胀。
 import 'package:flutter/material.dart';
 
@@ -125,6 +125,23 @@ String formatKmSinceLast(int? km) {
     return '—';
   }
   return '${formatNumber(km)} km';
+}
+
+/// 金额输入文本 → 分（四舍五入）。空/非法文本返回 null（= 未填）。
+/// 记录表单费用草稿（解析、算链、不一致判定）与提交清单共用。
+int? parseMoneyCents(String text) {
+  final value = double.tryParse(text.trim());
+  return value == null ? null : (value * 100).round();
+}
+
+/// 分 → 金额输入框文本（两位小数，与费用输入框历史格式一致）。
+/// 自动算链回填与草稿预填共用。
+String formatMoneyText(int cents) => (cents / 100).toStringAsFixed(2);
+
+/// 金额（分 → ¥xx.xx）展示文案。记录页卡片/详情弹窗与加油页
+/// 档位列表的加满金额共用。
+String formatMoneyCents(int costCents) {
+  return '¥${(costCents / 100).toStringAsFixed(2)}';
 }
 
 /// 识别 SQLite 唯一约束冲突（消息文本匹配 2067），
