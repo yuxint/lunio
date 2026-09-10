@@ -31,7 +31,10 @@ import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
 import 'notification_coordinator.dart';
 import 'reminder_dialogs.dart' as bridge;
+// ReminderViewData 类型已随 UI 半边拆到 reminder_rows.dart（内容组装
+// 函数仍在 reminder_notifications.dart）；两个 import 共用 bridge 别名。
 import 'reminder_notifications.dart' as bridge;
+import 'reminder_rows.dart' as bridge;
 
 /// 通知同步控制器。由 AppShell 的 State 创建/销毁：
 ///  - [ref]：主壳层的 WidgetRef（读 provider、listenManual）；

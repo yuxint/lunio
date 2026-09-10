@@ -16,9 +16,38 @@ import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
 import 'notification_coordinator.dart';
 import 'reminder_notifications.dart';
+import 'reminder_rows.dart';
 
 /// 弹窗动作结果枚举。
 enum ReminderDialogAction { acknowledged, snoozed }
+
+/// 到期详情长文案（应用内弹窗用，含超期量；兜底复用通知侧的
+/// 到期原因短文案）。
+String dueNoticeText(ReminderViewData row) {
+  final details = <String>[];
+  final daysRemaining = row.progress.daysRemaining;
+  if (row.item.remindByTime && daysRemaining != null && daysRemaining <= 0) {
+    details.add(
+      daysRemaining == 0
+          ? '时间今日到期'
+          : '已超 ${formatReminderDuration(daysRemaining.abs())}',
+    );
+  }
+  final mileageRemaining = row.progress.mileageRemainingKm;
+  if (row.item.remindByMileage &&
+      mileageRemaining != null &&
+      mileageRemaining <= 0) {
+    details.add(
+      mileageRemaining == 0
+          ? '里程已到期'
+          : '已超 ${formatNumber(mileageRemaining.abs())}km',
+    );
+  }
+  if (details.isEmpty) {
+    return dueReasonText(row);
+  }
+  return details.join(' · ');
+}
 
 /// 保养提醒弹窗：一次列出全部到期项（每项一段）。
 /// "15 天内不再提醒"经协调器逐项写 snooze 偏好后返回 snoozed。

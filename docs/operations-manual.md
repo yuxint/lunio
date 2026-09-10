@@ -127,16 +127,16 @@ appDatabaseProvider(:232)
 
 | 用户看到 | 代码位置 | 数据来源 |
 |---|---|---|
-| 品牌/车型/上路日期/当前里程 | `reminder_page.dart:78-99 → LunioHeroCard` | `appliedCarProvider`（providers.dart:173）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
-| "到期概览"文案（超期 x / 到期 x / 全部正常） | `reminder_notifications.dart:394 → dueOverviewText` | 全量重算提醒行（见 2.4） |
-| 右上角"更新里程"按钮 | `reminder_page.dart:81-82 → showQuickMileageUpdateSheet` | 快捷改里程 sheet，见 2.1.1 |
-| 右上角"切换车辆"按钮（多车才显示） | `reminder_page.dart:71 → showVehicleSwitcher` | `vehicles.dart:1369`，见 5.1.4 |
+| 品牌/车型/上路日期/当前里程 | `reminder_page.dart:76-97 → LunioHeroCard` | `appliedCarProvider`（providers.dart:173）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
+| "到期概览"文案（超期 x / 到期 x / 全部正常） | `reminder_page.dart → reminderRows.when` + `reminder_rows.dart → dueOverviewText` | watch `reminderRowsProvider`（reminder_rows.dart：watch 车辆/项目/记录/今天四上游，英雄卡与列表共消费，数据变化只组装一遍）；loading"计算中"/error"加载失败"由页面 when 收口，文案函数只收就绪数据，空态经 `classifyReminderRows` 单一出口 |
+| 右上角"更新里程"按钮 | `reminder_page.dart:80 → showQuickMileageUpdateSheet` | 快捷改里程 sheet，见 2.1.1 |
+| 右上角"切换车辆"按钮（多车才显示） | `reminder_page.dart:69 → showVehicleSwitcher` | `vehicles.dart:1369`，见 5.1.4 |
 
 #### 2.1.1 快捷更新里程（hero 卡"更新里程"按钮）
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `reminder_page.dart:179 → showQuickMileageUpdateSheet` | 弹表单 sheet（标题"更新里程"，副标题展示当前里程）；输入框（`LunioNumberField` 纯整数）**默认留空 + autofocus 自动弹数字键盘** | — |
+| 1 | `reminder_page.dart:165 → showQuickMileageUpdateSheet` | 弹表单 sheet（标题"更新里程"，副标题展示当前里程）；输入框（`LunioNumberField` 纯整数）**默认留空 + autofocus 自动弹数字键盘** | — |
 | 2 | 留空提交 → 行内校验错误"请输入当前里程" | 不落库 | — |
 | 3 | 新里程 ≤ 当前里程（**含相等**）提交 → 先弹确认框"里程未调高"（`showConfirmDialog`，非破坏性：确认键主色） | "仍要保存"强保继续；"取消"留在 sheet，库里不变 | — |
 | 4 | 确认/直接保存 → `shell_actions.dart → updateCar`（动作层，ADR 0007） | copyWith 里程（sync 置 pendingUpdate，与编辑车辆表单同通道）→ 写库 → 失效车辆家族 → 关 sheet + toast"里程已更新" | `cars` 表该行 `current_mileage_km` |
@@ -149,7 +149,7 @@ appDatabaseProvider(:232)
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `reminder_page.dart:128`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
+| 1 | `reminder_page.dart:103`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
 | 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（**点按钮此刻实时取系统时间，秒/毫秒截 0 默认整分**；时间轮可改时分秒）+ 免费时长（数字键盘输入框或 0.5/1/2 小时快捷 chip） | — |
 | 3 | 提交 → `parking_countdown.dart → saveParkingCountdown(context, ref, countdown)` | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。写偏好/失效阶段检查页面 context 仍挂载；sheet 提前关闭时通知尾巴照常走完（调度不依赖页面） | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
 | 4 | `lunio_notification_service.dart:243 → scheduleParkingCountdownNotification` | 先成对取消旧 9001/9002，再排新闹钟；**到点时刻已过则静默 return** | — |
@@ -162,17 +162,17 @@ appDatabaseProvider(:232)
 
 ### 2.3 新增保养记录入口
 
-`reminder_page.dart:126` → 记录表单（完整流程见 §4.2）。
+`reminder_page.dart:101` → 记录表单（完整流程见 §4.2）。
 
 ### 2.4 保养提醒列表（"待关注项目"）
 
 | 步骤 | 代码位置 | 做了什么 |
 |---|---|---|
-| 1 | `reminder_list.dart:22 → ReminderList` | 空态处理：无任何记录 → "记录首保后再生成保养提醒"（产品口径：无记录不产生提醒）；无启用项目 → 引导去"我的"配置 |
-| 2 | `reminder_notifications.dart:88 → buildReminderRows` | 只取启用项目 → 逐项找最近记录（`RecordRules.latestRecordForItem`，domain 层；同项目同日唯一约束保证按日期可唯一定位，无"同日多条"并列）→ 调 **进度计算**（见下）→ 排序（状态→百分比→sortOrder） |
+| 1 | `reminder_list.dart:21 → ReminderList` | 自取 `reminderRowsProvider`（不再由页面透传数据）：加载中 → 菊花；加载失败 → "加载失败：…"（车辆/项目/记录/今天四数据源合并成一个 provider，出错不再区分来源）；空态经 `classifyReminderRows` 单一出口：无任何记录 → "暂无保养记录"（产品约定：无记录不产生提醒）；无启用项目 → 引导去"我的"配置 |
+| 2 | `reminder_rows.dart:88 → buildReminderRows` | 只取启用项目 → 逐项找最近记录（`RecordRules.latestRecordForItem`，domain 层；同项目同日唯一约束保证按日期可唯一定位，无"同日多条"并列）→ 调 **进度计算**（见下）→ 排序（状态→百分比→sortOrder）。通知侧 `maintenanceNotices` 复用同一函数 |
 | 3 | `lib/domain/rules/maintenance_rules.dart:120 → progressForItem` | 里程维（当前里程−基线）/间隔、时间维（今天−基线日）/总天数，**双维取大**为展示进度；状态按项目阈值（默认 100 黄 / 125 红） |
-| 4 | `reminder_list.dart:88 → ReminderRow` | 进度环（`ReminderProgressRingPainter`）+ 状态徽章 + 剩余里程/时间文案 |
-| 5 | 点击行 → `reminder_list.dart:173 → showReminderRecordDetail` | 弹上次保养日期/里程 + 距上次时间/里程 sheet（距上次字段在 `buildReminderRows` 构造 `ReminderViewData` 时经 `RecordRules.daysSinceLast` / `kmSinceLast` 算好：基线记录 → 今天 / 当前里程；无记录或差值为负（补录乱序）已在 domain 折叠成 null，格式层只把 null 显示"—"） |
+| 4 | `reminder_list.dart:59 → ReminderRow` | 进度环（`ReminderProgressRingPainter`）+ 状态徽章 + 剩余里程/时间文案 |
+| 5 | 点击行 → `reminder_list.dart:151 → showReminderRecordDetail` | 弹上次保养日期/里程 + 距上次时间/里程 sheet（距上次字段在 `buildReminderRows` 构造 `ReminderViewData` 时经 `RecordRules.daysSinceLast` / `kmSinceLast` 算好：基线记录 → 今天 / 当前里程；无记录或差值为负（补录乱序）已在 domain 折叠成 null，格式层只把 null 显示"—"） |
 
 ---
 

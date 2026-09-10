@@ -1,77 +1,55 @@
 // 提醒列表：待关注项目卡片列表 + 单行卡片 + 点击详情 sheet + 进度环画笔。
 //
-// 空态处理（按优先级）：加载中 → 项目/记录加载失败 → 无任何记录
-// （"记录首保后再生成提醒"）→ 无启用项目 → 正常列表。
-// ⚠ 无记录时不显示提醒行（新车主不轰炸），产品口径见 maintenanceNotices。
+// 空态处理（按优先级）：加载中 → 加载失败 → 无任何记录（"暂无保养
+// 记录"）→ 无启用项目 → 正常列表；优先级判断单一出口在
+// reminder_rows.dart 的 classifyReminderRows。数据自取（watch
+// reminderRowsProvider），不再由页面透传 items/records/today。
+// ⚠ 无记录时不显示提醒行（新车主不轰炸），产品约定见 maintenanceNotices。
 // 列表用 Column 直排非懒加载（列表项有限，可接受）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
-import '../../../domain/entities/car.dart';
-import '../../../domain/entities/maintenance_item.dart';
-import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
-import 'reminder_notifications.dart';
+import 'reminder_rows.dart';
 
-/// 提醒列表容器：处理各种空态/错误态后渲染 ReminderRow 列表。
-class ReminderList extends StatelessWidget {
-  const ReminderList({
-    required this.car,
-    required this.items,
-    required this.records,
-    required this.today,
-  });
-
-  final Car car;
-  final AsyncValue<List<MaintenanceItem>> items;
-  final AsyncValue<List<MaintenanceRecord>> records;
-  final LocalDate today;
+/// 提醒列表容器：自取 reminderRowsProvider，处理各种空态/错误态后渲染
+/// ReminderRow 列表。
+class ReminderList extends ConsumerWidget {
+  const ReminderList();
 
   @override
-  Widget build(BuildContext context) {
-    if (items.isLoading || records.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (items.hasError) {
-      return LunioEmptyCard('保养项目加载失败：${friendlyError(items.error!)}');
-    }
-    if (records.hasError) {
-      return LunioEmptyCard('保养记录加载失败：${friendlyError(records.error!)}');
-    }
-    if ((records.value ?? const <MaintenanceRecord>[]).isEmpty) {
-      return LunioCard(
-        child: Text(
-          '暂无保养记录，记录首保后再生成保养提醒。',
-          style: Theme.of(context).textTheme.bodyMedium,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final board = ref.watch(reminderRowsProvider);
+    return board.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stackTrace) =>
+          LunioEmptyCard('加载失败：${friendlyError(error)}'),
+      data: (value) => switch (classifyReminderRows(value)) {
+        ReminderRowsNoRecords() => LunioCard(
+          child: Text(
+            '暂无保养记录',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ),
-      );
-    }
-    final rows = buildReminderRows(
-      car: car,
-      items: items.value ?? const [],
-      records: records.value ?? const [],
-      today: today,
-    );
-    if (rows.isEmpty) {
-      return LunioCard(
-        child: Text(
-          '暂无启用的保养项目，请先在“我的”里配置保养项目。',
-          style: Theme.of(context).textTheme.bodyMedium,
+        ReminderRowsNoEnabledItems() => LunioCard(
+          child: Text(
+            '暂无启用的保养项目，请先在“我的”里配置保养项目。',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ),
-      );
-    }
-    return Column(
-      children: [
-        for (final row in rows) ...[
-          ReminderRow(row: row),
-          const SizedBox(height: 12),
-        ],
-      ],
+        ReminderRowsData(:final rows) => Column(
+          children: [
+            for (final row in rows) ...[
+              ReminderRow(row: row),
+              const SizedBox(height: 12),
+            ],
+          ],
+        ),
+      },
     );
   }
 }

@@ -25,7 +25,7 @@ import '../records/records_page.dart';
 import '../shared/shell_shared.dart';
 import 'parking_countdown.dart';
 import 'reminder_list.dart';
-import 'reminder_notifications.dart';
+import 'reminder_rows.dart';
 
 /// 提醒页组件。
 class ReminderPreviewPage extends ConsumerStatefulWidget {
@@ -46,9 +46,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
   Widget build(BuildContext context) {
     final appliedCar = ref.watch(appliedCarProvider);
     final cars = ref.watch(carsProvider);
-    final items = ref.watch(appliedCarMaintenanceItemsProvider);
-    final records = ref.watch(appliedCarRecordsProvider);
-    final today = ref.watch(effectiveTodayProvider);
+    final reminderRows = ref.watch(reminderRowsProvider);
     final parkingCountdown = ref.watch(parkingCountdownProvider);
     final currentParkingCountdown = parkingCountdown.maybeWhen(
       data: (value) => value,
@@ -87,11 +85,12 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
                 ),
                 LunioMetric(
                   label: '到期概览',
-                  value: today.when(
+                  // loading/error 由 rows provider 的 when 收口，
+                  // 英雄卡只把就绪数据交给概览文案函数（纯数据入参）。
+                  value: reminderRows.when(
                     loading: () => '计算中',
-                    error: (error, stackTrace) => '日期失败',
-                    data: (value) =>
-                        dueOverviewText(items, records, car, value),
+                    error: (error, stackTrace) => '加载失败',
+                    data: (value) => dueOverviewText(value),
                   ),
                 ),
               ],
@@ -117,20 +116,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
           if (car != null)
             LunioSection(
               title: '待关注项目',
-              children: [
-                today.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (error, stackTrace) =>
-                      LunioEmptyCard('日期加载失败：${friendlyError(error)}'),
-                  data: (value) => ReminderList(
-                    car: car,
-                    items: items,
-                    records: records,
-                    today: value,
-                  ),
-                ),
-              ],
+              children: const [ReminderList()],
             ),
         ],
       ),

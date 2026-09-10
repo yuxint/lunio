@@ -74,7 +74,7 @@ void main() {
 
     expect(find.text('到期概览'), findsOneWidget);
     expect(find.text('暂无'), findsOneWidget);
-    expect(find.text('暂无保养记录，记录首保后再生成保养提醒。'), findsOneWidget);
+    expect(find.text('暂无保养记录'), findsOneWidget);
     expect(find.text('管理项目'), findsNothing);
     expect(find.text('按当前应用车辆计算里程与时间进度'), findsNothing);
   });
@@ -108,7 +108,7 @@ void main() {
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
 
-    expect(find.text('暂无保养记录，记录首保后再生成保养提醒。'), findsOneWidget);
+    expect(find.text('暂无保养记录'), findsOneWidget);
     expect(find.text('15 天内不再提醒'), findsNothing);
   });
 

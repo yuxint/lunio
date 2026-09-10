@@ -1,20 +1,20 @@
-// 提醒业务的 view-data 层：领域计算结果 → UI/通知 展示模型的转换
-// + 系统通知的内容组装。
+// 提醒通知域的内容组装：系统通知清单、应用内到期清单、全量数据签名。
 //
-// 被三处消费（同一套计算保证口径一致）：
-//  1. 提醒列表 ReminderList（buildReminderRows）；
-//  2. 英雄卡"到期概览"文案（dueOverviewText）；
-//  3. 系统通知内容（buildScheduledNotifications，通知同步控制器调用）。
-//
+// 在 App 中的位置：提醒的 UI 半边（视图模型/行组装/空态分类/英雄卡
+// 概览）已拆到 reminder_rows.dart，本文件只保留通知同步控制器消费的
+// 三块：
+//  1. 系统通知清单组装（buildScheduledNotifications，控制器重排时调用）；
+//  2. 应用内提醒弹窗的到期清单（maintenanceNotices，控制器过滤静默后
+//     传给 reminder_dialogs）；
+//  3. 全量数据签名（reminderNotificationDataSignature + 停车倒计时
+//     摘要），签名变化才重排系统通知/弹应用内弹窗。
+// 行组装与 UI 复用同一个 buildReminderRows（reminder_rows.dart），
+// "界面看到的"和"通知里发的"来自同一次组装规则。
 // snooze/ack 抑制协议（"稍后提醒"/"知道了"）已收编进通知协调器
 // notification_coordinator.dart，本文件只经它的两个静默读方法过滤。
-// ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/date/local_date.dart';
 import '../../../core/notifications/lunio_notification_service.dart';
-import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
@@ -22,123 +22,8 @@ import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/reminder.dart';
 import '../../../domain/rules/maintenance_rules.dart';
-import '../../../domain/rules/record_rules.dart';
-import '../shared/shell_shared.dart';
 import 'notification_coordinator.dart';
-
-/// 单个保养项目的提醒展示模型（≈ 前端 ViewModel）：
-/// 项目 + 进度 + 最近记录，附展示用 getter（百分比/徽章文案/语义色/详情行）。
-class ReminderViewData {
-  const ReminderViewData({
-    required this.item,
-    required this.progress,
-    required this.latestRecord,
-    this.daysSinceLatest,
-    this.kmSinceLatest,
-  });
-
-  final MaintenanceItem item;
-  final ReminderProgress progress;
-  final MaintenanceRecord? latestRecord;
-
-  /// 距上次时间：最近记录 → 今天的天数。无最近记录，或差值为负
-  /// （补录乱序，已在 RecordRules 折叠成 null）时为 null，详情弹窗显示占位 —。
-  final int? daysSinceLatest;
-
-  /// 距上次里程：车辆当前里程 − 最近记录里程。折叠规则同 [daysSinceLatest]。
-  final int? kmSinceLatest;
-
-  String get title => item.name;
-
-  int get displayPercent => MaintenanceRules.displayPercentForThresholds(
-    percent: progress.percent,
-    notOverdueUpperLimit: item.notOverdueUpperLimit,
-    overdueUpperLimit: item.overdueUpperLimit,
-  );
-
-  String get percentText => formatPercent(displayPercent);
-
-  LunioStatusTone get tone => progress.status.tone;
-
-  String get badge {
-    return switch (progress.status) {
-      ReminderStatus.normal => '正常',
-      ReminderStatus.warning => '到期',
-      ReminderStatus.danger => '超期',
-    };
-  }
-
-  List<String> get detailTexts {
-    final details = <String>[];
-    if (item.remindByMileage && progress.mileageRemainingKm != null) {
-      details.add(_mileageReminderText(progress.mileageRemainingKm!));
-    }
-    if (item.remindByTime && progress.daysRemaining != null) {
-      details.add(timeReminderText(progress.daysRemaining!));
-    }
-    if (details.isEmpty) {
-      details.add('未设置提醒规则');
-    }
-    return details;
-  }
-}
-
-/// 构建提醒列表行：只取启用且有 id 的项目 → 逐项算进度 → 排序。
-/// 排序规则：状态越差越靠前（超期>到期>正常）→ 百分比降序 → sortOrder。
-List<ReminderViewData> buildReminderRows({
-  required Car car,
-  required List<MaintenanceItem> items,
-  required List<MaintenanceRecord> records,
-  required LocalDate today,
-}) {
-  final rows = <ReminderViewData>[];
-  for (final item in items.where((item) => item.enabled && item.id != null)) {
-    final latestRecord = RecordRules.latestRecordForItem(
-      records: records,
-      itemId: item.id!,
-    );
-    final progress = MaintenanceRules.progressForItem(
-      item: item,
-      latestRecord: latestRecord,
-      currentMileageKm: car.currentMileageKm,
-      noHistoryBaselineDate: car.roadDate,
-      today: today,
-    );
-    rows.add(
-      ReminderViewData(
-        item: item,
-        progress: progress,
-        latestRecord: latestRecord,
-        // 距上次（提醒页参照点 = 今天 / 车辆当前里程），详情弹窗直接读；
-        // 无基线或差值为负已在 domain 折叠成 null。
-        daysSinceLatest: RecordRules.daysSinceLast(
-          baselineRecord: latestRecord,
-          untilDate: today,
-        ),
-        kmSinceLatest: RecordRules.kmSinceLast(
-          baselineRecord: latestRecord,
-          untilMileageKm: car.currentMileageKm,
-        ),
-      ),
-    );
-  }
-  rows.sort((left, right) {
-    final statusCompare = reminderStatusRank(
-      right.progress.status,
-    ).compareTo(reminderStatusRank(left.progress.status));
-    if (statusCompare != 0) {
-      return statusCompare;
-    }
-    final progressCompare = right.progress.percent.compareTo(
-      left.progress.percent,
-    );
-    if (progressCompare != 0) {
-      return progressCompare;
-    }
-    return left.item.sortOrder.compareTo(right.item.sortOrder);
-  });
-  return rows;
-}
+import 'reminder_rows.dart';
 
 /// 组装系统通知清单（通知同步控制器重排时调用）：
 ///  - 到期项目 ≥1（"稍后提醒"过滤后）→ 一条汇总通知 id 8000"保养提醒"
@@ -322,33 +207,6 @@ String dueReasonText(ReminderViewData row) {
   return '到期';
 }
 
-/// 到期详情长文案（应用内弹窗用，含超期量）。
-String dueNoticeText(ReminderViewData row) {
-  final details = <String>[];
-  final daysRemaining = row.progress.daysRemaining;
-  if (row.item.remindByTime && daysRemaining != null && daysRemaining <= 0) {
-    details.add(
-      daysRemaining == 0
-          ? '时间今日到期'
-          : '已超 ${formatReminderDuration(daysRemaining.abs())}',
-    );
-  }
-  final mileageRemaining = row.progress.mileageRemainingKm;
-  if (row.item.remindByMileage &&
-      mileageRemaining != null &&
-      mileageRemaining <= 0) {
-    details.add(
-      mileageRemaining == 0
-          ? '里程已到期'
-          : '已超 ${formatNumber(mileageRemaining.abs())}km',
-    );
-  }
-  if (details.isEmpty) {
-    return dueReasonText(row);
-  }
-  return details.join(' · ');
-}
-
 /// 到期项目清单（应用内弹窗与系统通知共用）。
 /// 注意：没有任何记录时直接返回空——产品约定"没记录就不产生提醒"
 /// （新车主不会被无历史基线的假超期轰炸）。
@@ -382,70 +240,4 @@ List<ReminderViewData> maintenanceNotices({
 bool noticeDueForRow(ReminderViewData row) {
   return row.progress.status == ReminderStatus.warning ||
       row.progress.status == ReminderStatus.danger;
-}
-
-/// 状态排序权重（越大越紧急）。
-int reminderStatusRank(ReminderStatus status) {
-  return switch (status) {
-    ReminderStatus.normal => 0,
-    ReminderStatus.warning => 1,
-    ReminderStatus.danger => 2,
-  };
-}
-
-/// 英雄卡"到期概览"文案：如"超期 1 / 到期 2"、"全部正常"、"暂无"。
-/// 数据变化时重算（页面已无周期性 ticker，不再高频执行）。
-String dueOverviewText(
-  AsyncValue<List<MaintenanceItem>> items,
-  AsyncValue<List<MaintenanceRecord>> records,
-  Car car,
-  LocalDate today,
-) {
-  if (items.isLoading || records.isLoading) {
-    return '计算中';
-  }
-  if (items.hasError || records.hasError) {
-    return '加载失败';
-  }
-  if ((records.value ?? const <MaintenanceRecord>[]).isEmpty) {
-    return '暂无';
-  }
-  final rows = buildReminderRows(
-    car: car,
-    items: items.value ?? const [],
-    records: records.value ?? const [],
-    today: today,
-  );
-  if (rows.isEmpty) {
-    return '无项目';
-  }
-  final overdueCount = rows
-      .where((row) => row.progress.status == ReminderStatus.danger)
-      .length;
-  final dueCount = rows
-      .where((row) => row.progress.status == ReminderStatus.warning)
-      .length;
-  if (overdueCount > 0 && dueCount > 0) {
-    return '超期 $overdueCount / 到期 $dueCount';
-  }
-  if (overdueCount > 0) {
-    return '超期 $overdueCount';
-  }
-  if (dueCount > 0) {
-    return '到期 $dueCount';
-  }
-  return '全部正常';
-}
-
-// ---- 文件内私有格式化（§5.2 回收：仅本文件消费的函数不留公共面）----
-
-/// 里程维剩余文案（提醒详情用）。
-String _mileageReminderText(int remainingKm) {
-  if (remainingKm > 0) {
-    return '里程：距离下次约 ${formatNumber(remainingKm)} 公里';
-  }
-  if (remainingKm == 0) {
-    return '里程：已到期';
-  }
-  return '里程：已超 ${formatNumber(remainingKm.abs())} 公里';
 }
