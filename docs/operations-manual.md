@@ -230,7 +230,7 @@ appDatabaseProvider(:232)
 
 ### 4.4 记录详情弹窗（ADR 0010）
 
-**入口**：按周期视图点记录卡任意位置（`RecordCycleCard` 内 `InkWell`）或按项目视图点项目行（`RecordItemRowCard`）→ `records_page.dart → showRecordDetailSheet`（两种卡片都持有该车**全量**记录 `carRecords` 并传入——按项目视图找"上一条"必须用未筛选列表，按年份筛选会把上一条筛掉）。
+**入口**：按周期视图点记录卡任意位置（`RecordCycleCard` 内 `InkWell`）或按项目视图点项目行（`RecordItemRowCard`）→ `record_detail_sheet.dart → showRecordDetailSheet`（弹窗自取数据：自己 watch 该车**全量**记录与项目两个 provider，卡片不再透传 `carRecords`——按项目视图找"上一条"必须用未筛选列表、按年份筛选会把上一条筛掉，这条知识现在是弹窗内部的实现细节）。
 
 | 视图 | 内容 | 展示规则 |
 |---|---|---|

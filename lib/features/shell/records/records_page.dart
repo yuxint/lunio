@@ -5,8 +5,9 @@
 //      第一格"全部"= 清空筛选）——固定头部 sliver；
 //   2. 记录列表：SliverList.builder 懒加载（每项 ValueKey）；
 //      按周期 = 每条记录一张卡；按项目 = 记录×项目展开成行；
-//   3. 卡片整卡可点 → 记录详情弹窗（按周期看全部项目费用、按项目只看
-//      该项目，ADR 0010）；卡上的编辑/删除按钮。
+//   3. 卡片整卡可点 → 记录详情弹窗（record_detail_sheet.dart，弹窗
+//      自取数据，卡片不再透传全量记录；按周期看全部项目费用、按项目
+//      只看该项目，ADR 0010）；卡上的编辑/删除按钮。
 //
 // 新增/编辑表单是两步流：第一步填日期/里程/费用/备注/选项目（可行内
 // 新增项目并自动勾选）→ 第二步确认所选项目的提醒间隔（可改，保存时
@@ -29,10 +30,10 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
-import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 import 'record_cost_form_controller.dart';
+import 'record_detail_sheet.dart';
 
 /// 记录页主组件。
 class RecordsPreviewPage extends ConsumerStatefulWidget {
@@ -196,8 +197,6 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
             child: RecordCycleCard(
               record: record,
               items: items,
-              // 详情弹窗的"距上次"要用未筛选的全量记录找上一条。
-              carRecords: records,
               onEdit: (record) =>
                   showMaintenanceRecordFormSheet(context, ref, record: record),
               onDelete: (record) =>
@@ -207,22 +206,15 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
         },
       );
     }
-    // 第二个列表参数是未筛选的全量记录：按项目视图找"上一条"必须用
-    // 它，筛选后的列表在按年份过滤时会把上一条筛掉导致误显示 —。
-    return _buildItemRowsSliver(
-      filteredRecords,
-      records,
-      items,
-      selections.itemIds,
-    );
+    // 详情弹窗自取全量记录（record_detail_sheet.dart），这里只传
+    // 筛选后的展示列表。
+    return _buildItemRowsSliver(filteredRecords, items, selections.itemIds);
   }
 
   /// 按项目视图：记录×项目展开成行，同样走 SliverList.builder。
-  /// [records] 是筛选后的展示列表，[allRecords] 是该车全量记录
-  /// （仅用于详情弹窗定位同项目上一条记录）。
+  /// [records] 是筛选后的展示列表。
   Widget _buildItemRowsSliver(
     List<MaintenanceRecord> records,
-    List<MaintenanceRecord> allRecords,
     List<MaintenanceItem> items,
     Set<int> validSelectedItemIds,
   ) {
@@ -257,7 +249,6 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
             record: row.record,
             itemId: row.itemId,
             item: row.item,
-            carRecords: allRecords,
             onEdit: (record, itemId) =>
                 showMaintenanceRecordFormSheet(context, ref, record: record),
             onDelete: (record, itemId) =>
@@ -276,16 +267,12 @@ class RecordCycleCard extends StatelessWidget {
   const RecordCycleCard({
     required this.record,
     required this.items,
-    required this.carRecords,
     required this.onEdit,
     required this.onDelete,
   });
 
   final MaintenanceRecord record;
   final List<MaintenanceItem> items;
-
-  /// 该车全量记录（未筛选），原样传给详情弹窗。
-  final List<MaintenanceRecord> carRecords;
   final ValueChanged<MaintenanceRecord> onEdit;
   final ValueChanged<MaintenanceRecord> onDelete;
 
@@ -300,12 +287,7 @@ class RecordCycleCard extends StatelessWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(tokens.radiusLarge),
         child: InkWell(
-          onTap: () => showRecordDetailSheet(
-            context,
-            record: record,
-            items: items,
-            carRecords: carRecords,
-          ),
+          onTap: () => showRecordDetailSheet(context, record: record),
           borderRadius: BorderRadius.circular(tokens.radiusLarge),
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -393,7 +375,6 @@ class RecordItemRowCard extends StatelessWidget {
     required this.record,
     required this.itemId,
     required this.item,
-    required this.carRecords,
     required this.onEdit,
     required this.onDelete,
   });
@@ -401,9 +382,6 @@ class RecordItemRowCard extends StatelessWidget {
   final MaintenanceRecord record;
   final int itemId;
   final MaintenanceItem? item;
-
-  /// 该车全量记录（未筛选）：详情弹窗定位该项目上一条记录用。
-  final List<MaintenanceRecord> carRecords;
   final void Function(MaintenanceRecord record, int itemId) onEdit;
   final void Function(MaintenanceRecord record, int itemId) onDelete;
 
@@ -420,8 +398,6 @@ class RecordItemRowCard extends StatelessWidget {
           onTap: () => showRecordDetailSheet(
             context,
             record: record,
-            items: [?item],
-            carRecords: carRecords,
             focusItemId: itemId,
           ),
           borderRadius: BorderRadius.circular(tokens.radiusLarge),
@@ -1146,320 +1122,6 @@ Future<void> deleteMaintenanceRecordItem(
 // ---- 文件内私有组件（§5.2 回收：仅本页消费的不进共享层）----
 // 金额展示/解析（formatMoneyCents/parseMoneyCents/formatMoneyText）
 // 已升入共享 formatters.dart，经 shell_shared.dart barrel 使用。
-
-/// ★ 记录详情弹窗（记录页两种视图的整卡点击入口，ADR 0010）：
-///  - focusItemId 为空（按周期视图）：看整条记录——日期/里程/总费用
-///    指标格 + 备注 + 全部项目费用清单；
-///  - focusItemId 非空（按项目视图）：只看该项目——日期/里程 + 距上次
-///    时间/里程（参照点 = 该项目上一条记录 → 本条）+ 材料费/工时费
-///    一行 + 项目费用格。
-/// 展示永远取存储值（单项目以项目费用为准、整条以总费用为准），
-/// 不一致的项目费用/总费用加黄色警告角标，不做读时修正。
-void showRecordDetailSheet(
-  BuildContext context, {
-  required MaintenanceRecord record,
-  required List<MaintenanceItem> items,
-  required List<MaintenanceRecord> carRecords,
-  int? focusItemId,
-}) {
-  showLunioModalSheet<void>(
-    context: context,
-    builder: (sheetContext) {
-      final costsByItemId = <int, RecordItemCost>{
-        for (final cost in record.itemCosts) cost.itemId: cost,
-      };
-      final focusCost = focusItemId == null
-          ? null
-          : costsByItemId[focusItemId];
-      final totalMismatch = RecordRules.totalCostMismatch(
-        totalCostCents: record.costCents,
-        itemCosts: record.itemCosts,
-      );
-      final Widget content;
-      if (focusItemId == null) {
-        content = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _RecordMetricTile(
-                    label: '保养日期',
-                    value: record.date.toString(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _RecordMetricTile(
-                    label: '保养里程',
-                    value: '${formatNumber(record.mileageKm)} km',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _RecordMetricTile(
-              label: '总费用',
-              value: formatMoneyCents(record.costCents),
-              warning: totalMismatch,
-            ),
-            if ((record.note ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              _RecordNoteBlock(note: record.note!.trim()),
-            ],
-            const SizedBox(height: 14),
-            Text('项目费用', style: Theme.of(sheetContext).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            for (final itemId in record.itemIds)
-              _ItemCostListRow(
-                name: itemById(items, itemId)?.name ?? '未知项目',
-                cost: costsByItemId[itemId],
-              ),
-          ],
-        );
-      } else {
-        // 距上次参照点 = 该项目上一条记录 → 本条（从全量记录里找，
-        // 严格早于本条日期的最新一条）；项目首条或差值为负显示 —。
-        final previousRecord = RecordRules.previousRecordForItem(
-          records: carRecords,
-          itemId: focusItemId,
-          beforeDate: record.date,
-        );
-        final materialCents = focusCost?.materialCents;
-        final laborCents = focusCost?.laborCents;
-        // 材料费/工时费都未填时整行不显示；只填一格另一格显示 —。
-        final hasSplitCosts = materialCents != null || laborCents != null;
-        content = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _RecordMetricTile(
-                    label: '保养日期',
-                    value: record.date.toString(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _RecordMetricTile(
-                    label: '保养里程',
-                    value: '${formatNumber(record.mileageKm)} km',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _RecordMetricTile(
-                    label: '距上次时间',
-                    value: formatDaysSinceLast(
-                      RecordRules.daysSinceLast(
-                        baselineRecord: previousRecord,
-                        untilDate: record.date,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _RecordMetricTile(
-                    label: '距上次里程',
-                    value: formatKmSinceLast(
-                      RecordRules.kmSinceLast(
-                        baselineRecord: previousRecord,
-                        untilMileageKm: record.mileageKm,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (hasSplitCosts) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: _RecordMetricTile(
-                      label: '材料费',
-                      value: materialCents == null
-                          ? '—'
-                          : formatMoneyCents(materialCents),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _RecordMetricTile(
-                      label: '工时费',
-                      value: laborCents == null
-                          ? '—'
-                          : formatMoneyCents(laborCents),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 10),
-            _RecordMetricTile(
-              label: '项目费用',
-              value: focusCost?.costCents == null
-                  ? '—'
-                  : formatMoneyCents(focusCost!.costCents!),
-              warning: focusCost != null &&
-                  RecordRules.itemCostMismatch(focusCost),
-            ),
-          ],
-        );
-      }
-      return PrototypeSheetFrame(
-        title: focusItemId == null
-            ? '保养记录'
-            : itemById(items, focusItemId)?.name ?? '未知项目',
-        // 副标题只在按周期视图显示总费用；按项目视图没有总费用概念。
-        subtitle: focusItemId == null
-            ? '整条记录总费用 ${formatMoneyCents(record.costCents)}'
-            : null,
-        child: content,
-      );
-    },
-  );
-}
-
-/// 详情弹窗里的指标格（标签 + 值，风格与提醒页详情一致）。
-/// warning 为 true 时值旁加黄色警告角标（费用不一致提示，ADR 0010）。
-class _RecordMetricTile extends StatelessWidget {
-  const _RecordMetricTile({
-    required this.label,
-    required this.value,
-    this.warning = false,
-  });
-
-  final String label;
-  final String value;
-  final bool warning;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surface2,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: tokens.muted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (warning)
-            Icon(Icons.warning_amber_rounded, size: 20, color: tokens.warning),
-        ],
-      ),
-    );
-  }
-}
-
-/// 详情弹窗的备注块（surface2 容器整行展示）。
-class _RecordNoteBlock extends StatelessWidget {
-  const _RecordNoteBlock({required this.note});
-
-  final String note;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: tokens.surface2,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-      ),
-      child: Text(note, style: Theme.of(context).textTheme.bodyMedium),
-    );
-  }
-}
-
-/// 详情弹窗项目费用清单的一行：项目名 + 项目费用（未填显示占位 —），
-/// 填了材料/工时的用小字标注；项目费用与材料+工时不一致时加黄色
-/// 警告角标（ADR 0010）。
-class _ItemCostListRow extends StatelessWidget {
-  const _ItemCostListRow({required this.name, this.cost});
-
-  final String name;
-  final RecordItemCost? cost;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final splitParts = <String>[
-      if (cost?.materialCents != null)
-        '材料 ${formatMoneyCents(cost!.materialCents!)}',
-      if (cost?.laborCents != null) '工时 ${formatMoneyCents(cost!.laborCents!)}',
-    ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (splitParts.isNotEmpty)
-                  Text(
-                    splitParts.join(' / '),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: tokens.muted,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (cost != null && RecordRules.itemCostMismatch(cost!))
-            Icon(Icons.warning_amber_rounded, size: 18, color: tokens.warning),
-          const SizedBox(width: 6),
-          Text(
-            cost?.costCents == null ? '—' : formatMoneyCents(cost!.costCents!),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: tokens.primary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// 详细模式下单个项目的费用输入行（ADR 0010）：项目名 + 材料/工时/
 /// 项目费用三个紧凑数字框。项目费用与材料+工时不一致时项目费用红字
