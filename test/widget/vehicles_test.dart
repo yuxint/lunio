@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/features/shell/profile/vehicles.dart' show PickerOption;
 
@@ -163,6 +164,34 @@ void main() {
 
     expect(find.text('机油'), findsNothing);
     expect(find.text('减速器油'), findsOneWidget);
+  });
+
+
+  testWidgets('add car wizard shows template load error back on first step', (
+    tester,
+  ) async {
+    // 模板 family 直接抛错：失败要退回第一步且错误可见（此前 errorText
+    // 只在第二步分支渲染，第一步实际什么都不显示）。
+    await pumpApp(
+      tester,
+      extraOverrides: [
+        defaultItemsTemplateProvider.overrideWith(
+          (ref, key) async => throw Exception('模板加载失败'),
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    // 退回第一步：错误行内可见，没进入第二步（sheet 标题还是"添加车辆"）。
+    expect(find.text('操作失败，请稍后重试'), findsOneWidget);
+    expect(find.text('上一步'), findsNothing);
+    expect(find.text('保养项目'), findsNothing);
   });
 
 

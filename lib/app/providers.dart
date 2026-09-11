@@ -38,6 +38,7 @@
 //   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
+//   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
 //   └─ 加油域 provider（开关/省份/油品/手填价/油价控制器）挂 fuelRepositoryProvider
 // ```
 import 'package:flutter/material.dart';
@@ -60,6 +61,8 @@ import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
 import '../domain/entities/notification_settings.dart';
 import '../domain/entities/parking_countdown.dart';
+import '../domain/entities/powertrain_type.dart';
+import '../domain/entities/vehicle_default_maintenance_item.dart';
 import '../domain/entities/vehicle_model.dart';
 import '../domain/rules/fuel_rules.dart';
 
@@ -288,6 +291,24 @@ final defaultMaintenanceBootstrapProvider = FutureProvider<void>((ref) {
 final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) async {
   await ref.watch(defaultMaintenanceBootstrapProvider.future);
   return ref.watch(builtInCatalogRepositoryProvider).listVehicleModels();
+});
+
+/// 添加车辆向导第二步的默认保养项目模板，按"品牌·车型·动力类型"缓存的
+/// family（key 是 Dart record，结构化相等）。解析规则只此一份：仓库的
+/// resolveDefaultItems（ensureBootstrapData + 车型专属优先回退通用，
+/// ADR 0004）。模板是内置只读数据，不存在"写库后失效"问题，family
+/// 常驻缓存即可；向导 State 只保留"模板 → 草稿"的转换。
+final defaultItemsTemplateProvider = FutureProvider.family<
+  List<VehicleDefaultMaintenanceItem>,
+  ({String brand, String model, PowertrainType powertrain})
+>((ref, key) {
+  return ref
+      .watch(builtInCatalogRepositoryProvider)
+      .resolveDefaultItems(
+        brand: key.brand,
+        model: key.model,
+        selectedPowertrain: key.powertrain,
+      );
 });
 
 /// 当前用户所有车辆列表。显式 await bootstrap 完成（依赖显式化，R29）：

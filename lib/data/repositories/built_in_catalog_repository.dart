@@ -308,6 +308,27 @@ class BuiltInCatalogRepository {
         ),
     ];
   }
+
+  /// 添加车辆向导的默认模板解析唯一入口：先确保 bootstrap 对账，
+  /// 车型专属模板优先（ADR 0004，命中规则见 [listDefaultItemsForVehicleModel]），
+  /// 未命中回退所选动力类型的通用模板。向导的模板 family provider
+  /// （providers.dart defaultItemsTemplateProvider）只调本方法，不再自己拼规则。
+  Future<List<domain.VehicleDefaultMaintenanceItem>> resolveDefaultItems({
+    required String brand,
+    required String model,
+    required domain.PowertrainType selectedPowertrain,
+  }) async {
+    await ensureBootstrapData();
+    final vehicleSpecific = await listDefaultItemsForVehicleModel(
+      brand: brand,
+      model: model,
+      selectedPowertrain: selectedPowertrain,
+    );
+    if (vehicleSpecific != null) {
+      return vehicleSpecific;
+    }
+    return listDefaultItemsForPowertrain(powertrainType: selectedPowertrain);
+  }
 }
 
 // bootstrap 对账用的"旧数据兜底键"：\u0000 作分隔符保证组合不歧义。

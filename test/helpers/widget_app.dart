@@ -282,7 +282,10 @@ Future<void> pumpUntilFound(WidgetTester tester, Finder finder) async {
 
 /// 装配完整 App：内存数据库 + 测试目录 + 固定"今天"（2026-05-19）+
 /// 假油价源 + 全新通知服务实例（用例间不共享通知服务状态）。
-/// 返回数据库供用例体播种/断言。
+/// 返回数据库供用例体播种/断言。extraOverrides 供个别用例追加
+/// provider 覆盖（如让模板 family 抛错验证失败路径）。Riverpod 3 未导出
+/// Override 类型，这里用 dynamic 承接，展开进 overrides 列表时由
+/// ProviderScope 的参数类型收窄。
 Future<AppDatabase> pumpApp(
   WidgetTester tester, {
   AppDateContext? dateContext,
@@ -290,6 +293,7 @@ Future<AppDatabase> pumpApp(
   bool systemNotificationsEnabled = false,
   bool inAppNotificationsEnabled = false,
   FuelAdjustmentForecast? fuelForecast,
+  List<dynamic> extraOverrides = const [],
 }) async {
   final appDatabase = database ?? AppDatabase.inMemory();
   if (database == null) {
@@ -330,6 +334,7 @@ Future<AppDatabase> pumpApp(
         fuelPriceSourceProvider.overrideWithValue(
           _FakeFuelPriceSource(forecast: fuelForecast),
         ),
+        ...extraOverrides,
       ],
       child: LunioApp(routerConfig: buildAppRouter()),
     ),

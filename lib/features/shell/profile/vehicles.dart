@@ -5,7 +5,9 @@
 //   列表外可自定义输入）+ 动力类型（五选一，按目录推荐值预选）
 //   + 当前里程 + 上路日期 + 油箱容积（选填，加油预估用）；
 //   第二步 AddCarMaintenanceItemsStep（在 maintenance_items.dart）：
-//   按动力类型取默认保养项目草稿（可编辑/启停/删除/新增/恢复），点保存 →
+//   默认模板经 defaultItemsTemplateProvider（providers.dart，按车型键缓存，
+//   车型专属优先回退通用，ADR 0004）转成项目草稿（可编辑/启停/删除/新增/
+//   恢复），点保存 →
 //   Repository.createCarWithMaintenanceItems 事务落库（首辆车自动设为应用车辆）。
 //
 // 编辑车辆（showEditCarSheet）：品牌车型与动力类型锁定（身份字段不可改），
@@ -493,134 +495,134 @@ class AddCarFormState extends State<AddCarForm> with LunioFormSubmit {
 
 /// 添加车辆两步向导（第一步车辆信息 → 第二步保养项目草稿）。
 /// onMaintenanceStepChanged 通知外层 sheet 切标题。
-class AddCarWizard extends StatefulWidget {
+class AddCarWizard extends ConsumerStatefulWidget {
   const AddCarWizard({
     required this.vehicleModels,
     required this.today,
-    required this.loadDefaultItems,
     required this.onMaintenanceStepChanged,
     required this.onSubmit,
   });
 
   final List<VehicleModel> vehicleModels;
   final LocalDate today;
-  final Future<List<VehicleDefaultMaintenanceItem>> Function(Car car)
-  loadDefaultItems;
   final ValueChanged<bool> onMaintenanceStepChanged;
   final Future<void> Function(Car car, List<MaintenanceItem> items) onSubmit;
 
   @override
-  State<AddCarWizard> createState() => AddCarWizardState();
+  ConsumerState<AddCarWizard> createState() => AddCarWizardState();
 }
 
-class AddCarWizardState extends State<AddCarWizard> {
+/// 模板 family 的缓存键：品牌/车型/所选动力类型（record 结构化相等，
+/// 与 providers.dart 的 defaultItemsTemplateProvider key 同形）。
+({String brand, String model, PowertrainType powertrain}) _carKey(Car car) =>
+    (brand: car.brand, model: car.model, powertrain: car.powertrainType);
+
+class AddCarWizardState extends ConsumerState<AddCarWizard>
+    with LunioFormSubmit {
   /// 第一步的车辆草稿（非 null 且 !editingCarDraft 时进入第二步）。
   Car? carDraft;
 
-  /// 第二步的项目草稿列表（null = 正在加载默认模板）。
+  /// 第二步的项目草稿列表（null = 还没从模板转出）。
   List<MaintenanceItem>? itemDrafts;
 
-  /// 当前车型对应的默认模板（"恢复"功能用）。
-  List<VehicleDefaultMaintenanceItem>? defaultItemTemplates;
-
-  /// 已加载模板的车型标识（brand\u0000model\u0000动力类型）：返回第一步
-  /// 没换车型且没换动力类型时不重新加载，保留用户已做的草稿修改。
-  String? itemModelKey;
-
-  /// 加载防串号：只接受最新一次请求的结果（写法正确）。
-  int loadRequestId = 0;
+  /// 当前草稿所属的车型键（品牌·车型·动力类型）："上一步"回到第一步
+  /// 再进来时同键直接复用草稿（保留用户已做的修改），换键才重新转。
+  ({String brand, String model, PowertrainType powertrain})? itemModelKey;
 
   /// "上一步"标记：true 时显示第一步表单（复用 carDraft 作初始值）。
   bool editingCarDraft = false;
-  bool loadingItems = false;
-  bool saving = false;
-  String? errorText;
 
   @override
   Widget build(BuildContext context) {
     final car = carDraft;
-    final items = itemDrafts;
     if (car == null || editingCarDraft) {
-      return AddCarForm(
-        vehicleModels: widget.vehicleModels,
-        today: widget.today,
-        initialCar: carDraft,
-        submitLabel: '下一步',
-        onSubmit: _handleCarDraft,
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 模板加载失败退回第一步时错误要真正可见（此前 errorText 只在
+          // 第二步分支渲染，第一步实际什么都不显示）。
+          if (errorText != null) ...[
+            LunioInlineMessage(
+              message: errorText!,
+              tone: LunioStatusTone.danger,
+            ),
+            const SizedBox(height: 10),
+          ],
+          AddCarForm(
+            vehicleModels: widget.vehicleModels,
+            today: widget.today,
+            initialCar: carDraft,
+            submitLabel: '下一步',
+            onSubmit: _handleCarDraft,
+          ),
+        ],
       );
     }
-    if (items == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 28),
-        child: Center(child: CircularProgressIndicator()),
+    final key = _carKey(car);
+    // 常驻 watch：保活模板 family（"恢复默认项目"要读它，实例无人监听
+    // 会被逐出）。加载态由下面"草稿是否就绪"统一表现，这里不取值。
+    ref.watch(defaultItemsTemplateProvider(key));
+    final items = itemDrafts;
+    if (items != null && itemModelKey == key) {
+      return AddCarMaintenanceItemsStep(
+        car: car,
+        items: items,
+        saving: saving,
+        errorText: errorText,
+        onBack: saving ? null : _returnToCarStep,
+        onChanged: (nextItems) => setState(() => itemDrafts = nextItems),
+        onAdd: saving ? null : _addItem,
+        onRestoreDefaults: saving ? null : () => _restoreDefaultItems(car, items),
+        onSubmit: saving ? null : _submit,
       );
     }
-    return AddCarMaintenanceItemsStep(
-      car: car,
-      items: items,
-      saving: saving || loadingItems,
-      errorText: errorText,
-      onBack: saving ? null : _returnToCarStep,
-      onChanged: (nextItems) => setState(() => itemDrafts = nextItems),
-      onAdd: saving ? null : _addItem,
-      onRestoreDefaults: saving ? null : () => _restoreDefaultItems(car, items),
-      onSubmit: saving ? null : _submit,
+    // 模板加载中（或已就绪但草稿还没转出），统一转圈。
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 28),
+      child: Center(child: CircularProgressIndicator()),
     );
   }
 
-  /// 第一步"下一步"：记住车辆草稿；车型或动力类型变了才异步加载默认模板
-  /// （loadDefaultItems：ensureBootstrapData + 车型专属模板优先、
-  /// 否则 listDefaultItemsForPowertrain），模板转成项目草稿；
-  /// 同车型同动力返回上一步则跳过加载。
+  /// 第一步"下一步"：记住车辆草稿进入第二步。模板的加载/缓存/竞态归
+  /// defaultItemsTemplateProvider（按车型键缓存、专属优先回退通用），
+  /// 这里只负责把模板转成草稿；同车型同动力直接复用已改过的草稿。
   Future<void> _handleCarDraft(Car car) async {
-    final nextKey =
-        '${car.brand}\u0000${car.model}\u0000${car.powertrainType.wire}';
-    final shouldLoadItems = itemModelKey != nextKey || itemDrafts == null;
-    final requestId = loadRequestId + 1;
-    loadRequestId = requestId;
+    final key = _carKey(car);
+    final sameKey = itemModelKey == key && itemDrafts != null;
     widget.onMaintenanceStepChanged(true);
+    setFormError(null);
     setState(() {
       carDraft = car;
       editingCarDraft = false;
-      loadingItems = shouldLoadItems;
-      errorText = null;
-      if (shouldLoadItems) {
-        itemDrafts = null;
-        defaultItemTemplates = null;
-      }
     });
-    if (!shouldLoadItems) {
+    if (sameKey) {
       return;
     }
     try {
-      final defaultItems = await widget.loadDefaultItems(car);
-      if (!mounted || loadRequestId != requestId) {
+      final defaultItems = await ref
+          .read(defaultItemsTemplateProvider(key).future);
+      if (!mounted) {
         return;
       }
-      final currentCar = carDraft;
-      if (currentCar == null ||
-          '${currentCar.brand}\u0000${currentCar.model}\u0000'
-              '${currentCar.powertrainType.wire}' != nextKey) {
+      // 防御：等待期间车辆草稿已变（当前 UI 在转圈不可操作，正常到不了）。
+      final current = carDraft;
+      if (current == null || _carKey(current) != key) {
         return;
       }
       setState(() {
-        itemModelKey = nextKey;
-        defaultItemTemplates = defaultItems;
+        itemModelKey = key;
         itemDrafts = defaultItems
             .map((item) => maintenanceItemFromDefault(item, car.sync))
             .toList();
-        loadingItems = false;
       });
     } catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() {
-        carDraft = null;
-        editingCarDraft = false;
-        loadingItems = false;
-        errorText = friendlyError(error);
-      });
+      // 失败退回第一步：清掉车草稿，错误在第一步顶部可见。
+      setState(() => carDraft = null);
+      setFormError(friendlyError(error));
       widget.onMaintenanceStepChanged(false);
     }
   }
@@ -631,8 +633,8 @@ class AddCarWizardState extends State<AddCarWizard> {
     setState(() => editingCarDraft = true);
   }
 
-  /// 最终提交：至少一个启用项目 → onSubmit（外层走 Repository 事务）
-  /// → 成功关 sheet；失败错误展示在第二步。
+  /// 最终提交：至少一个启用项目 → onSubmit（外层走动作层事务）
+  /// → 成功关 sheet；失败错误由 runSubmit 写进第二步行内错误位。
   Future<void> _submit() async {
     final car = carDraft;
     final items = itemDrafts;
@@ -640,24 +642,10 @@ class AddCarWizardState extends State<AddCarWizard> {
       return;
     }
     if (!items.any((item) => item.enabled)) {
-      setState(() => errorText = '至少保留一个可用保养项目');
+      setFormError('至少保留一个可用保养项目');
       return;
     }
-    setState(() {
-      saving = true;
-      errorText = null;
-    });
-    try {
-      await widget.onSubmit(car, items);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        saving = false;
-        errorText = friendlyError(error);
-      });
-    }
+    await runSubmit(() => widget.onSubmit(car, items));
   }
 
   /// 草稿列表"新增"：弹草稿项目表单（showDraftMaintenanceItemFormSheet，
@@ -687,13 +675,16 @@ class AddCarWizardState extends State<AddCarWizard> {
     );
   }
 
-  /// 草稿列表"恢复"：勾选式补回被删的默认项目。
+  /// 草稿列表"恢复"：勾选式补回被删的默认项目。模板读模板 family
+  /// （build 里常驻 watch 保活，此处 read 拿到的必是已就绪数据）。
   Future<void> _restoreDefaultItems(
     Car car,
     List<MaintenanceItem> items,
   ) async {
-    final templates = defaultItemTemplates;
-    if (templates == null || templates.isEmpty) {
+    final templates =
+        ref.read(defaultItemsTemplateProvider(_carKey(car))).value ??
+        const <VehicleDefaultMaintenanceItem>[];
+    if (templates.isEmpty) {
       return;
     }
     final selected = await showRestoreDefaultItemsSheet(
@@ -822,11 +813,13 @@ class VehicleModelPickerSheetState extends State<VehicleModelPickerSheet> {
         brands.add(model.brand);
       }
     }
-    if (!brands.contains(selectedBrand) && brands.isNotEmpty) {
-      selectedBrand = brands.first;
-    }
+    // 生效品牌：选中品牌不在过滤结果里时回退第一个。只影响本次布局
+    // （品牌高亮 + 车型列），不回写字段——原来在 build 里改字段，属副作用。
+    final effectiveBrand = brands.contains(selectedBrand)
+        ? selectedBrand
+        : (brands.isNotEmpty ? brands.first : selectedBrand);
     final models = filteredModels
-        .where((model) => model.brand == selectedBrand)
+        .where((model) => model.brand == effectiveBrand)
         .toList();
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -885,7 +878,7 @@ class VehicleModelPickerSheetState extends State<VehicleModelPickerSheet> {
                             final brand = brands[index];
                             return PickerOption(
                               label: brand,
-                              selected: brand == selectedBrand,
+                              selected: brand == effectiveBrand,
                               enabled: true,
                               onTap: () => setState(() {
                                 selectedBrand = brand;
@@ -1244,26 +1237,6 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
                 return AddCarWizard(
                   vehicleModels: data.vehicleModels,
                   today: data.today,
-                  loadDefaultItems: (car) async {
-                    final catalogRepository =
-                        ref.read(builtInCatalogRepositoryProvider);
-                    await catalogRepository.ensureBootstrapData();
-                    // 车型专属模板优先（如思域的 civicFuel，ADR 0004）；
-                    // 未命中（非目录车型/无专属模板/改选了其他动力类型）
-                    // 回退动力类型通用模板。
-                    final vehicleSpecific =
-                        await catalogRepository.listDefaultItemsForVehicleModel(
-                      brand: car.brand,
-                      model: car.model,
-                      selectedPowertrain: car.powertrainType,
-                    );
-                    if (vehicleSpecific != null) {
-                      return vehicleSpecific;
-                    }
-                    return catalogRepository.listDefaultItemsForPowertrain(
-                      powertrainType: car.powertrainType,
-                    );
-                  },
                   onMaintenanceStepChanged: (nextValue) {
                     if (isMaintenanceStep == nextValue) {
                       return;

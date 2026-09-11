@@ -436,6 +436,36 @@ void main() {
     );
   });
 
+  test('resolveDefaultItems composes bootstrap, specific-first, fallback', () async {
+    // 解析唯一入口自带 bootstrap 对账（上面两个用例先手动 ensure，
+    // 这个用例不 ensure，验证 resolveDefaultItems 自己完成灌库）。
+    // 专属命中：思域 + 燃油（与目录推荐一致）→ civicFuel 14 项。
+    final civic = await catalogRepository.resolveDefaultItems(
+      brand: '本田',
+      model: '思域',
+      selectedPowertrain: PowertrainType.fuel,
+    );
+    expect(civic, hasLength(14));
+    expect(civic.first.itemName, '燃油宝');
+
+    // 专属未命中（改选纯电，与推荐不一致）→ 回退纯电通用组（7 项）。
+    final evFallback = await catalogRepository.resolveDefaultItems(
+      brand: '本田',
+      model: '思域',
+      selectedPowertrain: PowertrainType.electric,
+    );
+    expect(evFallback, hasLength(7));
+    expect(evFallback.any((item) => item.itemName == '燃油宝'), isFalse);
+
+    // 非目录车型 → 回退燃油通用组（10 项）。
+    final fuelFallback = await catalogRepository.resolveDefaultItems(
+      brand: '自定义',
+      model: '手工车',
+      selectedPowertrain: PowertrainType.fuel,
+    );
+    expect(fuelFallback, hasLength(10));
+  });
+
   test('vehicle itemTemplate must reference vehicleTemplates', () {
     expect(
       () => BuiltInVehicleCatalog.fromJson({
