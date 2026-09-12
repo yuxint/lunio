@@ -1,6 +1,7 @@
 // 加油预测领域规则测试：全量档位表、金额/油量计算、油价刷新判断、
 // 容积校验（Car 上）与加油预测实体校验。
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
@@ -211,6 +212,70 @@ void main() {
       expect(
         () => FuelPrediction(carId: 1, fuelPercent: -1, sync: sync),
         throwsArgumentError,
+      );
+    });
+  });
+
+  group('FuelRules.isForecastExpired', () {
+    FuelAdjustmentForecast forecast(int month, int day) =>
+        FuelAdjustmentForecast(
+          month: month,
+          day: day,
+          trend: FuelPriceTrend.up,
+          minChangePerLiter: 0.05,
+          maxChangePerLiter: 0.06,
+        );
+
+    test('调价日当天仍有效（调价发生在 24 时，当天价格未变）', () {
+      expect(
+        FuelRules.isForecastExpired(
+          forecast: forecast(9, 11),
+          today: const LocalDate(2026, 9, 11),
+        ),
+        isFalse,
+      );
+    });
+
+    test('调价日次日过期（9-11 调价，9-12 即过期）', () {
+      expect(
+        FuelRules.isForecastExpired(
+          forecast: forecast(9, 11),
+          today: const LocalDate(2026, 9, 12),
+        ),
+        isTrue,
+      );
+    });
+
+    test('未来预告有效，定年取离今天最近的同月日（不是想当然取明年）', () {
+      // 今天 5-19，"9月11日"最近的候选是当年 9-11（未来）→ 有效；
+      // 若错取明年会仍是未来碰巧同结论，用次日过期案反向锁死定年：
+      // 今天 9-12 时"9月11日"必须落到当年（昨天）判过期而非明年（未来）。
+      expect(
+        FuelRules.isForecastExpired(
+          forecast: forecast(9, 11),
+          today: const LocalDate(2026, 5, 19),
+        ),
+        isFalse,
+      );
+    });
+
+    test('跨年缓存过期：今天 1 月，缓存里"12月28日"落到去年判过期', () {
+      expect(
+        FuelRules.isForecastExpired(
+          forecast: forecast(12, 28),
+          today: const LocalDate(2027, 1, 3),
+        ),
+        isTrue,
+      );
+    });
+
+    test('跨年缓存有效：12 月底读到"1月5日"预告落到明年判有效', () {
+      expect(
+        FuelRules.isForecastExpired(
+          forecast: forecast(1, 5),
+          today: const LocalDate(2026, 12, 30),
+        ),
+        isFalse,
       );
     });
   });

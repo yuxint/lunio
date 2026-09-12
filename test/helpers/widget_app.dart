@@ -35,25 +35,31 @@ import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceIte
 
 import 'built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 
-/// 油价源测试替身：固定全国价表（湖北 92# = 7.61，与 55 升 50% 档
-/// 组合出 ¥209.28 便于断言），可选带调价预告。替换真源避免测试触网。
+/// 油价源测试替身：按请求省份返回固定价表（湖北 92# = 7.61，与 55 升
+/// 50% 档组合出 ¥209.28 便于断言），可选带调价预告。替换真源避免测试触网。
 class _FakeFuelPriceSource implements FuelPriceSource {
   _FakeFuelPriceSource({this.forecast});
 
   final FuelAdjustmentForecast? forecast;
 
   @override
-  Future<FuelPriceData> fetchPrices() async {
+  Future<FuelPriceData> fetchPrices({required String province}) async {
     return FuelPriceData(
+      province: province,
       fetchedAt: DateTime(2026, 5, 19),
-      pricesByProvince: {
-        '湖北': {
-          FuelGrade.gasoline92: 7.61,
-          FuelGrade.gasoline95: 8.15,
-          FuelGrade.gasoline98: 9.15,
-          FuelGrade.diesel0: 7.20,
-        },
-        '广东': {FuelGrade.gasoline92: 7.63},
+      pricesByGrade: switch (province) {
+        '广东' => {
+            FuelGrade.gasoline92: 7.63,
+            FuelGrade.gasoline95: 8.17,
+            FuelGrade.gasoline98: 9.63,
+            FuelGrade.diesel0: 7.64,
+          },
+        _ => {
+            FuelGrade.gasoline92: 7.61,
+            FuelGrade.gasoline95: 8.15,
+            FuelGrade.gasoline98: 9.15,
+            FuelGrade.diesel0: 7.20,
+          },
       },
       forecast: forecast,
     );

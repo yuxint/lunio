@@ -170,8 +170,9 @@ final fuelManualPriceProvider = FutureProvider<double?>((ref) async {
 /// 失败退回旧缓存。手动刷新走 [FuelPriceController.manualRefresh]。
 ///
 /// watch 时机：AppShell（加油开关开着时，≈ 启动检查）与加油页。
-/// 缓存是全国价表（一次拉取含 31 省 + 调价预告，见 docs/adr/0006），
-/// 所以不再 watch 省份偏好——换省直接读缓存里的价格，不重新拉取。
+/// 缓存是单省价表（当前省份 + 调价预告，见 docs/adr/0011），所以这里
+/// watch 省份偏好：换省后缓存省份不匹配，按"暂无数据"处理、等用户点
+/// "刷新"再拉新省（用户决策 2026-09-12，不自动发请求）。
 final fuelPriceControllerProvider =
     AsyncNotifierProvider<FuelPriceController, FuelPriceData?>(
       FuelPriceController.new,
@@ -181,16 +182,24 @@ class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
   @override
   Future<FuelPriceData?> build() async {
     final fuelRepository = ref.watch(fuelRepositoryProvider);
+    final province = await ref.watch(fuelProvinceProvider.future);
     final cache = await fuelRepository.getFuelPriceCache();
     final fresh = !FuelRules.shouldRefreshFuelPrices(
       lastFetchedAt: cache?.fetchedAt,
       now: DateTime.now(),
     );
-    if (cache != null && fresh) {
+    if (cache != null && cache.province == province && fresh) {
       return cache;
     }
+    // 换省后缓存归属对不上：直接展示空态（价格里的省份守卫也拦住旧省
+    // 价透出），不自动拉取——由用户点"刷新"显式拉新省价格。
+    if (cache != null && cache.province != province) {
+      return null;
+    }
     try {
-      final data = await ref.watch(fuelPriceSourceProvider).fetchPrices();
+      final data = await ref
+          .watch(fuelPriceSourceProvider)
+          .fetchPrices(province: province);
       await fuelRepository.saveFuelPriceCache(data);
       return data;
     } catch (error) {
@@ -200,12 +209,16 @@ class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
     }
   }
 
-  /// 手动刷新：无视新鲜期强制拉一次。成功覆盖缓存与状态返回 true；
-  /// 失败保留原状态数据（不覆盖，与"手填价不被覆盖"同语义）返回 false。
+  /// 手动刷新：无视新鲜期按当前省份强制拉一次。成功覆盖缓存与状态返回
+  /// true；失败保留原状态数据（不覆盖，与"手填价不被覆盖"同语义，
+  /// 价格里的省份守卫会拦住换省后残留的旧省缓存）返回 false。
   Future<bool> manualRefresh() async {
+    final province = await ref.read(fuelProvinceProvider.future);
     state = const AsyncLoading<FuelPriceData?>();
     try {
-      final data = await ref.read(fuelPriceSourceProvider).fetchPrices();
+      final data = await ref
+          .read(fuelPriceSourceProvider)
+          .fetchPrices(province: province);
       await ref
           .read(fuelRepositoryProvider)
           .saveFuelPriceCache(data);

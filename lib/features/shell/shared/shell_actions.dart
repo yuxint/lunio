@@ -200,8 +200,9 @@ Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {
 
 // ---- 加油 ----
 
-/// 保存省份选择：写全局偏好 + 整族失效加油相关缓存（换省后缓存里的
-/// 价格、手填价、预估金额全部随 provider 重算）。
+/// 保存省份选择：写全局偏好 + 整族失效加油相关 provider。缓存是单省
+/// 价表（ADR 0011），换省后缓存省份不匹配 → 油价卡按"暂无数据"展示，
+/// 由用户点"刷新"显式拉新省价格（用户决策 2026-09-12，不自动发请求）。
 Future<void> saveFuelProvince(WidgetRef ref, String province) async {
   await ref.read(lunioPreferencesProvider).setFuelProvince(province);
   invalidateFuelPreferenceProviders(ref);

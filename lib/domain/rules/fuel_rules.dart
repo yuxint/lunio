@@ -6,6 +6,7 @@
 //  3. 油价缓存"该不该重新拉"的判断（10 个自然日规则，见 ADR 0001）。
 //  4. 油箱容积校验（容积在 Car 上，写库/恢复备份前调用）。
 //  5. 预估下次油价（调价预告变动中值参与计算，见 ADR 0006）。
+import '../../core/date/local_date.dart';
 import '../entities/fuel_price.dart';
 
 class FuelRules {
@@ -84,7 +85,8 @@ class FuelRules {
 
   /// 油价缓存是否需要重新拉取：没有缓存，或距上次拉取超过
   /// [priceRefreshDays] 个自然日，都算需要。
-  /// （缓存是全国价表，换省不用重新拉，见 docs/adr/0006。）
+  /// （缓存是当前省份的单省价表，换省由控制器按省份不匹配另行处理，
+  /// 见 docs/adr/0011。）
   static bool shouldRefreshFuelPrices({
     required DateTime? lastFetchedAt,
     required DateTime now,
@@ -107,5 +109,32 @@ class FuelRules {
         : -forecast.midChangePerLiter;
     final predicted = currentPricePerLiter + signedChange;
     return (predicted * 100).round() / 100;
+  }
+
+  /// 调价预告是否已过期（ADR 0011 修订，2026-09-12）：调价日早于
+  /// [today] 即过期，按无预告处理（"预估下次油价"块与"调价后价格"
+  /// 列都回落到占位）。调价发生在预告日 24 时（当天末尾），预告日
+  /// 当天价格未变，仍算有效。
+  ///
+  /// 预告原文只有月/日没有年份；调价窗口约 10 个工作日（≤16 自然日），
+  /// 预告日只可能在今天前后一个月内，按"离今天最近的同月日"定年——
+  /// 跨年缓存（今天 1 月、缓存里"12月28日"）自然落到去年判过期，
+  /// 反之 12 月底读到"1月5日"的预告落到明年判有效。
+  static bool isForecastExpired({
+    required FuelAdjustmentForecast forecast,
+    required LocalDate today,
+  }) {
+    final todayDate = DateTime(today.year, today.month, today.day);
+    DateTime candidateFor(int year) =>
+        DateTime(year, forecast.month, forecast.day);
+    var nearest = candidateFor(today.year);
+    for (final year in [today.year - 1, today.year + 1]) {
+      final candidate = candidateFor(year);
+      if (candidate.difference(todayDate).abs() <
+          nearest.difference(todayDate).abs()) {
+        nearest = candidate;
+      }
+    }
+    return nearest.isBefore(todayDate);
   }
 }

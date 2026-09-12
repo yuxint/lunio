@@ -243,12 +243,13 @@ class _PriceCard extends ConsumerWidget {
         const SizedBox(height: 14),
         // 预估下次油价块：标题字号与"当前油价"一致，数值行的
         // 价格/单位与日期展示方式复用 _priceRow 的样式（去掉清除按钮）。
+        // 预告走生效过滤（过期按无预告，ADR 0011 修订）。
         Text('预估下次油价', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 6),
         _buildForecastLine(
           context,
           province: province,
-          forecast: data?.forecast,
+          forecast: ref.watch(_effectiveForecastProvider),
           basePrice: effectivePrice,
         ),
       ],
@@ -346,8 +347,9 @@ class _PriceCard extends ConsumerWidget {
     );
   }
 
-  /// 选省份：写偏好 → 失效省份/油价相关 provider（油价控制器会因换省
-  /// 自动重新拉取）。列表 31 项较长，sheet 内容区限高滚动，
+  /// 选省份：写偏好 → 失效省份/油价相关 provider（缓存是单省价表，
+  /// 换省后省份不匹配按"暂无数据"展示，点"刷新"再拉新省价格，见
+  /// ADR 0011）。列表 31 项较长，sheet 内容区限高滚动，
   /// 打开时定位到当前省份所在行。
   Future<void> _pickProvince(
     BuildContext context,
@@ -1072,11 +1074,30 @@ final _effectivePriceProvider = Provider<double?>((ref) {
   return data?.priceFor(province: province, grade: grade);
 });
 
+/// 生效中的调价预告（ADR 0011 修订）：过期预告按无预告处理——调价日
+/// 早于当前应用日期即过期（规则与定年见 FuelRules.isForecastExpired）。
+/// 缓存与控制器状态保真（仍存站点原话），过滤只在这一处做，预估块与
+/// "调价后价格"列统一从这里取。
+final _effectiveForecastProvider = Provider<FuelAdjustmentForecast?>((ref) {
+  final forecast = ref.watch(fuelPriceControllerProvider).value?.forecast;
+  if (forecast == null) {
+    return null;
+  }
+  // "今天"未加载完成的瞬间按无预告处理（宁缺毋错，与源解析同口径）。
+  final today = ref.watch(effectiveTodayProvider).value;
+  if (today == null) {
+    return null;
+  }
+  return FuelRules.isForecastExpired(forecast: forecast, today: today)
+      ? null
+      : forecast;
+});
+
 /// 预估调价后每升价（生效价 + 调价预告变动中值，见 docs/adr/0006）。
-/// 无预告或无生效价时为 null（"调价后价格"列显示占位符）。
+/// 无预告（含过期）/无生效价时为 null（"调价后价格"列显示占位符）。
 final _predictedPriceProvider = Provider<double?>((ref) {
   final base = ref.watch(_effectivePriceProvider);
-  final forecast = ref.watch(fuelPriceControllerProvider).value?.forecast;
+  final forecast = ref.watch(_effectiveForecastProvider);
   if (base == null || forecast == null) {
     return null;
   }

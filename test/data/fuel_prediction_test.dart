@@ -155,10 +155,9 @@ void main() {
       );
       await fuelRepository.saveFuelPriceCache(
         FuelPriceData(
+          province: '湖北',
           fetchedAt: DateTime(2026, 8, 31),
-          pricesByProvince: {
-            '湖北': {FuelGrade.gasoline92: 7.45},
-          },
+          pricesByGrade: {FuelGrade.gasoline92: 7.45},
         ),
       );
       await fuelRepository.setFuelManualPrice(
@@ -178,16 +177,14 @@ void main() {
   });
 
   group('油价缓存与手填价偏好', () {
-    test('缓存 JSON 往返（全国价表 + 调价预告）', () async {
+    test('缓存 JSON 往返（单省价表 + 调价预告）', () async {
       expect(await fuelRepository.getFuelPriceCache(), isNull);
       final data = FuelPriceData(
+        province: '湖北',
         fetchedAt: DateTime(2026, 8, 31, 9),
-        pricesByProvince: {
-          '湖北': {
-            FuelGrade.gasoline92: 7.45,
-            FuelGrade.diesel0: 7.12,
-          },
-          '广东': {FuelGrade.gasoline92: 8.10},
+        pricesByGrade: {
+          FuelGrade.gasoline92: 7.45,
+          FuelGrade.diesel0: 7.12,
         },
         forecast: const FuelAdjustmentForecast(
           month: 9,
@@ -200,13 +197,18 @@ void main() {
       await fuelRepository.saveFuelPriceCache(data);
       // FuelPriceData 未重写 ==，按字段比较（与备份 sync 时间戳还原一致）。
       final restored = await fuelRepository.getFuelPriceCache();
+      expect(restored?.province, '湖北');
       expect(restored?.fetchedAt, data.fetchedAt);
       expect(
         restored?.priceFor(province: '湖北', grade: FuelGrade.gasoline92),
         7.45,
       );
       expect(restored?.priceFor(province: '湖北', grade: FuelGrade.diesel0), 7.12);
-      expect(restored?.priceFor(province: '广东', grade: FuelGrade.gasoline92), 8.10);
+      // 省份不匹配（换省后旧缓存）按无价处理。
+      expect(
+        restored?.priceFor(province: '广东', grade: FuelGrade.gasoline92),
+        isNull,
+      );
       // 调价预告往返。
       expect(restored?.forecast?.month, 9);
       expect(restored?.forecast?.day, 11);
@@ -214,11 +216,12 @@ void main() {
       expect(restored?.forecast?.midChangePerLiter, closeTo(0.055, 1e-9));
     });
 
-    test('旧版单省缓存 JSON 按损坏处理（无缓存，触发重新拉取）', () async {
-      // 旧结构：province + prices 平铺，不符合当前全国价表契约。
+    test('旧版全国价表缓存 JSON 按损坏处理（无缓存，触发重新拉取）', () async {
+      // 旧结构：顶层没有 province，prices 是"省 → 油品"两级，
+      // 不符合当前单省价表契约（ADR 0011）。
       await preferences.writeRaw(
         'fuelPriceCache',
-        '{"province":"湖北","fetchedAt":"2026-08-31T00:00:00.000","prices":{"92":7.45}}',
+        '{"fetchedAt":"2026-08-31T00:00:00.000","prices":{"湖北":{"92":7.45}}}',
       );
       expect(await fuelRepository.getFuelPriceCache(), isNull);
     });
@@ -286,10 +289,9 @@ void main() {
       await preferences.writeRaw('fuelGrade', '95');
       await fuelRepository.saveFuelPriceCache(
         FuelPriceData(
+          province: '湖北',
           fetchedAt: DateTime(2026, 8, 31),
-          pricesByProvince: {
-            '湖北': {FuelGrade.gasoline92: 7.45},
-          },
+          pricesByGrade: {FuelGrade.gasoline92: 7.45},
         ),
       );
       await fuelRepository.setFuelManualPrice(

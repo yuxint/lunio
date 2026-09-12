@@ -205,6 +205,71 @@ void main() {
     expect(find.text('¥210.93'), findsOneWidget);
   });
 
+  testWidgets('fuel page hides expired forecast and shows placeholders', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    // 过期预告：调价日 5月18日 早于固定"今天"2026-05-19（次日即过期）。
+    await pumpApp(
+      tester,
+      database: database,
+      fuelForecast: const FuelAdjustmentForecast(
+        month: 5,
+        day: 18,
+        trend: FuelPriceTrend.up,
+        minChangePerLiter: 0.05,
+        maxChangePerLiter: 0.06,
+      ),
+    );
+
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+
+    // 过期预告按无预告处理：预估块占位、无箭头、调价后价格列全"—"。
+    expect(find.text('暂无调价预测'), findsOneWidget);
+    expect(find.byIcon(Icons.trending_up), findsNothing);
+    expect(find.byIcon(Icons.trending_down), findsNothing);
+    expect(find.text('5月18日调价'), findsNothing);
+    expect(find.text('—'), findsNWidgets(5));
+    // 油价主体不受预告过期影响，当前价照常展示。
+    expect(find.text('7.61 元/升'), findsOneWidget);
+  });
+
   testWidgets('fuel forecast down trend shows green falling arrow', (
     tester,
   ) async {
@@ -444,12 +509,21 @@ void main() {
     await tester.tap(find.text('湖北'));
     await tester.pumpAndSettle();
     expect(find.text('选择省份'), findsOneWidget);
-    // 选广东：关 sheet、写省份偏好，油价自动刷新为广东价。
+    // 选广东：关 sheet、写省份偏好。缓存是单省价表（ADR 0011），换省后
+    // 省份不匹配按"暂无数据"展示，不自动拉取。
     await tester.tap(find.text('广东'));
     await tester.pumpAndSettle();
     expect(find.text('选择省份'), findsNothing);
     expect(await repository.getPreferenceValue('fuelProvince'), '广东');
     expect(find.text('广东'), findsOneWidget);
+    expect(find.text('— 元/升'), findsOneWidget);
+    expect(find.text('暂无数据'), findsOneWidget);
+
+    // 手动点"刷新"：按当前省份拉取。此前油品已切到 95#，出广东 95# 价。
+    await tester.tap(find.text('刷新'));
+    await tester.pumpAndSettle();
+    expect(find.text('8.17 元/升'), findsOneWidget);
+    expect(find.text('暂无数据'), findsNothing);
   });
 
 
