@@ -210,7 +210,7 @@ void main() {
   });
 
   test(
-    'parking countdown schedules due alert and Android ongoing timer',
+    'parking countdown schedules due alert, warnings and ongoing timer',
     () async {
       final startedAt = DateTime.now();
       final countdown = ParkingCountdown(
@@ -253,28 +253,103 @@ void main() {
       expect(showSpecifics['timeoutAfter'] as int, greaterThan(0));
       expect(showSpecifics['timeoutAfter'] as int, lessThanOrEqualTo(1800000));
 
-      final scheduledCall = notificationCalls.singleWhere(
-        (call) => call.method == 'zonedSchedule',
+      // 整 30 分钟倒计时（门槛含等号）：到点闹钟 + 两条预警全部排出。
+      final scheduleArgumentsByBody = <String, Map<Object?, Object?>>{};
+      for (final scheduledCall in notificationCalls
+          .where((call) => call.method == 'zonedSchedule')) {
+        final arguments = scheduledCall.arguments as Map<Object?, Object?>;
+        scheduleArgumentsByBody[arguments['body'] as String] = arguments;
+      }
+      expect(scheduleArgumentsByBody.keys, hasLength(3));
+
+      final dueArguments =
+          scheduleArgumentsByBody['免费停车时间已到，记得及时离场。']!;
+      expect(dueArguments['title'], '停车倒计时');
+      expect(
+        DateTime.parse(dueArguments['scheduledDateTime'] as String)
+            .difference(countdown.endsAt)
+            .inSeconds,
+        0,
       );
-      final scheduleArguments =
-          scheduledCall.arguments as Map<Object?, Object?>;
-      expect(scheduleArguments['title'], '停车倒计时');
-      expect(scheduleArguments['body'], '免费停车时间已到，记得及时离场。');
-      final scheduleSpecifics =
-          scheduleArguments['platformSpecifics'] as Map<Object?, Object?>;
-      expect(scheduleSpecifics['channelId'], 'lunio_parking_due_heads_up');
-      expect(scheduleSpecifics['icon'], 'ic_lunio_notification');
-      expect(scheduleSpecifics['importance'], 5);
-      expect(scheduleSpecifics['priority'], 2);
-      expect(scheduleSpecifics['category'], 'alarm');
-      expect(scheduleSpecifics['audioAttributesUsage'], 4);
-      expect(scheduleSpecifics['fullScreenIntent'], isFalse);
-      expect(scheduleSpecifics['scheduleMode'], 'exactAllowWhileIdle');
+      final dueSpecifics =
+          dueArguments['platformSpecifics'] as Map<Object?, Object?>;
+      expect(dueSpecifics['channelId'], 'lunio_parking_due_heads_up');
+      expect(dueSpecifics['icon'], 'ic_lunio_notification');
+      expect(dueSpecifics['importance'], 5);
+      expect(dueSpecifics['priority'], 2);
+      expect(dueSpecifics['category'], 'alarm');
+      expect(dueSpecifics['audioAttributesUsage'], 4);
+      expect(dueSpecifics['fullScreenIntent'], isFalse);
+      expect(dueSpecifics['scheduleMode'], 'exactAllowWhileIdle');
+
+      // 预警：到点前 15 分钟 / 5 分钟各一条，与到点闹钟同通道。
+      final warning15 =
+          scheduleArgumentsByBody['免费停车还剩 15 分钟，请准备离场。']!;
+      expect(
+        DateTime.parse(warning15['scheduledDateTime'] as String)
+            .difference(
+              countdown.endsAt.subtract(const Duration(minutes: 15)),
+            )
+            .inSeconds,
+        0,
+      );
+      final warning5 =
+          scheduleArgumentsByBody['免费停车还剩 5 分钟，请尽快离场。']!;
+      expect(
+        DateTime.parse(warning5['scheduledDateTime'] as String)
+            .difference(
+              countdown.endsAt.subtract(const Duration(minutes: 5)),
+            )
+            .inSeconds,
+        0,
+      );
+      for (final specifics in [
+        warning15['platformSpecifics'],
+        warning5['platformSpecifics'],
+      ]) {
+        expect(
+          (specifics as Map<Object?, Object?>)['channelId'],
+          'lunio_parking_due_heads_up',
+        );
+      }
     },
   );
 
+  test('parking countdown under 30 minutes remaining skips warnings', () async {
+    final countdown = ParkingCountdown(
+      startedAt: DateTime.now(),
+      durationSeconds: 20 * 60,
+    );
+
+    await service.scheduleParkingCountdownNotification(countdown);
+
+    // 剩余不足 30 分钟：两条预警都不排，只有到点闹钟。
+    final bodies = notificationCalls
+        .where((call) => call.method == 'zonedSchedule')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['body'])
+        .toList();
+    expect(bodies, ['免费停车时间已到，记得及时离场。']);
+  });
+
+  test('just-started 30-minute countdown keeps its warnings', () async {
+    // 临界容忍：表单默认入场时间截秒到整分，保存链真正调度时"整 30 分钟"
+    // 已只剩 29 分多；门槛按整分钟向上取整，此类倒计时仍算"还剩 30 分钟"。
+    final countdown = ParkingCountdown(
+      startedAt: DateTime.now().subtract(const Duration(seconds: 30)),
+      durationSeconds: 1800,
+    );
+
+    await service.scheduleParkingCountdownNotification(countdown);
+
+    final bodies = notificationCalls
+        .where((call) => call.method == 'zonedSchedule')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['body'])
+        .toList();
+    expect(bodies, hasLength(3));
+  });
+
   test(
-    'parking countdown cancellation clears due alert and ongoing timer',
+    'parking countdown cancellation clears due alert, warnings and ongoing timer',
     () async {
       await service.cancelParkingCountdownNotification();
 
@@ -282,10 +357,10 @@ void main() {
           .where((call) => call.method == 'cancel')
           .map((call) => call.arguments as Map<Object?, Object?>)
           .toList();
-      expect(cancelCalls, hasLength(2));
+      expect(cancelCalls, hasLength(4));
       expect(
         cancelCalls.map((arguments) => arguments['id']),
-        containsAll([9001, 9002]),
+        containsAll([9001, 9002, 9003, 9004]),
       );
     },
   );

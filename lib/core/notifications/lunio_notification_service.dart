@@ -6,15 +6,17 @@
 //     _applySystemNotificationSchedule），
 //     id 段 8000~8999（8000 系保养、8900 系里程，每个通知排 8 次，
 //     实际占用 16 个 id，取消时精确取消这 16 个，见 R10）；
-//  2. 停车到点闹钟 —— id 9001（channel lunio_parking_due_heads_up）；
-//  3. Android 停车进行中常驻通知 —— id 9002（low priority +
-//     chronometer 倒计时显示，到点自动消失）。
+//  2. 停车倒计时通知族 —— 到点闹钟 id 9001、剩余时长预警 id 9003/9004
+//     （channel lunio_parking_due_heads_up）、Android 停车进行中常驻
+//     通知 id 9002（low priority + chronometer 倒计时显示，到点自动消失）。
 //
 // 通知 id 分配表（改动会影响取消逻辑，见审查报告）：
 //  8000-8007  保养到期汇总通知的 8 次重复
 //  8900-8907  里程更新提醒的 8 次重复
 //  9001       停车到点闹钟
 //  9002       Android 停车常驻通知
+//  9003       停车预警：剩余 15 分钟
+//  9004       停车预警：剩余 5 分钟
 //
 // 时区：初始化时把 tz.local 设为设备时区（失败回退 UTC——非 UTC 设备
 // 通知时刻会整体偏移，见审查报告 R14）；所有调度时刻用 TZDateTime。
@@ -68,9 +70,12 @@ class LunioNotificationService {
 
   static const _androidNotificationIcon = 'ic_lunio_notification';
 
-  /// 停车到点闹钟 / Android 常驻通知的固定 id（取消时成对取消）。
+  /// 停车倒计时通知族的固定 id：到点闹钟 + Android 常驻通知 + 两条剩余
+  /// 时长预警（CONTEXT.md 词汇：停车预警通知），取消时成组取消。
   static const _parkingCountdownNotificationId = 9001;
   static const _parkingCountdownOngoingNotificationId = 9002;
+  static const _parkingCountdownWarning15NotificationId = 9003;
+  static const _parkingCountdownWarning5NotificationId = 9004;
 
   /// 保养/里程提醒通知的基础 id 与每个通知的重复次数。取消逻辑依赖
   /// 这份清单与 LunioScheduledNotification 的 id 分配保持一致：
@@ -272,7 +277,7 @@ class LunioNotificationService {
 
   /// 取消全部保养/里程提醒：按 id 分配表精确取消在用的 16 个 id
   /// （8000-8007 保养、8900-8907 里程；R10 收紧，不再串行扫 8000~8999
-  /// 共 1000 个）。不碰 9001/9002（停车通知单独取消）。
+  /// 共 1000 个）。不碰 9001~9004（停车通知单独取消）。
   /// 服务不可用时安全 no-op。
   Future<void> cancelLunioNotifications() async {
     await initialize();
@@ -286,15 +291,22 @@ class LunioNotificationService {
     }
   }
 
-  /// 调度停车倒计时通知（保存/开始倒计时时调用）：
-  ///  1. 先成对取消旧 9001/9002；
-  ///  2. ⚠ 若到点时刻已过直接 return——此时既无闹钟也无常驻通知，
+  /// 调度停车倒计时通知族（保存/开始倒计时时调用）：
+  ///  1. 先成组取消旧 9001~9004；
+  ///  2. ⚠ 若到点时刻已过直接 return——此时没有任何通知，
   ///     且数据库里的倒计时仍在（无提示的静默状态，见 R17）；
   ///  3. Android 先发常驻倒计时通知（9002），再调度到点闹钟（9001，
-  ///     alarm 类 channel，精确调度）。
+  ///     alarm 类 channel，精确调度）；
+  ///  4. 预警通知（9003 剩 15 分钟 / 9004 剩 5 分钟）：按 [evaluatedAt]
+  ///     （保存时刻，缺省用当前时刻）算剩余时长，≥ 30 分钟才成对调度，
+  ///     剩余不足 30 分钟只有到点闹钟（CONTEXT.md 词汇：停车预警通知）。
+  ///
+  /// [evaluatedAt] 由调用方在保存动作入口先取好再走权限弹窗等异步链，
+  /// 弹窗停留时间不挤占临界倒计时的剩余时长。
   Future<void> scheduleParkingCountdownNotification(
     ParkingCountdown countdown, {
     bool exactAlarm = true,
+    DateTime? evaluatedAt,
   }) async {
     await initialize();
     if (!_available) {
@@ -302,20 +314,61 @@ class LunioNotificationService {
     }
     await cancelParkingCountdownNotification();
     final scheduledDate = tz.TZDateTime.from(countdown.endsAt, tz.local);
-    if (!scheduledDate.isAfter(tz.TZDateTime.now(tz.local))) {
+    final referenceNow = tz.TZDateTime.from(
+      evaluatedAt ?? tz.TZDateTime.now(tz.local),
+      tz.local,
+    );
+    if (!scheduledDate.isAfter(referenceNow)) {
       return;
     }
     await _showAndroidParkingCountdownNotification(countdown);
-    await _plugin.zonedSchedule(
+    await _scheduleParkingAlarmNotification(
       id: _parkingCountdownNotificationId,
-      title: '停车倒计时',
+      scheduledDate: scheduledDate,
       body: '免费停车时间已到，记得及时离场。',
+      exactAlarm: exactAlarm,
+    );
+    // 门槛按整分钟向上取整比较：表单默认入场时间截秒到整分，"整 30 分钟"
+    // 的倒计时到真正调度时严格比较只剩 29 分多，向上取整让临界倒计时
+    // 仍算"还剩 30 分钟"；剩余不足 29 分钟的短倒计时两条预警都不发。
+    final remainingMinutes =
+        scheduledDate.difference(referenceNow).inMilliseconds /
+            Duration.millisecondsPerMinute;
+    if (remainingMinutes.ceil() >= 30) {
+      await _scheduleParkingAlarmNotification(
+        id: _parkingCountdownWarning15NotificationId,
+        scheduledDate: scheduledDate.subtract(const Duration(minutes: 15)),
+        body: '免费停车还剩 15 分钟，请准备离场。',
+        exactAlarm: exactAlarm,
+      );
+      await _scheduleParkingAlarmNotification(
+        id: _parkingCountdownWarning5NotificationId,
+        scheduledDate: scheduledDate.subtract(const Duration(minutes: 5)),
+        body: '免费停车还剩 5 分钟，请尽快离场。',
+        exactAlarm: exactAlarm,
+      );
+    }
+  }
+
+  /// 调度一条停车类闹钟通知（到点闹钟与预警共用）：alarm 通道、精确/非
+  /// 精确调度跟随 [exactAlarm]、单次不重复。通道显示名"Lunio 停车提醒"
+  /// 同时覆盖到点与预警两类。
+  Future<void> _scheduleParkingAlarmNotification({
+    required int id,
+    required tz.TZDateTime scheduledDate,
+    required String body,
+    required bool exactAlarm,
+  }) async {
+    await _plugin.zonedSchedule(
+      id: id,
+      title: '停车倒计时',
+      body: body,
       scheduledDate: scheduledDate,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'lunio_parking_due_heads_up',
-          'Lunio 停车到点提醒',
-          channelDescription: '停车倒计时到点提醒',
+          'Lunio 停车提醒',
+          channelDescription: '停车倒计时到点与剩余时长预警提醒',
           importance: Importance.max,
           priority: Priority.max,
           category: AndroidNotificationCategory.alarm,
@@ -335,8 +388,8 @@ class LunioNotificationService {
     );
   }
 
-  /// 成对取消停车通知（9001 闹钟 + 9002 常驻）。服务不可用时安全 no-op。
-  /// 结束倒计时、恢复备份/清空数据时都会调用。
+  /// 成组取消停车通知（9001 闹钟 + 9002 常驻 + 9003/9004 预警）。
+  /// 服务不可用时安全 no-op。结束倒计时、恢复备份/清空数据时都会调用。
   Future<void> cancelParkingCountdownNotification() async {
     await initialize();
     if (!_available) {
@@ -344,6 +397,8 @@ class LunioNotificationService {
     }
     await _plugin.cancel(id: _parkingCountdownNotificationId);
     await _plugin.cancel(id: _parkingCountdownOngoingNotificationId);
+    await _plugin.cancel(id: _parkingCountdownWarning15NotificationId);
+    await _plugin.cancel(id: _parkingCountdownWarning5NotificationId);
   }
 
   /// Android 专属：停车进行中的常驻通知（9002）。

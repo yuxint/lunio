@@ -405,10 +405,11 @@ void main() {
       )) {
         parkingIds.add(call.arguments['id']);
       }
-      // 8000/8900 系已取消，9001/9002（停车）不在取消名单里。
+      // 8000/8900 系已取消，9001~9004（停车）逐个断言不在取消名单里。
       expect(parkingIds, contains(8000));
-      expect(parkingIds, isNot(contains(9001)));
-      expect(parkingIds, isNot(contains(9002)));
+      for (final id in [9001, 9002, 9003, 9004]) {
+        expect(parkingIds, isNot(contains(id)), reason: '停车通知 $id 不应被取消');
+      }
     });
 
     test('runAllDataClear cancels parking first, then reminder notifications',
@@ -424,7 +425,7 @@ void main() {
         cancelledIds.add(call.arguments['id']);
       }
       expect(cancelledIds.indexOf(9001), lessThan(cancelledIds.indexOf(8000)));
-      expect(cancelledIds, contains(9002));
+      expect(cancelledIds, containsAll([9002, 9003, 9004]));
     });
   });
 
@@ -518,7 +519,7 @@ void main() {
       final cancelledIds = notificationCalls
           .where((call) => call.method == 'cancel')
           .map((call) => call.arguments['id']);
-      expect(cancelledIds, containsAll([9001, 9002]));
+      expect(cancelledIds, containsAll([9001, 9002, 9003, 9004]));
     });
 
     test('does not cancel anything while system notifications are off',

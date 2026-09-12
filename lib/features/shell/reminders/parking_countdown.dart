@@ -3,7 +3,8 @@
 // 用户流程：
 //   提醒页点"停车倒计时" → showParkingCountdownSheet（表单：入场时间 +
 //   免费时长[快捷 0.5/1/2 小时]）→ saveParkingCountdown（写偏好 +
-//   调系统通知：Android 常驻 chronometer 通知 + 到点闹钟）；
+//   调系统通知：Android 常驻 chronometer 通知 + 到点闹钟 + 剩余 15/5
+//   分钟预警[保存时剩余 ≥ 30 分钟才启用]）；
 //   卡片内部 1s Timer 自刷新剩余时间（R11：不再由整页 250ms ticker
 //   驱动重建）；点"结束" → clearParkingCountdown（删偏好 + 取消两条
 //   系统通知）。
@@ -358,7 +359,7 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm>
   }
 }
 
-/// 时/分/秒三个滚轮（CupertinoPicker，iOS 风格的 picker 在两端通用）。
+/// 时/分/秒三个循环滚轮（CupertinoPicker，iOS 风格的 picker 在两端通用）。
 class ParkingEntryTimePicker extends StatefulWidget {
   const ParkingEntryTimePicker({required this.initial});
 
@@ -436,6 +437,12 @@ class ParkingEntryTimePickerState extends State<ParkingEntryTimePicker> {
   }
 }
 
+/// 单个时间部分滚轮：双向无限循环（时 23→00、分/秒 59→00 都能直接滚过）。
+///
+/// 循环实现：把 0~count-1 重复 _loopCopies 份铺进 picker，初始定位在中段
+/// 副本；选中项滚进两端边缘区时按整份跨度跳回中段——跳转前后相差
+/// count 的整数倍，模 count 同余，铺出的内容完全一致，视觉上无感。
+/// CupertinoPicker 用 builder 形式按需构建子项，不一次性实例化全部副本。
 class _TimePartWheel extends StatefulWidget {
   const _TimePartWheel({
     required this.label,
@@ -454,18 +461,39 @@ class _TimePartWheel extends StatefulWidget {
 }
 
 class _TimePartWheelState extends State<_TimePartWheel> {
+  /// 副本总数、回跳跨度与边缘保护区（单位都是"份"）。回跳跨度取副本数的
+  /// 一半，跳回后距两端仍有十几份缓冲，单次甩动不可能一滑到底。
+  static const _loopCopies = 50;
+  static const _recentreSpanCopies = 25;
+  static const _edgeMarginCopies = 10;
+
   late final FixedExtentScrollController controller;
 
   @override
   void initState() {
     super.initState();
-    controller = FixedExtentScrollController(initialItem: widget.value);
+    controller = FixedExtentScrollController(
+      initialItem: (_loopCopies ~/ 2) * widget.count + widget.value,
+    );
   }
 
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
+  }
+
+  /// 选中项变化：对外只报模 count 归一化后的值；同时检查是否滚进边缘区，
+  /// 是则按整份跨度跳回中段（jumpTo 与滚动动画同帧发生，内容重复所以
+  /// 用户看到的仍是连续滚动）。
+  void _handleItemChanged(int item) {
+    widget.onChanged(item % widget.count);
+    final count = widget.count;
+    if (item < _edgeMarginCopies * count) {
+      controller.jumpToItem(item + _recentreSpanCopies * count);
+    } else if (item >= (_loopCopies - _edgeMarginCopies) * count) {
+      controller.jumpToItem(item - _recentreSpanCopies * count);
+    }
   }
 
   @override
@@ -486,22 +514,20 @@ class _TimePartWheelState extends State<_TimePartWheel> {
         const SizedBox(height: 6),
         SizedBox(
           height: 154,
-          child: CupertinoPicker(
+          child: CupertinoPicker.builder(
             scrollController: controller,
             itemExtent: 36,
             magnification: 1.08,
             useMagnifier: true,
             selectionOverlay: const CupertinoPickerDefaultSelectionOverlay(),
-            onSelectedItemChanged: widget.onChanged,
-            children: [
-              for (var index = 0; index < widget.count; index++)
-                Center(
-                  child: Text(
-                    index.toString().padLeft(2, '0'),
-                    style: textStyle,
-                  ),
-                ),
-            ],
+            onSelectedItemChanged: _handleItemChanged,
+            itemBuilder: (context, index) => Center(
+              child: Text(
+                (index % widget.count).toString().padLeft(2, '0'),
+                style: textStyle,
+              ),
+            ),
+            childCount: _loopCopies * widget.count,
           ),
         ),
       ],
@@ -593,7 +619,8 @@ Future<void> showParkingCountdownSheet(
 ///  1. 写偏好 parkingCountdown + 失效 provider（卡片立即出现）；
 ///  2. 通知尾巴委托协调器 onParkingCountdownSaved：请求权限（被拒回写
 ///     "系统通知关闭"）、比对同步代数（R8）、申请精确闹钟、调度
-///     9001 到点闹钟 + 9002 Android 常驻通知。
+///     9001 到点闹钟 + 9002 Android 常驻通知 + 9003/9004 剩余时长预警
+///     （保存时还剩 ≥ 30 分钟才启用，见通知服务层）。
 /// await 后检查页面 context 仍挂载（R13）；sheet 提前关闭时通知尾巴
 /// 照常走完（调度不依赖页面）。
 Future<void> saveParkingCountdown(
@@ -612,7 +639,7 @@ Future<void> saveParkingCountdown(
 }
 
 /// ★ 结束倒计时：删偏好 + 失效 provider + 通知收尾委托协调器
-/// （系统通知开着时取消 9001/9002 两条系统通知，关着时本来就没调度过）。
+/// （系统通知开着时取消 9001~9004 系统通知，关着时本来就没调度过）。
 /// await 后检查页面 context 仍挂载（R13）。
 Future<void> clearParkingCountdown(BuildContext context, WidgetRef ref) async {
   await ref.read(lunioPreferencesProvider).clearParkingCountdown();

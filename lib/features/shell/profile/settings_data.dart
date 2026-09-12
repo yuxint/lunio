@@ -192,7 +192,7 @@ Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
 /// 原生文件桥选文件 → 解码（版本不符抛 UnsupportedError）→
 /// 协调器 runBackupRestore：升代数作废在途同步任务（R8）→ restore
 /// 事务恢复（偏好保留，抑制键清除）→ 取消 8000/8900 系旧数据残留通知
-/// （空备份时同步引擎不会重排，显式取消；停车 9001/9002 不动——倒计时
+/// （空备份时同步引擎不会重排，显式取消；停车 9001~9004 不动——倒计时
 /// 偏好保留且仍有效）→ invalidateAllAppDataProviders 全量刷新。
 /// 失败分支：唯一约束冲突 → 弹"未写入任何数据"对话框（事务已回滚）；
 /// 其他错误 → toast。
@@ -256,7 +256,7 @@ String _backupFilename(DateTime dateTime) {
 
 /// ★ 清空数据：确认框（明示目录表保留）→ 协调器 runAllDataClear：
 /// 升代数（作废在途通知任务，R8）→ clearAllData 事务删 5 张表（业务
-/// 4 张 + 偏好）→ 取消停车 9001/9002 与保养/里程 8000/8900 系系统通知
+/// 4 张 + 偏好）→ 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知
 /// （偏好已删，倒计时偏好和通知开关都不复存在，残留通知必须显式取消）
 /// → invalidate 全量刷新（bootstrap provider 失效后车型目录会自动重灌）
 /// → 成功 overlay。

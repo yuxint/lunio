@@ -188,6 +188,49 @@ void main() {
   });
 
 
+  testWidgets('parking entry time wheels loop around at both ends', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 6, 10, 10, 20),
+      ),
+    );
+    await createDefaultCar(tester);
+
+    await tester.tap(find.text('提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('10:20:00'));
+    await tester.pumpAndSettle();
+
+    // 直接驱动时轮的 scrollController（跳项与真实滚动走同一条
+    // onSelectedItemChanged 路径，且不受手势惯性影响，落点确定）。
+    FixedExtentScrollController hourWheel() =>
+        tester.widget<CupertinoPicker>(
+          find.byType(CupertinoPicker).first,
+        ).scrollController!;
+
+    // 1) 向下环绕：从 10 往回跳 11 项，越过 00 循环到 23。
+    hourWheel().jumpToItem(hourWheel().selectedItem - 11);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(find.text('23:20:00'), findsOneWidget);
+
+    // 2) 滚进低端边缘区（小于保护区的第 5 项）：应整份回跳到中段且值不变，
+    //    确定后仍是 05:20:00。
+    await tester.tap(find.text('23:20:00'));
+    await tester.pumpAndSettle();
+    hourWheel().jumpToItem(5);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(find.text('05:20:00'), findsOneWidget);
+  });
+
   testWidgets('reminders show expired parking countdown', (tester) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
@@ -262,7 +305,7 @@ void main() {
         );
         await createDefaultCar(tester);
 
-        // 先启动停车倒计时，制造 9001/9002 系统通知。
+        // 先启动停车倒计时，制造 9001~9004 系统通知。
         await tester.tap(find.text('提醒'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
@@ -289,7 +332,7 @@ void main() {
             .map((call) => (call.arguments as Map<Object?, Object?>)['id'])
             .whereType<int>()
             .toSet();
-        expect(cancelledIds, containsAll([9001, 9002]));
+        expect(cancelledIds, containsAll([9001, 9002, 9003, 9004]));
         // 清空只取消 16 个在用通知 id（8000~8999 段内），不整段扫 8000~8999。
         expect(
           cancelledIds.where((id) => id >= 8000 && id < 9000),

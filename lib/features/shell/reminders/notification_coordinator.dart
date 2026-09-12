@@ -192,7 +192,7 @@ class LunioNotificationCoordinator {
   }
 
   /// 恢复备份的收尾模板：升代数 → 执行恢复 → 取消保养/里程系通知
-  /// （8000/8900）。停车 9001/9002 不取消——倒计时偏好保留且仍有效。
+  /// （8000/8900）。停车 9001~9004 不取消——倒计时偏好保留且仍有效。
   /// 恢复失败（异常，事务已回滚）时旧通知原样保留并上抛异常。
   Future<void> runBackupRestore(Future<void> Function() restoreBackup) async {
     _bumpNotificationSyncGeneration();
@@ -201,7 +201,7 @@ class LunioNotificationCoordinator {
   }
 
   /// 清空数据的收尾模板：升代数 → 执行清库（偏好表一并删除，倒计时偏好
-  /// 和通知开关都不复存在）→ 取消停车 9001/9002 与保养/里程 8000/8900 系
+  /// 和通知开关都不复存在）→ 取消停车 9001~9004 与保养/里程 8000/8900 系
   /// 残留通知。清库失败（异常）时上抛异常、不取消。
   Future<void> runAllDataClear(Future<void> Function() clearAllData) async {
     _bumpNotificationSyncGeneration();
@@ -217,10 +217,15 @@ class LunioNotificationCoordinator {
   ///  - 系统通知开关关着 → 到此为止（只保留应用内倒计时）；
   ///  - 开着 → 请求通知权限（顺手记"已请求过"，被拒时
   ///    [requestPermission] 内部回写"系统通知关闭"）→ 授权了再比对同步
-  ///    代数 → 申请 Android 精确闹钟 → 调度 9001 到点闹钟 + 9002 常驻通知。
+  ///    代数 → 申请 Android 精确闹钟 → 调度 9001 到点闹钟 + 9002 常驻
+  ///    通知 + 9003/9004 剩余时长预警（预警门槛按保存时刻的剩余时长判断，
+  ///    规则见服务层 scheduleParkingCountdownNotification）。
   /// 代数比对（R8）：保存链期间发生恢复备份/清空数据（数据已被整体替换）
   /// 就不再调度，避免排入一条指向已删除状态的通知。
   Future<void> onParkingCountdownSaved(ParkingCountdown countdown) async {
+    // 预警门槛的"保存时刻"在走权限弹窗等异步链之前先取好：弹窗停留多久
+    // 都不影响临界倒计时的剩余时长判断。
+    final evaluatedAt = DateTime.now();
     final syncGeneration = ref.read(notificationSyncGenerationProvider);
     final settings = await ref.read(notificationSettingsProvider.future);
     if (!settings.systemNotificationsEnabled) {
@@ -237,11 +242,12 @@ class LunioNotificationCoordinator {
     await service.scheduleParkingCountdownNotification(
       countdown,
       exactAlarm: exactAlarmGranted,
+      evaluatedAt: evaluatedAt,
     );
   }
 
   /// 停车倒计时已清除的通知收尾（调用方先删偏好并失效
-  /// parkingCountdownProvider 再调用）：系统通知开着才取消 9001/9002
+  /// parkingCountdownProvider 再调用）：系统通知开着才取消 9001~9004
   /// （关着时本来就没人调度过）。
   Future<void> onParkingCountdownCleared() async {
     final settings = await ref.read(notificationSettingsProvider.future);
