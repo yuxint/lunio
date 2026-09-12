@@ -80,16 +80,18 @@ class RecordRules {
   }
 
   /// 项目费用与"材料费+工时费"是否不一致（红字黄三角的判定，ADR 0010）。
-  /// 仅当材料费、工时费都填了且都大于 0、项目费用也填了时才比——
-  /// 0 与未填等价（只填一个组成部分时项目费用自由填写，不提示）。
+  /// 材料、工时任一非空即比（2026-09-12 修订：0 是明确的"没花钱"，与
+  /// 未填不等价，未填一侧按 0 求和；原规则要求两者都 >0）——只填一个
+  /// 组成部分时另一侧按 0 参与比较。项目费用未填不比（表单会自动算出，
+  /// 不会停在未填态）。
   static bool itemCostMismatch(RecordItemCost cost) {
     final material = cost.materialCents;
     final labor = cost.laborCents;
     final total = cost.costCents;
-    if (material == null || material <= 0 || labor == null || labor <= 0) {
+    if (material == null && labor == null) {
       return false;
     }
-    return total != null && total != material + labor;
+    return total != null && total != (material ?? 0) + (labor ?? 0);
   }
 
   /// 记录总费用与已填项目费用合计是否不一致（红字黄三角的判定）。

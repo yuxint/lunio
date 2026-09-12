@@ -1211,6 +1211,7 @@ CarFormLoad carFormLoadGuard(
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
   showLunioModalSheet<void>(
     context: context,
+    barrierDismissible: false,
     builder: (sheetContext) {
       var isMaintenanceStep = false;
       return StatefulBuilder(
@@ -1275,6 +1276,7 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
   showLunioModalSheet<void>(
     context: context,
+    barrierDismissible: false,
     builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '编辑车辆',

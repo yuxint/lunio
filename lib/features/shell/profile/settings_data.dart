@@ -532,6 +532,7 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
       );
   showLunioModalSheet<void>(
     context: context,
+    barrierDismissible: false,
     builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '手动日期',

@@ -44,7 +44,7 @@ void main() {
     );
   });
 
-  test('item cost mismatch requires material and labor both positive', () {
+  test('item cost mismatch compares whenever any component is present', () {
     // 都 > 0 且项目费用 ≠ 两者之和 → 不一致（如优惠改价）。
     expect(
       RecordRules.itemCostMismatch(
@@ -69,14 +69,26 @@ void main() {
       ),
       isFalse,
     );
-    // 只填一个组成部分：项目费用自由填写，不比。
+    // 只填材料（2026-09-12 修订：任一非空即比，未填侧按 0 求和）：
+    // 项目费用 ≠ 材料+0 → 不一致。
     expect(
       RecordRules.itemCostMismatch(
         const RecordItemCost(itemId: 1, materialCents: 15000, costCents: 500),
       ),
+      isTrue,
+    );
+    // 只填材料且项目费用恰好等于材料：一致（自动算链的正常结果）。
+    expect(
+      RecordRules.itemCostMismatch(
+        const RecordItemCost(
+          itemId: 1,
+          materialCents: 15000,
+          costCents: 15000,
+        ),
+      ),
       isFalse,
     );
-    // 0 与未填等价（ADR 0010：都为 0 时项目费用自由填写）。
+    // 材料为 0（明确的"没花钱"）+ 工时 8000：项目费用 ≠ 0+8000 → 不一致。
     expect(
       RecordRules.itemCostMismatch(
         const RecordItemCost(
@@ -85,6 +97,13 @@ void main() {
           laborCents: 8000,
           costCents: 1,
         ),
+      ),
+      isTrue,
+    );
+    // 材料工时都未填：无从比起，不提示。
+    expect(
+      RecordRules.itemCostMismatch(
+        const RecordItemCost(itemId: 1, costCents: 100),
       ),
       isFalse,
     );

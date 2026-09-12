@@ -166,6 +166,7 @@ void showQuickMileageUpdateSheet(BuildContext context, WidgetRef ref, Car car) {
   final controller = TextEditingController();
   showLunioModalSheet<void>(
     context: context,
+    barrierDismissible: false,
     builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: '更新里程',

@@ -1,8 +1,10 @@
 // 记录表单费用区的控制器：ADR 0010 自动算链与手改标记的唯一实现。
 //
 // 职责：管理详细模式下"材料费/工时费/项目费用/总费用"输入的草稿与联动——
-//   1. 自动算链：材料>0 且工时>0 → 项目费用 = 两者之和（已手改的不覆盖）；
-//      有项目费用 → 总费用 = 合计（已手改的不覆盖）。只在详细模式生效；
+//   1. 自动算链：材料/工时任一非空即算（2026-09-12 修订，原规则要求两者
+//      都 >0；0 是明确的"没花钱"，与未填不等价），未填侧按 0 求和 →
+//      项目费用 = 两者之和（已手改的不覆盖）；有项目费用 → 总费用 =
+//      合计（已手改的不覆盖）。只在详细模式生效；
 //   2. 手改标记：键入非空内容 = 手改（不再被自动覆盖）；清空 = 放弃手改
 //      （恢复自动跟随）；编辑历史记录打开时，存量费用与自动算结果不一致
 //      （如优惠改价）直接视为已手改，预填值不会被算链冲掉；
@@ -248,9 +250,10 @@ class RecordCostFormController {
     }
   }
 
-  /// 自动算链（ADR 0010）：材料>0 且工时>0 → 项目费用 = 两者之和
-  /// （已被手改的不覆盖）；有项目费用 → 总费用 = 合计（已被手改的
-  /// 不覆盖）。只在详细模式生效，简洁模式总费用纯手填。
+  /// 自动算链（ADR 0010 + 2026-09-12 修订）：材料/工时任一非空即算
+  /// （未填一侧按 0 求和；0 是明确的"没花钱"，与未填不等价）→
+  /// 项目费用 = 两者之和（已被手改的不覆盖）；有项目费用 → 总费用 =
+  /// 合计（已被手改的不覆盖）。只在详细模式生效，简洁模式总费用纯手填。
   void _applyAutoFill() {
     if (_applyingAutoFill) {
       return;
@@ -263,12 +266,12 @@ class RecordCostFormController {
       for (final draft in _drafts.values) {
         final material = parseMoneyCents(draft.materialController.text);
         final labor = parseMoneyCents(draft.laborController.text);
-        if (material != null &&
-            material > 0 &&
-            labor != null &&
-            labor > 0 &&
-            !draft.costTouched) {
-          final text = formatMoneyText(material + labor);
+        // 两格全空无从算起；任一非空（含 0）就算，未填侧按 0 求和。
+        if (material == null && labor == null) {
+          continue;
+        }
+        if (!draft.costTouched) {
+          final text = formatMoneyText((material ?? 0) + (labor ?? 0));
           if (draft.costController.text != text) {
             draft.costController.text = text;
           }

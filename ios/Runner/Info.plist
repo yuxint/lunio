@@ -14,6 +14,13 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<!-- 声明简体中文：iOS 长按输入框的系统菜单（拷贝/粘贴等）由系统
+	     按 App 声明的本地化列表选语言，不声明时跟开发区域走英文。
+	     Flutter 侧的代理配置见 lib/app/lunio_app.dart。 -->
+	<array>
+		<string>zh-Hans</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>lunio</string>
 	<key>CFBundlePackageType</key>

@@ -591,6 +591,7 @@ Future<void> showParkingCountdownSheet(
 ) {
   return showLunioModalSheet<void>(
     context: context,
+    barrierDismissible: false,
     builder: (sheetContext) {
       final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
       final tappedNow = ref.read(appDateContextProvider).readSystemNow();

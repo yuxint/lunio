@@ -328,4 +328,64 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('长内容弹窗'), findsNothing);
   });
+
+  testWidgets('编辑表单（barrierDismissible=false）遮罩/下滑/返回都关不掉', (
+    tester,
+  ) async {
+    Widget buildHost() => MaterialApp(
+      theme: buildLunioTheme(),
+      home: Scaffold(
+        body: Center(
+          child: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showLunioModalSheet<void>(
+                context: context,
+                barrierDismissible: false,
+                builder: (sheetContext) => PrototypeSheetFrame(
+                  title: '锁定弹窗',
+                  child: LunioFormActions(
+                    confirmLabel: '确定',
+                    onCancel: () => Navigator.of(sheetContext).pop(),
+                    onConfirm: () {},
+                  ),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildHost());
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(find.text('锁定弹窗'), findsOneWidget);
+
+    // 点弹窗外遮罩（sheet 外左上角）：不关。
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    expect(find.text('锁定弹窗'), findsOneWidget);
+
+    // 从标题处下拉拖拽：手势识别器未注册，sheet 不动也不关。
+    final titleCenter = tester.getCenter(find.text('锁定弹窗'));
+    final dragGesture = await tester.startGesture(titleCenter);
+    await dragGesture.moveBy(const Offset(0, 200));
+    await tester.pump();
+    await dragGesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('锁定弹窗'), findsOneWidget);
+    expect(tester.getCenter(find.text('锁定弹窗')), titleCenter);
+
+    // maybePop（系统返回键的等价路径，PopScope canPop=false）：不关。
+    await tester.state<NavigatorState>(
+      find.byType(Navigator),
+    ).maybePop();
+    await tester.pumpAndSettle();
+    expect(find.text('锁定弹窗'), findsOneWidget);
+
+    // 点取消按钮：唯一出口。
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('锁定弹窗'), findsNothing);
+  });
 }

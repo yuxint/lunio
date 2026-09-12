@@ -2,7 +2,8 @@
 //
 // 直接打控制器接口（不用 pump widget），锁死 ADR 0010 自动算链与
 // "手改标记"的完整语义：
-//  - 详细模式才跑算链：材料>0 且工时>0 → 项目费用；有项目费用 → 总费用；
+//  - 详细模式才跑算链：材料/工时任一非空（未填侧按 0，2026-09-12 修订）
+//    → 项目费用；有项目费用 → 总费用；
 //  - 手改后不再被自动覆盖；清空 = 放弃手改，恢复自动跟随；
 //  - 程序写入（自动回填）不算手改——递归保护是语义的一部分；
 //  - 编辑打开时存量不一致（优惠价）预置为已手改，存量一致保持自动跟随；
@@ -88,10 +89,11 @@ void main() {
     final controller = buildController(selected: {1});
     final draft = controller.drafts[1]!;
 
-    // 只填材料不触发：工时缺位不算链。
+    // 只填材料即触发：未填的工时按 0 求和（2026-09-12 修订）。
     draft.materialController.text = '100';
     controller.onSplitCostChanged();
-    expect(draft.costController.text, '');
+    expect(draft.costController.text, '100.00');
+    expect(controller.totalController.text, '100.00');
 
     draft.laborController.text = '50';
     controller.onSplitCostChanged();
@@ -102,6 +104,25 @@ void main() {
     expect(controller.totalController.text, '150.00');
     expect(draft.costTouched, isFalse);
     expect(controller.totalTouched, isFalse);
+  });
+
+  test('explicit zero computes and both zeros fill 0.00', () {
+    final controller = buildController(selected: {1});
+    final draft = controller.drafts[1]!;
+
+    // 材料 100、工时 0：0 是明确的"没花钱"，项目费用 = 100。
+    draft.materialController.text = '100';
+    draft.laborController.text = '0';
+    controller.onSplitCostChanged();
+    expect(draft.costController.text, '100.00');
+    expect(controller.totalController.text, '100.00');
+
+    // 两格都 0：免费保养成立，项目费用自动 0.00；合计为 0 不驱动
+    // 总费用（sum > 0 才跟随的既有规则不变）。
+    draft.materialController.text = '0';
+    controller.onSplitCostChanged();
+    expect(draft.costController.text, '0.00');
+    expect(controller.totalController.text, '100.00');
   });
 
   test('touched cost survives edits and reports mismatch', () {

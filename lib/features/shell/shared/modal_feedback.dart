@@ -10,8 +10,11 @@
 //    这是产品约定的瞬时成功反馈，替代系统 SnackBar）
 //  - dismissTransientUi：切 tab 时统一收起键盘/toast/snackbar
 //
-// 弹窗内点击非输入框区域统一收起键盘（不关弹窗）；点弹窗外遮罩区仍是
-// 直接关闭整个弹窗（无未保存确认，产品决策）。
+// 弹窗内点击非输入框区域统一收起键盘（不关弹窗）。点弹窗外遮罩区按弹层
+// 类型分两档（2026-09-12 产品决策）：编辑表单类（有取消/确认按钮的表单
+// sheet）传 barrierDismissible=false——点遮罩、下滑、系统返回键都关不掉，
+// 只能走取消/确认按钮，防止误关丢已输入内容；选择器/只读 sheet 保持点
+// 遮罩与下滑直接关闭（无未保存内容）。
 //
 // 实现：自绘 showGeneralDialog + BackdropFilter 毛玻璃（不是系统
 // showModalBottomSheet），保证三端观感一致。
@@ -29,6 +32,10 @@ import '../../../core/widgets/lunio_components.dart';
 /// 底部 sheet：全屏对话框 + 底部对齐内容。
 /// 不再内建白底表面（§5.3.2 收敛后全项目唯一骨架是 PrototypeSheetFrame），
 /// 调用方在 builder 里用 PrototypeSheetFrame 自带表面与标题。
+///
+/// [barrierDismissible]：点遮罩/下滑/系统返回键是否可关闭。编辑表单类
+/// （有取消/确认按钮的表单 sheet）必须传 false——"只能点按钮关闭"，
+/// 防止误关丢已输入内容；选择器/只读 sheet 用默认 true。
 Future<T?> showLunioModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -50,9 +57,16 @@ Future<T?> showLunioModalSheet<T>({
         useSafeArea: false,
         child: FractionallySizedBox(
           widthFactor: 1,
-          child: _SheetDragDismiss(
-            dismissible: barrierDismissible,
-            child: child,
+          // PopScope 与遮罩点击/下滑同源：barrierDismissible=false 时
+          // canPop=false，系统返回键（含预测性返回手势）不再 pop 路由，
+          // 遮罩点击的 maybePop 也被一并拦下；取消/确认按钮走
+          // Navigator.pop（强制），不受影响。
+          child: PopScope(
+            canPop: barrierDismissible,
+            child: _SheetDragDismiss(
+              dismissible: barrierDismissible,
+              child: child,
+            ),
           ),
         ),
       );

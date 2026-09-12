@@ -46,7 +46,11 @@
 
 **数字输入键盘**：所有只填数字的输入框统一数字键盘——整数字段用 `TextInputType.numberWithOptions()`（免费时长/保养里程/费用外的里程/项目周期数字行），金额类带小数用 `numberWithOptions(decimal: true)`（费用/油箱容积）。
 
-**底部弹窗关闭与键盘**：所有底部 sheet（`showLunioModalSheet`，modal_feedback.dart）的关闭/键盘行为统一由共享原语处理，页面不单独实现——① 下拉整块跟手：内容滚到顶部后继续下拉，sheet 跟手移动，松手超过 1/4 弹窗高度（矮弹窗按 80px 下限）或下滑够快即关闭，否则弹回；内容可滚时走内部出界滚动通知（`_SheetDragDismiss` 通知通道），内容收缩不满一屏时走外层手势（`canDrag=false` 时内部无识别器，出界通知不存在，Flutter 行为）。② 点弹窗内非输入框区域：只收键盘不关弹窗（`_LunioModalContent` 的 onTap unfocus，数字/全键盘一致）。③ 点弹窗外暗色遮罩区：直接关闭整个弹窗，无未保存确认（产品决策，与下滑关闭一致）。
+**底部弹窗关闭与键盘**：所有底部 sheet（`showLunioModalSheet`，modal_feedback.dart）的关闭/键盘行为统一由共享原语处理，页面不单独实现——① 下拉整块跟手：内容滚到顶部后继续下拉，sheet 跟手移动，松手超过 1/4 弹窗高度（矮弹窗按 80px 下限）或下滑够快即关闭，否则弹回；内容可滚时走内部出界滚动通知（`_SheetDragDismiss` 通知通道），内容收缩不满一屏时走外层手势（`canDrag=false` 时内部无识别器，出界通知不存在，Flutter 行为）。② 点弹窗内非输入框区域：只收键盘不关弹窗（`_LunioModalContent` 的 onTap unfocus，数字/全键盘一致）。③ 点弹窗外暗色遮罩区按弹层类型分两档（2026-09-12 产品决策）：**编辑表单类**（有取消/确认按钮的表单 sheet：记录表单、添加/编辑车辆、项目表单两版、停车倒计时、快捷更新里程、手动日期、手填油价，`barrierDismissible=false`）点遮罩、下滑、系统返回键（`PopScope` canPop=false）都关不掉，只能走取消/确认按钮，防止误关丢已输入内容；**选择器/只读 sheet**（车型选择、日期选择、项目多选、省份/油品选择、停车时长滚轮、记录详情、项目管理、通知设置、切换车辆）保持点遮罩与下滑直接关闭，无未保存确认。
+
+**sheet 高度上限**：`PrototypeSheetFrame` 限制 sheet 最大高度 = 屏幕高度 − 顶部安全区（2026-09-12）：长表单顶到状态栏下沿为止，标题永不与状态栏时钟重叠，超出内容走内部滚动；矮弹窗贴内容不变。
+
+**sheet 键盘高度来源**：表单 sheet 的 `bottomInset` 必须取 sheet 自己的 builder context（`MediaQuery.of(sheetContext)`，随键盘实时更新）；误用外层页面 context 会在 sheet 构建时定格为 0，键盘弹起后底部输入被遮挡（records_page 曾踩，2026-09-12 修复）。
 
 **三大缓存失效入口**（`lib/app/providers.dart:205-230`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不再手排：
 
@@ -213,7 +217,7 @@ appDatabaseProvider(:232)
 |---|---|---|---|
 | 0 | `showMaintenanceRecordFormSheet` 开头 | await 车/项目/今天三个 provider；无车或无可用项目 → toast 拦截 | — |
 | 1 | `MaintenanceRecordForm`（:524 起）第一步 | 日期（范围=上路日期~今天+365）、里程（默认车辆当前里程）、费用（元输入）、备注、**详细模式开关（ADR 0010，默认简洁、不持久化；编辑带项目费用的记录自动开启，`initState → detailMode`）**、项目多选 chip；编辑态可见"已禁用但被选过"的项目 | — |
-| 1a | 详细模式费用行（`_ItemCostRow`，勾选项目 chip 下方逐项展开） | 每个项目"材料费/工时费/项目费用"三个数字框。**自动算链**：材料>0 且工时>0 → 项目费用=两者之和；已填项目费用 → 总费用=合计。自动值可手改，**手改后不再自动覆盖**（清空=恢复自动；编辑记录打开时，存量项目费用≠材料+工时或存量总费用≠合计即视为已手改，避免预填的优惠价被自动算链冲掉）。算链、手改标记、费用草稿生命周期与提交清单收在 `records/record_cost_form_controller.dart → RecordCostFormController`（ADR 0010 唯一实现点，表单 State 只接线与重建；单测 `test/features/record_cost_form_controller_test.dart`）；**不一致纯提示**：项目费用≠材料+工时（两者都>0 时）或总费用≠合计（有项目费用时）→ 该数字红字+框尾/行首黄色警告角标，不拦截保存（优惠等差异合法）。判定纯函数在 `record_rules.dart`（`itemCostMismatch`/`totalCostMismatch`/`sumItemCostCents`） | — |
+| 1a | 详细模式费用行（`_ItemCostRow`，勾选项目 chip 下方逐项展开） | 每个项目"材料费/工时费/项目费用"三个数字框。**自动算链**：材料、工时**任一非空**（未填侧按 0 求和；两格都 0 填 0.00；2026-09-12 修订，原规则要求两者都>0）→ 项目费用=两者之和；已填项目费用 → 总费用=合计。自动值可手改，**手改后不再自动覆盖**（清空=恢复自动；编辑记录打开时，存量项目费用≠材料+工时或存量总费用≠合计即视为已手改，避免预填的优惠价被自动算链冲掉）。算链、手改标记、费用草稿生命周期与提交清单收在 `records/record_cost_form_controller.dart → RecordCostFormController`（ADR 0010 唯一实现点，表单 State 只接线与重建；单测 `test/features/record_cost_form_controller_test.dart`）；**不一致纯提示**：项目费用≠材料+工时（任一非空时比，未填侧按 0；2026-09-12 同步修订）或总费用≠合计（有项目费用时）→ 该数字红字+框尾/行首黄色警告角标，不拦截保存（优惠等差异合法）。判定纯函数在 `record_rules.dart`（`itemCostMismatch`/`totalCostMismatch`/`sumItemCostCents`） | — |
 | 1b | 行内"新增"项目 | `records_page.dart → _addMaintenanceItem` → 弹项目表单（§5.2.2）→ 重拉列表 → **diff 出新 id 自动勾选**（`costForm.syncSelection` 同步费用草稿） | 新项目已落库 |
 | 2 | `_buildRecordDraft()`（:780）+ `costForm.buildItemCosts()` + `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项；费用不一致**不做**校验）→ 构造记录草稿（含项目费用列表；全空草稿跳过）→ 为每个选中项目建间隔输入草稿 | — |
 | 3 | 第二步 `_buildIntervalStep` | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步） | — |

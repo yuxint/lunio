@@ -1042,11 +1042,15 @@ Future<void> showMaintenanceRecordFormSheet(
   }
   showLunioModalSheet<void>(
     context: context,
+    // 编辑表单：点遮罩/下滑/返回键不可关，只能走取消/保存按钮。
+    barrierDismissible: false,
     builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: record == null ? '新增保养记录' : '编辑保养记录',
         subtitle: '${car!.brand} ${car.model}',
-        bottomInset: MediaQuery.of(context).viewInsets.bottom,
+        // 必须用 sheet 自己的 context 取键盘高度：外层 context 在 sheet
+        // 构建时就定格为 0，键盘弹起后不会更新（曾致底部输入被遮挡）。
+        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
         child: MaintenanceRecordForm(
           car: car,
           items: items,

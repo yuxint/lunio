@@ -7,6 +7,7 @@
 // ConsumerWidget 表示这是一个"能从 Riverpod 容器取数"的组件——
 // Java 对照：相当于一个支持 @Autowired 注入的 Bean，ref 就是注入器。
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -33,6 +34,16 @@ class LunioApp extends ConsumerWidget {
         .maybeWhen(data: (value) => value, orElse: () => ThemeMode.system);
     return MaterialApp.router(
       title: 'Lunio',
+      // 本地化固定中文（App 文案本就全中文硬编码）。Material 代理让
+      // Flutter 自绘的系统文案（Android 长按输入框的复制/粘贴菜单等）
+      // 变中文；iOS 的系统菜单由 UIKit 按 App 声明的本地化列表渲染，
+      // 另需 ios/Runner/Info.plist 声明 CFBundleLocalizations，两处配合。
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('zh', 'Hans')],
       // 浅色/深色两套 ThemeData（见 core/theme/lunio_theme.dart），
       // themeMode 决定当前用哪套：light / dark / system（跟随系统）。
       theme: buildLunioTheme(),

@@ -51,7 +51,9 @@ void main() {
       tester.view.physicalSize.height / tester.view.devicePixelRatio,
     );
 
-    await tester.tapAt(const Offset(20, 20));
+    // 记录表单是编辑表单（barrierDismissible=false）：点遮罩关不掉，
+    // 走取消按钮关闭。
+    await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(find.text('下一步'), findsNothing);
 

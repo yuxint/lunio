@@ -764,6 +764,7 @@ Future<bool?> showMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
+    barrierDismissible: false,
     builder: (sheetContext) {
       return PrototypeSheetFrame(
         title: item == null ? '新增保养项目' : '编辑保养项目',
@@ -801,6 +802,7 @@ Future<bool?> showDraftMaintenanceItemFormSheet(
 }) {
   return showLunioModalSheet<bool>(
     context: context,
+    barrierDismissible: false,
     builder: (context) {
       return PrototypeSheetFrame(
         title: item.name.isEmpty ? '新增保养项目' : '编辑保养项目',

@@ -166,9 +166,11 @@ class PrototypeSheetFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 弹层不走 SafeArea（贴底绘制），这里手动读取底部安全区：
-    // 无圆角/无横条的老设备该值为 0，布局不受影响。
-    final safeBottom = MediaQuery.of(context).padding.bottom;
+    // 弹层不走 SafeArea（贴底绘制），这里手动读取安全区与屏幕尺寸：
+    // 底部安全区抬离屏幕底边（无圆角/无横条的老设备该值为 0）；
+    // 顶部安全区参与高度上限（见下方 constraints）。
+    final mq = MediaQuery.of(context);
+    final safeBottom = mq.padding.bottom;
     final content = Padding(
       padding: EdgeInsets.fromLTRB(
         18,
@@ -217,6 +219,12 @@ class PrototypeSheetFrame extends StatelessWidget {
       ),
     );
     final sheet = Container(
+      // 高度上限 = 屏高 - 顶部安全区：长表单顶到状态栏下沿为止，标题
+      // 永远在状态栏时钟下方，超出的内容交给内部滚动；矮弹窗贴内容，
+      // 不受上限影响。
+      constraints: BoxConstraints(
+        maxHeight: math.max(0, mq.size.height - mq.padding.top),
+      ),
       decoration: BoxDecoration(
         color: tokens.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),

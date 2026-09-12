@@ -414,6 +414,7 @@ class _PriceCard extends ConsumerWidget {
     final controller = TextEditingController();
     await showLunioModalSheet<void>(
       context: context,
+      barrierDismissible: false,
       builder: (sheetContext) {
         return PrototypeSheetFrame(
           title: '编辑油价',
