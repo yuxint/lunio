@@ -48,9 +48,9 @@
 
 **底部弹窗关闭与键盘**：所有底部 sheet（`showLunioModalSheet`，modal_feedback.dart）的关闭/键盘行为统一由共享原语处理，页面不单独实现——① 下拉整块跟手：内容滚到顶部后继续下拉，sheet 跟手移动，松手超过 1/4 弹窗高度（矮弹窗按 80px 下限）或下滑够快即关闭，否则弹回；内容可滚时走内部出界滚动通知（`_SheetDragDismiss` 通知通道），内容收缩不满一屏时走外层手势（`canDrag=false` 时内部无识别器，出界通知不存在，Flutter 行为）。② 点弹窗内非输入框区域：只收键盘不关弹窗（`_LunioModalContent` 的 onTap unfocus，数字/全键盘一致）。③ 点弹窗外暗色遮罩区按弹层类型分两档（2026-09-12 产品决策）：**编辑表单类**（有取消/确认按钮的表单 sheet：记录表单、添加/编辑车辆、项目表单两版、停车倒计时、快捷更新里程、手动日期、手填油价，`barrierDismissible=false`）点遮罩、下滑、系统返回键（`PopScope` canPop=false）都关不掉，只能走取消/确认按钮，防止误关丢已输入内容；**选择器/只读 sheet**（车型选择、日期选择、项目多选、省份/油品选择、停车时长滚轮、记录详情、项目管理、通知设置、切换车辆）保持点遮罩与下滑直接关闭，无未保存确认。
 
-**sheet 高度上限**：`PrototypeSheetFrame` 限制 sheet 最大高度 = 屏幕高度 − 顶部安全区（2026-09-12）：长表单顶到状态栏下沿为止，标题永不与状态栏时钟重叠，超出内容走内部滚动；矮弹窗贴内容不变。
+**sheet 高度上限**：`PrototypeSheetFrame` 限制 sheet 最大高度 = 屏幕高度 − 顶部安全区 − 底部预留（max(安全区, 键盘高度)，2026-09-12）：长表单顶到状态栏下沿为止，标题永不与状态栏时钟重叠，超出内容走内部滚动；矮弹窗贴内容不变；键盘弹出时上限随键盘高度同步收缩。
 
-**sheet 键盘高度来源**：表单 sheet 的 `bottomInset` 必须取 sheet 自己的 builder context（`MediaQuery.of(sheetContext)`，随键盘实时更新）；误用外层页面 context 会在 sheet 构建时定格为 0，键盘弹起后底部输入被遮挡（records_page 曾踩，2026-09-12 修复）。
+**sheet 键盘抬升**：键盘高度（`bottomInset`）垫在 sheet 容器**外侧**（`PrototypeSheetFrame` 返回 `Padding(bottom: bottomInset)`）：键盘弹出时 sheet 底边整体抬到键盘顶边、表面悬在键盘上方，滚动视口完整可见，点击底部输入框由 Flutter 焦点滚动滚入可见区；无键盘时外侧垫 0，sheet 照旧贴住屏幕底边不悬空。底部安全区（Home 横条）补在内容内侧、只补键盘没盖住的差额，总预留恒为 max(安全区, 键盘高度) 不叠加（2026-09-12 修复：此前键盘预留垫在滚动内容内部，长表单触顶高度上限后视口下半截仍被键盘盖住，编辑记录底部费用框点了看不见；抬升初版把安全区也垫外侧，无键盘时底部悬空一条缝，均已修）。配套约束：`bottomInset` 必须取 sheet 自己的 builder context（`MediaQuery.of(sheetContext)`，随键盘实时更新）；误用外层页面 context 会在 sheet 构建时定格为 0（records_page 曾踩，2026-09-12 修复）。
 
 **三大缓存失效入口**（`lib/app/providers.dart:205-230`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不再手排：
 

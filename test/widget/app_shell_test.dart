@@ -199,6 +199,133 @@ void main() {
   });
 
 
+  testWidgets('长表单触顶时键盘弹出把 sheet 底边抬到键盘上方', (tester) async {
+    // 固定逻辑分辨率，几何断言不受宿主默认窗口影响。
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(1170, 2532);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const screenHeight = 844.0;
+    // FakeViewPadding 单位是物理像素：900 物理 @ dpr 3 = 300 逻辑。
+    const keyboardLogical = 300.0;
+    const keyboardPhysical = 900.0;
+
+    Widget buildHost() => MaterialApp(
+      theme: buildLunioTheme(),
+      home: Scaffold(
+        body: Center(
+          child: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showLunioModalSheet<void>(
+                context: context,
+                builder: (sheetContext) => PrototypeSheetFrame(
+                  title: '编辑保养记录',
+                  // 真实接缝：与各表单 sheet 一致，从 sheet 自己的
+                  // context 读键盘高度（dialog 路由内 viewInsets 可见）。
+                  bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    // 20 × 80 = 1600 远超屏高，保证内容触顶。
+                    children: [
+                      for (var i = 0; i < 20; i++) const SizedBox(height: 80),
+                    ],
+                  ),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildHost());
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    // 无键盘：长表单触顶 = 整屏高（宿主无顶部安全区），底边贴屏幕底。
+    // 注意 PrototypeSheetFrame 的渲染盒含外侧键盘预留，量不到表面底边；
+    // sheet 表面（Container）与滚动视口等高，用视口矩形度量。
+    final scrollRect = tester.getRect(find.byType(SingleChildScrollView));
+    expect(scrollRect.bottom, screenHeight);
+    expect(scrollRect.height, screenHeight);
+
+    // 键盘弹出：sheet 底边 = 键盘顶边，高度同步收缩为可用高度，滚动
+    // 视口完整落在键盘上方（回归锁定：此前键盘预留垫在滚动内容内部，
+    // 触顶后视口下半截被键盘盖住，底部输入框点了也看不见）。
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboardPhysical);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    final usableHeight = screenHeight - keyboardLogical;
+    final liftedScrollRect = tester.getRect(find.byType(SingleChildScrollView));
+    expect(liftedScrollRect.bottom, usableHeight);
+    expect(liftedScrollRect.height, usableHeight);
+  });
+
+
+  testWidgets('无键盘时 sheet 贴住屏幕底边，键盘弹出才抬升', (tester) async {
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.physicalSize = const Size(1170, 2532);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const screenHeight = 844.0;
+    const safeBottom = 34.0;
+    const keyboardLogical = 300.0;
+    // FakeViewPadding 单位是物理像素：900 物理 @ dpr 3 = 300 逻辑。
+    const keyboardPhysical = 900.0;
+
+    Widget buildHost() => MaterialApp(
+      theme: buildLunioTheme(),
+      // 通过 MaterialApp.builder 注入底部安全区：路由子树（含弹层）
+      // 从这里继承 MediaQuery，模拟全面屏 Home 横条。
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(padding: EdgeInsets.only(bottom: safeBottom)),
+        child: child!,
+      ),
+      home: Scaffold(
+        body: Center(
+          child: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => showLunioModalSheet<void>(
+                context: context,
+                builder: (sheetContext) => PrototypeSheetFrame(
+                  title: '更新里程',
+                  bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
+                  child: const SizedBox(height: 40),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildHost());
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    // 无键盘：sheet 贴住屏幕底边，不因安全区悬空（回归锁定：键盘抬升
+    // 方案初版把安全区也垫到容器外侧，无键盘时底部空出一条 Home 横条
+    // 高度的缝，用户报告）。
+    expect(
+      tester.getRect(find.byType(SingleChildScrollView)).bottom,
+      screenHeight,
+    );
+
+    // 键盘弹出：底边抬到键盘顶边；安全区被键盘覆盖后不再重复垫。
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboardPhysical);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getRect(find.byType(SingleChildScrollView)).bottom,
+      screenHeight - keyboardLogical,
+    );
+  });
+
+
   testWidgets('底部 sheet 下拉整块跟手，松手过阈值关闭', (tester) async {
     Widget buildHost(WidgetBuilder sheetBuilder) => MaterialApp(
       theme: buildLunioTheme(),

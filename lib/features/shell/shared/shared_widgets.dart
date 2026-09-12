@@ -146,10 +146,15 @@ class SmallActionButton extends StatelessWidget {
 }
 
 /// 表单/信息类 sheet 的统一骨架（全项目唯一，§5.3.2 收敛）：drag handle +
-/// 标题/副标题 + 可滚动内容 + bottomInset（预留给键盘）。
+/// 标题/副标题 + 可滚动内容 + 键盘抬升。
 /// 配合 showLunioModalSheet 使用（内部即透明底，调用方不再传表面参数）。
-/// 底部会自动叠加系统安全区高度（全面屏圆角/Home 横条），把内容抬离
-/// 屏幕底边；与键盘高度取较大值，避免键盘弹起时双重预留。
+/// [bottomInset] 为键盘高度（调用方须用 sheet 自己的 context 读
+/// MediaQuery.viewInsets.bottom），垫在 sheet 容器外侧：有键盘时把
+/// sheet 底边抬到键盘顶边，滚动视口完整落在键盘上方，点击底部输入框
+/// 时 Flutter 的焦点滚动才能把它滚进可见区；该值不能垫进滚动内容内部
+/// ——长表单触顶下方的高度上限后，视口下半截仍会被键盘盖住。
+/// 无键盘时外侧垫 0，sheet 照旧贴住屏幕底边；底部安全区（Home 横条）
+/// 补在内容内侧、只补键盘没盖住的差额，两者不叠加。
 class PrototypeSheetFrame extends StatelessWidget {
   const PrototypeSheetFrame({
     required this.title,
@@ -166,18 +171,14 @@ class PrototypeSheetFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 弹层不走 SafeArea（贴底绘制），这里手动读取安全区与屏幕尺寸：
-    // 底部安全区抬离屏幕底边（无圆角/无横条的老设备该值为 0）；
-    // 顶部安全区参与高度上限（见下方 constraints）。
+    // 弹层不走 SafeArea（贴底绘制），这里手动读取安全区与屏幕尺寸。
+    // 键盘高度垫在容器外侧（见类注释）；安全区补在内容内侧、只补键盘
+    // 没盖住的差额（bottomInset ≥ 安全区时补 0），总预留恒为
+    // max(安全区, 键盘高度)，两者不叠加。
     final mq = MediaQuery.of(context);
-    final safeBottom = mq.padding.bottom;
+    final innerSafeBottom = math.max(0.0, mq.padding.bottom - bottomInset);
     final content = Padding(
-      padding: EdgeInsets.fromLTRB(
-        18,
-        12,
-        18,
-        18 + math.max(safeBottom, bottomInset),
-      ),
+      padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + innerSafeBottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,15 +220,21 @@ class PrototypeSheetFrame extends StatelessWidget {
       ),
     );
     final sheet = Container(
-      // 高度上限 = 屏高 - 顶部安全区：长表单顶到状态栏下沿为止，标题
-      // 永远在状态栏时钟下方，超出的内容交给内部滚动；矮弹窗贴内容，
-      // 不受上限影响。
+      // 高度上限 = 屏高 - 顶部安全区 - 底部总预留：键盘弹出时 sheet 变矮
+      // 并整体悬在键盘上方，长表单超出的内容交给内部滚动。
       constraints: BoxConstraints(
-        maxHeight: math.max(0, mq.size.height - mq.padding.top),
+        maxHeight: math.max(
+          0,
+          mq.size.height -
+              mq.padding.top -
+              math.max(mq.padding.bottom, bottomInset),
+        ),
       ),
       decoration: BoxDecoration(
         color: tokens.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        // 四角统一 30 圆角：底部预留垫在容器外侧后，sheet 底边会悬空
+        // （键盘上方/Home 横条上方），方角会露出来。
+        borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
             color: tokens.ink.withValues(alpha: 0.18),
@@ -244,7 +251,13 @@ class PrototypeSheetFrame extends StatelessWidget {
         child: SingleChildScrollView(child: content),
       ),
     );
-    return sheet;
+    // 键盘高度垫在容器外侧（不能垫进上方滚动内容，原因见类注释）：
+    // 有键盘时 sheet 底边 = 键盘顶边，视口整体可见；无键盘时垫 0，
+    // sheet 照旧贴住屏幕底边（安全区已在内容内侧垫过）。
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: sheet,
+    );
   }
 }
 
