@@ -290,7 +290,12 @@ String _forecastSentence(String bodyText, RegExpMatch dateMatch) {
   return segment;
 }
 
-/// 标签内文本：去实体空格、去首尾空白（价格格可能有杂散空白）。
+/// 标签内文本：先剥内嵌标签，再去实体空格、去首尾空白。dt/dd 内容
+/// 可能带内嵌标签（如加粗油品名），不剥的话标签属性里的数字会被价格
+/// 正则抢先命中算错价（宁缺毋错）。
 String _plainText(String raw) {
-  return raw.replaceAll('&nbsp;', ' ').trim();
+  return raw
+      .replaceAll(_tagPattern, '')
+      .replaceAll('&nbsp;', ' ')
+      .trim();
 }

@@ -102,6 +102,20 @@ void main() {
       expect(data.priceFor(province: '湖北', grade: FuelGrade.gasoline98), 10.29);
     });
 
+    test('dt/dd 内嵌标签剥掉后再取关键词与价格（属性数字不算价格）', () {
+      // dt 里油品关键词被标签拆开（剥标签后才连续）；dd 里数字前面的
+      // 标签属性带数字（不剥标签会被价格正则抢先命中算成 9.0）。
+      const html = '<dl><dt>湖北<b>92号</b>汽油</dt><dd>8.31(元)</dd></dl>'
+          '<dl><dt>湖北95号汽油</dt><dd><i class="n9">8.89</i>(元)</dd></dl>';
+      final data = parseFuelProvinceHtml(
+        html,
+        province: '湖北',
+        fetchedAt: fetchedAt,
+      );
+      expect(data.priceFor(province: '湖北', grade: FuelGrade.gasoline92), 8.31);
+      expect(data.priceFor(province: '湖北', grade: FuelGrade.gasoline95), 8.89);
+    });
+
     test('整页解析不到价格时抛 FuelSourceException', () {
       expect(
         () => parseFuelProvinceHtml(
