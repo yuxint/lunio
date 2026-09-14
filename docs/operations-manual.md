@@ -207,9 +207,10 @@ appDatabaseProvider(:153)
 | 用户操作 | 代码位置 | 做了什么 |
 |---|---|---|
 | 切换"按周期/按项目" | `records_page.dart:56`（LunioSegmentedControl） | `selectedMode` 0/1 |
-| 年份/项目多选筛选 | `records_page.dart`（两个 `_FilterBar`，已回收为页面私有） | `selectedYears`/`selectedItemIds` 集合仅由用户点击变更；渲染与过滤用派生集合 `_validSelections`（自动忽略已失效的年份/项目） |
+| 年份/项目多选筛选 | `records_page.dart`（两个 `_FilterBar`，已回收为页面私有）+ `record_rows.dart`（口径规则） | `selectedYears`/`selectedItemIds` 集合仅由用户点击变更；渲染与过滤用派生集合（自动忽略已失效的年份/项目），下标映射、toggle 与有效性过滤收在 `record_rows.dart`（`validSelections`/`filterBarSelectionIndexes`/`toggleSetValue`） |
 | 按周期视图 | `records_page.dart → RecordCycleCard`（SliverList.builder 逐条懒加载，ValueKey('record-<id>')） | 一条记录一张卡（日期+金额+里程+备注+项目 pills+编辑/删除）；**整卡可点 → 记录详情弹窗（§4.4，ADR 0010）** |
-| 按项目视图 | `records_page.dart → RecordItemRowCard`（同样懒加载） | 记录×项目展开成行，可单独删某项；**整行可点 → 只看该项目的详情弹窗（§4.4）** |
+| 按项目视图 | `records_page.dart → RecordItemRowCard`（同样懒加载） | 记录×项目展开成行（行组装在 `record_rows.dart → buildRecordItemRows`：记录序×itemIds 序，项目已删的行 item 为 null、渲染兜底"未知项目"），可单独删某项；**整行可点 → 只看该项目的详情弹窗（§4.4）** |
+| 列表空态 | `record_rows.dart → classifyRecordListState`（sealed 分类） | 优先级：无车 > 无任何记录 > 筛选无结果 > 有数据（两视图行各自备好）；空态文案是 UI 决策，留在 `records_page.dart` 渲染 |
 
 ### 4.2 新增 / 编辑保养记录（两步表单）
 

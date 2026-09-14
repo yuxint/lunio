@@ -20,6 +20,9 @@
 // 第二步的间隔草稿与提交清单生成收在 record_interval_updates.dart
 // （正整数校验在 MaintenanceRules，与保养项目表单共用），本文件只做
 // 接线与渲染。
+// 列表筛选/行展开口径与空态分类收在 record_rows.dart（与提醒域
+// reminder_rows 同构的纯函数组装层；只有页面一个消费者，不设
+// provider），本文件持有筛选选中 state 并渲染。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -38,6 +41,7 @@ import '../shared/shell_shared.dart';
 import 'record_cost_form_controller.dart';
 import 'record_detail_sheet.dart';
 import 'record_interval_updates.dart';
+import 'record_rows.dart';
 
 /// 记录页主组件。
 class RecordsPreviewPage extends ConsumerStatefulWidget {
@@ -77,58 +81,63 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
     return records.when(
       loading: () => const LoadingPage(title: '保养记录'),
       error: (error, stackTrace) => ErrorPage(title: '保养记录', error: error),
-      data: (value) => LunioPage.slivers(
-        title: '保养记录',
-        slivers: [
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LunioSegmentedControl(
-                  values: const ['按周期', '按项目'],
-                  selectedIndex: selectedMode,
-                  onSelected: (index) => setState(() => selectedMode = index),
-                ),
-                const SizedBox(height: 14),
-                _buildFilterBars(value, items),
-                const SizedBox(height: 14),
-              ],
+      data: (value) {
+        // 筛选选中集的有效化（R21）与列表组装口径都在 record_rows.dart，
+        // 这里算一次传下去（此前筛选条和列表各算一遍有效集）。
+        final selections = validSelections(
+          records: value,
+          items: items,
+          selectedYears: selectedYears,
+          selectedItemIds: selectedItemIds,
+        );
+        final listState = classifyRecordListState(
+          car: car,
+          records: value,
+          items: items,
+          selections: selections,
+        );
+        return LunioPage.slivers(
+          title: '保养记录',
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LunioSegmentedControl(
+                    values: const ['按周期', '按项目'],
+                    selectedIndex: selectedMode,
+                    onSelected: (index) =>
+                        setState(() => selectedMode = index),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildFilterBars(value, items, selections),
+                  const SizedBox(height: 14),
+                ],
+              ),
             ),
-          ),
-          _buildRecordListSliver(car, value, items),
-        ],
-      ),
-    );
-  }
-
-  /// 派生集合：把 state 里的选中值过滤成"当前数据下仍有效"的视图集合，
-  /// 渲染与过滤都用它，不改 state（R21）。
-  ({Set<int> years, Set<int> itemIds}) _validSelections(
-    List<MaintenanceRecord> records,
-    List<MaintenanceItem> items,
-  ) {
-    final years = _recordYears(records);
-    final itemIds = items.map((item) => item.id).whereType<int>().toSet();
-    return (
-      years: selectedYears.where(years.contains).toSet(),
-      itemIds: selectedItemIds.where(itemIds.contains).toSet(),
+            _buildRecordListSliver(items, listState),
+          ],
+        );
+      },
     );
   }
 
   /// 两条筛选条（年份多选 + 项目多选，第一格"全部"= 清空筛选）。
+  /// 标签来自全量数据（年份取全部记录、项目取全部项目，不是筛选后
+  /// 的子集）；下标映射与 toggle 规则在 record_rows.dart。
   Widget _buildFilterBars(
     List<MaintenanceRecord> records,
     List<MaintenanceItem> items,
+    ({Set<int> years, Set<int> itemIds}) selections,
   ) {
-    final years = _recordYears(records);
-    final selections = _validSelections(records, items);
+    final years = recordYears(records);
     final itemIds = items.map((item) => item.id).whereType<int>().toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _FilterBar(
           labels: ['全部年份', for (final year in years) '$year年'],
-          selectedIndexes: _selectedFilterIndexes(
+          selectedIndexes: filterBarSelectionIndexes(
             values: years,
             selectedValues: selections.years,
           ),
@@ -137,13 +146,13 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
               selectedYears.clear();
               return;
             }
-            _toggleSelection(selectedYears, years[index - 1]);
+            toggleSetValue(selectedYears, years[index - 1]);
           }),
         ),
         const SizedBox(height: 8),
         _FilterBar(
           labels: ['全部项目', for (final item in items) item.name],
-          selectedIndexes: _selectedFilterIndexes(
+          selectedIndexes: filterBarSelectionIndexes(
             values: itemIds,
             selectedValues: selections.itemIds,
           ),
@@ -154,7 +163,7 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
             }
             final itemId = items[index - 1].id;
             if (itemId != null) {
-              _toggleSelection(selectedItemIds, itemId);
+              toggleSetValue(selectedItemIds, itemId);
             }
           }),
         ),
@@ -162,105 +171,87 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
     );
   }
 
-  /// 记录列表区：空态/过滤空态是固定卡片，正常态按当前模式返回
-  /// SliverList.builder（每项 ValueKey('record-记录id')，R25）。
+  /// 记录列表区：空态优先级分类在 record_rows.dart 的
+  /// classifyRecordListState（无车 > 无记录 > 筛选无结果），空态是固定
+  /// 卡片；正常态按当前模式返回 SliverList.builder（每项
+  /// ValueKey('record-记录id')，R25）。
   Widget _buildRecordListSliver(
-    Car? car,
-    List<MaintenanceRecord> records,
     List<MaintenanceItem> items,
+    RecordListState listState,
   ) {
-    if (car == null) {
-      return const SliverToBoxAdapter(child: LunioEmptyCard('请先新增车辆'));
-    }
-    if (records.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: LunioEmptyCard('暂无保养记录，可在提醒页点「新增保养记录」。'),
-      );
-    }
-    final selections = _validSelections(records, items);
-    final filteredRecords = _filterRecords(
-      records: records,
-      years: selections.years,
-      itemIds: selections.itemIds,
-    );
-    if (filteredRecords.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: LunioEmptyCard('没有符合筛选条件的记录'),
-      );
-    }
-    if (selectedMode == 0) {
-      return SliverList.builder(
-        itemCount: filteredRecords.length,
-        itemBuilder: (context, index) {
-          final record = filteredRecords[index];
-          return Padding(
-            key: ValueKey('record-${record.id}'),
-            padding: EdgeInsets.only(
-              bottom: index == filteredRecords.length - 1 ? 0 : 12,
-            ),
-            child: RecordCycleCard(
-              record: record,
-              items: items,
-              onEdit: (record) =>
-                  showMaintenanceRecordFormSheet(context, ref, record: record),
-              onDelete: (record) =>
-                  deleteMaintenanceRecord(context, ref, record),
-            ),
-          );
-        },
-      );
-    }
-    // 详情弹窗自取全量记录（record_detail_sheet.dart），这里只传
-    // 筛选后的展示列表。
-    return _buildItemRowsSliver(filteredRecords, items, selections.itemIds);
-  }
-
-  /// 按项目视图：记录×项目展开成行，同样走 SliverList.builder。
-  /// [records] 是筛选后的展示列表。
-  Widget _buildItemRowsSliver(
-    List<MaintenanceRecord> records,
-    List<MaintenanceItem> items,
-    Set<int> validSelectedItemIds,
-  ) {
-    final rows =
-        <({MaintenanceRecord record, int itemId, MaintenanceItem? item})>[];
-    for (final record in records) {
-      for (final itemId in record.itemIds) {
-        if (validSelectedItemIds.isNotEmpty &&
-            !validSelectedItemIds.contains(itemId)) {
-          continue;
-        }
-        rows.add((
-          record: record,
-          itemId: itemId,
-          item: itemById(items, itemId),
-        ));
-      }
-    }
-    if (rows.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: LunioEmptyCard('没有符合筛选条件的记录'),
-      );
-    }
-    return SliverList.builder(
-      itemCount: rows.length,
-      itemBuilder: (context, index) {
-        final row = rows[index];
-        return Padding(
-          key: ValueKey('record-${row.record.id}-item-${row.itemId}'),
-          padding: EdgeInsets.only(bottom: index == rows.length - 1 ? 0 : 12),
-          child: RecordItemRowCard(
-            record: row.record,
-            itemId: row.itemId,
-            item: row.item,
-            onEdit: (record, itemId) =>
-                showMaintenanceRecordFormSheet(context, ref, record: record),
-            onDelete: (record, itemId) =>
-                deleteMaintenanceRecordItem(context, ref, record, itemId),
-          ),
+    switch (listState) {
+      case RecordListNoCar():
+        return const SliverToBoxAdapter(
+          child: LunioEmptyCard('请先新增车辆'),
         );
-      },
-    );
+      case RecordListNoRecords():
+        return const SliverToBoxAdapter(
+          child: LunioEmptyCard('暂无保养记录，可在提醒页点「新增保养记录」。'),
+        );
+      case RecordListFilteredEmpty():
+        return const SliverToBoxAdapter(
+          child: LunioEmptyCard('没有符合筛选条件的记录'),
+        );
+      case RecordListData(:final cycleRecords, :final itemRows):
+        if (selectedMode == 0) {
+          return SliverList.builder(
+            itemCount: cycleRecords.length,
+            itemBuilder: (context, index) {
+              final record = cycleRecords[index];
+              return Padding(
+                key: ValueKey('record-${record.id}'),
+                padding: EdgeInsets.only(
+                  bottom: index == cycleRecords.length - 1 ? 0 : 12,
+                ),
+                child: RecordCycleCard(
+                  record: record,
+                  items: items,
+                  onEdit: (record) => showMaintenanceRecordFormSheet(
+                    context,
+                    ref,
+                    record: record,
+                  ),
+                  onDelete: (record) =>
+                      deleteMaintenanceRecord(context, ref, record),
+                ),
+              );
+            },
+          );
+        }
+        // 零项目记录的退化数据会让行展开为空（按周期视图看不到它），
+        // 此时按项目视图与"筛选无结果"同文案兜底。
+        if (itemRows.isEmpty) {
+          return const SliverToBoxAdapter(
+            child: LunioEmptyCard('没有符合筛选条件的记录'),
+          );
+        }
+        // 详情弹窗自取全量记录（record_detail_sheet.dart），这里只传
+        // 筛选后的展示列表。
+        return SliverList.builder(
+          itemCount: itemRows.length,
+          itemBuilder: (context, index) {
+            final row = itemRows[index];
+            return Padding(
+              key: ValueKey('record-${row.record.id}-item-${row.itemId}'),
+              padding: EdgeInsets.only(
+                bottom: index == itemRows.length - 1 ? 0 : 12,
+              ),
+              child: RecordItemRowCard(
+                record: row.record,
+                itemId: row.itemId,
+                item: row.item,
+                onEdit: (record, itemId) => showMaintenanceRecordFormSheet(
+                  context,
+                  ref,
+                  record: record,
+                ),
+                onDelete: (record, itemId) =>
+                    deleteMaintenanceRecordItem(context, ref, record, itemId),
+              ),
+            );
+          },
+        );
+    }
   }
 }
 
@@ -444,56 +435,6 @@ class RecordItemRowCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// 提取记录里出现过的年份（倒序去重）。
-List<int> _recordYears(List<MaintenanceRecord> records) {
-  final years = records.map((record) => record.date.year).toSet().toList()
-    ..sort((left, right) => right.compareTo(left));
-  return years;
-}
-
-/// 双条件过滤（年份 + 项目，各自"空集=不过滤"）。
-List<MaintenanceRecord> _filterRecords({
-  required List<MaintenanceRecord> records,
-  required Set<int> years,
-  required Set<int> itemIds,
-}) {
-  return records.where((record) {
-    if (years.isNotEmpty && !years.contains(record.date.year)) {
-      return false;
-    }
-    if (itemIds.isNotEmpty &&
-        !record.itemIds.any((itemId) => itemIds.contains(itemId))) {
-      return false;
-    }
-    return true;
-  }).toList();
-}
-
-/// 把"已选值集合"映射成 FilterBar 的选中下标集合
-/// （第 0 格是"全部"，没选中任何值时高亮第 0 格）。
-Set<int> _selectedFilterIndexes({
-  required List<int> values,
-  required Set<int> selectedValues,
-}) {
-  if (selectedValues.isEmpty) {
-    return {0};
-  }
-  final indexes = <int>{};
-  for (var index = 0; index < values.length; index++) {
-    if (selectedValues.contains(values[index])) {
-      indexes.add(index + 1);
-    }
-  }
-  return indexes.isEmpty ? {0} : indexes;
-}
-
-/// 点同一个值：未选中则选中，已选中则取消（toggle）。
-void _toggleSelection(Set<int> values, int value) {
-  if (!values.add(value)) {
-    values.remove(value);
   }
 }
 
