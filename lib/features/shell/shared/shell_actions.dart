@@ -25,6 +25,7 @@ import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
+import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../fuel/fuel_prices.dart';
 import '../reminders/notification_coordinator.dart';
@@ -197,6 +198,31 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
 Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {
   await ref.read(lunioPreferencesProvider).setFuelPredictionEnabled(value);
   invalidatePreferenceProviders(ref);
+}
+
+/// 保存停车倒计时（开始计时的完整动作链）：写临时偏好 parkingCountdown
+/// → 失效 provider（卡片立即出现）→ 通知尾巴委托协调器
+/// onParkingCountdownSaved：请求权限（被拒回写"系统通知关闭"）、比对
+/// 同步代数（R8）、申请精确闹钟、调度 9001 到点闹钟 + 9002 Android
+/// 常驻通知 + 9003/9004 剩余时长预警（保存时还剩 ≥ 30 分钟才启用，
+/// 见通知服务层）。倒计时走系统真实时间，编排不依赖任何页面存活。
+Future<void> saveParkingCountdown(
+  WidgetRef ref,
+  ParkingCountdown countdown,
+) async {
+  await ref.read(lunioPreferencesProvider).saveParkingCountdown(countdown);
+  ref.invalidate(parkingCountdownProvider);
+  await ref
+      .read(notificationCoordinatorProvider)
+      .onParkingCountdownSaved(countdown);
+}
+
+/// 结束停车倒计时：删临时偏好 → 失效 provider → 通知收尾委托协调器
+/// （系统通知开着时取消 9001~9004 系统通知，关着时本来就没调度过）。
+Future<void> clearParkingCountdown(WidgetRef ref) async {
+  await ref.read(lunioPreferencesProvider).clearParkingCountdown();
+  ref.invalidate(parkingCountdownProvider);
+  await ref.read(notificationCoordinatorProvider).onParkingCountdownCleared();
 }
 
 // ---- 加油 ----

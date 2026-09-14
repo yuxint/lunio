@@ -109,7 +109,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
             ParkingCountdownCard(
               countdown: currentParkingCountdown,
               now: now,
-              onEnd: () => clearParkingCountdown(context, ref),
+              onEnd: () => clearParkingCountdown(ref),
             ),
             const SizedBox(height: 22),
           ],

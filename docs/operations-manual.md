@@ -157,12 +157,12 @@ appDatabaseProvider(:153)
 |---|---|---|---|
 | 1 | `reminder_page.dart:103`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
 | 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（**点按钮此刻实时取系统时间，秒/毫秒截 0 默认整分**；时间轮可改时分秒，双向循环滚动）+ 免费时长（数字键盘输入框或 0.5/1/2 小时快捷 chip） | — |
-| 3 | 提交 → `parking_countdown.dart → saveParkingCountdown(context, ref, countdown)` | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：**先取保存时刻**（预警门槛用它评估，弹窗停留不挤占剩余时长）→ 若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。写偏好/失效阶段检查页面 context 仍挂载；sheet 提前关闭时通知尾巴照常走完（调度不依赖页面） | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）+ **9003/9004**（剩 15/5 分钟预警，保存时剩余 ≥ 30 分钟才启用）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
+| 3 | 提交 → `shell_actions.dart → saveParkingCountdown(ref, countdown)`（动作层，ADR 0007） | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：**先取保存时刻**（预警门槛用它评估，弹窗停留不挤占剩余时长）→ 若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。编排只收 `WidgetRef`，不依赖任何页面存活（表单 sheet 的关闭由表单自理） | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）+ **9003/9004**（剩 15/5 分钟预警，保存时剩余 ≥ 30 分钟才启用）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
 | 4 | `lunio_notification_service.dart → scheduleParkingCountdownNotification` | 先成组取消旧 9001~9004，再排新通知；**到点时刻已过则静默 return**；剩余 ≥ 30 分钟（按整分钟向上取整）才加排两条预警 | — |
 
 **展示**：`parking_countdown.dart → ParkingCountdownCard`（ConsumerStatefulWidget）——进度规则在 `lib/domain/rules/parking_countdown_rules.dart`（剩余≤20% 黄、到期红转正计时）；颜色映射 `_parkingStatusColor`。**卡片内部 1s Timer 自刷新**（时钟走 `appDateContextProvider.readSystemNow()`，测试可注入），重建范围只有这张卡。
 
-**结束**：卡片"结束"按钮 → `parking_countdown.dart → clearParkingCountdown(context, ref)` → 删偏好 key + 失效 + 通知收尾委托协调器 `onParkingCountdownCleared`（系统通知开着时取消 9001~9004）。
+**结束**：卡片"结束"按钮 → `shell_actions.dart → clearParkingCountdown(ref)`（动作层，ADR 0007）→ 删偏好 key + 失效 + 通知收尾委托协调器 `onParkingCountdownCleared`（系统通知开着时取消 9001~9004）。
 
 > 已知问题：到期后倒计时不自动清除（须手动结束才能开始新的，R9/R17）。恢复备份/清空数据后的 9001~9004 残留已修复（恢复保留停车偏好不动其通知；清空显式成组取消，见 §5.4/§5.5）。
 

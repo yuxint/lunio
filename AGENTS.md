@@ -28,7 +28,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档）；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单提交运行器（`form_submit.dart`，`LunioFormSubmit` mixin：saving/errorText 生命周期 + friendlyError 翻译，新表单直接混入）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`）。
-  - `reminders/parking_countdown.dart`：停车倒计时卡片、表单、时间选择器、保存和清除逻辑。
+  - `reminders/parking_countdown.dart`：停车倒计时卡片、表单和时间选择器（保存/清除走动作层 `shell_actions.dart`）。
   - `reminders/reminder_list.dart`：保养提醒列表、提醒行、记录详情 sheet 和进度环。
   - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。
   - `reminders/reminder_rows.dart`：提醒行视图模型与组装（`buildReminderRows`）、空态分类单一出口（`classifyReminderRows`）、`reminderRowsProvider`（提醒页数据接缝，watch 车辆/项目/记录/今天，英雄卡与列表共消费）；通知侧复用同一组装函数。

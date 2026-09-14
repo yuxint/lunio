@@ -1,13 +1,13 @@
-// 停车倒计时：卡片展示 + 开始/结束表单 + 时间选择器 + 保存/清除动作。
+// 停车倒计时：卡片展示 + 开始/结束表单 + 时间选择器。
 //
 // 用户流程：
 //   提醒页点"停车倒计时" → showParkingCountdownSheet（表单：入场时间 +
-//   免费时长[快捷 0.5/1/2 小时]）→ saveParkingCountdown（写偏好 +
-//   调系统通知：Android 常驻 chronometer 通知 + 到点闹钟 + 剩余 15/5
-//   分钟预警[保存时剩余 ≥ 30 分钟才启用]）；
+//   免费时长[快捷 0.5/1/2 小时]）→ 动作层 saveParkingCountdown（ADR
+//   0007：写偏好 + 调系统通知——Android 常驻 chronometer 通知 + 到点
+//   闹钟 + 剩余 15/5 分钟预警[保存时剩余 ≥ 30 分钟才启用]）；
 //   卡片内部 1s Timer 自刷新剩余时间（R11：不再由整页 250ms ticker
-//   驱动重建）；点"结束" → clearParkingCountdown（删偏好 + 取消两条
-//   系统通知）。
+//   驱动重建）；点"结束" → 动作层 clearParkingCountdown（删偏好 +
+//   取消两条系统通知）。
 //
 // 状态颜色复用保养提醒三态：剩余 >20% 绿 / ≤20% 黄 / 到期红（改计正时长）。
 // 注意：倒计时用系统真实时间，不受开发者模式手动日期影响；
@@ -28,7 +28,6 @@ import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/reminder.dart';
 import '../../../domain/rules/parking_countdown_rules.dart';
 import '../shared/shell_shared.dart';
-import 'notification_coordinator.dart';
 import 'reminder_list.dart';
 
 /// 倒计时进行中的展示卡片（提醒页内嵌）：入场信息 + 进度环 +
@@ -583,8 +582,6 @@ class ParkingDurationChip extends StatelessWidget {
 /// 点按钮的此刻实时取系统时间（不用页面构建时缓存的时间，页面开久了
 /// 会过期），秒/毫秒截成 0：入场时间默认整分，需要秒再手动调滚轮。
 /// bottomInset 跟随键盘高度，键盘弹起时把内容顶上去。
-/// context 是页面级 context：传给 saveParkingCountdown 做"页面仍在
-/// 挂载"的检查（sheet 可能先一步关闭）。
 Future<void> showParkingCountdownSheet(
   BuildContext context,
   WidgetRef ref,
@@ -608,47 +605,11 @@ Future<void> showParkingCountdownSheet(
         bottomInset: bottomInset,
         child: ParkingCountdownForm(
           now: entryTime,
-          onSubmit: (countdown) =>
-              saveParkingCountdown(context, ref, countdown),
+          onSubmit: (countdown) => saveParkingCountdown(ref, countdown),
         ),
       );
     },
   );
-}
-
-/// ★ 保存倒计时的完整动作链：
-///  1. 写偏好 parkingCountdown + 失效 provider（卡片立即出现）；
-///  2. 通知尾巴委托协调器 onParkingCountdownSaved：请求权限（被拒回写
-///     "系统通知关闭"）、比对同步代数（R8）、申请精确闹钟、调度
-///     9001 到点闹钟 + 9002 Android 常驻通知 + 9003/9004 剩余时长预警
-///     （保存时还剩 ≥ 30 分钟才启用，见通知服务层）。
-/// await 后检查页面 context 仍挂载（R13）；sheet 提前关闭时通知尾巴
-/// 照常走完（调度不依赖页面）。
-Future<void> saveParkingCountdown(
-  BuildContext context,
-  WidgetRef ref,
-  ParkingCountdown countdown,
-) async {
-  await ref.read(lunioPreferencesProvider).saveParkingCountdown(countdown);
-  if (!context.mounted) {
-    return;
-  }
-  ref.invalidate(parkingCountdownProvider);
-  await ref
-      .read(notificationCoordinatorProvider)
-      .onParkingCountdownSaved(countdown);
-}
-
-/// ★ 结束倒计时：删偏好 + 失效 provider + 通知收尾委托协调器
-/// （系统通知开着时取消 9001~9004 系统通知，关着时本来就没调度过）。
-/// await 后检查页面 context 仍挂载（R13）。
-Future<void> clearParkingCountdown(BuildContext context, WidgetRef ref) async {
-  await ref.read(lunioPreferencesProvider).clearParkingCountdown();
-  if (!context.mounted) {
-    return;
-  }
-  ref.invalidate(parkingCountdownProvider);
-  await ref.read(notificationCoordinatorProvider).onParkingCountdownCleared();
 }
 
 // ---- 私有格式化函数 ----
