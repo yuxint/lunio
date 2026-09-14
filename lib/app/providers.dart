@@ -39,7 +39,8 @@
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
-//   └─ 加油域 provider（开关/省份/油品/手填价/油价控制器）挂 fuelRepositoryProvider
+//   └─ 加油域 provider：开关/当前车设置在本文件；省份/油品/手填价/
+//      数据源/油价控制器/生效链在 features/shell/fuel/fuel_prices.dart
 // ```
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,7 +49,6 @@ import '../core/date/app_date_context.dart';
 import '../core/notifications/lunio_notification_service.dart';
 import '../core/date/local_date.dart';
 import '../data/database/app_database.dart';
-import '../data/fuel/qiyoujiage_fuel_price_source.dart';
 import '../data/preferences/app_preferences.dart';
 import '../data/repositories/backup_repository.dart';
 import '../data/repositories/built_in_catalog_repository.dart';
@@ -56,7 +56,6 @@ import '../data/repositories/fuel_repository.dart';
 import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
 import '../domain/entities/fuel_prediction.dart';
-import '../domain/entities/fuel_price.dart';
 import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
 import '../domain/entities/notification_settings.dart';
@@ -64,7 +63,7 @@ import '../domain/entities/parking_countdown.dart';
 import '../domain/entities/powertrain_type.dart';
 import '../domain/entities/vehicle_default_maintenance_item.dart';
 import '../domain/entities/vehicle_model.dart';
-import '../domain/rules/fuel_rules.dart';
+import '../features/shell/fuel/fuel_prices.dart';
 
 /// 应用日期上下文：目前只用它读"系统真实当前时间"（停车倒计时用）。
 /// 手动日期（开发者模式）不会写进这里，而是走 [manualDatePreferenceProvider]，
@@ -125,17 +124,6 @@ final fuelPredictionEnabledProvider = FutureProvider<bool>((ref) {
   return ref.watch(lunioPreferencesProvider).getFuelPredictionEnabled();
 });
 
-/// 加油预测的省份（全局一份，默认湖北，产品确认）。
-final fuelProvinceProvider = FutureProvider<String>((ref) async {
-  return await ref.watch(lunioPreferencesProvider).getFuelProvince() ??
-      QiyouJiaFuelPriceSource.defaultProvince;
-});
-
-/// 加油预测的油品编号（全局一份，单选，默认 92#；解析与默认值在门面）。
-final fuelGradeProvider = FutureProvider<FuelGrade>((ref) {
-  return ref.watch(lunioPreferencesProvider).getFuelGrade();
-});
-
 /// 当前应用车辆的加油预测设置（剩余油量 = 加满预估基准档，按车一条；
 /// 油箱容积在 Car 上）。无应用车辆返回 null；
 /// 从没保存过也是 null（页面按默认 50% 展示）。
@@ -149,90 +137,6 @@ final appliedCarFuelPredictionProvider =
           .watch(fuelRepositoryProvider)
           .getFuelPredictionForCar(car!.id!);
     });
-
-/// 油价数据源（≈ Java 里注入接口实现的地方）。真源是 qiyoujiage 网页
-/// 解析（见 docs/adr/0006）；换源时在这里换成新实现即可。
-final fuelPriceSourceProvider = Provider<FuelPriceSource>(
-  (ref) => QiyouJiaFuelPriceSource(),
-);
-
-/// 当前"省+油品"的手填价（用户手填的每升价，优先于数据源价格）。
-/// 无手填返回 null。写入口在动作层 saveFuelManualPrice（手填/重置）。
-final fuelManualPriceProvider = FutureProvider<double?>((ref) async {
-  final province = await ref.watch(fuelProvinceProvider.future);
-  final grade = await ref.watch(fuelGradeProvider.future);
-  return ref
-      .watch(fuelRepositoryProvider)
-      .getFuelManualPrice(province: province, grade: grade);
-});
-
-/// 油价状态控制器：缓存优先，过期/无缓存时自动拉取，
-/// 失败退回旧缓存。手动刷新走 [FuelPriceController.manualRefresh]。
-///
-/// watch 时机：AppShell（加油开关开着时，≈ 启动检查）与加油页。
-/// 缓存是单省价表（当前省份 + 调价预告，见 docs/adr/0011），所以这里
-/// watch 省份偏好：换省后缓存省份不匹配，按"暂无数据"处理、等用户点
-/// "刷新"再拉新省（用户决策 2026-09-12，不自动发请求）。
-final fuelPriceControllerProvider =
-    AsyncNotifierProvider<FuelPriceController, FuelPriceData?>(
-      FuelPriceController.new,
-    );
-
-class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
-  @override
-  Future<FuelPriceData?> build() async {
-    final fuelRepository = ref.watch(fuelRepositoryProvider);
-    final province = await ref.watch(fuelProvinceProvider.future);
-    final cache = await fuelRepository.getFuelPriceCache();
-    final fresh = !FuelRules.shouldRefreshFuelPrices(
-      lastFetchedAt: cache?.fetchedAt,
-      now: DateTime.now(),
-    );
-    if (cache != null && cache.province == province && fresh) {
-      return cache;
-    }
-    // 换省后缓存归属对不上：直接展示空态（价格里的省份守卫也拦住旧省
-    // 价透出），不自动拉取——由用户点"刷新"显式拉新省价格。
-    if (cache != null && cache.province != province) {
-      return null;
-    }
-    try {
-      final data = await ref
-          .watch(fuelPriceSourceProvider)
-          .fetchPrices(province: province);
-      await fuelRepository.saveFuelPriceCache(data);
-      return data;
-    } catch (error) {
-      // 拉取失败退回旧缓存（可能为 null → 页面显示"暂无油价数据"）。
-      // 缓存损坏已被 FuelRepository 按 null 处理，这里不会把坏数据透出。
-      return cache;
-    }
-  }
-
-  /// 手动刷新：无视新鲜期按当前省份强制拉一次。成功覆盖缓存与状态返回
-  /// true；失败保留原状态数据（不覆盖，与"手填价不被覆盖"同语义，
-  /// 价格里的省份守卫会拦住换省后残留的旧省缓存）返回 false。
-  Future<bool> manualRefresh() async {
-    final province = await ref.read(fuelProvinceProvider.future);
-    state = const AsyncLoading<FuelPriceData?>();
-    try {
-      final data = await ref
-          .read(fuelPriceSourceProvider)
-          .fetchPrices(province: province);
-      await ref
-          .read(fuelRepositoryProvider)
-          .saveFuelPriceCache(data);
-      state = AsyncData(data);
-      return true;
-    } catch (error) {
-      final previous = await ref
-          .read(fuelRepositoryProvider)
-          .getFuelPriceCache();
-      state = AsyncData(previous);
-      return false;
-    }
-  }
-}
 
 /// 全局生效的"今天"：手动日期优先，否则系统今天。
 /// 所有业务日期口径（提醒进度、记录表单默认日期、snooze/ack 判断）都用它，

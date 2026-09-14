@@ -22,6 +22,7 @@ import '../../app/providers.dart';
 import '../../core/platform/native_system_ui.dart';
 import '../../core/theme/lunio_tokens.dart';
 import 'fuel/fuel_page.dart';
+import 'fuel/fuel_prices.dart';
 import 'profile/profile_page.dart';
 import 'records/records_page.dart';
 import 'reminders/notification_sync_controller.dart';

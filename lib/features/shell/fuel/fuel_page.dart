@@ -24,7 +24,8 @@
 //   - 剩余油量按车存 fuel_predictions 表（默认 50%，滚动定档才落库）；
 //     省份、油品全局存偏好；油箱容积在 cars 表（车的属性）；
 //   - 油价来源优先级：手填价 > 数据源价；手填不被自动/手动刷新覆盖；
-//   - 油价缓存是全国价表（一次拉取含 31 省 + 调价预告），换省不重新拉；
+//   - 油价缓存是当前省份的单省价表 + 调价预告（ADR 0011），换省后缓存
+//     归属不匹配，不自动重拉、由用户点"刷新"显式拉新省；
 //   - 所有修改即写库（自动保存），无保存按钮。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
@@ -43,6 +44,7 @@ import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
 import '../shared/form_submit.dart';
 import '../shared/formatters.dart';
+import 'fuel_prices.dart';
 import '../shared/modal_feedback.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
@@ -123,7 +125,7 @@ class _PriceCard extends ConsumerWidget {
     // 当前生效价（手填价优先，其次数据源价）统一从 provider 取——
     // 它也是档位列表与预估调价后金额的同一份实现，不再在油价卡
     // 手拼第二遍。
-    final effectivePrice = ref.watch(_effectivePriceProvider);
+    final effectivePrice = ref.watch(effectiveFuelPriceProvider);
 
     return LunioCard(
       child: Column(
@@ -249,7 +251,7 @@ class _PriceCard extends ConsumerWidget {
         _buildForecastLine(
           context,
           province: province,
-          forecast: ref.watch(_effectiveForecastProvider),
+          forecast: ref.watch(effectiveFuelForecastProvider),
           basePrice: effectivePrice,
         ),
       ],
@@ -907,7 +909,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
 
   @override
   Widget build(BuildContext context) {
-    final price = ref.watch(_effectivePriceProvider);
+    final price = ref.watch(effectiveFuelPriceProvider);
     return LunioCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -951,7 +953,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
   /// + 每档定行高；滚动停稳吸附整行并落库。
   Widget _buildTierList(BuildContext context, double price) {
     final capacity = widget.capacity!;
-    final predictedPrice = ref.watch(_predictedPriceProvider);
+    final predictedPrice = ref.watch(predictedFuelPriceProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1054,58 +1056,6 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     );
   }
 }
-
-/// 当前生效的每升价（手填优先，其次数据源价）；都没有为 null。
-/// 档位金额随价联动，抽成 provider 让列表只在价格变化时重算。
-final _effectivePriceProvider = Provider<double?>((ref) {
-  final manualPrice = ref.watch(fuelManualPriceProvider).value;
-  if (manualPrice != null) {
-    return manualPrice;
-  }
-  final grade = ref.watch(fuelGradeProvider).value;
-  final data = ref.watch(fuelPriceControllerProvider).value;
-  if (grade == null) {
-    return null;
-  }
-  final province = ref.watch(fuelProvinceProvider).value;
-  if (province == null) {
-    return null;
-  }
-  return data?.priceFor(province: province, grade: grade);
-});
-
-/// 生效中的调价预告（ADR 0011 修订）：过期预告按无预告处理——调价日
-/// 早于当前应用日期即过期（规则与定年见 FuelRules.isForecastExpired）。
-/// 缓存与控制器状态保真（仍存站点原话），过滤只在这一处做，预估块与
-/// "调价后价格"列统一从这里取。
-final _effectiveForecastProvider = Provider<FuelAdjustmentForecast?>((ref) {
-  final forecast = ref.watch(fuelPriceControllerProvider).value?.forecast;
-  if (forecast == null) {
-    return null;
-  }
-  // "今天"未加载完成的瞬间按无预告处理（宁缺毋错，与源解析同口径）。
-  final today = ref.watch(effectiveTodayProvider).value;
-  if (today == null) {
-    return null;
-  }
-  return FuelRules.isForecastExpired(forecast: forecast, today: today)
-      ? null
-      : forecast;
-});
-
-/// 预估调价后每升价（生效价 + 调价预告变动中值，见 docs/adr/0006）。
-/// 无预告（含过期）/无生效价时为 null（"调价后价格"列显示占位符）。
-final _predictedPriceProvider = Provider<double?>((ref) {
-  final base = ref.watch(_effectivePriceProvider);
-  final forecast = ref.watch(_effectiveForecastProvider);
-  if (base == null || forecast == null) {
-    return null;
-  }
-  return FuelRules.predictedPricePerLiter(
-    currentPricePerLiter: base,
-    forecast: forecast,
-  );
-});
 
 /// 单档行：档位% + 表头四列取值（当前油量/可加油量/加满价格/调价后价格）。
 /// 第一行（基准档）高亮。

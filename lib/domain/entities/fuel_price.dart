@@ -194,7 +194,7 @@ class FuelPriceData {
 /// 油价数据源契约（≈ Java 里手写的接口 + 适配器模式）。
 ///
 /// 真源是 qiyoujiage 网页（见 docs/adr/0006）；换源时在 data 层新增
-/// 一个实现类，替换 providers.dart 里 fuelPriceSourceProvider 的注入
+/// 一个实现类，替换 fuel_prices.dart 里 fuelPriceSourceProvider 的注入
 /// 即可，业务代码与页面不动。
 abstract interface class FuelPriceSource {
   /// 拉取指定省份的各油品每升价与调价预告。

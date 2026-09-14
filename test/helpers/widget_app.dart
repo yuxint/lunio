@@ -31,6 +31,7 @@ import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
+import 'package:lunio/features/shell/fuel/fuel_prices.dart';
 import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
 
 import 'built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;

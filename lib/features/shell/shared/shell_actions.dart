@@ -26,6 +26,7 @@ import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/sync_metadata.dart';
+import '../fuel/fuel_prices.dart';
 import '../reminders/notification_coordinator.dart';
 import 'modal_feedback.dart';
 
