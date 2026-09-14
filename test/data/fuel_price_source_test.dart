@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/data/fuel/qiyoujiage_fuel_price_source.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 
 /// 真实湖北详情页（2026-09-12 抓取）截取的价格块与预告段。注意两个
@@ -227,19 +228,17 @@ void main() {
   });
 
   group('省份清单与地址', () {
-    test('31 个省级行政区都有详情页路径，默认值在清单里', () {
-      expect(QiyouJiaFuelPriceSource.provinces.length, 31);
-      for (final province in QiyouJiaFuelPriceSource.provinces) {
+    test('领域省份清单每省都有详情页路径（领域清单 ⊆ 适配器覆盖）', () {
+      expect(fuelProvinces.length, 31);
+      // 产品默认省必须在清单里：否则选择器定位不到当前项（indexOf -1）。
+      expect(fuelProvinces, contains(LunioPreferences.defaultFuelProvince));
+      for (final province in fuelProvinces) {
         expect(
           QiyouJiaFuelPriceSource.provincePaths[province],
           isNotNull,
           reason: '$province 缺详情页路径',
         );
       }
-      expect(
-        QiyouJiaFuelPriceSource.provinces,
-        contains(QiyouJiaFuelPriceSource.defaultProvince),
-      );
     });
 
     test('同音省份的路径区分山西/陕西', () {

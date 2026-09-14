@@ -24,10 +24,9 @@ import '../../../data/fuel/qiyoujiage_fuel_price_source.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
 
-/// 加油预测的省份（全局一份，默认湖北，产品确认）。
+/// 加油预测的省份（全局一份；未设置由偏好门面兜底产品默认湖北）。
 final fuelProvinceProvider = FutureProvider<String>((ref) async {
-  return await ref.watch(lunioPreferencesProvider).getFuelProvince() ??
-      QiyouJiaFuelPriceSource.defaultProvince;
+  return await ref.watch(lunioPreferencesProvider).getFuelProvince();
 });
 
 /// 加油预测的油品编号（全局一份，单选，默认 92#；解析与默认值在门面）。

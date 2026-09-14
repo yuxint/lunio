@@ -65,6 +65,10 @@ class LunioPreferences {
   static const fuelProvinceKey = 'fuelProvince';
   static const fuelGradeKey = 'fuelGrade';
 
+  /// 省份的产品默认值（产品确认；见 docs/adr/0001 附注——默认省是产品
+  /// 数据，归偏好门面兜底，不寄存在数据源适配器上）。
+  static const String defaultFuelProvince = '湖北';
+
   /// 停车倒计时（JSON，临时数据不进备份）。
   static const _parkingCountdownKey = 'parkingCountdown';
 
@@ -349,9 +353,12 @@ class LunioPreferences {
     return _writeRaw(fuelPredictionEnabledKey, enabled ? 'true' : 'false');
   }
 
-  /// 省份（未设置返回 null；默认值"湖北"由数据源层提供，这里不掺业务默认）。
-  Future<String?> getFuelProvince() {
-    return readRaw(fuelProvinceKey);
+  /// 省份（未设置回退产品默认 [defaultFuelProvince]，与 [getFuelGrade]
+  /// 的 92# 同打法；2026-09-14 修订，见 docs/adr/0001 附注）。需要区分
+  /// "用户改没改过"的场景用 [readRaw] + [fuelProvinceKey] 原始读
+  /// （备份导出就是这个口径）。
+  Future<String> getFuelProvince() async {
+    return await readRaw(fuelProvinceKey) ?? defaultFuelProvince;
   }
 
   /// 写省份（原样存字符串，不校验取值——取值范围由数据源层保证）。

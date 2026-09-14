@@ -31,9 +31,12 @@ class QiyouJiaFuelPriceSource implements FuelPriceSource {
   /// 数据源域名（明文 http，iOS 需 ATS 例外域，见 docs/adr/0006）。
   static const String _host = 'm.qiyoujiage.com';
 
-  /// 省份名 → 详情页路径段（/hubei.shtml 的 hubei）。清单与站点首页
-  /// 栏目导航一致（2026-09-12 核对）；山西/陕西同音，站点用 shanxi（山西）
-  /// 与 shanxi-3（陕西）区分。
+  /// 省份名 → 详情页路径段（/hubei.shtml 的 hubei）。映射范围与站点
+  /// 详情页栏目一致（2026-09-12 核对）；山西/陕西同音，站点用 shanxi
+  /// （山西）与 shanxi-3（陕西）区分。省份清单本身是领域数据
+  /// （fuel_price.dart 的 fuelProvinces），这里只存 qiyoujiage 自己的
+  /// 取数地址；领域清单 ⊆ 本映射由覆盖守卫测试锁定
+  /// （test/data/fuel_price_source_test.dart，见 docs/adr/0001 附注）。
   static const Map<String, String> provincePaths = {
     '北京': 'beijing',
     '天津': 'tianjin',
@@ -67,13 +70,6 @@ class QiyouJiaFuelPriceSource implements FuelPriceSource {
     '宁夏': 'ningxia',
     '新疆': 'xinjiang',
   };
-
-  /// 全国 31 个省级行政区（不含港澳台）。省份选择器的数据源，
-  /// UI 层也从这里取，避免两处各维护一份省份清单。
-  static List<String> get provinces => provincePaths.keys.toList();
-
-  /// 产品确认的省份默认值。
-  static const String defaultProvince = '湖北';
 
   /// 某省详情页的地址。
   static Uri provincePageUri(String province) =>

@@ -37,7 +37,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
-import '../../../data/fuel/qiyoujiage_fuel_price_source.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_price.dart';
@@ -361,11 +360,11 @@ class _PriceCard extends ConsumerWidget {
     await showLunioModalSheet<void>(
       context: context,
       builder: (sheetContext) {
-        final initialIndex = QiyouJiaFuelPriceSource.provinces.indexOf(current);
+        final initialIndex = fuelProvinces.indexOf(current);
         return PrototypeSheetFrame(
           title: '选择省份',
           child: _SheetOptionList(
-            labels: QiyouJiaFuelPriceSource.provinces,
+            labels: fuelProvinces,
             selectedIndex: initialIndex,
             onSelected: (name) async {
               await saveFuelProvince(ref, name);

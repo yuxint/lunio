@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
-import 'package:lunio/data/fuel/qiyoujiage_fuel_price_source.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/features/shell/fuel/fuel_prices.dart';
 
@@ -41,12 +41,12 @@ class _CountingFakeSource implements FuelPriceSource {
   }
 }
 
-/// 默认省（直读数据源真值常量，不手写"湖北"字面量）。
-final _defaultProvince = QiyouJiaFuelPriceSource.defaultProvince;
+/// 默认省（直读偏好门面真值常量，不手写"湖北"字面量）。
+final _defaultProvince = LunioPreferences.defaultFuelProvince;
 
 /// 与默认省不同的另一个真实省份（换省用例用）。
-final _otherProvince = QiyouJiaFuelPriceSource.provinces
-    .firstWhere((p) => p != _defaultProvince);
+final _otherProvince =
+    fuelProvinces.firstWhere((p) => p != _defaultProvince);
 
 FuelPriceData _priceData({
   String? province,

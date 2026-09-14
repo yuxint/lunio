@@ -70,7 +70,11 @@ class BackupRepository {
     final fuelPredictions = fuelPredictionRows.map(fuelPredictionFromRow)
         .toList();
     // 全局加油设置（省份/油品）：用户改过才有值，没改过不带进备份。
-    final fuelProvince = await _preferences.getFuelProvince();
+    // 这里故意用原始读而不是 getFuelProvince()/getFuelGrade()——两个
+    // getter 都会兜底产品默认值，会把"没改过"读成"改成了默认值"。
+    final fuelProvince = await _preferences.readRaw(
+      LunioPreferences.fuelProvinceKey,
+    );
     final fuelGradeCode = await _preferences.readRaw(
       LunioPreferences.fuelGradeKey,
     );
