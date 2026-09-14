@@ -177,4 +177,70 @@ void main() {
       isTrue,
     );
   });
+
+  test('validateIntervals checks only enabled axes, mileage wins first', () {
+    // 里程轴开启但值非法（null / 0）→ 里程问题优先。
+    expect(
+      MaintenanceRules.validateIntervals(
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: null,
+        timeIntervalMonths: null,
+      ),
+      MaintenanceIntervalProblem.mileage,
+    );
+    expect(
+      MaintenanceRules.validateIntervals(
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 0,
+        timeIntervalMonths: 6,
+      ),
+      MaintenanceIntervalProblem.mileage,
+    );
+    // 里程轴合法、时间轴非法 → 时间问题。
+    expect(
+      MaintenanceRules.validateIntervals(
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: -1,
+      ),
+      MaintenanceIntervalProblem.time,
+    );
+    // 两轴都合法 → null。
+    expect(
+      MaintenanceRules.validateIntervals(
+        remindByMileage: true,
+        remindByTime: true,
+        mileageIntervalKm: 5000,
+        timeIntervalMonths: 6,
+      ),
+      isNull,
+    );
+    // 未开启的轴即使值为 null 也不校验。
+    expect(
+      MaintenanceRules.validateIntervals(
+        remindByMileage: false,
+        remindByTime: false,
+        mileageIntervalKm: null,
+        timeIntervalMonths: null,
+      ),
+      isNull,
+    );
+  });
+
+  test('intervalProblemText renders with and without item name prefix', () {
+    expect(
+      MaintenanceRules.intervalProblemText(MaintenanceIntervalProblem.mileage),
+      '里程间隔必须填写正整数',
+    );
+    expect(
+      MaintenanceRules.intervalProblemText(
+        MaintenanceIntervalProblem.time,
+        itemName: '机油',
+      ),
+      '机油 的时间间隔必须填写正整数',
+    );
+  });
 }

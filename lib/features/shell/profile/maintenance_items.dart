@@ -21,6 +21,7 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/entities/vehicle_default_maintenance_item.dart';
+import '../../../domain/rules/maintenance_rules.dart';
 import '../shared/shell_shared.dart';
 
 /// 向导第二步：车型 pill + 新增/恢复按钮 + 项目列表（限高滚动）+
@@ -718,12 +719,16 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm>
       setFormError('至少选择一种提醒方式');
       return;
     }
-    if (remindByMileage && (mileageInterval == null || mileageInterval <= 0)) {
-      setFormError('里程间隔必须填写正整数');
-      return;
-    }
-    if (remindByTime && (timeInterval == null || timeInterval <= 0)) {
-      setFormError('时间间隔必须填写正整数');
+    // 正整数校验收在 MaintenanceRules.validateIntervals（与记录表单第二步
+    // 共用一份规则），文案由 intervalProblemText 生成（无项目名前缀口径）。
+    final intervalProblem = MaintenanceRules.validateIntervals(
+      remindByMileage: remindByMileage,
+      mileageIntervalKm: mileageInterval,
+      remindByTime: remindByTime,
+      timeIntervalMonths: timeInterval,
+    );
+    if (intervalProblem != null) {
+      setFormError(MaintenanceRules.intervalProblemText(intervalProblem));
       return;
     }
     final item = widget.item;

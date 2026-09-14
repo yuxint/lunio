@@ -17,6 +17,9 @@
 // 总费用；自动值可手改，不一致时红字 + 黄色警告角标，纯提示不拦保存。
 // 算链与手改标记的实现收在 record_cost_form_controller.dart（ADR 0010
 // 的唯一实现点），本文件只做接线与渲染。
+// 第二步的间隔草稿与提交清单生成收在 record_interval_updates.dart
+// （正整数校验在 MaintenanceRules，与保养项目表单共用），本文件只做
+// 接线与渲染。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -34,6 +37,7 @@ import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 import 'record_cost_form_controller.dart';
 import 'record_detail_sheet.dart';
+import 'record_interval_updates.dart';
 
 /// 记录页主组件。
 class RecordsPreviewPage extends ConsumerStatefulWidget {
@@ -864,68 +868,24 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
     );
   }
 
-  /// 第二步提交：间隔校验（正整数）→ 有变化的项目生成 update 列表 →
-  /// onSubmit（入库）→ 成功由外层关 sheet；失败展示中文错误。
+  /// 第二步提交：间隔输入 → buildItemUpdates（校验 + 生成 update 清单，
+  /// 实现在 record_interval_updates.dart）→ onSubmit（入库）→ 成功由
+  /// 外层关 sheet；失败展示中文错误。
   Future<void> _submit() async {
     final draft = recordDraft;
     if (draft == null) {
       _goToIntervalStep();
       return;
     }
-    final itemUpdates = _buildItemUpdates();
-    if (itemUpdates == null) {
+    final result = buildItemUpdates(
+      drafts: intervalDrafts,
+      now: DateTime.now(),
+    );
+    if (result.errorText != null) {
+      setFormError(result.errorText!);
       return;
     }
-    await runSubmit(() => widget.onSubmit(draft, itemUpdates));
-  }
-
-  /// 把第二步的间隔输入整理成"待更新的项目实体"列表：
-  /// 间隔没变的项目跳过（不生成 update）；非法值返回 null + 错误文案。
-  List<MaintenanceItem>? _buildItemUpdates() {
-    final updates = <MaintenanceItem>[];
-    for (final draft in intervalDrafts) {
-      final item = draft.item;
-      final mileageInterval = item.remindByMileage
-          ? int.tryParse(draft.mileageController.text)
-          : item.mileageIntervalKm;
-      final timeInterval = item.remindByTime
-          ? int.tryParse(draft.monthsController.text)
-          : item.timeIntervalMonths;
-
-      if (item.remindByMileage &&
-          (mileageInterval == null || mileageInterval <= 0)) {
-        setFormError('${item.name} 的里程间隔必须填写正整数');
-        return null;
-      }
-      if (item.remindByTime && (timeInterval == null || timeInterval <= 0)) {
-        setFormError('${item.name} 的时间间隔必须填写正整数');
-        return null;
-      }
-      if (mileageInterval == item.mileageIntervalKm &&
-          timeInterval == item.timeIntervalMonths) {
-        continue;
-      }
-      updates.add(
-        MaintenanceItem(
-          id: item.id,
-          carsId: item.carsId,
-          name: item.name,
-          enabled: item.enabled,
-          remindByMileage: item.remindByMileage,
-          remindByTime: item.remindByTime,
-          mileageIntervalKm: item.remindByMileage ? mileageInterval : null,
-          timeIntervalMonths: item.remindByTime ? timeInterval : null,
-          notOverdueUpperLimit: item.notOverdueUpperLimit,
-          overdueUpperLimit: item.overdueUpperLimit,
-          sortOrder: item.sortOrder,
-          sync: SyncMetadata(
-            status: SyncStatus.pendingUpdate,
-            updatedAt: DateTime.now(),
-          ),
-        ),
-      );
-    }
-    return updates;
+    await runSubmit(() => widget.onSubmit(draft, result.updates));
   }
 
   /// 行内"新增"项目：打开项目表单 sheet → 保存成功后重拉项目列表 →
@@ -983,31 +943,6 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       return;
     }
     setState(() => recordDate = picked);
-  }
-}
-
-/// 第二步单个项目的间隔输入草稿（项目 + 两个 controller，
-/// 缺省值 5000km / 1 个月）。dispose 释放 controller。
-class RecordIntervalDraft {
-  RecordIntervalDraft({required this.item})
-    : mileageController = TextEditingController(
-        text: item.remindByMileage
-            ? (item.mileageIntervalKm ?? 5000).toString()
-            : '',
-      ),
-      monthsController = TextEditingController(
-        text: item.remindByTime
-            ? (item.timeIntervalMonths ?? 1).toString()
-            : '',
-      );
-
-  final MaintenanceItem item;
-  final TextEditingController mileageController;
-  final TextEditingController monthsController;
-
-  void dispose() {
-    mileageController.dispose();
-    monthsController.dispose();
   }
 }
 

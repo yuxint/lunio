@@ -1,11 +1,14 @@
 // 保养提醒核心规则（纯静态工具类，无任何 UI/DB 依赖，可单测）。
 //
-// 三块业务：
+// 四块业务：
 //  1. 进度计算 progressForItem —— 提醒列表每个项目显示百分之多少、
 //     什么状态、还剩多少公里/多少天；
 //  2. 里程更新频率 mileageUpdateFrequencyForRecords —— 根据用户历史
 //     记录习惯，推断"该多久提醒他更新一次里程"；
-//  3. 里程更新是否到期 mileageUpdateDue / 下次提醒日。
+//  3. 里程更新是否到期 mileageUpdateDue / 下次提醒日；
+//  4. 间隔输入校验 validateIntervals / intervalProblemText —— 记录
+//     表单第二步与保养项目表单共用的"开启的提醒轴必须正整数"规则
+//     （此前两处 UI 各写一遍，2026-09-14 收编）。
 //
 // 输入的 today 一律是"生效日期"（开发者模式的手动日期 ?? 系统今天），
 // 见 providers.dart 的 effectiveTodayProvider。
@@ -14,6 +17,9 @@ import '../entities/maintenance_item.dart';
 import '../entities/maintenance_record.dart';
 import '../entities/notification_settings.dart';
 import '../entities/reminder.dart';
+
+/// 间隔校验的问题轴：哪个提醒轴的间隔值不合法。
+enum MaintenanceIntervalProblem { mileage, time }
 
 class MaintenanceRules {
   const MaintenanceRules._();
@@ -170,6 +176,43 @@ class MaintenanceRules {
       display = overdueUpperLimit.ceil() - 1;
     }
     return display;
+  }
+
+  /// 校验「开启的提醒轴间隔必须是正整数」：某轴开启但值为 null（含文本
+  /// 解析失败）或 ≤0 时返回该轴的问题；未开启的轴不校验；两轴都合法时
+  /// 返回 null。两轴同时不合法只报里程轴（首个问题），与两处表单的
+  /// 既有行为一致。
+  ///
+  /// 调用方：记录表单第二步（record_interval_updates.dart）与保养项目
+  /// 表单（maintenance_items.dart），值由调用方 int.tryParse 后传入。
+  static MaintenanceIntervalProblem? validateIntervals({
+    required bool remindByMileage,
+    required bool remindByTime,
+    int? mileageIntervalKm,
+    int? timeIntervalMonths,
+  }) {
+    if (remindByMileage &&
+        (mileageIntervalKm == null || mileageIntervalKm <= 0)) {
+      return MaintenanceIntervalProblem.mileage;
+    }
+    if (remindByTime &&
+        (timeIntervalMonths == null || timeIntervalMonths <= 0)) {
+      return MaintenanceIntervalProblem.time;
+    }
+    return null;
+  }
+
+  /// 把间隔校验问题翻成表单错误文案。[itemName] 传项目名时带"×× 的"
+  /// 前缀（记录表单第二步逐项目校验的口径），不传则是不带前缀的短句
+  /// （保养项目表单的口径）。文案与收编前两处 UI 的原文逐字一致。
+  static String intervalProblemText(
+    MaintenanceIntervalProblem problem, {
+    String? itemName,
+  }) {
+    final axis =
+        problem == MaintenanceIntervalProblem.mileage ? '里程' : '时间';
+    final prefix = itemName == null ? '' : '$itemName 的';
+    return '$prefix$axis间隔必须填写正整数';
   }
 
   /// 里程维进度：基线里程 = 最近记录里程（无记录则用兜底基线）；
