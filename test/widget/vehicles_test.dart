@@ -4,9 +4,29 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/app_date_context.dart';
-import 'package:lunio/features/shell/profile/vehicles.dart' show PickerOption;
+import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/repositories/lunio_repository.dart';
+import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/maintenance_item.dart';
+import 'package:lunio/features/shell/profile/vehicle_model_picker.dart'
+    show PickerOption;
 
 import '../helpers/widget_app.dart';
+
+/// 建车必抛的仓库替身：只覆写向导"保存车辆"的落库入口，模拟动作层
+/// 写库失败。与主夹具共享同一内存库实例（drift 对多 AppDatabase 实例
+/// 会告警）；替身自身从不查询，库的生命周期归 pumpApp 侧的 addTearDown。
+class _ThrowingSaveRepository extends LunioRepository {
+  _ThrowingSaveRepository(super.database);
+
+  @override
+  Future<int> createCarWithMaintenanceItems(
+    Car car,
+    List<MaintenanceItem> items,
+  ) async {
+    throw Exception('建车失败');
+  }
+}
 
 void main() {
   testWidgets('profile can create a car and set it as applied car', (
@@ -192,6 +212,37 @@ void main() {
     expect(find.text('操作失败，请稍后重试'), findsOneWidget);
     expect(find.text('上一步'), findsNothing);
     expect(find.text('保养项目'), findsNothing);
+  });
+
+
+  testWidgets('add car item step clears stale save error after going back', (
+    tester,
+  ) async {
+    // 第二步保存失败 → 回第一步再"下一步"（同键复用草稿）：上一次
+    // 失败的行内错误要被清掉，不跟着带进新一步。
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    await pumpApp(
+      tester,
+      database: database,
+      repository: _ThrowingSaveRepository(database),
+    );
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存车辆'));
+    await tester.pumpAndSettle();
+    expect(find.text('操作失败，请稍后重试'), findsOneWidget);
+
+    await tester.tap(find.text('上一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.text('操作失败，请稍后重试'), findsNothing);
   });
 
 

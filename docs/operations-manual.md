@@ -136,7 +136,7 @@ appDatabaseProvider(:153)
 | 品牌/车型/上路日期/当前里程 | `reminder_page.dart:76-97 → LunioHeroCard` | `appliedCarProvider`（providers.dart:243）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
 | "到期概览"文案（超期 x / 到期 x / 全部正常） | `reminder_page.dart → reminderRows.when` + `reminder_rows.dart → dueOverviewText` | watch `reminderRowsProvider`（reminder_rows.dart：watch 车辆/项目/记录/今天四上游，英雄卡与列表共消费，数据变化只组装一遍）；loading"计算中"/error"加载失败"由页面 when 收口，文案函数只收就绪数据，空态经 `classifyReminderRows` 单一出口 |
 | 右上角"更新里程"按钮 | `reminder_page.dart:80 → showQuickMileageUpdateSheet` | 快捷改里程 sheet，见 2.1.1 |
-| 右上角"切换车辆"按钮（多车才显示） | `reminder_page.dart:69 → showVehicleSwitcher` | `vehicles.dart:1369`，见 5.1.4 |
+| 右上角"切换车辆"按钮（多车才显示） | `reminder_page.dart:69 → showVehicleSwitcher` | `vehicles.dart:430`，见 5.1.4 |
 
 #### 2.1.1 快捷更新里程（hero 卡"更新里程"按钮）
 
@@ -253,20 +253,20 @@ appDatabaseProvider(:153)
 
 #### 5.1.1 添加车辆（两步向导）
 
-**入口**：我的页"我的车辆 → 添加"（profile_page.dart:56）或提醒页/我的页空卡片"新增车辆" → `vehicles.dart:907 → showAddCarSheet`。
+**入口**：我的页"我的车辆 → 添加"（profile_page.dart:56）或提醒页/我的页空卡片"新增车辆" → `vehicles.dart:297 → showAddCarSheet`。
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 1 | sheet 内 watch `vehicleModelsProvider` + `effectiveTodayProvider` | 车型目录/日期加载失败给行内提示 | — |
-| 2 | 第一步 `AddCarForm`（vehicles.dart:272 起） | 选品牌车型（`VehicleModelPicker` → 双列选择 sheet `:672 → VehicleModelPickerSheet`，支持搜索；**列表外可"＋ 自定义输入…"手输品牌车型**，ADR 0003）、**动力类型五选一 chip 行**（`PowertrainPicker`，按目录推荐值预选，换车型时重置推荐、用户可改）、当前里程、上路日期、油箱容积（选填，升，1–999、最多四位小数，`FuelRules.validateTankCapacity` 校验） | — |
-| 3 | "下一步" → `AddCarWizardState._handleCarDraft`（vehicles.dart:590 附近） | 模板加载/缓存/竞态归 `defaultItemsTemplateProvider`（providers.dart，**按"品牌·车型·所选动力类型"record 键缓存的 family**，内置只读数据不失效）：仓库 `resolveDefaultItems`（built_in_catalog_repository.dart，解析唯一入口）→ `ensureBootstrapData()` + **车型专属模板优先**（`listDefaultItemsForVehicleModel`：品牌+车型命中目录条目、条目带 itemTemplate、所选动力类型=推荐值三者都满足才命中，目前仅思域→civicFuel 14 项，ADR 0004；不落库）→ 未命中 `listDefaultItemsForPowertrain`（**按车的动力类型取**）；同车型同动力"上一步"再进来直接复用草稿不重查；加载失败退回第一步、行内错误可见 | 只读，无写库 |
+| 2 | 第一步 `AddCarForm`（add_car_wizard.dart:41 起） | 选品牌车型（`VehicleModelPicker`（vehicle_model_picker.dart:58）→ 双列选择 sheet `:117 → VehicleModelPickerSheet`，支持搜索——过滤/品牌派生/生效品牌回退是三个纯函数；**列表外可"＋ 自定义输入…"手输品牌车型**，ADR 0003）、**动力类型五选一 chip 行**（`PowertrainPicker`，按目录推荐值预选，换车型时重置推荐、用户可改）、当前里程、上路日期、油箱容积（选填，升，1–999、最多四位小数，`FuelRules.validateTankCapacity` 校验） | — |
+| 3 | "下一步" → `AddCarWizardController.submitCarDraft`（add_car_wizard.dart:611；widget 侧 `_handleCarDraft` :480 只做刷新与 sheet 标题同步） | 草稿状态机（plain-Dart 控制器，单测 test/features/add_car_wizard_controller_test.dart）：同车型同动力复用草稿不重查、换键重转、竞态防御（等待中换车丢弃过期结果/过期失败）。模板加载/缓存归 `defaultItemsTemplateProvider`（providers.dart，**按"品牌·车型·所选动力类型"record 键缓存的 family**，内置只读数据不失效）：仓库 `resolveDefaultItems`（built_in_catalog_repository.dart，解析唯一入口）→ `ensureBootstrapData()` + **车型专属模板优先**（`listDefaultItemsForVehicleModel`：品牌+车型命中目录条目、条目带 itemTemplate、所选动力类型=推荐值三者都满足才命中，目前仅思域→civicFuel 14 项，ADR 0004；不落库）→ 未命中 `listDefaultItemsForPowertrain`（**按车的动力类型取**）；加载失败退回第一步、行内错误可见 | 只读，无写库 |
 | 4 | 第二步 `AddCarMaintenanceItemsStep`（maintenance_items.dart:32） | 默认项目草稿可编辑（草稿表单 `:1007 → showDraftMaintenanceItemFormSheet`，纯内存）/启停/删除（均受"至少一个启用项"拦截）/"恢复"补回被删默认项（`:133 → showRestoreDefaultItemsSheet` 勾选式） | 纯内存 |
-| 5 | "保存车辆" → `AddCarWizardState._submit` → onSubmit（sheet 入口处）→ `shell_actions.dart → createCar`（动作层，ADR 0007） | `repository.createCarWithMaintenanceItems`（lunio_repository.dart:224，**单事务**：校验至少一个启用项目+逐项 validate → 插车辆 → 逐条插项目 → **无应用车辆时把新车设为当前**）；写完失效车辆家族 | `cars` +1、`maintenance_items` +N、可能写 `appliedCarId` |
+| 5 | "保存车辆" → `AddCarWizardState._submit`（add_car_wizard.dart:497，校验在控制器 `validateForSubmit`）→ onSubmit（sheet 入口处）→ `shell_actions.dart → createCar`（动作层，ADR 0007） | `repository.createCarWithMaintenanceItems`（lunio_repository.dart:224，**单事务**：校验至少一个启用项目+逐项 validate → 插车辆 → 逐条插项目 → **无应用车辆时把新车设为当前**）；写完失效车辆家族 | `cars` +1、`maintenance_items` +N、可能写 `appliedCarId` |
 | 6 | 反馈薄壳：关 sheet（sheetContext）+ toast"车辆已保存"（外层 context） | 提醒页立即显示新车 | — |
 
 #### 5.1.2 编辑车辆
 
-车辆卡"编辑" → `vehicles.dart:988 → showEditCarSheet` → `AddCarForm` 编辑模式（**品牌车型与动力类型只读**——身份字段，ADR 0003）→ `shell_actions.dart → updateCar`（动作层：`repository.updateCar`（lunio_repository.dart:291，写里程/日期/油箱容积/sync）+ 失效车辆家族）→ 反馈薄壳关 sheet + toast"车辆已保存"。⚠ 里程可改小（无回退限制）。油箱容积在此可随时补填/修改（加油预估用，ADR 0002）。
+车辆卡"编辑" → `vehicles.dart:362 → showEditCarSheet` → `AddCarForm` 编辑模式（**品牌车型与动力类型只读**——身份字段，ADR 0003）→ `shell_actions.dart → updateCar`（动作层：`repository.updateCar`（lunio_repository.dart:291，写里程/日期/油箱容积/sync）+ 失效车辆家族）→ 反馈薄壳关 sheet + toast"车辆已保存"。⚠ 里程可改小（无回退限制）。油箱容积在此可随时补填/修改（加油预估用，ADR 0002）。
 
 #### 5.1.3 删除车辆
 

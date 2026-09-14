@@ -292,11 +292,14 @@ Future<void> pumpUntilFound(WidgetTester tester, Finder finder) async {
 /// 返回数据库供用例体播种/断言。extraOverrides 供个别用例追加
 /// provider 覆盖（如让模板 family 抛错验证失败路径）。Riverpod 3 未导出
 /// Override 类型，这里用 dynamic 承接，展开进 overrides 列表时由
-/// ProviderScope 的参数类型收窄。
+/// ProviderScope 的参数类型收窄。写库失败路径注入仓库替身走 repository
+/// 参数——lunioRepositoryProvider 已在内置覆盖里，经 extraOverrides 再
+/// 覆盖同一 provider 会被 Riverpod 3"重复覆盖"断言拦截。
 Future<AppDatabase> pumpApp(
   WidgetTester tester, {
   AppDateContext? dateContext,
   AppDatabase? database,
+  LunioRepository? repository,
   bool systemNotificationsEnabled = false,
   bool inAppNotificationsEnabled = false,
   FuelAdjustmentForecast? fuelForecast,
@@ -324,11 +327,12 @@ Future<AppDatabase> pumpApp(
         appDatabaseProvider.overrideWithValue(appDatabase),
         builtInCatalogRepositoryProvider.overrideWithValue(catalogRepository),
         lunioRepositoryProvider.overrideWithValue(
-          LunioRepository(
-            appDatabase,
-            preferences: preferences,
-            fuel: FuelRepository(appDatabase, preferences),
-          ),
+          repository ??
+              LunioRepository(
+                appDatabase,
+                preferences: preferences,
+                fuel: FuelRepository(appDatabase, preferences),
+              ),
         ),
         lunioNotificationServiceProvider.overrideWithValue(
           LunioNotificationService(),
