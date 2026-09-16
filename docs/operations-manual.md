@@ -461,7 +461,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
            （App Group `group.com.example.lunio` 的 UserDefaults）+ reloadAllTimelines
 ```
 
-小组件扩展侧（`MaintenanceOverviewWidget.swift`）：快照条目 → 各日本地午夜时间轴，系统到点自动换页（App 不在也翻页）；窗口耗尽停在最后一条、半天兜底重试；无快照/契约版本不符（`schemaVersion` ≠ 1）渲染"打开 Lunio 同步车况"占位；空态三态渲染引导文案。点击小组件不带深链，唤起 App 落默认页。
+小组件扩展侧（`MaintenanceOverviewWidget.swift`）：快照条目 → 各日本地午夜时间轴，系统到点自动换页（App 不在也翻页）；窗口耗尽停在最后一条、半天兜底重试；无快照/契约版本不符（`schemaVersion` ≠ 1）渲染"打开 Lunio 同步车况"占位；空态三态渲染引导文案。点击小组件经 `widgetURL`（`lunio:///reminders`，2026-09-16 接入）唤起 App：冷启落默认首屏（提醒页），热启经 Flutter scene delegate 转发给 go_router 跳回提醒页。
 
 **改快照 JSON 契约**：`widgetSnapshotSchemaVersion` +1 → 同步 Swift 侧 `LunioWidgetSnapshot` 模型 → 两端测试同改；快照 key/存取只在 `LunioWidgetSnapshotStore.swift`，App Group 标识跟 bundle id 走（改 bundle id 时两个 entitlements + `appGroupId` 常量一起改）。
 

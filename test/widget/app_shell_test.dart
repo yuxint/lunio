@@ -110,6 +110,38 @@ void main() {
   });
 
 
+  testWidgets('widget 深链热启跳回提醒页', (tester) async {
+    await pumpApp(tester);
+
+    // 复现"上次停在记录页"的热启场景（小组件深链实际补的就是这个回跳）。
+    await tester.tap(find.text('记录'));
+    await pumpUntilFound(tester, find.text('保养记录'));
+
+    // 生产链路：系统把 widgetURL 发给 App，engine 经 flutter/navigation
+    // 通道投递 pushRoute，go_router 按路径匹配落 /reminders。
+    await pushRouteViaNavigationChannel('lunio:///reminders');
+    await tester.pumpAndSettle();
+
+    expect(find.text('保养提醒'), findsWidgets);
+    expect(find.text('保养记录'), findsNothing);
+  });
+
+
+  testWidgets('widget 深链双斜杠形态匹配不到提醒页（URL 必须三斜杠）', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    // lunio://reminders 里 "reminders" 会被解析成 host、path 为空，
+    // go_router 匹配不到 /reminders——这是小组件 widgetURL 必须用
+    // lunio:///reminders 三斜杠形态的原因（变异锁定：防手滑简化成双斜杠）。
+    await pushRouteViaNavigationChannel('lunio://reminders');
+    await tester.pumpAndSettle();
+
+    expect(find.text('保养提醒'), findsNothing);
+  });
+
+
   testWidgets('theme switch stays on profile without success feedback', (
     tester,
   ) async {

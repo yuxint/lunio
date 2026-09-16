@@ -29,6 +29,21 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<!-- 桌面小组件点击深链（ADR 0013 修订）：小组件声明 widgetURL 唤起
+	     App，Flutter 侧 go_router 按 URL 的 path 匹配路由。URL 用
+	     lunio:///reminders 三斜杠形态——双斜杠的 lunio://reminders 里
+	     "reminders" 会被解析成 host、path 为空，go_router 匹配失败。 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lunio</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>

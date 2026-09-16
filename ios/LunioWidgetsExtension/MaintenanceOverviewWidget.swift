@@ -9,8 +9,9 @@
 // 视觉约定：跟随系统深浅色（背景 systemBackground / 文字语义灰阶），
 // 状态语义色是 DESIGN.md LunioTokens 的常量副本（照实时活动 ADR 0012
 // 五轮先例）；布局对齐产品紧凑偏好——不放说明性小字。
-// 点击小组件不带 widgetURL，系统默认唤起 App 落在默认页（拍板：第一
-// 版不接深链）。
+// 点击小组件经 widgetURL（lunio:///reminders，scheme 注册在 Runner 的
+// Info.plist）唤起 App 落提醒页——冷启默认首屏本就是提醒页，深链实际
+// 补的是热启回跳（2026-09-16 修订，推翻 ADR 0013 初版"不接深链"）。
 import WidgetKit
 import SwiftUI
 
@@ -169,6 +170,10 @@ struct MaintenanceOverviewView: View {
                 EmptyHintView(emptyState: entry.snapshot?.emptyState)
             }
         }
+        // 深链落提醒页的链路与修订出处见文件头；这里挂根视图一处，
+        // 小/中两档与空态全覆盖。URL 必须保持 lunio:///reminders 三斜杠
+        // 形态——go_router 只匹配 path，简化成双斜杠会匹配失败。
+        .widgetURL(URL(string: "lunio:///reminders"))
         .modifier(WidgetContainerBackground())
     }
 }

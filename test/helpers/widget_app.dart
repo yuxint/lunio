@@ -287,6 +287,20 @@ Future<void> pumpUntilFound(WidgetTester tester, Finder finder) async {
   }
 }
 
+/// 经 flutter/navigation 通道向 framework 投递 pushRoute（桌面小组件
+/// 深链的生产链路：系统把 widgetURL 发给 App → FlutterSceneDelegate
+/// 转发给 engine → engine 走该通道叫起 go_router）。测试里用它模拟
+/// 热启深链，断言路由落点。
+Future<void> pushRouteViaNavigationChannel(String url) async {
+  await TestDefaultBinaryMessengerBinding
+      .instance.defaultBinaryMessenger.handlePlatformMessage(
+    SystemChannels.navigation.name,
+    SystemChannels.navigation.codec
+        .encodeMethodCall(MethodCall('pushRoute', url)),
+    (_) {},
+  );
+}
+
 /// 装配完整 App：内存数据库 + 测试目录 + 固定"今天"（2026-05-19）+
 /// 假油价源 + 全新通知服务实例（用例间不共享通知服务状态）。
 /// 返回数据库供用例体播种/断言。extraOverrides 供个别用例追加

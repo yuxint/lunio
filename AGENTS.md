@@ -81,7 +81,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。
 - 停车倒计时是临时偏好状态，落在 `app_preferences.parkingCountdown`，不进入 JSON 备份。保存、结束、关闭系统通知、清空数据和恢复备份都要同步考虑通知清理。
 - 停车倒计时在 iOS 16.2+ 有实时活动（Live Activity：锁屏卡片 + 灵动岛 + 通知中心顶部，ADR 0012）：Widget Extension target `ParkingCountdownExtension` 与 Attributes 共享文件（`ParkingCountdownAttributes.swift`）同时编进 Runner 与扩展两个 target，改动活动数据形态要两侧同步；编排（保存→启、清除/清空→撤、删车/恢复备份/通知总开关→不动、冷启/回前台对账三态）挂在通知协调器，不要再在 UI 层碰通道。本机模拟器构建不可用（运行时/SDK 错配），实时活动外观与灵动岛动画只能真机验收。
-- 保养提醒桌面小组件（iOS 16.2+，ADR 0013）：Widget Extension target `LunioWidgetsExtension`；快照 JSON（`schemaVersion: 1`，含 14 天预生成窗口的逐日条目）由 `reminders/widget_snapshot.dart` 组装、经 `WidgetSnapshotController`（监听数据上游，AppShell 挂载）自动重写——数据写点不需要也不能单独通知它；小组件只渲染快照不做计算，点击不接深链。快照存取契约在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（编进 Runner 与扩展两个 target）；App Group 标识 `group.com.example.lunio` 跟 bundle id 走，改 bundle id 时两个 entitlements 与 `appGroupId` 常量要一起改。改快照 JSON 契约要 `widgetSnapshotSchemaVersion` +1 并同步 Swift 侧模型。
+- 保养提醒桌面小组件（iOS 16.2+，ADR 0013）：Widget Extension target `LunioWidgetsExtension`；快照 JSON（`schemaVersion: 1`，含 14 天预生成窗口的逐日条目）由 `reminders/widget_snapshot.dart` 组装、经 `WidgetSnapshotController`（监听数据上游，AppShell 挂载）自动重写——数据写点不需要也不能单独通知它；小组件只渲染快照不做计算，点击经 `widgetURL`（`lunio:///reminders`，scheme 注册在 Runner Info.plist，ADR 0013 六轮修订）深链落提醒页——go_router 只匹配 path，URL 必须三斜杠形态，双斜杠 host 吃掉路径会匹配失败。快照存取契约在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（编进 Runner 与扩展两个 target）；App Group 标识 `group.com.example.lunio` 跟 bundle id 走，改 bundle id 时两个 entitlements 与 `appGroupId` 常量要一起改。改快照 JSON 契约要 `widgetSnapshotSchemaVersion` +1 并同步 Swift 侧模型。
 
 ## UI 与交互约定
 
@@ -147,3 +147,17 @@ dart run build_runner build
 - 验证了什么
 
 如果有假设、未验证项或因为环境原因没法验证，要直接写明。
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as local markdown under `.scratch/<feature-slug>/`（本地 markdown，无远端 tracker）. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+默认五角色词汇（needs-triage / needs-info / ready-for-agent / ready-for-human / wontfix）. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context：根目录 `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
