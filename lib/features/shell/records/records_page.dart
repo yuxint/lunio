@@ -12,6 +12,11 @@
 // 新增/编辑表单是两步流：第一步填日期/里程/费用/备注/选项目（可行内
 // 新增项目并自动勾选）→ 第二步确认所选项目的提醒间隔（可改，保存时
 // 一并更新项目）。入口在提醒页按钮和记录卡"编辑"。
+// 新增模式带同日查重拦截：表单打开时（默认日期=生效今天）和每次选完
+// 日期后立即检查当天是否已有记录，有则弹「返回/去编辑」确认框——
+// 「返回」自动重开日期选择器换日期，「去编辑」关新增 sheet 直接转编辑
+// 该记录；拦截始终在第一步，不会带着重复日期进入第二步。编辑模式不查
+// （改日期撞已有记录时由 Repository 同日唯一校验在保存时报错）。
 // 第一步带"详细模式"开关（ADR 0010，默认关）：开启后每个勾选项目展开
 // 材料费/工时费/项目费用输入行，自动算链 = 材料+工时→项目费用→合计→
 // 总费用；自动值可手改，不一致时红字 + 黄色警告角标，纯提示不拦保存。
@@ -448,6 +453,7 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
     required this.items,
     required this.initialDate,
     required this.today,
+    required this.onExitToEdit,
     this.record,
     required this.reloadItems,
     required this.onSubmit,
@@ -458,6 +464,12 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
   final LocalDate initialDate;
   final LocalDate today;
   final MaintenanceRecord? record;
+
+  /// 新增模式同日查重弹窗选「去编辑」时回调（传同日已有记录）：
+  /// 关当前新增 sheet、打开该记录的编辑 sheet 都要拿到外层 context，
+  /// 由入口函数（showMaintenanceRecordFormSheet）接线，表单只管发起。
+  final ValueChanged<MaintenanceRecord> onExitToEdit;
+
   final Future<List<MaintenanceItem>> Function() reloadItems;
   final Future<void> Function(
     MaintenanceRecord record,
@@ -514,6 +526,15 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       // 编辑带项目费用的记录自动进入详细模式（ADR 0010）。
       detailMode: record?.itemCosts.isNotEmpty ?? false,
     );
+    // 新增模式打开即查重（默认日期=生效今天）：首帧渲染后再弹窗，
+    // 等 sheet 完成布局，避免浮层叠在开窗动画上；编辑模式不查。
+    if (record == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _checkDuplicateAndOfferEdit();
+        }
+      });
+    }
   }
 
   @override
@@ -870,8 +891,22 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
   }
 
   /// 选记录日期：范围 = 车辆上路日期 ~ 生效今天+365（允许未来日期，R36）。
+  /// 新增模式选完立即查重（编辑模式跳过——改日期撞已有记录时由
+  /// Repository 同日唯一校验在保存时报错）。
   Future<void> _pickRecordDate() async {
-    final picked = await showSimpleDatePicker(
+    final picked = await _showDatePicker();
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() => recordDate = picked);
+    if (!isEditing) {
+      await _checkDuplicateAndOfferEdit();
+    }
+  }
+
+  /// 弹自绘日期选择器（初始值 = 当前选中日期）。
+  Future<LocalDate?> _showDatePicker() {
+    return showSimpleDatePicker(
       context,
       initialDate: recordDate,
       firstDate: widget.car.roadDate,
@@ -880,16 +915,67 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       ),
       today: widget.today,
     );
-    if (picked == null || !mounted) {
+  }
+
+  /// 新增模式的同日查重与处置：检查当前选中日期是否已有记录——
+  /// 无重复直接结束；有重复弹「返回/去编辑」确认框：「去编辑」回调
+  /// onExitToEdit 关新增 sheet 转编辑该记录（由入口函数接线）；
+  /// 「返回」/点遮罩重开日期选择器换日期（初始值 = 重复日期），选完
+  /// 再查一轮，循环到选出无重复日期或去编辑退出。拦截始终在第一步。
+  Future<void> _checkDuplicateAndOfferEdit() async {
+    final existing = _findRecordOn(recordDate);
+    if (existing == null) {
       return;
     }
-    setState(() => recordDate = picked);
+    final gotoEdit = await _showDuplicateDialog(existing);
+    if (!mounted) {
+      return;
+    }
+    if (gotoEdit) {
+      widget.onExitToEdit(existing);
+      return;
+    }
+    await _pickRecordDate();
+  }
+
+  /// 查当前车辆在 [date] 是否已有保养记录（{carId, date} 唯一约束保证
+  /// 最多一条）。记录 provider 未就绪时返回 null 跳过检查——保存时
+  /// Repository 的同日唯一校验仍会兜底报错。
+  MaintenanceRecord? _findRecordOn(LocalDate date) {
+    final records = ref.read(appliedCarRecordsProvider).value;
+    if (records == null) {
+      return null;
+    }
+    for (final record in records) {
+      if (record.date == date) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  /// 「该日期已有保养记录」确认框。返回 true = 用户选「去编辑」；
+  /// false/null（「返回」/点遮罩）= 留在新增表单换日期。
+  Future<bool> _showDuplicateDialog(MaintenanceRecord existing) {
+    return showConfirmDialog(
+      context: context,
+      title: '该日期已有保养记录',
+      message:
+          '${formatDateForUser(existing.date)} 已有一条保养记录，'
+          '可去编辑该记录，或返回更换日期。',
+      confirmLabel: '去编辑',
+      destructive: false,
+      cancelLabel: '返回',
+    ).then((result) => result == true);
   }
 }
 
 /// ★ 记录表单入口（提醒页按钮 / 记录卡"编辑"）：
 /// 先 await 三个 provider（车/项目/生效今天）→ 无车或无可用项目时
 /// toast 拦截 → 弹两步表单 sheet。
+/// 新增模式表单内自带同日查重（打开时/选完日期后，见表单 state），
+/// 查重弹窗选「去编辑」时经 onExitToEdit 在这里关新增 sheet、递归
+/// 打开该记录的编辑 sheet。
 /// onSubmit：新增走 saveMaintenanceRecordWithItemUpdates、编辑走
 /// updateMaintenanceRecordWithItemUpdates（Repository 事务）→
 /// invalidateVehicleProviders → 关 sheet。
@@ -933,6 +1019,16 @@ Future<void> showMaintenanceRecordFormSheet(
           initialDate: today,
           today: today,
           record: record,
+          // 新增模式同日查重弹窗选「去编辑」：先确认外层 context 仍
+          // mounted 再关当前新增 sheet，然后用外层 context 打开编辑
+          // sheet（关了 sheet 表单的 context 就不可用了，必须用外层）。
+          onExitToEdit: (existing) {
+            if (!context.mounted) {
+              return;
+            }
+            Navigator.of(sheetContext).pop();
+            showMaintenanceRecordFormSheet(context, ref, record: existing);
+          },
           reloadItems: () =>
               ref.read(maintenanceItemsForCarProvider(car.id!).future),
           onSubmit: (value, itemUpdates) async {

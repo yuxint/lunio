@@ -520,4 +520,85 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'new record form warns same-day record and jump to edit on confirm',
+    (tester) async {
+      await pumpApp(tester);
+      await createDefaultCar(tester);
+      await createDefaultRecord(tester);
+
+      // 当天（2026-05-19）已有记录：再次打开新增表单 → 立即弹查重确认框。
+      await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
+      await tester.pumpAndSettle();
+      expect(find.text('该日期已有保养记录'), findsOneWidget);
+      expect(find.text('去编辑'), findsOneWidget);
+      expect(find.text('返回'), findsOneWidget);
+
+      // 「去编辑」：关新增 sheet → 打开该记录的编辑 sheet（回填原值）。
+      await tester.tap(find.text('去编辑'));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑保养记录'), findsOneWidget);
+      expect(find.text('该日期已有保养记录'), findsNothing);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
+        '13000',
+      );
+    },
+  );
+
+  testWidgets(
+    'duplicate dialog back reopens date picker and rechecks picked date',
+    (tester) async {
+      await pumpApp(tester);
+      await createDefaultCar(tester);
+      await createDefaultRecord(tester);
+
+      await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
+      await tester.pumpAndSettle();
+      expect(find.text('该日期已有保养记录'), findsOneWidget);
+
+      // 「返回」：自动重开日期选择器（不是回到第一步干等）。
+      await tester.tap(find.text('返回'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择日期'), findsOneWidget);
+
+      // 换到无记录的 5-20（不能选 5-18：在车辆上路日期之前，格子禁用）
+      // → 不再弹窗，正常停在第一步。
+      await tester.tap(find.text('20'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      expect(find.text('该日期已有保养记录'), findsNothing);
+      expect(find.text('下一步'), findsOneWidget);
+
+      // 再选回今天（2026-05-19）：选完立即再弹查重框。
+      // （点日期值文本而非"保养日期"标签——标签中心命中 InputDecorator，
+      // 会有 tap 命中告警。）
+      await tester.tap(find.text('2026年5月20日'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('今天'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      expect(find.text('该日期已有保养记录'), findsOneWidget);
+    },
+  );
+
+  testWidgets('edit sheet does not trigger same-day duplicate dialog', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await createDefaultCar(tester);
+    await createDefaultRecord(tester);
+
+    // 编辑模式不查重（记录日期撞自己/撞他日都走保存时校验）。
+    await tester.tap(find.text('记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '编辑').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑保养记录'), findsOneWidget);
+    expect(find.text('该日期已有保养记录'), findsNothing);
+  });
 }

@@ -230,11 +230,12 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 4.2 新增 / 编辑保养记录（两步表单）
 
-**入口**：提醒页"新增保养记录"按钮（reminder_page.dart:126）或记录卡"编辑" → `records_page.dart:955 → showMaintenanceRecordFormSheet`。
+**入口**：提醒页"新增保养记录"按钮（reminder_page.dart:126）或记录卡"编辑" → `records_page.dart → showMaintenanceRecordFormSheet`。新增模式带同日查重拦截（步骤 0b：打开时/选完日期后，重复日期弹"返回/去编辑"，可直接转编辑同日已有记录）。
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 0 | `showMaintenanceRecordFormSheet` 开头 | await 车/项目/今天三个 provider；无车或无可用项目 → toast 拦截 | — |
+| 0b | 新增模式 `initState` 首帧后 + `_pickRecordDate` 选完日期后 → `_checkDuplicateAndOfferEdit` | **同日查重拦截（2026-09-16 新增，仅新增模式，编辑模式不查）**：`_findRecordOn` 读 `appliedCarRecordsProvider` 过滤同日期记录（{carId, date} 唯一约束最多一条；provider 未就绪时跳过检查，保存时同日唯一校验兜底）。有记录 → `showConfirmDialog`"该日期已有保养记录"（按钮**返回/去编辑**；`showConfirmDialog` 的 `cancelLabel` 参数为此新增，默认仍"取消"）：「去编辑」→ `onExitToEdit` 回调（sheet 入口接线）关新增 sheet、用外层 context 重开该记录的编辑 sheet；「返回」/点遮罩 → 自动重开日期选择器换日期，选完再查一轮，循环到选出无重复日期或去编辑退出。拦截始终发生在第一步，不会带着重复日期进入第二步 | — |
 | 1 | `MaintenanceRecordForm`（:504 起）第一步 | 日期（范围=上路日期~今天+365）、里程（默认车辆当前里程）、费用（元输入）、备注、**详细模式开关（ADR 0010，默认简洁、不持久化；编辑带项目费用的记录自动开启，`initState → detailMode`）**、项目多选 chip；编辑态可见"已禁用但被选过"的项目 | — |
 | 1a | 详细模式费用行（`_ItemCostRow`，勾选项目 chip 下方逐项展开） | 每个项目"材料费/工时费/项目费用"三个数字框。**自动算链**：材料、工时**任一非空**（未填侧按 0 求和；两格都 0 填 0.00；2026-09-12 修订，原规则要求两者都>0）→ 项目费用=两者之和；已填项目费用 → 总费用=合计。自动值可手改，**手改后不再自动覆盖**（清空=恢复自动；编辑记录打开时，存量项目费用≠材料+工时或存量总费用≠合计即视为已手改，避免预填的优惠价被自动算链冲掉）。算链、手改标记、费用草稿生命周期与提交清单收在 `records/record_cost_form_controller.dart → RecordCostFormController`（ADR 0010 唯一实现点，表单 State 只接线与重建；单测 `test/features/record_cost_form_controller_test.dart`）；**不一致纯提示**：项目费用≠材料+工时（任一非空时比，未填侧按 0；2026-09-12 同步修订）或总费用≠合计（有项目费用时）→ 该数字红字+框尾/行首黄色警告角标，不拦截保存（优惠等差异合法）。判定纯函数在 `record_rules.dart`（`itemCostMismatch`/`totalCostMismatch`/`sumItemCostCents`） | — |
 | 1b | 行内"新增"项目 | `records_page.dart → _addMaintenanceItem` → 弹项目表单（§5.2.2）→ 重拉列表 → **diff 出新 id 自动勾选**（`costForm.syncSelection` 同步费用草稿） | 新项目已落库 |

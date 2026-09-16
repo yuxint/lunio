@@ -350,12 +350,15 @@ class _SheetDragDismissState extends State<_SheetDragDismiss>
 /// 通用确认框：取消/确认双按钮，destructive=true 时确认键为危险红。
 /// 返回 true（确认）/false（取消）/null（点遮罩关闭）。
 /// 删除记录、删车、清空数据、恢复备份等危险操作都用它。
+/// [cancelLabel]：左侧次要按钮文案，默认「取消」（如记录表单查重弹窗
+/// 用「返回」，点后由调用方重开日期选择器）。
 Future<bool?> showConfirmDialog({
   required BuildContext context,
   required String title,
   required String message,
   required String confirmLabel,
   bool destructive = true,
+  String cancelLabel = '取消',
 }) {
   return showLunioDialog<bool>(
     context: context,
@@ -393,7 +396,7 @@ Future<bool?> showConfirmDialog({
                 children: [
                   Expanded(
                     child: LunioSecondaryButton(
-                      label: '取消',
+                      label: cancelLabel,
                       onPressed: () => Navigator.of(context).pop(false),
                     ),
                   ),
