@@ -25,6 +25,15 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // 只打包 64 位 ARM（arm64-v8a）：现代真机与 Apple Silicon 上的 Android 模拟器都是这个架构。
+        // 排除 armeabi-v7a（32 位老手机）、x86/x86_64（Intel 架构模拟器）。
+        // 生效前提是 gradle.properties 里 disable-abi-filtering=true，否则 Flutter 插件会
+        // 在 apply() 阶段 clear 再 addAll 全部架构，本行配置被覆盖（注释见 gradle.properties）。
+        // 将来若要支持上述设备：去掉此条 + gradle.properties 里的 disable-abi-filtering，或用
+        // flutter build apk --target-platform android-arm,android-arm64,android-x64 覆盖。
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     buildTypes {
