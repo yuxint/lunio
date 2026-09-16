@@ -115,6 +115,35 @@ class RecordRules {
         : currentMileageKm;
   }
 
+  /// 里程单调性冲突检测（记录合法性软提示）：草稿与已有记录构成
+  /// "里程不随日期单调非降"时返回冲突参照记录，无冲突返回 null。
+  /// 判定＝存在记录 R：(R 晚于草稿且 R 里程更低) 或 (R 早于草稿且
+  /// R 里程更高)；等里程不算冲突（"非降"允许持平）。同日记录跳过
+  /// ——同日冲突由既有同日查重和 {carId, date} 唯一约束兜底；
+  /// 编辑模式经 [selfRecordId] 排除自身（新增传 null）。多条记录同时
+  /// 冲突时返回先遇到的一条（跟随传入列表顺序，不挑最接近草稿的）。
+  /// ⚠ [records] 必须传该车全部记录：传筛选子集会漏判。
+  static MaintenanceRecord? conflictingMileageRecord({
+    required List<MaintenanceRecord> records,
+    required LocalDate draftDate,
+    required int draftMileageKm,
+    int? selfRecordId,
+  }) {
+    for (final record in records) {
+      if (selfRecordId != null && record.id == selfRecordId) {
+        continue;
+      }
+      final dateComparison = record.date.compareTo(draftDate);
+      if (dateComparison > 0 && record.mileageKm < draftMileageKm) {
+        return record;
+      }
+      if (dateComparison < 0 && record.mileageKm > draftMileageKm) {
+        return record;
+      }
+    }
+    return null;
+  }
+
   /// 某项目最近一次记录（提醒进度与"距上次"的基线，含当天）。
   /// 同车同项目同日的唯一约束（maintenance_record_items 的
   /// {carId, date, itemId}）保证该项目一天最多一条记录，按日期比较

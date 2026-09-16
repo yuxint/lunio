@@ -26,6 +26,172 @@ void main() {
     );
   });
 
+  test('mileage conflict detection hits both directions', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    MaintenanceRecord record(int id, LocalDate date, int mileageKm) =>
+        MaintenanceRecord(
+          id: id,
+          carId: 1,
+          date: date,
+          itemIds: const [1],
+          itemCosts: const [],
+          costCents: 0,
+          mileageKm: mileageKm,
+          sync: sync,
+        );
+
+    // 方向一：已有记录晚于草稿但里程更低（补录更早、里程更高的记录，
+    // 用户故事 4）→ 命中该参照记录。
+    final later = record(1, const LocalDate(2026, 5, 25), 10000);
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [later],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+      ),
+      same(later),
+    );
+
+    // 方向二：已有记录早于草稿但里程更高（补录更晚、里程更低的记录，
+    // 用户故事 5）→ 同样命中。
+    final earlier = record(2, const LocalDate(2026, 5, 10), 15000);
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [earlier],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+      ),
+      same(earlier),
+    );
+
+    // 列表乱序传入不影响判定（逐条比较，不依赖顺序）：先遇到的先返回。
+    final newest = record(3, const LocalDate(2026, 6, 1), 9000);
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [newest, later],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+      ),
+      same(newest),
+    );
+  });
+
+  test('mileage conflict skips same-day, equal mileage and monotonic data', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    MaintenanceRecord record(int id, LocalDate date, int mileageKm) =>
+        MaintenanceRecord(
+          id: id,
+          carId: 1,
+          date: date,
+          itemIds: const [1],
+          itemCosts: const [],
+          costCents: 0,
+          mileageKm: mileageKm,
+          sync: sync,
+        );
+
+    // 单调非降的历史（"非降"允许持平：草稿与已有记录等里程、
+    // 已有记录之间等里程都合法）→ 无冲突。
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [
+          record(1, const LocalDate(2026, 5, 10), 10000),
+          record(2, const LocalDate(2026, 5, 19), 10000),
+          // 与草稿等里程的两侧记录：早于/晚于草稿都不算冲突。
+          record(3, const LocalDate(2026, 5, 20), 11000),
+          record(4, const LocalDate(2026, 5, 24), 11000),
+          record(5, const LocalDate(2026, 5, 25), 12000),
+        ],
+        draftDate: const LocalDate(2026, 5, 22),
+        draftMileageKm: 11000,
+      ),
+      isNull,
+    );
+
+    // 同日记录跳过（同日冲突由既有查重/唯一约束兜底）：同日里程更高、
+    // 更低两个方向都不算单调性冲突。
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [
+          record(6, const LocalDate(2026, 5, 19), 99999),
+          record(7, const LocalDate(2026, 5, 19), 0),
+        ],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 1,
+      ),
+      isNull,
+    );
+
+    // 没有任何已有记录 → 无冲突。
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: const [],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+      ),
+      isNull,
+    );
+  });
+
+  test('mileage conflict excludes self when editing', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    MaintenanceRecord record(int id, LocalDate date, int mileageKm) =>
+        MaintenanceRecord(
+          id: id,
+          carId: 1,
+          date: date,
+          itemIds: const [1],
+          itemCosts: const [],
+          costCents: 0,
+          mileageKm: mileageKm,
+          sync: sync,
+        );
+
+    // 自身构成冲突形态（晚于草稿日期、里程更低）但编辑模式排除自身
+    // → 无冲突。
+    final self = record(7, const LocalDate(2026, 5, 25), 10000);
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [self],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+        selfRecordId: 7,
+      ),
+      isNull,
+    );
+
+    // 同样的输入不排除自身（新增视角，selfRecordId 缺省 null）→ 命中。
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [self],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+      ),
+      same(self),
+    );
+
+    // 排除自身后仍能命中其他冲突记录。
+    final other = record(8, const LocalDate(2026, 5, 10), 15000);
+    expect(
+      RecordRules.conflictingMileageRecord(
+        records: [self, other],
+        draftDate: const LocalDate(2026, 5, 19),
+        draftMileageKm: 12000,
+        selfRecordId: 7,
+      ),
+      same(other),
+    );
+  });
+
   test('item cost sum only counts entries with item cost filled', () {
     expect(RecordRules.sumItemCostCents(const []), 0);
     expect(

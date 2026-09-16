@@ -230,7 +230,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 4.2 新增 / 编辑保养记录（两步表单）
 
-**入口**：提醒页"新增保养记录"按钮（reminder_page.dart:126）或记录卡"编辑" → `records_page.dart → showMaintenanceRecordFormSheet`。新增模式带同日查重拦截（步骤 0b：打开时/选完日期后，重复日期弹"返回/去编辑"，可直接转编辑同日已有记录）。
+**入口**：提醒页"新增保养记录"按钮（reminder_page.dart:126）或记录卡"编辑" → `records_page.dart → showMaintenanceRecordFormSheet`。新增模式带同日查重拦截（步骤 0b：打开时/选完日期后，重复日期弹"返回/去编辑"，可直接转编辑同日已有记录）；第一步「下一步」另有里程单调性软提示（步骤 2a，新增与编辑都查）。
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
@@ -240,6 +240,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 1a | 详细模式费用行（`_ItemCostRow`，勾选项目 chip 下方逐项展开） | 每个项目"材料费/工时费/项目费用"三个数字框。**自动算链**：材料、工时**任一非空**（未填侧按 0 求和；两格都 0 填 0.00；2026-09-12 修订，原规则要求两者都>0）→ 项目费用=两者之和；已填项目费用 → 总费用=合计。自动值可手改，**手改后不再自动覆盖**（清空=恢复自动；编辑记录打开时，存量项目费用≠材料+工时或存量总费用≠合计即视为已手改，避免预填的优惠价被自动算链冲掉）。算链、手改标记、费用草稿生命周期与提交清单收在 `records/record_cost_form_controller.dart → RecordCostFormController`（ADR 0010 唯一实现点，表单 State 只接线与重建；单测 `test/features/record_cost_form_controller_test.dart`）；**不一致纯提示**：项目费用≠材料+工时（任一非空时比，未填侧按 0；2026-09-12 同步修订）或总费用≠合计（有项目费用时）→ 该数字红字+框尾/行首黄色警告角标，不拦截保存（优惠等差异合法）。判定纯函数在 `record_rules.dart`（`itemCostMismatch`/`totalCostMismatch`/`sumItemCostCents`） | — |
 | 1b | 行内"新增"项目 | `records_page.dart → _addMaintenanceItem` → 弹项目表单（§5.2.2）→ 重拉列表 → **diff 出新 id 自动勾选**（`costForm.syncSelection` 同步费用草稿） | 新项目已落库 |
 | 2 | `_buildRecordDraft()`（:760）+ `costForm.buildItemCosts()` + `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项；费用不一致**不做**校验）→ 构造记录草稿（含项目费用列表；全空草稿跳过）→ 为每个选中项目建间隔输入草稿 | — |
+| 2a | `_goToIntervalStep` → `_findMileageConflict` → `RecordRules.conflictingMileageRecord`（domain 纯函数） | **里程单调性软提示（2026-09-17 新增，新增与编辑都查——区别于步骤 0b 同日查重只查新增）**：草稿与该车全量记录构成"里程不随日期单调非降"（存在记录晚于草稿但里程更低，或早于草稿但里程更高；等里程不算冲突，同日跳过——同日由步骤 0b/唯一约束兜底；编辑经草稿自身 id 排除自己）→ `showConfirmDialog`"与已有记录不一致"（文案含参照记录日期+里程，按钮**仍要继续/返回修改**）：「仍要继续」→ 放行进第二步；「返回修改」/点遮罩 → 留在第一步改日期或里程。**纯提示不拦截保存、两分支都不写库**；provider 未就绪跳过检查（保存时既有校验兜底）。规则单测（含变异验证）`test/domain/record_rules_test.dart`，弹窗三态+编辑态 `test/widget/records_test.dart` | — |
 | 3 | 第二步 `_buildIntervalStep` | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步） | — |
 | 4 | `_submit()` → `records/record_interval_updates.dart → buildItemUpdates()` | 间隔草稿 → 待更新项目实体清单：正整数校验（规则收在 `MaintenanceRules.validateIntervals`，**与保养项目表单共用**，文案经 `intervalProblemText` 生成、带项目名前缀）；**有变化的项目**才生成 update 实体（`now` 注入重建实体的 sync 元数据）。草稿类与清单生成收在 `record_interval_updates.dart`（单测 `test/features/record_interval_updates_test.dart`；校验规则单测在 `test/domain/maintenance_rules_test.dart`） | — |
 | 5 | onSubmit（sheet 入口处）→ `shell_actions.dart → saveMaintenanceRecord`（动作层，ADR 0007） | 内部按 id 分流：新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:343）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:395)。**单事务**：项目归属校验 → 同日唯一校验（`_ensureRecordIsUnique`，**R4 收紧后同车同日只允许一条记录**，已有记录即抛"这辆车当天已有保养记录，请编辑原记录"，不再区分项目是否相同）→ 插/改主表+关联表（**费用三列按 itemId 从 `record.itemCosts` 取，`_insertRecordItemRowsInTransaction`**）→ 车辆里程只增同步 → 更新项目间隔；写完失效车辆家族 | `maintenance_records` + `maintenance_record_items`（含费用三列）；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |

@@ -17,6 +17,10 @@
 // 「返回」自动重开日期选择器换日期，「去编辑」关新增 sheet 直接转编辑
 // 该记录；拦截始终在第一步，不会带着重复日期进入第二步。编辑模式不查
 // （改日期撞已有记录时由 Repository 同日唯一校验在保存时报错）。
+// 第一步「下一步」另有里程单调性软提示（新增与编辑都查）：草稿与已有
+// 记录构成"里程不随日期单调非降"时弹「仍要继续/返回修改」确认框，
+// 纯提示不拦截保存、两分支都不写库；规则在
+// RecordRules.conflictingMileageRecord，记录数据未就绪时跳过检查。
 // 第一步带"详细模式"开关（ADR 0010，默认关）：开启后每个勾选项目展开
 // 材料费/工时费/项目费用输入行，自动算链 = 材料+工时→项目费用→合计→
 // 总费用；自动值可手改，不一致时红字 + 黄色警告角标，纯提示不拦保存。
@@ -41,6 +45,7 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
+import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 import 'record_cost_form_controller.dart';
@@ -753,12 +758,28 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
     );
   }
 
-  /// "下一步"：校验通过后为每个选中项目建间隔输入草稿，进入第二步。
-  void _goToIntervalStep() {
+  /// "下一步"：校验通过后先做里程单调性软提示检查（新增与编辑都查，
+  /// 区别于同日查重只查新增；记录数据未就绪跳过，保存时既有校验兜底），
+  /// 有冲突弹确认框——「仍要继续」放行进第二步，「返回修改」/点遮罩
+  /// 留在第一步；无冲突直接进第二步。软提示两分支都不写库。
+  Future<void> _goToIntervalStep() async {
     final draft = _buildRecordDraft();
     if (draft == null) {
       return;
     }
+    final conflict = _findMileageConflict(draft);
+    if (conflict != null) {
+      final proceed = await _showMileageConflictDialog(conflict);
+      if (!mounted || proceed != true) {
+        return;
+      }
+    }
+    _enterIntervalStep(draft);
+  }
+
+  /// 构造第二步的间隔输入草稿并切换视图（软提示「仍要继续」与无冲突
+  /// 的共用出口）。
+  void _enterIntervalStep(MaintenanceRecord draft) {
     final selectedItems = formItems
         .where((item) => item.id != null && selectedItemIds.contains(item.id))
         .toList();
@@ -836,7 +857,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
   Future<void> _submit() async {
     final draft = recordDraft;
     if (draft == null) {
-      _goToIntervalStep();
+      await _goToIntervalStep();
       return;
     }
     final result = buildItemUpdates(
@@ -952,6 +973,41 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       }
     }
     return null;
+  }
+
+  /// 里程单调性软提示检查（第一步「下一步」时调用，新增与编辑都查）：
+  /// 草稿与该车已有记录构成"里程不随日期单调非降"时返回冲突参照记录。
+  /// 记录 provider 未就绪时返回 null 跳过——保存时 Repository 的既有
+  /// 校验仍会兜底；编辑模式经草稿自身 id 排除自己。
+  MaintenanceRecord? _findMileageConflict(MaintenanceRecord draft) {
+    final records = ref.read(appliedCarRecordsProvider).value;
+    if (records == null) {
+      return null;
+    }
+    return RecordRules.conflictingMileageRecord(
+      records: records,
+      draftDate: draft.date,
+      draftMileageKm: draft.mileageKm,
+      selfRecordId: draft.id,
+    );
+  }
+
+  /// 「与已有记录不一致」软提示确认框（仿同日查重模式）：文案含参照
+  /// 记录的日期与里程。返回 true = 用户选「仍要继续」（放行进第二步）；
+  /// false（「返回修改」，点遮罩的 null 也折叠成 false）= 留在第一步
+  /// 改日期或里程。
+  Future<bool> _showMileageConflictDialog(MaintenanceRecord conflict) {
+    return showConfirmDialog(
+      context: context,
+      title: '与已有记录不一致',
+      message:
+          '${formatDateForUser(conflict.date)} 已有记录里程 '
+          '${formatNumber(conflict.mileageKm)} km，与本条填写的日期、'
+          '里程矛盾（里程应随日期不减）。可返回修改，或仍要继续。',
+      confirmLabel: '仍要继续',
+      destructive: false,
+      cancelLabel: '返回修改',
+    ).then((result) => result == true);
   }
 
   /// 「该日期已有保养记录」确认框。返回 true = 用户选「去编辑」；

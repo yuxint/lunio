@@ -64,6 +64,73 @@ Future<AppDatabase> seedCostedRecord({
   return database;
 }
 
+/// 里程单调性软提示夹具：预播种一辆车（当前里程 12000）+ 若干记录，
+/// [records] 为 (日期, 里程) 列表，逐条经主仓库写入（机油一项，费用 0）。
+/// 必须在 pumpApp 之前建库播种：App 装配后再经仓库直接写库不会触发
+/// provider 失效，页面会拿到旧的空缓存（同 seedCostedRecord）。
+Future<AppDatabase> seedRecordsForConflictPrompt(
+  List<(LocalDate, int)> records,
+) async {
+  final database = AppDatabase.inMemory();
+  addTearDown(database.close);
+  final bundle = testRepository(database);
+  await bundle.ensureBootstrapData();
+  final carId = await createCarWithDefaultItems(
+    database,
+    Car(
+      brand: '本田',
+      model: '思域（燃油版）',
+      currentMileageKm: 12000,
+      roadDate: const LocalDate(2020, 1, 1),
+      sync: SyncMetadata(
+        status: SyncStatus.pendingCreate,
+        updatedAt: DateTime(2026, 5, 19),
+      ),
+    ),
+  );
+  final items = await bundle.listMaintenanceItemsForCar(carId);
+  final oilId = items.firstWhere((item) => item.name == '机油').id!;
+  for (final (date, mileageKm) in records) {
+    await bundle.repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: date,
+        itemIds: [oilId],
+        itemCosts: const [],
+        costCents: 0,
+        mileageKm: mileageKm,
+        sync: SyncMetadata(
+          status: SyncStatus.synced,
+          updatedAt: DateTime(2026),
+        ),
+      ),
+    );
+  }
+  await bundle.setAppliedCarId(carId);
+  return database;
+}
+
+/// 里程单调性软提示三态测试的公共开场：预播种"晚于生效今天（05-19）
+/// 且里程更低"的一条记录（05-25@10000）→ 装配 → 经提醒页打开新增表单
+/// （默认草稿 = 今天 + 车辆当前里程 12000，与 05-25@10000 必冲突，且
+/// 当天无记录不触发同日查重）→ 选中机油 → 点「下一步」。结束时软提示
+/// 弹窗已在屏上，三个用例各自从这一态出发断言。
+Future<void> openConflictPromptDialog(WidgetTester tester) async {
+  final database = await seedRecordsForConflictPrompt([
+    (const LocalDate(2026, 5, 25), 10000),
+  ]);
+  await pumpApp(tester, database: database);
+  await tester.tap(find.text('提醒'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('机油').last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('下一步'));
+  await tester.pumpAndSettle();
+  expect(find.text('与已有记录不一致'), findsOneWidget);
+}
+
 void main() {
   testWidgets('records page switches between cycle and item modes', (
     tester,
@@ -600,5 +667,70 @@ void main() {
 
     expect(find.text('编辑保养记录'), findsOneWidget);
     expect(find.text('该日期已有保养记录'), findsNothing);
+  });
+
+  testWidgets('mileage conflict soft prompt shows reference record', (
+    tester,
+  ) async {
+    await openConflictPromptDialog(tester);
+
+    // 弹窗按钮齐全；文案含参照记录的日期与里程（findsWidgets：不锁
+    // 页面上是否还有别处出现同串，只锁弹窗里有）。
+    expect(find.text('仍要继续'), findsOneWidget);
+    expect(find.text('返回修改'), findsOneWidget);
+    expect(find.textContaining('2026年5月25日'), findsWidgets);
+    expect(find.textContaining('10,000 km'), findsWidgets);
+  });
+
+  testWidgets('mileage conflict proceed enters interval step', (tester) async {
+    await openConflictPromptDialog(tester);
+
+    // 「仍要继续」：软提示不拦截，放行进第二步。
+    await tester.tap(find.text('仍要继续'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('与已有记录不一致'), findsNothing);
+    expect(find.text('确认下次提醒间隔'), findsOneWidget);
+    expect(find.text('保存记录'), findsOneWidget);
+  });
+
+  testWidgets('mileage conflict back stays on first step', (tester) async {
+    await openConflictPromptDialog(tester);
+
+    // 「返回修改」：留在第一步，不进入第二步。
+    await tester.tap(find.text('返回修改'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('与已有记录不一致'), findsNothing);
+    expect(find.text('下一步'), findsOneWidget);
+    expect(find.text('确认下次提醒间隔'), findsNothing);
+  });
+
+  testWidgets('edit form also prompts mileage conflict on next step', (
+    tester,
+  ) async {
+    final database = await seedRecordsForConflictPrompt([
+      (const LocalDate(2026, 5, 10), 10000),
+      (const LocalDate(2026, 5, 25), 10000),
+    ]);
+    await pumpApp(tester, database: database);
+
+    // 列表按日期倒序：第一条卡片是 05-25 那条，编辑它。
+    await tester.tap(find.text('记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '编辑').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2026年5月25日'), findsOneWidget);
+
+    // 里程 10000 → 9000：与 05-10@10000 构成"已有记录早于草稿但里程
+    // 更高"（编辑排除自身，05-25 那条自己不参与比较）。
+    await tester.enterText(find.byType(TextField).at(0), '9000');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('与已有记录不一致'), findsOneWidget);
+    expect(find.textContaining('2026年5月10日'), findsWidgets);
+    expect(find.textContaining('10,000 km'), findsWidgets);
   });
 }
