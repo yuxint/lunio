@@ -27,6 +27,7 @@ import 'profile/profile_page.dart';
 import 'records/records_page.dart';
 import 'reminders/notification_sync_controller.dart';
 import 'reminders/reminder_page.dart';
+import 'reminders/widget_snapshot_controller.dart';
 import 'shared/shell_shared.dart';
 
 /// 主壳层组件。selectedIndex 是"固定 tab 位"：
@@ -46,6 +47,10 @@ class _AppShellState extends ConsumerState<AppShell>
   /// 通知同步控制器：提醒数据 → 系统通知重排/应用内弹窗的协调器。
   /// initState 创建并 start（订阅 6 个 provider），dispose 关闭。
   late final NotificationSyncController _notificationSync;
+
+  /// 桌面小组件快照同步控制器：提醒数据 → 小组件快照重写（ADR 0013）。
+  /// 与通知同步 watch 同一组上游但互不相干；initState 创建并 start。
+  late final WidgetSnapshotController _widgetSnapshot;
 
   /// 跨零点刷新定时器：对准下一个 00:00:00 触发，失效
   /// effectiveTodayProvider（"今天"缓存跨零点会过期，提醒页的到期
@@ -73,6 +78,8 @@ class _AppShellState extends ConsumerState<AppShell>
       isAlive: () => mounted,
     );
     _notificationSync.start();
+    _widgetSnapshot = WidgetSnapshotController(ref: ref, isAlive: () => mounted);
+    _widgetSnapshot.start();
     _scheduleMidnightDateRefresh();
     _refreshAndroidSystemNavigationInset();
   }
@@ -80,6 +87,7 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void dispose() {
     _notificationSync.dispose();
+    _widgetSnapshot.dispose();
     _midnightRefreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();

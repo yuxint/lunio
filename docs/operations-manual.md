@@ -440,6 +440,32 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 
 > iOS 停车实时活动（ADR 0012）不走通知 id 体系：活动由 ActivityKit 管理、系统托管展示，见 §2.2.1。
 
+### 6.5 桌面小组件快照同步（iOS，ADR 0013）
+
+保养提醒桌面小组件（`LunioWidgetsExtension`：小/中两档，小=概览+top4 密集单行、中=车名+概览+top3 两行项目行）只渲染快照、不做计算。快照链路：
+
+```
+数据变化（记保养/改项目/改里程/切车/手动日期/跨零点…）
+  → 4 个数据上游 provider 重算
+  → WidgetSnapshotController（widget_snapshot_controller.dart，AppShell initState 挂载，
+     listenManual fireImmediately 监听，模式同 §6.3 通知同步）
+      ├─ 任一上游 loading → 跳过，等就绪那一拍补写
+      ├─ buildWidgetSnapshotJson（widget_snapshot.dart 纯函数）：
+      │    当前应用车辆 + 有效今天 → top4 行 + 概览 + 空态（复用 reminder_rows
+      │    组装/分类单一出口）+ 未来 14 天逐日条目（预生成窗口，逐日重算）
+      │    （行详情按轴到期表达：哪轴到期说哪轴、都到期都说，未到期回退
+      │     里程优先的剩余行——ReminderViewData.dueDetailText）
+      ├─ 内容与上次相同 → 不重写；写入失败 → 不记账，下个触发点重试
+      └─ lunio/native_widgets 通道 → LunioWidgetSnapshotStore.save
+           （App Group `group.com.example.lunio` 的 UserDefaults）+ reloadAllTimelines
+```
+
+小组件扩展侧（`MaintenanceOverviewWidget.swift`）：快照条目 → 各日本地午夜时间轴，系统到点自动换页（App 不在也翻页）；窗口耗尽停在最后一条、半天兜底重试；无快照/契约版本不符（`schemaVersion` ≠ 1）渲染"打开 Lunio 同步车况"占位；空态三态渲染引导文案。点击小组件不带深链，唤起 App 落默认页。
+
+**改快照 JSON 契约**：`widgetSnapshotSchemaVersion` +1 → 同步 Swift 侧 `LunioWidgetSnapshot` 模型 → 两端测试同改；快照 key/存取只在 `LunioWidgetSnapshotStore.swift`，App Group 标识跟 bundle id 走（改 bundle id 时两个 entitlements + `appGroupId` 常量一起改）。
+
+**一句话：任何提醒数据变化 → provider 变更 → 监听器自动重写 App Group 快照并请求系统刷新；业务动作层（§0）对此零感知。**
+
 ---
 
 ## 7. 数据与偏好速查表

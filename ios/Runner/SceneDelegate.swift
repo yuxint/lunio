@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import UniformTypeIdentifiers
+import WidgetKit
 
 class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var documentPickerResult: FlutterResult?
@@ -8,6 +9,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var nativeFilesChannel: FlutterMethodChannel?
   private var nativeNotificationSettingsChannel: FlutterMethodChannel?
   private var nativeLiveActivitiesChannel: FlutterMethodChannel?
+  private var nativeWidgetsChannel: FlutterMethodChannel?
 
   private enum DocumentPickerMode {
     case exportJson
@@ -25,6 +27,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
       self?.configureNativeFilesChannelIfNeeded()
       self?.configureNativeNotificationSettingsChannelIfNeeded()
       self?.configureNativeLiveActivitiesChannelIfNeeded()
+      self?.configureNativeWidgetsChannelIfNeeded()
     }
   }
 
@@ -33,6 +36,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     configureNativeFilesChannelIfNeeded()
     configureNativeNotificationSettingsChannelIfNeeded()
     configureNativeLiveActivitiesChannelIfNeeded()
+    configureNativeWidgetsChannelIfNeeded()
   }
 
   private func configureNativeFilesChannelIfNeeded() {
@@ -144,6 +148,58 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
       ParkingCountdownActivityController.status { snapshot in
         result(snapshot)
       }
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  /// 桌面小组件快照通道分发（Dart 侧桥接 lib/core/platform/native_widgets.dart）。
+  /// 把快照 JSON 写进 App Group 共享存储（LunioWidgetSnapshotStore，ADR
+  /// 0013）并请求 WidgetKit 重载时间线。iOS < 14 无 WidgetKit，按"未启用"
+  /// 回 false，Dart 侧静默降级（桌面小组件缺失不影响 App 功能）。
+  private func configureNativeWidgetsChannelIfNeeded() {
+    guard nativeWidgetsChannel == nil else {
+      return
+    }
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "lunio/native_widgets",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      self?.handleWidgetCall(call, result: result)
+    }
+    nativeWidgetsChannel = channel
+  }
+
+  private func handleWidgetCall(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    switch call.method {
+    case "updateSnapshot":
+      guard #available(iOS 14.0, *) else {
+        result(false)
+        return
+      }
+      guard
+        let arguments = call.arguments as? [String: Any],
+        let json = arguments["json"] as? String
+      else {
+        result(FlutterError(
+          code: "invalid_arguments",
+          message: "Missing widget snapshot json",
+          details: nil
+        ))
+        return
+      }
+      let saved = LunioWidgetSnapshotStore.save(json: json)
+      if saved {
+        WidgetCenter.shared.reloadAllTimelines()
+      }
+      result(saved)
     default:
       result(FlutterMethodNotImplemented)
     }

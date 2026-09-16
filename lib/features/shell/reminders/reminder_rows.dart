@@ -81,6 +81,29 @@ class ReminderViewData {
     }
     return details;
   }
+
+  /// 按轴到期表达的详情文案（桌面小组件行内用，ADR 0013）：
+  /// 哪一轴到期/超期（该轴剩余 ≤ 0，即该轴自身进度过线）就说哪一轴，
+  /// 两轴都到期都展示（逗号连接、各带"里程：/时间："前缀）；两轴都没到
+  /// 期回退 [detailTexts] 第一行（里程优先，与提醒页详情同序）。
+  /// 判定与状态无关——状态取两维较大者，这里逐轴独立看，避免
+  /// "时间轴到期却显示里程剩余"的错位（2026-09-16 用户反馈修正）。
+  String get dueDetailText {
+    final dueLines = <String>[
+      if (item.remindByMileage &&
+          progress.mileageRemainingKm != null &&
+          progress.mileageRemainingKm! <= 0)
+        _mileageReminderText(progress.mileageRemainingKm!),
+      if (item.remindByTime &&
+          progress.daysRemaining != null &&
+          progress.daysRemaining! <= 0)
+        timeReminderText(progress.daysRemaining!),
+    ];
+    if (dueLines.isNotEmpty) {
+      return dueLines.join('，');
+    }
+    return detailTexts.first;
+  }
 }
 
 /// 构建提醒列表行：只取启用且有 id 的项目 → 逐项算进度 → 排序。

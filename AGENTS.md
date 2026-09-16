@@ -23,7 +23,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/app/app_router.dart`：GoRouter 配置。`appRouter` 是稳定单例，主题切换时不要重建路由导致跳页。
 - `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、偏好门面、各域仓库（主仓库/目录/加油/备份）、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好、通知服务等（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `features/shell/fuel/fuel_prices.dart`，与本文件互相 import 供失效名单逐出）。
 - `lib/features/shell/app_shell.dart`：主壳层入口，保留平级入口页面挂载（加油项按开关条件显示）、底部导航、生命周期监听和提醒通知同步触发。
-- `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒行组装、通知内容组装与调度 helper。
+- `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒行组装、通知内容组装与调度 helper、桌面小组件快照组装与同步（`widget_snapshot.dart` / `widget_snapshot_controller.dart`）。
 - `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。
 - `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档）；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
@@ -32,6 +32,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
   - `reminders/reminder_list.dart`：保养提醒列表、提醒行、记录详情 sheet 和进度环。
   - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。
   - `reminders/reminder_rows.dart`：提醒行视图模型与组装（`buildReminderRows`）、空态分类单一出口（`classifyReminderRows`）、`reminderRowsProvider`（提醒页数据接缝，watch 车辆/项目/记录/今天，英雄卡与列表共消费）；通知侧复用同一组装函数。
+  - `reminders/widget_snapshot.dart`：桌面小组件快照组装纯函数（`buildWidgetSnapshotJson`，契约 `schemaVersion: 1` + 14 天预生成窗口，ADR 0013）；`reminders/widget_snapshot_controller.dart`：快照同步控制器（AppShell 挂载、listenManual 数据上游，内容相同不重写、失败不记账）。
   - `reminders/reminder_notifications.dart`：系统通知内容组装（`buildScheduledNotifications`）、应用内到期清单（`maintenanceNotices`）、全量数据签名。`reminders/reminder_dialogs.dart`：应用内提醒弹窗（抑制读写经通知协调器）。
   - `profile/vehicles.dart`：车辆列表、车辆卡片、车辆切换，以及添加/编辑车辆 sheet 入口（数据装载守卫 + 提交给动作层的接线）；添加车辆两步向导（第一步表单 + 草稿状态机控制器 `AddCarWizardController`，模板加载经注入、plain-Dart 可单测）在 `profile/add_car_wizard.dart`，车型目录选择器（搜索过滤/品牌派生/生效品牌回退三个纯函数）在 `profile/vehicle_model_picker.dart`。
   - `profile/maintenance_items.dart`：保养项目 sheet、列表、卡片、项目表单和恢复默认草稿。
@@ -59,6 +60,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
 - `lib/core/platform/native_live_activities.dart`：停车倒计时 iOS 实时活动（灵动岛/锁屏卡片）的原生桥（ADR 0012）。Swift 执行体在 `ios/Runner/ParkingCountdownActivityController.swift`，卡片 UI 在 Widget Extension target `ios/ParkingCountdownExtension/`，通道经 SceneDelegate 挂 `lunio/native_live_activities`；启停/对账编排挂通知协调器。零更新渲染（系统自动走时），iOS 16.2 以下或系统关实时活动静默降级；本机模拟器构建不可用，外观只能真机验收。
+- `lib/core/platform/native_widgets.dart`：保养提醒桌面小组件（iOS WidgetKit）的快照通道桥（ADR 0013）。扩展 target `ios/LunioWidgetsExtension/`，契约/存取在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（显式编进 Runner 与扩展两个 target），通道经 SceneDelegate 挂 `lunio/native_widgets`；数据经 App Group `group.com.example.lunio`；非 iOS 平台方法自禁用。
 - `lib/core/notifications/lunio_notification_service.dart`：系统通知、保养提醒、里程更新提醒和停车倒计时通知。普通可实例化类（生产用 `LunioNotificationService.instance` 单例），经 `lunioNotificationServiceProvider` 装配，测试逐用例覆盖新实例。
 - `lib/core/platform/native_notification_settings.dart`：原生通知设置跳转桥接。
 - `test/domain/`：领域规则测试。
@@ -79,6 +81,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。
 - 停车倒计时是临时偏好状态，落在 `app_preferences.parkingCountdown`，不进入 JSON 备份。保存、结束、关闭系统通知、清空数据和恢复备份都要同步考虑通知清理。
 - 停车倒计时在 iOS 16.2+ 有实时活动（Live Activity：锁屏卡片 + 灵动岛 + 通知中心顶部，ADR 0012）：Widget Extension target `ParkingCountdownExtension` 与 Attributes 共享文件（`ParkingCountdownAttributes.swift`）同时编进 Runner 与扩展两个 target，改动活动数据形态要两侧同步；编排（保存→启、清除/清空→撤、删车/恢复备份/通知总开关→不动、冷启/回前台对账三态）挂在通知协调器，不要再在 UI 层碰通道。本机模拟器构建不可用（运行时/SDK 错配），实时活动外观与灵动岛动画只能真机验收。
+- 保养提醒桌面小组件（iOS 16.2+，ADR 0013）：Widget Extension target `LunioWidgetsExtension`；快照 JSON（`schemaVersion: 1`，含 14 天预生成窗口的逐日条目）由 `reminders/widget_snapshot.dart` 组装、经 `WidgetSnapshotController`（监听数据上游，AppShell 挂载）自动重写——数据写点不需要也不能单独通知它；小组件只渲染快照不做计算，点击不接深链。快照存取契约在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（编进 Runner 与扩展两个 target）；App Group 标识 `group.com.example.lunio` 跟 bundle id 走，改 bundle id 时两个 entitlements 与 `appGroupId` 常量要一起改。改快照 JSON 契约要 `widgetSnapshotSchemaVersion` +1 并同步 Swift 侧模型。
 
 ## UI 与交互约定
 
