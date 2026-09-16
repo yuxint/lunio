@@ -634,8 +634,9 @@ void main() {
         running: true,
         expired: false,
       );
+      await preferences.clearParkingCountdown();
 
-      await coordinator.reconcileParkingLiveActivity(null);
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status', 'stop']);
     });
@@ -647,7 +648,9 @@ void main() {
         expired: false,
       );
 
-      await coordinator.reconcileParkingLiveActivity(null);
+      await preferences.clearParkingCountdown();
+
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status']);
     });
@@ -658,8 +661,9 @@ void main() {
         expired: false,
       );
       final countdown = futureCountdown();
+      await preferences.saveParkingCountdown(countdown);
 
-      await coordinator.reconcileParkingLiveActivity(countdown);
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status', 'start']);
       expect(liveActivities.endsAtArg, countdown.endsAt);
@@ -671,8 +675,9 @@ void main() {
         running: false,
         expired: false,
       );
+      await preferences.saveParkingCountdown(expiredCountdown());
 
-      await coordinator.reconcileParkingLiveActivity(expiredCountdown());
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status']);
     });
@@ -685,8 +690,9 @@ void main() {
         expired: false,
         endsAt: countdown.endsAt,
       );
+      await preferences.saveParkingCountdown(countdown);
 
-      await coordinator.reconcileParkingLiveActivity(countdown);
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status', 'markExpired']);
     });
@@ -699,8 +705,9 @@ void main() {
         expired: true,
         endsAt: countdown.endsAt,
       );
+      await preferences.saveParkingCountdown(countdown);
 
-      await coordinator.reconcileParkingLiveActivity(countdown);
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status']);
     });
@@ -713,8 +720,9 @@ void main() {
         expired: false,
         endsAt: countdown.endsAt.add(const Duration(minutes: 5)),
       );
+      await preferences.saveParkingCountdown(countdown);
 
-      await coordinator.reconcileParkingLiveActivity(countdown);
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status', 'start']);
       expect(liveActivities.endsAtArg, countdown.endsAt);
@@ -727,11 +735,12 @@ void main() {
         running: false,
         expired: false,
       );
+      await preferences.saveParkingCountdown(countdown);
       liveActivities.onStatus = () {
         container.read(notificationSyncGenerationProvider.notifier).bump();
       };
 
-      await coordinator.reconcileParkingLiveActivity(countdown);
+      await coordinator.reconcileParkingLiveActivity();
 
       expect(liveActivities.calls, ['status']);
     });

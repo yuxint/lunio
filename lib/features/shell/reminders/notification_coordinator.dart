@@ -286,7 +286,15 @@ class LunioNotificationCoordinator {
   ///    内卡片同款"到期红正计时"的岛端对应）；到点时刻对不上（偏好被改
   ///    而活动没跟上，正常路径保存时会重建，这里是竞态兜底）→ 没过期
   ///    重建、已过期撤。
-  Future<void> reconcileParkingLiveActivity(ParkingCountdown? countdown) async {
+  ///
+  /// 倒计时真值直读偏好表、不收调用方传的 provider 快照（2026-09-16
+  /// 真机日志实锤的误撤根因）：invalidate 后 provider 在重建完成前仍
+  /// 暴露旧值，保存链触发的对账会读到"无倒计时"的旧快照，把刚启动的
+  /// 活动按"偏好无 + 活动在"误撤（start 后 18ms 被 stop）。偏好表读的
+  /// 是当下事实，与 provider 重建时序天然解耦。偏好读取与动作之间仍可能
+  /// 插入保存/清除（毫秒级窗口）：两条链自己会启停，这里再执行一次也
+  /// 收敛——start 是"先撤场再重建"、stop 无活动时无操作。
+  Future<void> reconcileParkingLiveActivity() async {
     final generation = ref.read(notificationSyncGenerationProvider);
     final snapshot = await liveActivities.status();
     // status 往返期间发生恢复备份/清空数据（代数已变）→ 放弃本轮，
@@ -298,6 +306,7 @@ class LunioNotificationCoordinator {
     if (snapshot == null) {
       return;
     }
+    final countdown = await preferences.getParkingCountdown();
     if (countdown == null) {
       if (snapshot.running) {
         await liveActivities.stop();

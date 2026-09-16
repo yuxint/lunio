@@ -135,7 +135,8 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
       }
     case "stop":
       // 等全部活动确认撤场再回包：Dart 侧 await stop() 返回时岛已撤
-      //（真机反馈：fire-and-forget 在随即退后台时会留下残卡）。
+      //（真机反馈：随即退后台时撤场半路夭折会留下残卡——现叠加后台
+      // 保活根治，见 ParkingCountdownActivityController.runKeptAlive）。
       ParkingCountdownActivityController.stopAll {
         result(true)
       }

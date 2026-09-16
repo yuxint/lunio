@@ -151,11 +151,11 @@ class NotificationSyncController {
   }
 
   /// 停车实时活动对账（ADR 0012，执行体在通知协调器）：倒计时 provider
-  /// 还在加载时跳过——无从对账，等它装载触发上面 listenManual 再补；
-  /// 读偏好抛异常时 provider 停在 AsyncError（hasValue 为 false），同样
-  /// 跳过、活动不动，等下一个对账点。偏好 JSON 损坏经偏好门面转 null
-  /// 数据（R14），按"偏好无倒计时"对账——活动在跑会撤掉，与"偏好无+
-  /// 活动在→撤"同一口径。
+  /// 还在加载时跳过——等它装载触发上面 listenManual 再补；读偏好抛异常
+  /// 时 provider 停在 AsyncError（hasValue 为 false），同样跳过、活动不
+  /// 动。对账内部的倒计时真值由协调器直读偏好表（不走本方法的 provider
+  /// 读数——invalidate 后的旧快照曾把刚启动的活动当"偏好无"误撤，
+  /// 2026-09-16 真机日志实锤，见协调器注释）。
   Future<void> syncParkingLiveActivity() async {
     if (_disposed) {
       return;
@@ -164,10 +164,9 @@ class NotificationSyncController {
     if (!parkingAsync.hasValue) {
       return;
     }
-    final countdown = parkingAsync.value;
     await ref
         .read(notificationCoordinatorProvider)
-        .reconcileParkingLiveActivity(countdown);
+        .reconcileParkingLiveActivity();
   }
 
   /// 同步入口：从 6 个 provider 读当前值（loading 中的当 null），
