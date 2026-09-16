@@ -225,6 +225,16 @@ Future<void> clearParkingCountdown(WidgetRef ref) async {
   await ref.read(notificationCoordinatorProvider).onParkingCountdownCleared();
 }
 
+/// 停车倒计时到点（App 在前台时由停车卡片的秒时钟跨越到点的那一刻
+/// 触发）：把灵动岛实时活动切成"已超时"正计时形态。App 不在前台时
+/// 系统不会唤醒 App（本地无定时更新手段），该场景由回前台/冷启动的
+/// 实时活动对账兜底（ADR 0012 决定 5）。原生侧幂等，重复触发无害。
+Future<void> notifyParkingCountdownExpired(WidgetRef ref) async {
+  await ref
+      .read(notificationCoordinatorProvider)
+      .markParkingLiveActivityExpired();
+}
+
 // ---- 加油 ----
 
 /// 保存省份选择：写全局偏好 + 整族失效加油相关 provider。缓存是单省

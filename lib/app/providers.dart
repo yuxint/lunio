@@ -48,6 +48,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/date/app_date_context.dart';
 import '../core/notifications/lunio_notification_service.dart';
 import '../core/date/local_date.dart';
+import '../core/platform/native_live_activities.dart';
 import '../data/database/app_database.dart';
 import '../data/preferences/app_preferences.dart';
 import '../data/repositories/backup_repository.dart';
@@ -286,6 +287,12 @@ final lunioNotificationServiceProvider = Provider<LunioNotificationService>((
   ref,
 ) {
   return LunioNotificationService.instance;
+});
+
+/// 停车实时活动桥：生产装配真实通道实现；测试可整体覆盖为假子类。
+/// 非 iOS 平台上方法自禁用（见桥文件头），Android 行为零变化。
+final nativeLiveActivitiesProvider = Provider<NativeLiveActivities>((ref) {
+  return NativeLiveActivities();
 });
 
 /// 通知同步代数（≈ 乐观锁的版本号）：恢复备份/清空数据时 bump()，

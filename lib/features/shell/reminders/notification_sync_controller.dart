@@ -115,6 +115,17 @@ class NotificationSyncController {
         (_, _) => syncFromProviders(),
       ),
     );
+    // 停车实时活动对账（ADR 0012）：倒计时偏好装载/变化时对一轮，兜住
+    // "重启后活动丢失""到点后未切正计时"两类漂移。fireImmediately 兜住
+    // "start() 时偏好已就绪"的时序；未就绪时 syncParkingLiveActivity
+    // 自行跳过，等装载那一拍再对。
+    _subscriptions.add(
+      ref.listenManual(
+        parkingCountdownProvider,
+        (_, _) => syncParkingLiveActivity(),
+        fireImmediately: true,
+      ),
+    );
   }
 
   /// 销毁：AppShell dispose 调用。关闭订阅；置 _disposed 后所有在途
@@ -128,13 +139,35 @@ class NotificationSyncController {
   }
 
   /// 回到前台：清空应用内提醒签名（强制重新检查弹窗，实现"用户处理完
-  /// 提醒离开再回来，若又到期会再次提醒"）并立即重跑一轮同步。
+  /// 提醒离开再回来，若又到期会再次提醒"）、对账停车实时活动，并立即
+  /// 重跑一轮通知同步。
   void onAppResumed() {
     if (_disposed) {
       return;
     }
     _inAppNotificationSignature = null;
+    syncParkingLiveActivity();
     syncFromProviders();
+  }
+
+  /// 停车实时活动对账（ADR 0012，执行体在通知协调器）：倒计时 provider
+  /// 还在加载时跳过——无从对账，等它装载触发上面 listenManual 再补；
+  /// 读偏好抛异常时 provider 停在 AsyncError（hasValue 为 false），同样
+  /// 跳过、活动不动，等下一个对账点。偏好 JSON 损坏经偏好门面转 null
+  /// 数据（R14），按"偏好无倒计时"对账——活动在跑会撤掉，与"偏好无+
+  /// 活动在→撤"同一口径。
+  Future<void> syncParkingLiveActivity() async {
+    if (_disposed) {
+      return;
+    }
+    final parkingAsync = ref.read(parkingCountdownProvider);
+    if (!parkingAsync.hasValue) {
+      return;
+    }
+    final countdown = parkingAsync.value;
+    await ref
+        .read(notificationCoordinatorProvider)
+        .reconcileParkingLiveActivity(countdown);
   }
 
   /// 同步入口：从 6 个 provider 读当前值（loading 中的当 null），

@@ -157,14 +157,30 @@ appDatabaseProvider(:153)
 |---|---|---|---|
 | 1 | `reminder_page.dart:103`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
 | 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（**点按钮此刻实时取系统时间，秒/毫秒截 0 默认整分**；时间轮可改时分秒，双向循环滚动）+ 免费时长（数字键盘输入框或 0.5/1/2 小时快捷 chip） | — |
-| 3 | 提交 → `shell_actions.dart → saveParkingCountdown(ref, countdown)`（动作层，ADR 0007） | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：**先取保存时刻**（预警门槛用它评估，弹窗停留不挤占剩余时长）→ 若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。编排只收 `WidgetRef`，不依赖任何页面存活（表单 sheet 的关闭由表单自理） | ① `parkingCountdown` = JSON ② 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）+ **9003/9004**（剩 15/5 分钟预警，保存时剩余 ≥ 30 分钟才启用）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
+| 3 | 提交 → `shell_actions.dart → saveParkingCountdown(ref, countdown)`（动作层，ADR 0007） | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：**先取保存时刻**（预警门槛用它评估，弹窗停留不挤占剩余时长）→ **启动/重建 iOS 实时活动**（与系统通知开关无关；到点时刻已过则跳过，与通知调度同一静默口径）→ 若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。编排只收 `WidgetRef`，不依赖任何页面存活（表单 sheet 的关闭由表单自理） | ① `parkingCountdown` = JSON ② iOS 实时活动（见下方专节）③ 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）+ **9003/9004**（剩 15/5 分钟预警，保存时剩余 ≥ 30 分钟才启用）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
 | 4 | `lunio_notification_service.dart → scheduleParkingCountdownNotification` | 先成组取消旧 9001~9004，再排新通知；**到点时刻已过则静默 return**；剩余 ≥ 30 分钟（按整分钟向上取整）才加排两条预警 | — |
 
 **展示**：`parking_countdown.dart → ParkingCountdownCard`（ConsumerStatefulWidget）——进度规则在 `lib/domain/rules/parking_countdown_rules.dart`（剩余≤20% 黄、到期红转正计时）；颜色映射 `_parkingStatusColor`。**卡片内部 1s Timer 自刷新**（时钟走 `appDateContextProvider.readSystemNow()`，测试可注入），重建范围只有这张卡。
 
-**结束**：卡片"结束"按钮 → `shell_actions.dart → clearParkingCountdown(ref)`（动作层，ADR 0007）→ 删偏好 key + 失效 + 通知收尾委托协调器 `onParkingCountdownCleared`（系统通知开着时取消 9001~9004）。
+**结束**：卡片"结束"按钮 → `shell_actions.dart → clearParkingCountdown(ref)`（动作层，ADR 0007）→ 删偏好 key + 失效 + 通知收尾委托协调器 `onParkingCountdownCleared`（撤 iOS 实时活动 + 系统通知开着时取消 9001~9004）。
 
-> 已知问题：到期后倒计时不自动清除（须手动结束才能开始新的，R9/R17）。恢复备份/清空数据后的 9001~9004 残留已修复（恢复保留停车偏好不动其通知；清空显式成组取消，见 §5.4/§5.5）。
+#### 2.2.1 iOS 实时活动（灵动岛，ADR 0012）
+
+iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + 灵动岛 + 通知中心顶部），Android 零改动。链路：Dart 桥 `lib/core/platform/native_live_activities.dart`（非 iOS 自禁用）↔ SceneDelegate `lunio/native_live_activities` 通道 ↔ 执行体 `ios/Runner/ParkingCountdownActivityController.swift`；卡片 UI 在 Widget Extension target `ios/ParkingCountdownExtension/`；启停编排挂通知协调器。
+
+| 事件 | 行为 |
+|---|---|
+| 保存倒计时 | 启动/重建活动（零更新渲染：剩余时间与进度条由系统组件自动走时，App 不推送任何更新；启动时设 `staleDate = 到点时刻`）。样式为"行式对照"（ADR 0012 三轮定稿）：青色图标 + 灰色文案 + 金黄计时 + 白色状态 + 蓝色剩余递减进度条 + 黑底锁屏 |
+| 到点（App 在前台，提醒页可见） | 停车卡片秒时钟跨越到点的那一刻经动作层 `notifyParkingCountdownExpired` 调协调器，**即时**把活动切成"已超时"正计时（红色状态，计时从入场时刻起算 = App 内"停车时长"） |
+| 到点（App 不在跑/不在提醒页） | 卡片停在 00:00；**锁屏卡由系统自动置灰（staleDate），灵动岛无置灰表现**；不自动切正计时——ActivityKit 无本地定时更新手段，由回前台/冷启动对账兜底（接受的折衷，ADR 0012 决定 5 及三轮修订） |
+| 回前台 / 冷启动 / 偏好变化 | 协调器 `reconcileParkingLiveActivity` 对账三态：偏好无+活动在 → 撤；偏好有+活动丢（重启/系统收回）→ 剩余为正才补启；都有但形态漂移 → 过期切正计时、到点时刻对不上则重建/撤 |
+| 结束 / 清空数据 | 协调器撤活动（`onParkingCountdownCleared` / `runAllDataClear`）；原生侧确认全部撤场后才算返回（防 App 随即退后台留下残卡） |
+| 删车 / 恢复备份 / 关通知总开关 | 不动实时活动（倒计时全局不挂车、备份不含倒计时偏好；实时活动与通知是系统设置里两个独立开关） |
+| iOS < 16.2 / 系统关实时活动 / 活动超上限 | 通道返回"未启用"，静默降级为"只有通知"，不提示不报错 |
+
+> 实时活动卡片不放开始/结束钟点、不放车辆名；活动有系统寿命上限（约 8~12 小时），超长倒计时活动被系统收回后由对账补启兜底（剩余为正时）。已知问题：到点后与 App 内卡片一致不自动清除，须手动"结束"（R9）。
+
+> 已知问题：到期后倒计时不自动清除（须手动结束才能开始新的，R9/R17）。恢复备份/清空数据后的 9001~9004 残留已修复（恢复保留停车偏好不动其通知；清空显式成组取消并撤实时活动，见 §5.4/§5.5）。
 
 ### 2.3 新增保养记录入口
 
@@ -316,13 +332,13 @@ appDatabaseProvider(:153)
 2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2} 抛 UnsupportedError；**v1 备份兼容导入**——没有 `itemCosts` 字段等于项目费用全空，ADR 0010）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）再执行恢复；
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 4 张业务表 + 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
-5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 不动——停车倒计时偏好保留且其通知仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
+5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
 6. `invalidateAllAppDataProviders` → 全量刷新（车型目录由 bootstrap 自动重灌）；
 7. 失败分支：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框；其他 → toast。
 
 ### 5.5 清空数据
 
-我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**先 bump() 通知同步代数** → `backupRepository.clearAllData`（事务删 5 张表：4 张业务表 + 偏好表）→ 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知必须取消；清库失败异常上抛、不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
+我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**先 bump() 通知同步代数** → `backupRepository.clearAllData`（事务删 5 张表：4 张业务表 + 偏好表）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
 
 ### 5.6 通知设置
 
@@ -421,6 +437,8 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | 9002 | Android 停车进行中常驻通知（chronometer 倒计时，到点自毁） | lunio_parking_ongoing |
 | 9003 | 停车预警：剩 15 分钟（保存时剩余 ≥ 30 分钟才排） | lunio_parking_due_heads_up（alarm） |
 | 9004 | 停车预警：剩 5 分钟（同上，与 9003 成对） | lunio_parking_due_heads_up（alarm） |
+
+> iOS 停车实时活动（ADR 0012）不走通知 id 体系：活动由 ActivityKit 管理、系统托管展示，见 §2.2.1。
 
 ---
 

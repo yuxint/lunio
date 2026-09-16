@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/core/date/app_date_context.dart';
 
+import 'package:lunio/app/providers.dart';
+import 'package:lunio/core/platform/native_live_activities.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import '../helpers/widget_app.dart';
@@ -369,4 +371,109 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'parking card reports expiry to the live activity across the boundary',
+    (tester) async {
+      var now = DateTime(2026, 6, 10, 10, 20);
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      await testRepository(database).saveParkingCountdown(
+        ParkingCountdown(startedAt: now, durationSeconds: 1800),
+      );
+      final liveCalls = <String>[];
+      await pumpApp(
+        tester,
+        database: database,
+        dateContext: AppDateContext(readSystemNow: () => now),
+        extraOverrides: [
+          nativeLiveActivitiesProvider.overrideWithValue(
+            _RecordingLiveActivities(liveCalls),
+          ),
+        ],
+      );
+      // 未到点：秒钟 tick 不触发到点上报。
+      expect(liveCalls, isEmpty);
+
+      now = DateTime(2026, 6, 10, 10, 35);
+      await tester.pump(const Duration(seconds: 1));
+      expect(liveCalls, isEmpty);
+
+      // 跨越到点：下一拍把实时活动切"已超时"，只上报一次；偏好保留
+      // 等手动结束（R9），上报不清数据。
+      now = DateTime(2026, 6, 10, 10, 50, 1);
+      await tester.pump(const Duration(seconds: 1));
+      expect(liveCalls, ['markExpired']);
+
+      now = DateTime(2026, 6, 10, 10, 50, 6);
+      await tester.pump(const Duration(seconds: 1));
+      expect(liveCalls, ['markExpired']);
+      expect(await testRepository(database).getParkingCountdown(), isNotNull);
+    },
+  );
+
+  testWidgets(
+    'parking card reports expiry on the first frame when already expired',
+    (tester) async {
+      final now = DateTime(2026, 6, 10, 10, 20);
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      // 免费时长 60 秒、到点已过 19 分钟：进页首拍（initState）即上报。
+      await testRepository(database).saveParkingCountdown(
+        ParkingCountdown(
+          startedAt: now.subtract(const Duration(minutes: 20)),
+          durationSeconds: 60,
+        ),
+      );
+      final liveCalls = <String>[];
+      await pumpApp(
+        tester,
+        database: database,
+        dateContext: AppDateContext(readSystemNow: () => now),
+        extraOverrides: [
+          nativeLiveActivitiesProvider.overrideWithValue(
+            _RecordingLiveActivities(liveCalls),
+          ),
+        ],
+      );
+
+      expect(liveCalls, ['markExpired']);
+
+      // 幂等门：继续秒钟 tick 不重复上报。
+      await tester.pump(const Duration(seconds: 2));
+      expect(liveCalls, ['markExpired']);
+    },
+  );
+}
+
+/// 实时活动假桥：只记录变更类调用（start/stop/markExpired），作为卡片
+/// 到点上报链路（onExpired → 动作层 → 协调器 → 桥）的观察点。status 不
+/// 覆写——测试默认平台非 iOS，基类实现守卫自禁用零通道调用，冷启/回前
+/// 台对账自然空转，不污染断言。启停/对账编排的完整断言在
+/// test/features/notification_coordinator_test.dart。
+class _RecordingLiveActivities extends NativeLiveActivities {
+  _RecordingLiveActivities(this.calls);
+
+  final List<String> calls;
+
+  @override
+  Future<bool> start({
+    required DateTime startedAt,
+    required DateTime endsAt,
+  }) async {
+    calls.add('start');
+    return true;
+  }
+
+  @override
+  Future<bool> markExpired() async {
+    calls.add('markExpired');
+    return true;
+  }
+
+  @override
+  Future<bool> stop() async {
+    calls.add('stop');
+    return true;
+  }
 }

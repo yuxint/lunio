@@ -42,11 +42,17 @@ class ParkingCountdownCard extends ConsumerStatefulWidget {
     required this.countdown,
     required this.now,
     required this.onEnd,
+    this.onExpired,
   });
 
   final ParkingCountdown countdown;
   final DateTime now;
   final VoidCallback onEnd;
+
+  /// 跨越到点的那一刻触发一次（含进页时已到点的首拍）。App 在前台时
+  /// 这是感知到点的唯一时钟：提醒页拿它把灵动岛实时活动切成"已超时"
+  /// 形态（动作层 notifyParkingCountdownExpired，ADR 0012）。
+  final VoidCallback? onExpired;
 
   @override
   ConsumerState<ParkingCountdownCard> createState() =>
@@ -56,6 +62,9 @@ class ParkingCountdownCard extends ConsumerStatefulWidget {
 class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
   Timer? _ticker;
 
+  /// 到点是否已上报（幂等门：秒时钟每次 tick 都会检查，只放行第一次）。
+  bool _expiryReported = false;
+
   /// 卡片当前使用的"现在"（每秒刷新；倒计时存在即计时，
   /// 到点后继续正计"停车时长"）。
   late DateTime _now;
@@ -64,12 +73,25 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
   void initState() {
     super.initState();
     _now = widget.now;
+    _reportExpiryIfNeeded();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) {
         return;
       }
       setState(() => _now = ref.read(appDateContextProvider).readSystemNow());
+      _reportExpiryIfNeeded();
     });
+  }
+
+  /// 跨越到点（或进页时已到点）上报一次到点事件，驱动灵动岛实时活动
+  /// 切"已超时"形态。上报走 [ParkingCountdownCard.onExpired] 回调，
+  /// 卡片只报告发生了什么，不自己碰通道。
+  void _reportExpiryIfNeeded() {
+    if (_expiryReported || !_now.isAfter(widget.countdown.endsAt)) {
+      return;
+    }
+    _expiryReported = true;
+    widget.onExpired?.call();
   }
 
   @override

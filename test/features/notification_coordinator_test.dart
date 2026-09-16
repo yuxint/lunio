@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/notifications/lunio_notification_service.dart';
+import 'package:lunio/core/platform/native_live_activities.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
@@ -33,6 +34,7 @@ void main() {
   late LunioPreferences preferences;
   late LunioNotificationCoordinator coordinator;
   late List<MethodCall> notificationCalls;
+  late _FakeLiveActivities liveActivities;
 
   /// 注册 Android 平台实现 + mock 通知/时区通道。[onCall] 在每次通道调用
   /// 后触发（用于在权限请求期间 bump 同步代数等竞态模拟）。
@@ -93,6 +95,7 @@ void main() {
     // 通知服务是进程级单例：重置初始化状态，避免上一个用例的初始化结果
     //（可用/不可用）影响本用例的 mock 行为。
     database = AppDatabase.inMemory();
+    liveActivities = _FakeLiveActivities();
     container = ProviderContainer(
       overrides: [
         appDatabaseProvider.overrideWithValue(database),
@@ -100,6 +103,8 @@ void main() {
         lunioNotificationServiceProvider.overrideWithValue(
           LunioNotificationService(),
         ),
+        // 实时活动桥换成假实现：记录调用、可编排系统侧状态快照。
+        nativeLiveActivitiesProvider.overrideWithValue(liveActivities),
       ],
     );
     preferences = container.read(lunioPreferencesProvider);
@@ -535,4 +540,247 @@ void main() {
       );
     });
   });
+
+  group('parking live activity (ADR 0012)', () {
+    // 到点时刻必须相对当前时间（写死日期一过用例就退化，同上组）。
+    ParkingCountdown futureCountdown() => ParkingCountdown(
+          startedAt: DateTime.now(),
+          durationSeconds: 1800,
+        );
+
+    ParkingCountdown expiredCountdown() => ParkingCountdown(
+          startedAt: DateTime.now().subtract(const Duration(minutes: 40)),
+          durationSeconds: 1800,
+        );
+
+    test('save starts the live activity even with system notifications off',
+        () async {
+      mockAndroidNotifications(notificationsEnabled: false);
+      await preferences.writeRaw('systemNotificationsEnabled', 'false');
+      final countdown = futureCountdown();
+
+      await coordinator.onParkingCountdownSaved(countdown);
+
+      // 实时活动与通知开关无关（独立系统能力）：开关关着也要上卡，
+      // 且上卡区间必须是保存的倒计时（送错时间戳 = 卡片走时不准）。
+      expect(liveActivities.calls, contains('start'));
+      expect(liveActivities.startedAtArg, countdown.startedAt);
+      expect(liveActivities.endsAtArg, countdown.endsAt);
+      expect(
+        notificationCalls.map((call) => call.method),
+        isNot(contains('zonedSchedule')),
+      );
+    });
+
+    test('save skips the live activity when endsAt has already passed',
+        () async {
+      mockAndroidNotifications();
+
+      await coordinator.onParkingCountdownSaved(expiredCountdown());
+
+      expect(liveActivities.calls, isNot(contains('start')));
+    });
+
+    test('clear stops the live activity regardless of the toggle', () async {
+      mockAndroidNotifications(notificationsEnabled: false);
+      await preferences.writeRaw('systemNotificationsEnabled', 'false');
+
+      await coordinator.onParkingCountdownCleared();
+
+      expect(liveActivities.calls, contains('stop'));
+    });
+
+    test('clearAllData stops the live activity', () async {
+      mockAndroidNotifications();
+
+      await coordinator.runAllDataClear(() async {});
+
+      expect(liveActivities.calls, contains('stop'));
+    });
+
+    test('clearAllData keeps the live activity when the clear fails',
+        () async {
+      mockAndroidNotifications();
+
+      await expectLater(
+        coordinator.runAllDataClear(() async {
+          throw StateError('清库失败');
+        }),
+        throwsStateError,
+      );
+
+      // 清库失败 = 数据未变：活动不撤、通知不取消（与 runCarDeletion
+      // 失败路径同一模板语义）。
+      expect(liveActivities.calls, isEmpty);
+      expect(
+        notificationCalls.map((call) => call.method),
+        isNot(contains('cancel')),
+      );
+    });
+
+    test('car deletion and backup restore never touch the live activity',
+        () async {
+      mockAndroidNotifications();
+
+      await coordinator.runCarDeletion(() async {});
+      await coordinator.runBackupRestore(() async {});
+
+      expect(liveActivities.calls, isEmpty);
+    });
+
+    test('reconcile: clears a leftover activity when no countdown exists',
+        () async {
+      liveActivities.snapshot = const LiveActivitySnapshot(
+        running: true,
+        expired: false,
+      );
+
+      await coordinator.reconcileParkingLiveActivity(null);
+
+      expect(liveActivities.calls, ['status', 'stop']);
+    });
+
+    test('reconcile: does nothing when nothing runs and no countdown exists',
+        () async {
+      liveActivities.snapshot = const LiveActivitySnapshot(
+        running: false,
+        expired: false,
+      );
+
+      await coordinator.reconcileParkingLiveActivity(null);
+
+      expect(liveActivities.calls, ['status']);
+    });
+
+    test('reconcile: restarts a lost activity while time remains', () async {
+      liveActivities.snapshot = const LiveActivitySnapshot(
+        running: false,
+        expired: false,
+      );
+      final countdown = futureCountdown();
+
+      await coordinator.reconcileParkingLiveActivity(countdown);
+
+      expect(liveActivities.calls, ['status', 'start']);
+      expect(liveActivities.endsAtArg, countdown.endsAt);
+    });
+
+    test('reconcile: does not resurrect an already expired countdown',
+        () async {
+      liveActivities.snapshot = const LiveActivitySnapshot(
+        running: false,
+        expired: false,
+      );
+
+      await coordinator.reconcileParkingLiveActivity(expiredCountdown());
+
+      expect(liveActivities.calls, ['status']);
+    });
+
+    test('reconcile: flips a running activity to expired past endsAt',
+        () async {
+      final countdown = expiredCountdown();
+      liveActivities.snapshot = LiveActivitySnapshot(
+        running: true,
+        expired: false,
+        endsAt: countdown.endsAt,
+      );
+
+      await coordinator.reconcileParkingLiveActivity(countdown);
+
+      expect(liveActivities.calls, ['status', 'markExpired']);
+    });
+
+    test('reconcile: leaves a live activity in expired form untouched',
+        () async {
+      final countdown = expiredCountdown();
+      liveActivities.snapshot = LiveActivitySnapshot(
+        running: true,
+        expired: true,
+        endsAt: countdown.endsAt,
+      );
+
+      await coordinator.reconcileParkingLiveActivity(countdown);
+
+      expect(liveActivities.calls, ['status']);
+    });
+
+    test('reconcile: rebuilds when the activity endsAt drifted from the pref',
+        () async {
+      final countdown = futureCountdown();
+      liveActivities.snapshot = LiveActivitySnapshot(
+        running: true,
+        expired: false,
+        endsAt: countdown.endsAt.add(const Duration(minutes: 5)),
+      );
+
+      await coordinator.reconcileParkingLiveActivity(countdown);
+
+      expect(liveActivities.calls, ['status', 'start']);
+      expect(liveActivities.endsAtArg, countdown.endsAt);
+    });
+
+    test('reconcile: aborts when the sync generation changed mid-flight',
+        () async {
+      final countdown = futureCountdown();
+      liveActivities.snapshot = const LiveActivitySnapshot(
+        running: false,
+        expired: false,
+      );
+      liveActivities.onStatus = () {
+        container.read(notificationSyncGenerationProvider.notifier).bump();
+      };
+
+      await coordinator.reconcileParkingLiveActivity(countdown);
+
+      expect(liveActivities.calls, ['status']);
+    });
+
+    test('markParkingLiveActivityExpired flips the activity to expired',
+        () async {
+      await coordinator.markParkingLiveActivityExpired();
+
+      expect(liveActivities.calls, ['markExpired']);
+    });
+  });
+}
+
+/// 实时活动假桥：记录调用、编排 status 返回值。[onStatus] 在每次 status
+/// 查询时触发（用于模拟查询期间恢复备份/清空数据的代数竞态）。
+class _FakeLiveActivities extends NativeLiveActivities {
+  final List<String> calls = <String>[];
+  LiveActivitySnapshot? snapshot;
+  DateTime? startedAtArg;
+  DateTime? endsAtArg;
+  void Function()? onStatus;
+
+  @override
+  Future<bool> start({
+    required DateTime startedAt,
+    required DateTime endsAt,
+  }) async {
+    calls.add('start');
+    startedAtArg = startedAt;
+    endsAtArg = endsAt;
+    return true;
+  }
+
+  @override
+  Future<bool> markExpired() async {
+    calls.add('markExpired');
+    return true;
+  }
+
+  @override
+  Future<bool> stop() async {
+    calls.add('stop');
+    return true;
+  }
+
+  @override
+  Future<LiveActivitySnapshot?> status() async {
+    calls.add('status');
+    onStatus?.call();
+    return snapshot;
+  }
 }

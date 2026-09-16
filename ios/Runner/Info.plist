@@ -48,6 +48,11 @@
 			</dict>
 		</dict>
 	</dict>
+	<!-- 停车倒计时实时活动（锁屏卡片/灵动岛，ADR 0012）：活动由 App 本地
+	     启动、零推送更新，无需 FrequentUpdates 与后台模式；iOS 16.2 以下
+	     或用户关掉实时活动时由 Dart 侧静默降级为"只有通知"。 -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

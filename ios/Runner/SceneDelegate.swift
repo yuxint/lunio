@@ -7,6 +7,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var documentPickerMode: DocumentPickerMode?
   private var nativeFilesChannel: FlutterMethodChannel?
   private var nativeNotificationSettingsChannel: FlutterMethodChannel?
+  private var nativeLiveActivitiesChannel: FlutterMethodChannel?
 
   private enum DocumentPickerMode {
     case exportJson
@@ -23,6 +24,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     DispatchQueue.main.async { [weak self] in
       self?.configureNativeFilesChannelIfNeeded()
       self?.configureNativeNotificationSettingsChannelIfNeeded()
+      self?.configureNativeLiveActivitiesChannelIfNeeded()
     }
   }
 
@@ -30,6 +32,7 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     super.sceneDidBecomeActive(scene)
     configureNativeFilesChannelIfNeeded()
     configureNativeNotificationSettingsChannelIfNeeded()
+    configureNativeLiveActivitiesChannelIfNeeded()
   }
 
   private func configureNativeFilesChannelIfNeeded() {
@@ -76,6 +79,73 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
       }
     }
     nativeNotificationSettingsChannel = channel
+  }
+
+  private func configureNativeLiveActivitiesChannelIfNeeded() {
+    guard nativeLiveActivitiesChannel == nil else {
+      return
+    }
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "lunio/native_live_activities",
+      binaryMessenger: controller.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      self?.handleLiveActivityCall(call, result: result)
+    }
+    nativeLiveActivitiesChannel = channel
+  }
+
+  /// 停车实时活动通道分发（Dart 侧桥接 lib/core/platform/native_live_activities.dart）。
+  /// 时间戳统一用毫秒 double 跨通道。iOS < 16.2（staleDate 门槛，ADR 0012）
+  /// 与参数缺失一律按"未启用"回 false，Dart 侧静默降级为"只有通知"。
+  private func handleLiveActivityCall(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    guard #available(iOS 16.2, *) else {
+      result(false)
+      return
+    }
+    switch call.method {
+    case "start":
+      guard
+        let arguments = call.arguments as? [String: Any],
+        let startedAtMs = arguments["startedAtMs"] as? Double,
+        let endsAtMs = arguments["endsAtMs"] as? Double
+      else {
+        result(FlutterError(
+          code: "invalid_arguments",
+          message: "Missing live activity timestamps",
+          details: nil
+        ))
+        return
+      }
+      ParkingCountdownActivityController.start(
+        startedAt: Date(timeIntervalSince1970: startedAtMs / 1000),
+        endsAt: Date(timeIntervalSince1970: endsAtMs / 1000)
+      ) { started in
+        result(started)
+      }
+    case "markExpired":
+      ParkingCountdownActivityController.markExpired { updated in
+        result(updated)
+      }
+    case "stop":
+      // 等全部活动确认撤场再回包：Dart 侧 await stop() 返回时岛已撤
+      //（真机反馈：fire-and-forget 在随即退后台时会留下残卡）。
+      ParkingCountdownActivityController.stopAll {
+        result(true)
+      }
+    case "status":
+      ParkingCountdownActivityController.status { snapshot in
+        result(snapshot)
+      }
+    default:
+      result(FlutterMethodNotImplemented)
+    }
   }
 
   private func openNotificationSettings(result: @escaping FlutterResult) {

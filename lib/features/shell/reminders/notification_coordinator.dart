@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/notifications/lunio_notification_service.dart';
+import '../../../core/platform/native_live_activities.dart';
 import '../../../data/preferences/app_preferences.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
@@ -53,6 +54,7 @@ final notificationCoordinatorProvider = Provider<LunioNotificationCoordinator>(
       ref: ref,
       preferences: ref.watch(lunioPreferencesProvider),
       service: ref.watch(lunioNotificationServiceProvider),
+      liveActivities: ref.watch(nativeLiveActivitiesProvider),
     );
   },
 );
@@ -64,11 +66,16 @@ class LunioNotificationCoordinator {
     required this.ref,
     required this.preferences,
     required this.service,
+    required this.liveActivities,
   });
 
   final Ref ref;
   final LunioPreferences preferences;
   final LunioNotificationService service;
+
+  /// 停车实时活动桥（iOS Live Activity / 灵动岛，ADR 0012）。非 iOS
+  /// 平台方法自禁用，本类所有实时活动编排在其他平台均为无操作。
+  final NativeLiveActivities liveActivities;
 
   // ---- 权限真值协议（偏好 key 常量与编解码在 LunioPreferences 登记）----
 
@@ -201,11 +208,13 @@ class LunioNotificationCoordinator {
   }
 
   /// 清空数据的收尾模板：升代数 → 执行清库（偏好表一并删除，倒计时偏好
-  /// 和通知开关都不复存在）→ 取消停车 9001~9004 与保养/里程 8000/8900 系
-  /// 残留通知。清库失败（异常）时上抛异常、不取消。
+  /// 和通知开关都不复存在）→ 撤停车实时活动 → 取消停车 9001~9004 与
+  /// 保养/里程 8000/8900 系残留通知。清库失败（异常）时上抛异常、不撤
+  /// 不取消（数据未变）。
   Future<void> runAllDataClear(Future<void> Function() clearAllData) async {
     _bumpNotificationSyncGeneration();
     await clearAllData();
+    await liveActivities.stop();
     await service.cancelParkingCountdownNotification();
     await service.cancelLunioNotifications();
   }
@@ -227,6 +236,15 @@ class LunioNotificationCoordinator {
     // 都不影响临界倒计时的剩余时长判断。
     final evaluatedAt = DateTime.now();
     final syncGeneration = ref.read(notificationSyncGenerationProvider);
+    // 实时活动与系统通知开关无关（系统设置里是两个独立能力，ADR 0012
+    // 决定 6），保存即启动/重建；到点时刻已过则跳过——与通知调度的
+    // "到点已过静默 return" 同一口径（R17）。
+    if (evaluatedAt.isBefore(countdown.endsAt)) {
+      await liveActivities.start(
+        startedAt: countdown.startedAt,
+        endsAt: countdown.endsAt,
+      );
+    }
     final settings = await ref.read(notificationSettingsProvider.future);
     if (!settings.systemNotificationsEnabled) {
       return;
@@ -247,13 +265,82 @@ class LunioNotificationCoordinator {
   }
 
   /// 停车倒计时已清除的通知收尾（调用方先删偏好并失效
-  /// parkingCountdownProvider 再调用）：系统通知开着才取消 9001~9004
-  /// （关着时本来就没人调度过）。
+  /// parkingCountdownProvider 再调用）：撤停车实时活动（不受通知开关
+  /// 影响）；系统通知开着才取消 9001~9004（关着时本来就没人调度过）。
   Future<void> onParkingCountdownCleared() async {
+    await liveActivities.stop();
     final settings = await ref.read(notificationSettingsProvider.future);
     if (settings.systemNotificationsEnabled) {
       await service.cancelParkingCountdownNotification();
     }
+  }
+
+  // ---- 停车实时活动对账（ADR 0012） ----
+
+  /// 停车实时活动对账三态。冷启动与回前台由 NotificationSyncController
+  /// 调用（保存/清除/清空路径各自直接启停，不走这里），覆盖三类漂移：
+  ///  - 偏好无倒计时 + 系统有活动 → 撤（偏好已清而活动漏撤的残留）；
+  ///  - 偏好有 + 系统无活动 → 剩余时间为正才补启（手机重启丢活动、系统
+  ///    寿命上限收回；已过期的倒计时不再补一张死卡）；
+  ///  - 都有但形态漂移 → 到点已过而卡片还是倒计时形态 → 切正计时（App
+  ///    内卡片同款"到期红正计时"的岛端对应）；到点时刻对不上（偏好被改
+  ///    而活动没跟上，正常路径保存时会重建，这里是竞态兜底）→ 没过期
+  ///    重建、已过期撤。
+  Future<void> reconcileParkingLiveActivity(ParkingCountdown? countdown) async {
+    final generation = ref.read(notificationSyncGenerationProvider);
+    final snapshot = await liveActivities.status();
+    // status 往返期间发生恢复备份/清空数据（代数已变）→ 放弃本轮，
+    // 下一个对账点再对。
+    if (ref.read(notificationSyncGenerationProvider) != generation) {
+      return;
+    }
+    // 非 iOS / 通道未装配：能力整体缺席，视为无活动且永不补启。
+    if (snapshot == null) {
+      return;
+    }
+    if (countdown == null) {
+      if (snapshot.running) {
+        await liveActivities.stop();
+      }
+      return;
+    }
+    final expired = DateTime.now().isAfter(countdown.endsAt);
+    if (!snapshot.running) {
+      if (!expired) {
+        await liveActivities.start(
+          startedAt: countdown.startedAt,
+          endsAt: countdown.endsAt,
+        );
+      }
+      return;
+    }
+    // 活动在跑：先比到点时刻（毫秒精度，快照经通道序列化被截断到毫秒）。
+    final sameEndsAt =
+        snapshot.endsAt?.millisecondsSinceEpoch ==
+        countdown.endsAt.millisecondsSinceEpoch;
+    if (!sameEndsAt) {
+      if (expired) {
+        await liveActivities.stop();
+      } else {
+        await liveActivities.start(
+          startedAt: countdown.startedAt,
+          endsAt: countdown.endsAt,
+        );
+      }
+      return;
+    }
+    if (expired && !snapshot.expired) {
+      await liveActivities.markExpired();
+    }
+  }
+
+  /// 停车实时活动到点切换：把进行中的活动切成"已超时"正计时形态
+  /// （状态转红）。App 在前台时由停车卡片的秒时钟在跨越到点的那一刻
+  /// 经动作层调用；App 不在前台时系统不会唤醒 App（本地无定时更新
+  /// 手段），由回前台/冷启动的对账兜底。原生侧幂等（无活动在跑/已切
+  /// 过均无害），重复触发不需要去重。
+  Future<void> markParkingLiveActivityExpired() async {
+    await liveActivities.markExpired();
   }
 
   // ---- 提醒静默协议（"稍后提醒" / "知道了"） ----

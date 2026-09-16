@@ -58,6 +58,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
+- `lib/core/platform/native_live_activities.dart`：停车倒计时 iOS 实时活动（灵动岛/锁屏卡片）的原生桥（ADR 0012）。Swift 执行体在 `ios/Runner/ParkingCountdownActivityController.swift`，卡片 UI 在 Widget Extension target `ios/ParkingCountdownExtension/`，通道经 SceneDelegate 挂 `lunio/native_live_activities`；启停/对账编排挂通知协调器。零更新渲染（系统自动走时），iOS 16.2 以下或系统关实时活动静默降级；本机模拟器构建不可用，外观只能真机验收。
 - `lib/core/notifications/lunio_notification_service.dart`：系统通知、保养提醒、里程更新提醒和停车倒计时通知。普通可实例化类（生产用 `LunioNotificationService.instance` 单例），经 `lunioNotificationServiceProvider` 装配，测试逐用例覆盖新实例。
 - `lib/core/platform/native_notification_settings.dart`：原生通知设置跳转桥接。
 - `test/domain/`：领域规则测试。
@@ -77,7 +78,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用主仓库（`LunioRepository`）与 `providers.dart` 里的现有模式。读偏好/写偏好走 `LunioPreferences` typed 方法。
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。
 - 停车倒计时是临时偏好状态，落在 `app_preferences.parkingCountdown`，不进入 JSON 备份。保存、结束、关闭系统通知、清空数据和恢复备份都要同步考虑通知清理。
-- 当前仓库没有 iOS Live Activity / Widget Extension 接线；不要把历史验证过的 Live Activity 方案写成当前已落地能力。
+- 停车倒计时在 iOS 16.2+ 有实时活动（Live Activity：锁屏卡片 + 灵动岛 + 通知中心顶部，ADR 0012）：Widget Extension target `ParkingCountdownExtension` 与 Attributes 共享文件（`ParkingCountdownAttributes.swift`）同时编进 Runner 与扩展两个 target，改动活动数据形态要两侧同步；编排（保存→启、清除/清空→撤、删车/恢复备份/通知总开关→不动、冷启/回前台对账三态）挂在通知协调器，不要再在 UI 层碰通道。本机模拟器构建不可用（运行时/SDK 错配），实时活动外观与灵动岛动画只能真机验收。
 
 ## UI 与交互约定
 
