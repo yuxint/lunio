@@ -370,7 +370,11 @@ Parking countdown is a temporary but high-priority reminder-screen utility. It s
 
 ### Records
 
-Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color. Record cards lazily build as the user scrolls (sliver lists with stable per-record keys). Item name pills inside a card flow with a 6px gap via `Wrap`; they wrap naturally without forced row packing. While the backing data is loading, the whole page shows the shared centered loading placeholder, and load failures show the shared error card — all three main pages use the same loading/error treatment.
+Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color. Record cards lazily build as the user scrolls (sliver lists with stable per-record keys). Item name pills inside a card flow with a 6px gap via `Wrap`; they wrap naturally without forced row packing. While the backing data is loading, the whole page shows the shared centered loading placeholder, and load failures show the shared error card — all three main pages use the same loading/error treatment. A single compact summary row ("this year's spend") sits at the top of the records header when records exist and links to the cost statistics page.
+
+### Cost Statistics
+
+The cost statistics page is a pushed subpage (not a tab) reached from the records header row or the profile page. It is read-only aggregation rendered with self-drawn primitives — no chart library. Charts use only existing tokens: horizontal bars are rounded primary-color bars at ~82% alpha scaled to the in-section maximum (zero value draws nothing), and the 12-month trend is a row of equal-width mini columns with shallow neutral stubs for empty months and the current month labeled in primary. Each section lives in a standard card with a bold small-caps-style header; exact amounts always accompany bars, with the trend section showing only a peak value in its header trailing. Scope switching uses the records-style chips (selected = soft primary fill).
 
 ### Bottom Navigation
 

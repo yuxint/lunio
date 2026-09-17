@@ -11,6 +11,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
@@ -92,6 +93,12 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
         LunioSection(
           title: '数据与工具',
           children: [
+            ProfileSettingRow(
+              title: '花费统计',
+              subtitle: '总花费、按年对比、项目占比、月度走势',
+              trailingLabel: '查看',
+              onTap: () => context.push('/cost-stats'),
+            ),
             ProfileSettingRow(
               title: '通知提醒',
               subtitle: notificationSettings.when(

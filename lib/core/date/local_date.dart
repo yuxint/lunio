@@ -58,11 +58,17 @@ class LocalDate implements Comparable<LocalDate> {
   }
 
   /// 加 n 个月，月末自动钳制：1.31 + 1月 → 2.28/2.29（与 Java 的
-  /// LocalDate.plusMonths 行为一致）。时间进度计算的到期日靠它保证正确。
+  /// LocalDate.plusMonths 行为一致，负数月份即往前推）。时间进度计算的
+  /// 到期日靠它保证正确。
   LocalDate addMonths(int months) {
     final targetMonthIndex = month - 1 + months;
-    final targetYear = year + targetMonthIndex ~/ 12;
-    final targetMonth = targetMonthIndex % 12 + 1;
+    // Dart 的 ~/ 向零截断而 % 是欧几里得余数，负数下二者不配对
+    // （-10 ~/ 12 = 0 但 -10 % 12 = 2），直接组合会把"往前推月"算成
+    // 年份不动。先取余数定月，再用（索引-余数）补年份偏移，正负月份
+    // 都等价于 floor 语义（2026-02-01 + (-11)月 = 2025-03-01）。
+    final monthInYear = targetMonthIndex % 12;
+    final targetYear = year + (targetMonthIndex - monthInYear) ~/ 12;
+    final targetMonth = monthInYear + 1;
     final targetDay = day.clamp(1, _daysInMonth(targetYear, targetMonth));
     return LocalDate(targetYear, targetMonth, targetDay);
   }

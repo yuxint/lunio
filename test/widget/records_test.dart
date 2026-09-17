@@ -154,7 +154,9 @@ void main() {
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
     expect(find.textContaining('2026-05-19 · 13,000 km'), findsOneWidget);
-    expect(find.textContaining('¥428.00'), findsNothing);
+    // 按项目行卡不展示金额；屏上唯一的 ¥428.00 是头部"今年花费"汇总行
+    // （2026-05-19 记录在生效今天所在年）。
+    expect(find.textContaining('¥428.00'), findsOneWidget);
   });
 
 
@@ -480,8 +482,9 @@ void main() {
     expect(find.text('保养记录'), findsNWidgets(2));
     expect(find.textContaining('整条记录总费用'), findsOneWidget);
     expect(find.text('总费用'), findsOneWidget);
-    // 卡片上的总费用与弹窗指标格各一份（sheet 打开时卡片仍在树下）。
-    expect(find.text('¥280.00'), findsNWidgets(2));
+    // 卡片上的总费用与弹窗指标格各一份，加头部"今年花费"汇总行一份
+    // （记录日期在生效今天所在年），共三处（sheet 打开时卡片仍在树下）。
+    expect(find.text('¥280.00'), findsNWidgets(3));
     expect(find.text('项目费用'), findsOneWidget);
     expect(find.text('¥230.00'), findsOneWidget);
     expect(find.textContaining('材料 ¥150.00 / 工时 ¥80.00'), findsOneWidget);
@@ -515,9 +518,10 @@ void main() {
     expect(find.text('¥80.00'), findsOneWidget);
     expect(find.text('项目费用'), findsOneWidget);
     expect(find.text('¥230.00'), findsOneWidget);
-    // 按项目弹窗不再展示整条记录总费用（格子和副标题都已移除）。
+    // 按项目弹窗不再展示整条记录总费用（格子和副标题都已移除）；屏上
+    // 唯一的 ¥280.00 是头部"今年花费"汇总行（记录日期在生效今天所在年）。
     expect(find.text('总费用'), findsNothing);
-    expect(find.text('¥280.00'), findsNothing);
+    expect(find.text('¥280.00'), findsOneWidget);
     expect(find.textContaining('整条记录总费用'), findsNothing);
     // 单项目费用本身一致（230 = 150 + 80），无警告角标。
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);

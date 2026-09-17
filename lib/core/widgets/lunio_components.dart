@@ -28,6 +28,7 @@ class LunioPage extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.leading,
     this.trailing,
     this.bottomPadding = 102,
     required this.children,
@@ -38,6 +39,7 @@ class LunioPage extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.leading,
     this.trailing,
     this.bottomPadding = 102,
     required this.slivers,
@@ -45,6 +47,9 @@ class LunioPage extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+
+  /// 顶部栏左侧组件（pushed 子页的返回键用；tab 页不传，保持大标题贴左）。
+  final Widget? leading;
   final Widget? trailing;
   final double bottomPadding;
   final List<Widget> children;
@@ -65,6 +70,7 @@ class LunioPage extends StatelessWidget {
                     LunioTopBar(
                       title: title,
                       subtitle: subtitle,
+                      leading: leading,
                       trailing: trailing,
                     ),
                     const SizedBox(height: 12),
@@ -88,17 +94,21 @@ class LunioPage extends StatelessWidget {
   }
 }
 
-/// 页面顶部标题栏（大标题 + 可选副标题 + 右侧动作区）。
+/// 页面顶部标题栏（可选 leading 位 + 大标题 + 可选副标题 + 右侧动作区）。
+/// leading 给 pushed 子页放返回键（tab 页不传）；iOS 右滑返回由路由层
+/// 默认转场天然支持，不在这里做。
 class LunioTopBar extends StatelessWidget {
   const LunioTopBar({
     super.key,
     required this.title,
     this.subtitle,
+    this.leading,
     this.trailing,
   });
 
   final String title;
   final String? subtitle;
+  final Widget? leading;
   final Widget? trailing;
 
   @override
@@ -107,6 +117,10 @@ class LunioTopBar extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        if (leading != null) ...[
+          leading!,
+          const SizedBox(width: 10),
+        ],
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

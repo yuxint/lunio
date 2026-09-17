@@ -56,9 +56,9 @@
 
 | 函数 | 失效内容 | 谁在调 |
 |---|---|---|
-| `invalidateVehicleProviders` (:351) | 车辆/车型/项目/记录/加油记录 8 个 provider | 动作层车辆/项目/记录类函数 |
-| `invalidatePreferenceProviders` (:387) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
-| `invalidateAllAppDataProviders` (:408) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
+| `invalidateVehicleProviders` (:363) | 车辆/车型/项目/记录（含按车记录 family）/加油记录 9 个 provider | 动作层车辆/项目/记录类函数 |
+| `invalidatePreferenceProviders` (:402) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
+| `invalidateAllAppDataProviders` (:423) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
 
 **Provider 依赖图**（`lib/app/providers.dart`，文件头有注释版；仓库按域拆分后：目录/加油/备份/主仓库各自独立挂数据库，偏好类 provider 统一挂偏好门面；**油价域 provider 定义在 `lib/features/shell/fuel/fuel_prices.dart`**，这里只画在本文件的锚点）：
 
@@ -77,7 +77,9 @@ appDatabaseProvider(:180)
   │           └─→ carsProvider(:261)（另挂主仓库）
   │                 └─→ appliedCarProvider(:270)（另挂主仓库）
   │                       ├─→ appliedCarMaintenanceItemsProvider(:288)（另挂主仓库）
-  │                       ├─→ appliedCarRecordsProvider(:298)（另挂主仓库）
+  │                       ├─→ appliedCarRecordsProvider(:310)（另挂主仓库）
+  │                       ├─→ recordsForCarProvider(:302)（另挂主仓库，按车记录
+  │                       │   family——花费统计页单车/全部作用域，2026-09-17）
   │                       └─→ appliedCarFuelRecordsProvider(:159)
   │                             （另挂加油仓库 family :151，ADR 0014）
   ├─→ fuelRepositoryProvider(:200)（另挂偏好门面）
@@ -224,7 +226,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 | 用户操作 | 代码位置 | 做了什么 |
 |---|---|---|
-| 切换"按周期/按项目" | `records_page.dart:56`（LunioSegmentedControl） | `selectedMode` 0/1 |
+| 切换"按周期/按项目" | `records_page.dart:59`（LunioSegmentedControl） | `selectedMode` 0/1 |
 | 年份/项目多选筛选 | `records_page.dart`（两个 `_FilterBar`，已回收为页面私有）+ `record_rows.dart`（口径规则） | `selectedYears`/`selectedItemIds` 集合仅由用户点击变更；渲染与过滤用派生集合（自动忽略已失效的年份/项目），下标映射、toggle 与有效性过滤收在 `record_rows.dart`（`validSelections`/`filterBarSelectionIndexes`/`toggleSetValue`） |
 | 按周期视图 | `records_page.dart → RecordCycleCard`（SliverList.builder 逐条懒加载，ValueKey('record-<id>')） | 一条记录一张卡（日期+金额+里程+备注+项目 pills+编辑/删除）；**整卡可点 → 记录详情弹窗（§4.4，ADR 0010）** |
 | 按项目视图 | `records_page.dart → RecordItemRowCard`（同样懒加载） | 记录×项目展开成行（行组装在 `record_rows.dart → buildRecordItemRows`：记录序×itemIds 序，项目已删的行 item 为 null、渲染兜底"未知项目"），可单独删某项；**整行可点 → 只看该项目的详情弹窗（§4.4）** |
@@ -264,11 +266,26 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 按周期（整条记录） | 标题"保养记录" + 副标题"整条记录总费用 ¥xx" + 日期/里程/总费用指标格 + 备注（有才显示）+ 项目费用清单（每勾选项目一行：项目名 + 项目费用，未填显示"—"，填了材料/工时的加小字"材料 xx / 工时 xx"） | 展示永远取存储值：单项目以项目费用为准、整条记录以总费用为准；不一致的项目费用/总费用加黄色警告角标，**不做读时修正** |
 | 按项目（单项目） | 标题=项目名（无副标题）+ 日期/里程指标格 + 距上次时间/里程指标格 + 材料费/工时费一行（两者都未填整行不显示，只填一格另一格显示"—"）+ 项目费用格（保留不一致黄三角）。距上次参照点 = 该项目**上一条记录 → 本条**（`RecordRules.previousRecordForItem`：严格早于本条日期的最新一条，同车同日唯一保证可唯一定位；项目首条无上一条 → 两格都显示"—"） | 同上；差值经 `RecordRules.daysSinceLast` / `kmSinceLast` 计算，负值（补录乱序）/无上一条在 domain 折叠成 null，`formatters.dart → formatDaysSinceLast` / `formatKmSinceLast` 只把 null 显示"—" |
 
+### 4.5 花费统计（今年花费汇总行 + /cost-stats 统计页，2026-09-17 新增）
+
+**纯读取聚合**：不动数据库、不走动作层（无写点）。聚合口径唯一实现在 `lib/features/shell/records/cost_stats.dart`（纯函数 `buildCostStats`，单测含变异验证 `test/features/cost_stats_test.dart`）：**总额/年度/月度用记录总费用（权威值）**，与项目费用合计不一致仍按总费用（ADR 0010 口径）；**项目占比 = 项目费用 ?? 材料+工时**（缺失一边按 0），三项全缺跳过该行，按**项目名**聚合（清单外归"未知项目"，多车同名自然合并）；近 12 个月窗口含当月往前推 11 个月（依赖 `LocalDate.addMonths` 负数月份，2026-09-17 修复其 floor 语义，回归测试在 `test/domain/app_date_context_test.dart`）。
+
+| 用户操作 | 代码位置 | 做了什么 |
+|---|---|---|
+| 记录页头部"今年花费"汇总行（**仅当前车有记录时显示**，金额=今年记录总费用） | `records_page.dart:1177 → _CostSummaryRow`（`costCentsForYear` 算今年值；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
+| 我的页「数据与工具」首行"花费统计 → 查看" | `profile_page.dart`（`ProfileSettingRow`，onTap `context.push`） | 进同一统计页 |
+| 统计页默认作用域 | `cost_stats_page.dart → CostStatsPageState.build` | 默认当前应用车辆（解析完成前整页 loading）；无车时"全部"落空态 |
+| 切车辆 chips（每车一枚 + "全部"） | 同页 `_buildScopeChips` → `setState(selectedCarId)` | 作用域是页面 state；数据接缝 `costStatsDataProvider`（**family，key=车 id / null=全部**）：单车直取按车 family，"全部"逐车合并——复用 `recordsForCarProvider` / `maintenanceItemsForCarProvider`，无新 SQL；写库后经 `invalidateVehicleProviders` 整族失效传导重算 |
+| 统计页内容（自绘横条，无图表库） | 同页 `_buildSummaryCard` / `_buildYearCard` / `_buildItemCard` / `_buildTrendCard` | 汇总卡（总花费+今年花费）→ 按年横条（年份升序，条宽=相对最大年）→ 项目占比 Top 5（`costStatsTopItemCount`，花费降序、平局按名称）→ 近 12 个月小柱（旧→新，当月高亮，标题行右侧"峰值"）；无记录 → 空态卡（"暂无保养记录…"），无车 → "请先新增车辆" |
+| 返回 | 顶部栏 leading 返回键（`context.pop`）+ iOS 右滑返回（默认转场天然支持） | — |
+
+**路由**：`lib/app/app_router.dart:61 → /cost-stats` 是第一个**不挂主壳层的 pushed 子页**（不渲染 AppShell 无底部导航，页面自带 Scaffold；builder 默认 MaterialPage 转场）。`LunioPage`/`LunioTopBar`为此增加可选 `leading` 位（`lib/core/widgets/lunio_components.dart`）。widget 测试 `test/widget/cost_stats_test.dart`（渲染/切车/空态/两入口跳转/返回键）。
+
 ---
 
 ## 5. 我的页（/me）
 
-页面装配：`lib/features/shell/profile/profile_page.dart:20 → ProfilePreviewPage`（结构：我的车辆 / 数据与工具 / 版本 footer）。
+页面装配：`lib/features/shell/profile/profile_page.dart:27 → ProfilePreviewPage`（结构：我的车辆 / 数据与工具——首行「花费统计」进统计页（§4.5）/ 版本 footer）。
 
 ### 5.1 车辆管理
 

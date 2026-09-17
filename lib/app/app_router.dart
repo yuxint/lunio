@@ -8,20 +8,26 @@
 // 导航里（开关在开发者模式 → 我的页）；路由本身常驻，开关关闭时
 // AppShell 会把 /fuel 重定向回 /me（见 app_shell.dart）。
 //
+// /cost-stats（花费统计）是第一个不挂主壳层的 pushed 子页：不渲染
+// AppShell（无底部导航），从记录页汇总行/我的页设置行 push 进栈，
+// 默认转场（MaterialPage，iOS 右滑返回天然可用），返回键在页面
+// LunioTopBar 的 leading 位。其余 tab 路由约定不变。
+//
 // 关键设计：appRouter 是**顶层全局单例**（不是每次 build 新建）。
 // 这样主题切换时 MaterialApp.router 重建也不会重建路由对象，
 // 避免切主题导致页面跳回默认 tab（/reminders）。
 import 'package:go_router/go_router.dart';
 
 import '../features/shell/app_shell.dart';
+import '../features/shell/records/cost_stats_page.dart';
 
 /// 全局路由单例。修改主题偏好 → LunioApp 重建 → 复用同一个 router 实例
 /// → 当前所在页面保持不变。不要把它挪进任何 Widget/Provider 内部。
 final appRouter = buildAppRouter();
 
-/// 构建 GoRouter 实例。四个 GoRoute 分别对应底部导航的入口
-/// （selectedIndex 语义：0=提醒 1=记录 2=加油 3=我的，加油项是否
-/// 显示由 AppShell 按开关决定）。
+/// 构建 GoRouter 实例。四个 GoRoute 对应底部导航的入口（selectedIndex
+/// 语义：0=提醒 1=记录 2=加油 3=我的，加油项是否显示由 AppShell 按开关
+/// 决定），另有一个 pushed 子页 /cost-stats（花费统计）。
 GoRouter buildAppRouter() {
   return GoRouter(
     // 冷启动后的初始页面：提醒页（产品默认首屏）。
@@ -48,6 +54,12 @@ GoRouter buildAppRouter() {
         path: '/me',
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: AppShell(selectedIndex: 3)),
+      ),
+      GoRoute(
+        // pushed 子页先例：用 builder（默认 MaterialPage 转场），不用
+        // NoTransitionPage——进入/返回要有页面推入动画，区别于切 tab。
+        path: '/cost-stats',
+        builder: (context, state) => const CostStatsPage(),
       ),
     ],
   );

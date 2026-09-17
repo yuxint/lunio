@@ -24,6 +24,17 @@ void main() {
     expect(const LocalDate(2026, 1, 31).addMonths(1).toString(), '2026-02-28');
   });
 
+  test('add negative months steps back across year with floor semantics', () {
+    // 花费统计的"近 12 个月"窗口靠负数月份往前推（2026-05 - 11月 =
+    // 2025-06）。Dart ~/ 向零截断与 % 非负余数不配对，负数月份曾算成
+    // 年份不动（2026-05 - 11月 = 2026-06），此用例锁住修复。
+    expect(const LocalDate(2026, 5, 19).addMonths(-11).toString(), '2025-06-19');
+    expect(const LocalDate(2026, 2, 1).addMonths(-11).toString(), '2025-03-01');
+    expect(const LocalDate(2026, 1, 15).addMonths(-1).toString(), '2025-12-15');
+    // 往前推也做月末钳制（3.31 - 1月 → 2.28）。
+    expect(const LocalDate(2026, 3, 31).addMonths(-1).toString(), '2026-02-28');
+  });
+
   test('add days normalizes across month and year boundaries', () {
     // R34：snooze 的 +15 天改走 LocalDate 日历加减，锁定跨月/跨年归一化。
     expect(const LocalDate(2026, 1, 31).addDays(1).toString(), '2026-02-01');

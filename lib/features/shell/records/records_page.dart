@@ -36,6 +36,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
@@ -48,6 +49,7 @@ import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
+import 'cost_stats.dart';
 import 'record_cost_form_controller.dart';
 import 'record_detail_sheet.dart';
 import 'record_interval_updates.dart';
@@ -106,6 +108,14 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           items: items,
           selections: selections,
         );
+        // 头部"今年花费"汇总行（记录非空才显示，整行可点进花费统计页）。
+        // 生效今天未就绪时兜底系统日期——与我的页 today 取值同款模式。
+        final today = ref
+            .watch(effectiveTodayProvider)
+            .maybeWhen(
+              data: (value) => value,
+              orElse: () => LocalDate.fromDateTime(DateTime.now()),
+            );
         return LunioPage.slivers(
           title: '保养记录',
           slivers: [
@@ -113,6 +123,13 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (value.isNotEmpty) ...[
+                    _CostSummaryRow(
+                      thisYearCents: costCentsForYear(value, today.year),
+                      onTap: () => context.push('/cost-stats'),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   LunioSegmentedControl(
                     values: const ['按周期', '按项目'],
                     selectedIndex: selectedMode,
@@ -1154,6 +1171,60 @@ Future<void> deleteMaintenanceRecordItem(
 // ---- 文件内私有组件（§5.2 回收：仅本页消费的不进共享层）----
 // 金额展示/解析（formatMoneyCents/parseMoneyCents/formatMoneyText）
 // 已升入共享 formatters.dart，经 shell_shared.dart barrel 使用。
+
+/// 头部"今年花费"汇总行（记录非空才显示）：金额口径见 cost_stats.dart
+/// （记录总费用权威值），整行可点进花费统计页（/cost-stats）。
+class _CostSummaryRow extends StatelessWidget {
+  const _CostSummaryRow({required this.thisYearCents, required this.onTap});
+
+  final int thisYearCents;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return LunioCard(
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Text(
+                  '今年花费',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: tokens.muted,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  formatMoneyCents(thisYearCents),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: tokens.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '花费统计',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: tokens.muted,
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 18, color: tokens.subtle),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 详细模式下单个项目的费用输入行（ADR 0010）：项目名 + 材料/工时/
 /// 项目费用三个紧凑数字框。项目费用与材料+工时不一致时项目费用红字

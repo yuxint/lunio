@@ -10,7 +10,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - Flutter / Dart
 - Riverpod：依赖注入、偏好与业务数据状态
-- go_router：平级入口路由，固定路径为 `/reminders`、`/records`、`/me`，另有条件路径 `/fuel`（加油预测开关打开时才出现在底部导航，路由常驻）
+- go_router：平级入口路由，固定路径为 `/reminders`、`/records`、`/me`，另有条件路径 `/fuel`（加油预测开关打开时才出现在底部导航，路由常驻），以及第一个不挂主壳层的 pushed 子页 `/cost-stats`（花费统计，默认转场，返回键在 LunioTopBar 的 leading 位）
 - Drift + SQLite：本地数据库、唯一约束、事务、备份恢复
 - Material 3 + 自定义 `LunioTokens`：浅色/深色主题 token
 
@@ -24,7 +24,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、偏好门面、各域仓库（主仓库/目录/加油/备份）、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好、通知服务等（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `features/shell/fuel/fuel_prices.dart`，与本文件互相 import 供失效名单逐出）。
 - `lib/features/shell/app_shell.dart`：主壳层入口，保留平级入口页面挂载（加油项按开关条件显示）、底部导航、生命周期监听和提醒通知同步触发。
 - `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒行组装、通知内容组装与调度 helper、桌面小组件快照组装与同步（`widget_snapshot.dart` / `widget_snapshot_controller.dart`）。
-- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。
+- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互；花费统计的聚合纯函数（`cost_stats.dart`，总额/年度/月度用记录总费用权威值、项目占比按"项目费用 ?? 材料+工时、再缺跳过"）与独立统计页（`cost_stats_page.dart`，路由 `/cost-stats`）也在此。
 - `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档；加油记录卡与记一笔/编辑/删除表单在 `fuel_records_card.dart`，满箱段油耗口径纯函数在 domain 的 `FuelRules`）；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`；加油记录数据模型与满箱段油耗口径见 `docs/adr/0014`。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单提交运行器（`form_submit.dart`，`LunioFormSubmit` mixin：saving/errorText 生命周期 + friendlyError 翻译，新表单直接混入）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`）。
