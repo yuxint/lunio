@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
+import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/core/theme/lunio_tokens.dart';
 import 'package:lunio/features/shell/shared/shared_widgets.dart';
 
@@ -634,4 +635,249 @@ void main() {
     expect(find.text('手填'), findsOneWidget);
     expect(find.text('重置'), findsNothing);
   });
+
+  // ---- 加油记录卡（ADR 0014，票 05）----
+
+  /// 建车 + 打开开发者/加油开关 + 装配 App 并切到加油页。
+  /// 加油记录的播种必须在装配前完成（[buildRecords] 回调拿到 carId 后
+  /// 同步写库，provider 首读才能看到），与夹具"播种在装配前"约定一致。
+  Future<({TestRepositories repository, int carId})> pumpFuelPage(
+    WidgetTester tester,
+    List<FuelRecord> Function(int carId) buildRecords,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    final carId = await repository.createCarWithMaintenanceItems(
+      Car(
+        brand: '本田',
+        model: '22款思域',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2023, 8, 12),
+        tankCapacityLiters: 55,
+        sync: sync,
+      ),
+      [
+        MaintenanceItem(
+          carsId: 0,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          timeIntervalMonths: null,
+          notOverdueUpperLimit: 100,
+          overdueUpperLimit: 125,
+          sortOrder: 0,
+          sync: sync,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    for (final record in buildRecords(carId)) {
+      await repository.fuelRepository.saveFuelRecord(record);
+    }
+    await pumpApp(tester, database: database);
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+    return (repository: repository, carId: carId);
+  }
+
+  /// 加油记录播种造数（金额/升数给常用默认值，fullTank 默认加满）。
+  FuelRecord fuelSeed(
+    int carId, {
+    required String date,
+    required int mileageKm,
+    double volumeLiters = 40,
+    int totalCostCents = 30000,
+    bool fullTank = true,
+  }) {
+    return FuelRecord(
+      carId: carId,
+      date: LocalDate.parse(date),
+      mileageKm: mileageKm,
+      volumeLiters: volumeLiters,
+      totalCostCents: totalCostCents,
+      fullTank: fullTank,
+    );
+  }
+
+  testWidgets('fuel records card shows empty state and saves via form', (
+    tester,
+  ) async {
+    final fixture = await pumpFuelPage(tester, (carId) => []);
+
+    // 页面标题与底部导航都叫"加油"（文案从"加油预测"改名，ADR 0014）。
+    expect(find.text('加油'), findsNWidgets(2));
+    // 空态一行文案占位（不隐藏入口）。
+    expect(find.text('还没有加油记录，点「记一笔」开始记录'), findsOneWidget);
+
+    // 记一笔：表单 sheet，填里程/金额/升数三格（日期默认生效今天）。
+    await tester.tap(find.text('记一笔'));
+    await tester.pumpAndSettle();
+    expect(find.text('记一笔加油'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(0), '12300');
+    await tester.enterText(find.byType(TextField).at(1), '300');
+    await tester.pump();
+    // 单价 = 金额 ÷ 升数，只读展示：升数未填时给占位。
+    expect(find.text('—'), findsWidgets);
+    await tester.enterText(find.byType(TextField).at(2), '40');
+    await tester.pump();
+    expect(find.text('7.50 元/升'), findsOneWidget);
+    // 加满开关默认开。
+    final fullTankSwitch = tester.widget<Switch>(
+      find.byType(Switch).first,
+    );
+    expect(fullTankSwitch.value, isTrue);
+
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    // 行出现（默认日期 2026-05-19 · 12,300 km / ¥300.00）；
+    // 只有一条满箱不闭合 → 无摘要行。
+    expect(find.textContaining('2026-05-19 · 12,300 km'), findsOneWidget);
+    expect(find.text('¥300.00'), findsOneWidget);
+    expect(find.textContaining('平均油耗'), findsNothing);
+    final records = await fixture.repository
+        .listFuelRecordsForCar(fixture.carId);
+    expect(records, hasLength(1));
+    expect(records.first.date, const LocalDate(2026, 5, 19));
+    expect(records.first.mileageKm, 12300);
+    expect(records.first.totalCostCents, 30000);
+    expect(records.first.volumeLiters, 40);
+    expect(records.first.fullTank, isTrue);
+  });
+
+  testWidgets('fuel record row opens edit sheet prefilled and saves changes', (
+    tester,
+  ) async {
+    final fixture = await pumpFuelPage(
+      tester,
+      (carId) => [
+        fuelSeed(carId, date: '2026-05-10', mileageKm: 12000),
+      ],
+    );
+
+    // 行点按进编辑，五项字段预填（单价 = 300 ÷ 40 = 7.50 一并展示）。
+    await tester.tap(find.textContaining('2026-05-10 · 12,000 km'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑加油记录'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '12000'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '300.00'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '40.0'), findsOneWidget);
+    expect(find.text('7.50 元/升'), findsOneWidget);
+
+    // 改里程保存：行与库都更新。
+    await tester.enterText(find.byType(TextField).at(0), '12100');
+    await tester.tap(find.widgetWithText(FilledButton, '保存修改'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2026-05-10 · 12,100 km'), findsOneWidget);
+    final records = await fixture.repository
+        .listFuelRecordsForCar(fixture.carId);
+    expect(records.single.mileageKm, 12100);
+  });
+
+  testWidgets('fuel record delete asks confirmation and removes the row', (
+    tester,
+  ) async {
+    final fixture = await pumpFuelPage(
+      tester,
+      (carId) => [
+        fuelSeed(carId, date: '2026-05-10', mileageKm: 12000),
+      ],
+    );
+
+    await tester.tap(find.textContaining('2026-05-10 · 12,000 km'));
+    await tester.pumpAndSettle();
+    // 编辑态里的"删除"按钮 → 确认框（调用方弹），确认后行与库都清掉。
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除加油记录'), findsOneWidget);
+    // 编辑 sheet 的删除按钮与确认框确认按钮同名，取最后一个（弹窗内）。
+    await tester.tap(find.text('删除').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2026-05-10'), findsNothing);
+    expect(find.text('还没有加油记录，点「记一笔」开始记录'), findsOneWidget);
+    expect(
+      await fixture.repository.listFuelRecordsForCar(fixture.carId),
+      isEmpty,
+    );
+  });
+
+  testWidgets('fuel records list collapses to latest five with expand-all', (
+    tester,
+  ) async {
+    await pumpFuelPage(
+      tester,
+      (carId) => [
+        for (var day = 1; day <= 6; day++)
+          fuelSeed(carId, date: '2026-05-0$day', mileageKm: 10000 + day * 100),
+      ],
+    );
+
+    // 默认收起：只显示最近 5 条（05-02 ~ 05-06），最早的 05-01 折叠。
+    expect(find.textContaining('2026-05-01'), findsNothing);
+    expect(find.textContaining('2026-05-02'), findsOneWidget);
+    expect(find.text('展开全部'), findsOneWidget);
+
+    await tester.tap(find.text('展开全部'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2026-05-01'), findsOneWidget);
+    expect(find.text('收起'), findsOneWidget);
+
+    await tester.tap(find.text('收起'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2026-05-01'), findsNothing);
+  });
+
+  testWidgets(
+    'fuel records card shows average summary and per-row segment consumption',
+    (tester) async {
+      await pumpFuelPage(
+        tester,
+        (carId) => [
+          // 首条满箱：只做锚点（行内无本段油耗）。
+          fuelSeed(
+            carId,
+            date: '2026-05-01',
+            mileageKm: 10000,
+            volumeLiters: 20,
+            totalCostCents: 15000,
+          ),
+          // 中间部分加油：计入段升数/金额，不闭合段。
+          fuelSeed(
+            carId,
+            date: '2026-05-05',
+            mileageKm: 10200,
+            volumeLiters: 10,
+            totalCostCents: 8000,
+            fullTank: false,
+          ),
+          // 闭合条：段 = 40 升 / 500 km → 8.0 L/100km；每公里 0.66 元。
+          fuelSeed(
+            carId,
+            date: '2026-05-10',
+            mileageKm: 10500,
+            volumeLiters: 30,
+            totalCostCents: 25000,
+          ),
+        ],
+      );
+
+      // 摘要行 = 全部有效段聚合（此例只有一段）：8.0 L/100km · ¥0.66。
+      expect(
+        find.text('平均油耗 8.0 L/100km · 每公里 ¥0.66'),
+        findsOneWidget,
+      );
+      // 行内本段油耗只挂在闭合行上（05-10），全局唯一。
+      expect(find.text('8.0 L/100km'), findsOneWidget);
+    },
+  );
 }

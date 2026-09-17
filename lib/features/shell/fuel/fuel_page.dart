@@ -1,4 +1,4 @@
-// 加油页（/fuel）：加油预测的交互页面。
+// 加油页（/fuel）：加油预测 + 加油记录的交互页面。
 //
 // 页面结构：
 //   1. 油价卡：当前省+油品的每升价（手填价 > 数据源价），右上角刷新；
@@ -18,6 +18,8 @@
 //      下次进入定位到该档在第一行）；右上角返回图标滚回默认 50%。
 //      油箱容积在"我的 → 车辆管理"添加/编辑车辆时填写（选填），
 //      没填时本卡显示引导。
+//   3. 加油记录卡：流水 + 满箱段油耗（ADR 0014），实现在
+//      fuel_records_card.dart（本文件只挂载）。
 //   无应用车辆时整页占位提示"请先新增车辆"。
 //
 // 数据规则（设计决定见 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006）：
@@ -44,6 +46,7 @@ import '../../../domain/rules/fuel_rules.dart';
 import '../shared/form_submit.dart';
 import '../shared/formatters.dart';
 import 'fuel_prices.dart';
+import 'fuel_records_card.dart';
 import '../shared/modal_feedback.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
@@ -58,7 +61,9 @@ class FuelPreviewPage extends ConsumerWidget {
         .watch(appliedCarProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
     return LunioPage(
-      title: '加油预测',
+      // 标题从"加油预测"改为"加油"（ADR 0014：新增流水后原名不准确），
+      // 底部导航此前已用"加油"；开关本身仍叫"加油预测"。
+      title: '加油',
       children: [
         if (car == null)
           const LunioEmptyCard('请先新增车辆')
@@ -99,6 +104,8 @@ class _FuelContent extends ConsumerWidget {
             savedPercent: prediction?.fuelPercent,
           ),
         ),
+        const SizedBox(height: 12),
+        const FuelRecordsCard(),
       ],
     );
   }

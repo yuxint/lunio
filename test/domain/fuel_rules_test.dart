@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
+import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/domain/rules/fuel_rules.dart';
 
@@ -285,6 +286,137 @@ void main() {
       for (final grade in FuelGrade.values) {
         expect(FuelGrade.tryParse(grade.code), grade);
       }
+    });
+  });
+
+  group('FuelRules 满箱段油耗（ADR 0014）', () {
+    // 造数捷径：id 自增保证（日期、里程、id）排序稳定，fullTank 默认加满。
+    var nextId = 0;
+    FuelRecord record(
+      String date, {
+      required int mileageKm,
+      double volumeLiters = 40,
+      int totalCostCents = 30000,
+      bool fullTank = true,
+    }) {
+      nextId += 1;
+      return FuelRecord(
+        id: nextId,
+        carId: 1,
+        date: LocalDate.parse(date),
+        mileageKm: mileageKm,
+        volumeLiters: volumeLiters,
+        totalCostCents: totalCostCents,
+        fullTank: fullTank,
+      );
+    }
+
+    setUp(() => nextId = 0);
+
+    test('空列表与单条记录：无段', () {
+      expect(FuelRules.fuelTankSegments(const []), isEmpty);
+      expect(
+        FuelRules.fuelTankSegments([
+          record('2026-05-01', mileageKm: 10000),
+        ]),
+        isEmpty,
+        reason: '单条记录无论是否加满都不闭合段',
+      );
+      expect(
+        FuelRules.averageFuelConsumptionPer100Km(
+          FuelRules.fuelTankSegments([]),
+        ),
+        isNull,
+      );
+      expect(FuelRules.averageCostPerKm(FuelRules.fuelTankSegments([])), isNull);
+    });
+
+    test('两次加满闭合一段；首条满箱只做锚点不闭合', () {
+      final segments = FuelRules.fuelTankSegments([
+        record('2026-05-01', mileageKm: 10000),
+        record('2026-05-10', mileageKm: 10500, volumeLiters: 30,
+            totalCostCents: 25000),
+      ]);
+      expect(segments, hasLength(1));
+      expect(segments.first.km, 500);
+      expect(segments.first.liters, 30);
+      expect(segments.first.costCents, 25000);
+    });
+
+    test('部分加油计入所在段升数但不闭合段', () {
+      final segments = FuelRules.fuelTankSegments([
+        record('2026-05-01', mileageKm: 10000),
+        // 中间加半箱：贡献升数与金额，不闭合段（无本段油耗）。
+        record('2026-05-05', mileageKm: 10200, volumeLiters: 15,
+            totalCostCents: 12000, fullTank: false),
+        record('2026-05-10', mileageKm: 10500, volumeLiters: 20,
+            totalCostCents: 16000),
+      ]);
+      expect(segments, hasLength(1));
+      expect(segments.first.closingRecordId, 3);
+      expect(segments.first.liters, 35, reason: '部分加油 15 升计入所在段');
+      expect(segments.first.costCents, 28000);
+      // 行内本段油耗 = 本段 35 升 ÷ 500 km × 100 = 7.0（与均值同源公式）。
+      expect(segments.first.consumptionPer100Km, closeTo(7.0, 1e-9));
+      // 平均油耗 = 35 升 ÷ 500 km × 100 = 7.0（浮点累计误差用 closeTo）。
+      expect(
+        FuelRules.averageFuelConsumptionPer100Km(segments),
+        closeTo(7.0, 1e-9),
+      );
+      // 每公里油费 = 280 元 ÷ 500 km = 0.56 元/km。
+      expect(FuelRules.averageCostPerKm(segments), 0.56);
+    });
+
+    test('首条记录非满箱：不产生锚点，其后的满箱仍是首锚点不出段', () {
+      final segments = FuelRules.fuelTankSegments([
+        record('2026-05-01', mileageKm: 10000, fullTank: false),
+        record('2026-05-10', mileageKm: 10500),
+      ]);
+      expect(segments, isEmpty, reason: '首个满箱之前的部分加油不进入任何段');
+    });
+
+    test('段里程非增（同里程/倒退）折叠为无效段，不计入均值', () {
+      final segments = FuelRules.fuelTankSegments([
+        record('2026-05-01', mileageKm: 10000),
+        // 同日同里程补录的"加满"：段里程 = 0，折叠。
+        record('2026-05-01', mileageKm: 10000, volumeLiters: 30),
+        // 里程倒退的补录：段里程 < 0，折叠。
+        record('2026-05-02', mileageKm: 9900, volumeLiters: 30),
+        // 正常前行的第三次加满：对上一锚点（倒退那条）是 +600，有效。
+        record('2026-05-10', mileageKm: 10500, volumeLiters: 30),
+      ]);
+      expect(segments, hasLength(1), reason: '只有最后一段有效');
+      expect(segments.first.km, 600);
+      expect(segments.first.liters, 30, reason: '锚点切换后累计清零重启');
+      // 均值只用有效段：30 ÷ 600 × 100 = 5.0。
+      expect(FuelRules.averageFuelConsumptionPer100Km(segments), 5.0);
+    });
+
+    test('输入乱序时按（日期、里程、id）升序内部重排', () {
+      final segments = FuelRules.fuelTankSegments([
+        record('2026-05-10', mileageKm: 10500, volumeLiters: 20,
+            totalCostCents: 16000),
+        record('2026-05-01', mileageKm: 10000),
+      ]);
+      expect(segments, hasLength(1));
+      expect(segments.first.km, 500, reason: '按日期排序后锚点在前');
+    });
+
+    test('多条满箱链：逐段闭合，均值按全段求和', () {
+      final segments = FuelRules.fuelTankSegments([
+        record('2026-05-01', mileageKm: 10000),
+        record('2026-05-10', mileageKm: 10500, volumeLiters: 30,
+            totalCostCents: 25000),
+        record('2026-05-20', mileageKm: 11000, volumeLiters: 32,
+            totalCostCents: 26000),
+      ]);
+      expect(segments, hasLength(2));
+      expect(segments[0].km, 500);
+      expect(segments[1].km, 500);
+      // 均值 = (30+32) ÷ (500+500) × 100 = 6.2。
+      expect(FuelRules.averageFuelConsumptionPer100Km(segments), closeTo(6.2, 1e-9));
+      // 每公里 = (250+260) ÷ 1000 = 0.51 元。
+      expect(FuelRules.averageCostPerKm(segments), 0.51);
     });
   });
 }

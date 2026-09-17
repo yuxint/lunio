@@ -29,6 +29,7 @@ import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
+import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/features/shell/fuel/fuel_prices.dart';
@@ -230,6 +231,11 @@ class TestRepositories {
   /// 转发加油仓库：写某车的加油预测设置行（写 fuel_predictions 表）。
   Future<void> saveFuelPrediction(FuelPrediction prediction) =>
       fuelRepository.saveFuelPrediction(prediction);
+
+  /// 转发加油仓库：读某车的加油记录全量列表（fuel_records 表，
+  /// 按日期、里程、id 升序，ADR 0014）。
+  Future<List<FuelRecord>> listFuelRecordsForCar(int carId) =>
+      fuelRepository.listFuelRecordsForCar(carId);
 
   /// 转发主仓库：单事务建车带项目（写 cars + maintenance_items，
   /// 无应用车辆时把新车设为当前）。

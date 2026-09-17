@@ -6,8 +6,44 @@
 //  3. 油价缓存"该不该重新拉"的判断（10 个自然日规则，见 ADR 0001）。
 //  4. 油箱容积校验（容积在 Car 上，写库/恢复备份前调用）。
 //  5. 预估下次油价（调价预告变动中值参与计算，见 ADR 0006）。
+//  6. 加油记录的满箱段油耗口径（full-to-full，见 ADR 0014 与
+//     CONTEXT.md"满箱段"词条）。
 import '../../core/date/local_date.dart';
 import '../entities/fuel_price.dart';
+import '../entities/fuel_record.dart';
+
+/// 一个满箱段（full-to-full）：从锚点（上一次加满）到闭合条（这一次
+/// 加满）之间的计算区间。段数据只含聚合值，不持有实体引用，行内
+/// "本段油耗"按 [closingRecordId] 挂到对应记录行。
+///
+/// [FuelRules.fuelTankSegments] 返回的都是有效段：段里程 > 0 才会产出
+/// （里程非增的段折叠为空，不进结果），因此平均值直接对返回列表求和。
+class FuelTankSegment {
+  const FuelTankSegment({
+    required this.closingRecordId,
+    required this.liters,
+    required this.km,
+    required this.costCents,
+  });
+
+  /// 闭合该段的加油记录 id（这次加满的那条）。
+  final int closingRecordId;
+
+  /// 段升数 = 锚点之后至闭合条（含）的升数之和——部分加油（没加满）
+  /// 的升数计入所在段，但不闭合段。
+  final double liters;
+
+  /// 段里程 = 闭合条里程 − 锚点里程（恒 > 0，非正的段已折叠）。
+  final int km;
+
+  /// 段金额（分），口径与 [liters] 相同（锚点后至闭合条含）。
+  final int costCents;
+
+  /// 本段百公里油耗（L/100km）= 段升数 ÷ 段里程 × 100。行内"本段
+  /// 油耗"与摘要行平均油耗（[FuelRules.averageFuelConsumptionPer100Km]）
+  /// 是"单段 / 多段聚合"两级，公式同源。
+  double get consumptionPer100Km => liters / km * 100;
+}
 
 class FuelRules {
   FuelRules._();
@@ -136,5 +172,92 @@ class FuelRules {
       }
     }
     return nearest.isBefore(todayDate);
+  }
+
+  // ---------------- 加油记录的满箱段油耗（ADR 0014） ----------------
+
+  /// 满箱段划分（full-to-full 口径，ADR 0014）：
+  ///
+  ///  - 输入须是已入库的记录（id 非空，排序与段闭合都要用）；
+  ///  - 内部按（日期、里程、id）升序重排（与仓库列表查询的固定排序
+  ///    一致，不依赖调用方先排序）；
+  ///  - 一条记录"闭合一段"当且仅当它加满且存在更早的满箱记录（锚点）；
+  ///    首条满箱只做锚点不闭合段；
+  ///  - 段里程 ≤ 0（补录乱序、同日里程相同等）视为该段无效，折叠为空
+  ///    ——不出负数油耗，也不参与平均值；
+  ///  - 非满箱记录只贡献升数/金额，永不闭合段。
+  static List<FuelTankSegment> fuelTankSegments(List<FuelRecord> records) {
+    final ordered = [...records]..sort((left, right) {
+      final byDate = left.date.compareTo(right.date);
+      if (byDate != 0) {
+        return byDate;
+      }
+      final byMileage = left.mileageKm.compareTo(right.mileageKm);
+      if (byMileage != 0) {
+        return byMileage;
+      }
+      return left.id!.compareTo(right.id!);
+    });
+    final segments = <FuelTankSegment>[];
+    // 当前锚点（上一次加满的记录）；null = 还没见过满箱（首条满箱前）。
+    FuelRecord? anchor;
+    // 锚点之后至当前记录（含）的累计升数/金额：遇到锚点清零重启。
+    var litersSinceAnchor = 0.0;
+    var costSinceAnchor = 0;
+    for (final record in ordered) {
+      litersSinceAnchor += record.volumeLiters;
+      costSinceAnchor += record.totalCostCents;
+      if (!record.fullTank) {
+        continue;
+      }
+      if (anchor != null) {
+        final km = record.mileageKm - anchor.mileageKm;
+        if (km > 0) {
+          segments.add(
+            FuelTankSegment(
+              closingRecordId: record.id!,
+              liters: litersSinceAnchor,
+              km: km,
+              costCents: costSinceAnchor,
+            ),
+          );
+        }
+      }
+      // 无论是否闭合，加满的记录都成为下一段的锚点，累计值清零重启。
+      anchor = record;
+      litersSinceAnchor = 0;
+      costSinceAnchor = 0;
+    }
+    return segments;
+  }
+
+  /// 平均百公里油耗（L/100km）= 有效段升数和 ÷ 有效段里程和 × 100。
+  /// 无有效段返回 null（调用方不显示摘要行）。
+  static double? averageFuelConsumptionPer100Km(
+    List<FuelTankSegment> segments,
+  ) {
+    if (segments.isEmpty) {
+      return null;
+    }
+    final totalLiters = segments.fold<double>(0, (sum, s) => sum + s.liters);
+    final totalKm = segments.fold<int>(0, (sum, s) => sum + s.km);
+    if (totalKm <= 0) {
+      return null;
+    }
+    return totalLiters / totalKm * 100;
+  }
+
+  /// 平均每公里油费（元）= 有效段金额和 ÷ 有效段里程和，换算成元。
+  /// 无有效段返回 null。与油耗同口径（分→元除以 100）。
+  static double? averageCostPerKm(List<FuelTankSegment> segments) {
+    if (segments.isEmpty) {
+      return null;
+    }
+    final totalCostCents = segments.fold<int>(0, (sum, s) => sum + s.costCents);
+    final totalKm = segments.fold<int>(0, (sum, s) => sum + s.km);
+    if (totalKm <= 0) {
+      return null;
+    }
+    return totalCostCents / totalKm / 100;
   }
 }
