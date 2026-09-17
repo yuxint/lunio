@@ -2,7 +2,7 @@
 
 本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、车型目录
 asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
-（ADR 0014）；备份 JSON `schemaVersion` 为 `2`（解码兼容读 v1，见下文
+（ADR 0014）；备份 JSON `schemaVersion` 为 `3`（解码兼容读 v1/v2，见下文
 "备份契约边界"）。
 
 本文只记录当前代码事实，不记录历史版本演变。事实源是
@@ -294,15 +294,17 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 - 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联、加油预测设置、加油记录，并清理指向该车的 `appliedCarId`。
 - 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录和车辆。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
-- 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。加油记录暂不在恢复替换范围内（备份 v3 接入时一并处理，docs/adr/0014）。
+- 恢复备份是 replace-import：先清空当前业务数据（含加油记录），再恢复备份内容，失败整体回滚。
 
 ## 备份契约边界
 
-当前 JSON 备份契约版本为 `schemaVersion = 2`，由
-`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1 与 v2——
+当前 JSON 备份契约版本为 `schemaVersion = 3`，由
+`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1/v2/v3——
 v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没有它就
-等于"项目费用全部未填"，按空读入（docs/adr/0010 修订）；除此之外的
-版本直接拒绝，不做旧版本字段回退（docs/adr/0005）。
+等于"项目费用全部未填"；v3 只比 v2 多了 `fuelRecords` 数组，v1/v2
+文件没有它就等于"没有加油记录"，均按空读入（docs/adr/0010 修订、
+docs/adr/0014）；除此之外的版本直接拒绝，不做旧版本字段回退
+（docs/adr/0005）。
 
 备份导出包含：
 
@@ -312,6 +314,7 @@ v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没
   三个金额可空，只写有内容的项目）
 - `fuelPrediction`（全局加油设置：省份 + 油品编号，用户改过才有值）
 - `fuelPredictions`（每车加油预测设置：剩余油量）
+- `fuelRecords`（加油流水：条目不带 id，恢复时重新生成雪花 ID）
 
 备份不包含：
 
@@ -322,7 +325,7 @@ v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没
 - 提醒延后/确认状态
 - 停车倒计时
 - 油价缓存与手填油价（临时数据）
-- 加油记录（`fuel_records` 表；备份 v3 接入前暂不导出，docs/adr/0014）
 
 恢复备份时，源车辆 ID 和项目 ID 会换成新雪花 ID（事务内维护旧→新对应表）；
-恢复完成后当前应用车辆写为第一辆恢复出的车辆。
+加油预测设置与加油记录的 `carId` 同样按对应表重映射；恢复完成后当前应用
+车辆写为第一辆恢复出的车辆。

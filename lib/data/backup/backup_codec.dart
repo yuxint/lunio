@@ -1,23 +1,28 @@
 // 备份 JSON 的编解码器（≈ Java 里的 Jackson 手写 Serializer/Deserializer）。
 //
-// 备份契约（schemaVersion = 2，与数据库 schemaVersion 是两套独立版本号）：
+// 备份契约（schemaVersion = 3，与数据库 schemaVersion 是两套独立版本号）：
 // {
-//   "schemaVersion": 2,
+//   "schemaVersion": 3,
 //   "cars": [ { id, brand, model, powertrainType, currentMileageKm, roadDate,
 //               tankCapacityLiters, sync } ],
 //   "maintenanceItems": [ { id, carsId, name, ..., sync } ],
 //   "records": [ { id, carId, date, itemIds[], itemCosts[], costCents,
 //                  mileageKm, note, sync } ],
 //   "fuelPrediction": { "province": "湖北", "gradeCode": "92" },
-//   "fuelPredictions": [ { carId, fuelPercent, sync } ]
+//   "fuelPredictions": [ { carId, fuelPercent, sync } ],
+//   "fuelRecords": [ { carId, date, mileageKm, volumeLiters, totalCostCents,
+//                      fullTank, sync } ]
 // }
 // itemCosts 条目：{ itemId, materialCents, laborCents, costCents }，
 // 三个金额都可空（null = 未填），只写有内容的项目（ADR 0010）。
+// fuelRecords 条目不带 id：行 id 恢复时重新生成雪花，备份里没有引用
+// 它的地方（与 fuelPredictions 同先例；ADR 0014）。
 //
-// 版本兼容（ADR 0010 修订）：解码接受 v1 与 v2——v2 只比 v1 多了纯增量
-// 的 itemCosts 字段，v1 条目没有它就等于"全部项目费用未填"，按空读入
-// 即可；这不是 ADR 0005 禁止的"旧字段语义变化回退"。除此之外的版本
-// 直接拒绝，不做字段回退。油价缓存与手填油价是临时数据，不进备份。
+// 版本兼容（ADR 0010 确立先例：纯增量缺失按空读入）：解码接受 v1/v2/v3
+// ——v2 只比 v1 多 itemCosts 字段，v1 条目没有它就等于"全部项目费用未
+// 填"；v3 只比 v2 多 fuelRecords 字段，v1/v2 没有它就等于"没有加油记录"。
+// 这不是 ADR 0005 禁止的"旧字段语义变化回退"。除此之外的版本直接拒绝，
+// 不做字段回退。油价缓存与手填油价是临时数据，不进备份。
 //
 // ⚠ 契约边界（改字段前必读）：
 //  - 不包含偏好（主题/应用车辆/通知设置/snooze 等）；
@@ -30,6 +35,7 @@ import 'dart:convert';
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart';
 import '../../domain/entities/fuel_prediction.dart';
+import '../../domain/entities/fuel_record.dart';
 import '../../domain/entities/maintenance_item.dart';
 import '../../domain/entities/maintenance_record.dart';
 import '../../domain/entities/powertrain_type.dart';
@@ -43,9 +49,11 @@ class BackupPayload {
     this.records = const [],
     this.fuelPrediction,
     this.fuelPredictions = const [],
+    this.fuelRecords = const [],
   });
 
-  /// 备份契约版本（v1 = 旧版无项目费用；v2 = 当前，见 ADR 0010）。
+  /// 备份契约版本（v1 = 无项目费用；v2 = 增项目费用，ADR 0010；
+  /// v3 = 当前，增加油记录，ADR 0014）。
   final int schemaVersion;
   final List<Car> cars;
   final List<MaintenanceItem> maintenanceItems;
@@ -56,6 +64,9 @@ class BackupPayload {
 
   /// 每辆车的加油预测设置（剩余油量；容积在 cars 条目里）。
   final List<FuelPrediction> fuelPredictions;
+
+  /// 加油流水（ADR 0014）。v1/v2 备份没有该字段，解码按空读入。
+  final List<FuelRecord> fuelRecords;
 }
 
 /// 备份里的全局加油设置（省份 + 油品编号）。
@@ -71,10 +82,11 @@ final class BackupCodec {
   const BackupCodec();
 
   /// 当前写入的备份契约版本。
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
-  /// 解码接受的版本：当前版本 + 纯增量兼容的 v1（缺 itemCosts = 费用全空）。
-  static const List<int> supportedSchemaVersions = [1, 2];
+  /// 解码接受的版本：当前版本 + 纯增量兼容的 v1/v2（缺 itemCosts =
+  /// 费用全空；缺 fuelRecords = 无加油记录，ADR 0010/0014）。
+  static const List<int> supportedSchemaVersions = [1, 2, 3];
 
   /// 编码为 JSON 字符串（导出文件内容）。
   String encode(BackupPayload payload) {
@@ -92,16 +104,17 @@ final class BackupCodec {
       'fuelPredictions': payload.fuelPredictions
           .map(_fuelPredictionToJson)
           .toList(),
+      'fuelRecords': payload.fuelRecords.map(_fuelRecordToJson).toList(),
     });
   }
 
   /// 从 JSON 字符串解码（导入文件内容）。
   ///
-  /// 接受 v1/v2（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
-  /// UI 提示"不支持的备份文件"（ADR 0005：不做版本分支兼容；ADR 0010：
-  /// v1 是纯增量缺失，按"项目费用全空"读入）。引用完整性由
-  /// Repository._validateBackupReferences 负责，业务规则（金额/里程非负
-  /// 等）恢复时不校验（审查报告 R35）。
+  /// 接受 v1/v2/v3（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
+  /// UI 提示"不支持的备份文件"（ADR 0005：不做版本分支兼容；ADR 0010/0014：
+  /// v1/v2 是纯增量缺失，项目费用全空、加油记录为空读入）。引用完整性
+  /// 与业务规则（金额/里程非负等）由 Repository 的两层预校验在事务外
+  /// 负责（审查报告 R35），codec 只做结构解码。
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;
@@ -132,6 +145,12 @@ final class BackupCodec {
       fuelPredictions: ((map['fuelPredictions'] as List?) ?? const [])
           .cast<Map<String, Object?>>()
           .map(_fuelPredictionFromJson)
+          .toList(),
+      // v1/v2 备份没有 fuelRecords 字段 = 没有加油记录，按空列表读入
+      // （ADR 0014 的纯增量兼容，沿用 itemCosts 先例）。
+      fuelRecords: ((map['fuelRecords'] as List?) ?? const [])
+          .cast<Map<String, Object?>>()
+          .map(_fuelRecordFromJson)
           .toList(),
     );
   }
@@ -265,6 +284,32 @@ final class BackupCodec {
     return FuelPrediction(
       carId: json['carId'] as int,
       fuelPercent: json['fuelPercent'] as int,
+      sync: SyncMetadata.fromJson(
+        (json['sync'] as Map).cast<String, Object?>(),
+      ),
+    );
+  }
+
+  Map<String, Object?> _fuelRecordToJson(FuelRecord record) {
+    return {
+      'carId': record.carId,
+      'date': record.date.toString(),
+      'mileageKm': record.mileageKm,
+      'volumeLiters': record.volumeLiters,
+      'totalCostCents': record.totalCostCents,
+      'fullTank': record.fullTank,
+      'sync': record.sync.toJson(),
+    };
+  }
+
+  FuelRecord _fuelRecordFromJson(Map<String, Object?> json) {
+    return FuelRecord(
+      carId: json['carId'] as int,
+      date: LocalDate.parse(json['date'] as String),
+      mileageKm: json['mileageKm'] as int,
+      volumeLiters: (json['volumeLiters'] as num).toDouble(),
+      totalCostCents: json['totalCostCents'] as int,
+      fullTank: json['fullTank'] as bool,
       sync: SyncMetadata.fromJson(
         (json['sync'] as Map).cast<String, Object?>(),
       ),

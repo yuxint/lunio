@@ -55,7 +55,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
   - `fuel_repository.dart`：加油预测设置表 + 加油记录表（ADR 0014）+ 油价缓存/手填油价（临时偏好经偏好门面原语存取）；
   - `backup_repository.dart`：备份导出/恢复/清空数据（恢复与手工录入共用同一份 Companion 字段清单）。
 - `lib/data/preferences/app_preferences.dart`：偏好门面（`LunioPreferences`）——全部偏好 key 常量、编解码与 typed 读写的唯一出口，新偏好进这里加 typed 方法，不要在调用方拼 key 字符串。停车倒计时偏好与提醒抑制 key 前缀也登记在此。
-- `lib/data/backup/backup_codec.dart`：`schemaVersion: 2` JSON 备份契约编码/解码（接受 v1 兼容读——缺 `itemCosts` 等于项目费用全空，ADR 0010；其余版本直接拒绝）。
+- `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
@@ -73,7 +73,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 ## 数据与契约注意点
 
-- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3（ADR 0014）、备份 JSON `schemaVersion` 为 2（ADR 0010）。数据库只服务全新安装：库文件版本与代码不一致时删库重建，不写任何升级分支（见 `docs/adr/0005`）。备份解码接受 v1 兼容读（纯增量缺失按空处理，唯一例外）+ v2，其余版本直接拒绝。改 Drift 表结构必须把数据库 `schemaVersion` +1。
+- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3（ADR 0014）、备份 JSON `schemaVersion` 为 3（ADR 0014）。数据库只服务全新安装：库文件版本与代码不一致时删库重建，不写任何升级分支（见 `docs/adr/0005`）。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理，唯一例外）+ v3，其余版本直接拒绝。改 Drift 表结构必须把数据库 `schemaVersion` +1。
 - 加油记录（ADR 0014）：`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于保养记录，写加油域代码时别套用保养记录的直觉。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同步考虑版本号、测试和文档。
 - 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。

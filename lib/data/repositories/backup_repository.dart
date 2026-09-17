@@ -6,8 +6,8 @@
 // 手工录入路径用同一份字段清单（R35 的不变量"恢复的数据过和手工
 // 录入同样的规则"在插入层也成立），给表加字段不再需要改恢复循环。
 //
-// 恢复流程（ADR 0010：接受 v1 与 v2——v1 条目缺项目费用按"全部未填"
-// 读入；v1/v2 之外的版本拒收）：
+// 恢复流程（接受 v1/v2/v3——v1 缺项目费用、v1/v2 缺加油记录，纯增量
+// 缺失按空读入，ADR 0010/0014；其余版本拒收）：
 //  1. 版本校验；2. 事务外两层预校验（引用完整性 + 业务规则）；3. 单一
 //  大事务清业务表 → 逐行插入（id 全换新雪花，旧→新映射）；4. 应用车辆
 //  指向恢复出的第一辆车；5. 备份带全局加油设置时覆盖省份/油品偏好。
@@ -30,8 +30,8 @@ class BackupRepository {
   final AppDatabase database;
   final LunioPreferences _preferences;
 
-  /// 导出备份：4 张业务表 + 加油预测设置全量读取（顺序两次查询拼
-  /// itemIds，无 N+1），组装 BackupPayload。
+  /// 导出备份：4 张业务表 + 加油预测设置 + 加油记录全量读取（顺序查询
+  /// 拼 itemIds，无 N+1），组装 BackupPayload。
   /// 不含偏好/停车倒计时/油价缓存与手填价/目录。
   Future<BackupPayload> exportBackupPayload() async {
     final cars = (await database.select(database.cars).get())
@@ -69,6 +69,8 @@ class BackupRepository {
     ).get();
     final fuelPredictions = fuelPredictionRows.map(fuelPredictionFromRow)
         .toList();
+    final fuelRecordRows = await database.select(database.fuelRecords).get();
+    final fuelRecords = fuelRecordRows.map(fuelRecordFromRow).toList();
     // 全局加油设置（省份/油品）：用户改过才有值，没改过不带进备份。
     // 这里故意用原始读而不是 getFuelProvince()/getFuelGrade()——两个
     // getter 都会兜底产品默认值，会把"没改过"读成"改成了默认值"。
@@ -90,12 +92,13 @@ class BackupRepository {
               gradeCode: fuelGradeCode,
             ),
       fuelPredictions: fuelPredictions,
+      fuelRecords: fuelRecords,
     );
   }
 
   /// 恢复备份（导入）。流程见文件头。任何一行违反约束抛错则整体回滚
   /// （UI 提示"未写入任何数据"）。
-  /// 版本检查与 codec 一致：接受 v1（无项目费用）与 v2（ADR 0010）。
+  /// 版本检查与 codec 一致：接受 v1/v2/v3（ADR 0010/0014 的纯增量兼容）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
     if (!BackupCodec.supportedSchemaVersions.contains(payload.schemaVersion)) {
       throw UnsupportedError(
@@ -219,6 +222,23 @@ class BackupRepository {
               ),
             );
       }
+
+      // 加油记录：与加油预测同一套重映射——备份里的 carId 换成新雪花
+      // id，行 id 重新生成（备份条目不带 id，ADR 0014）。
+      for (final fuelRecord in payload.fuelRecords) {
+        final carId = carIdMap[fuelRecord.carId];
+        if (carId == null) {
+          throw ArgumentError('Backup fuel record references missing car');
+        }
+        await database
+            .into(database.fuelRecords)
+            .insert(
+              fuelRecordCompanion(
+                fuelRecord.copyWith(carId: carId),
+                SnowflakeIdGenerator.instance.next(),
+              ),
+            );
+      }
     });
   }
 
@@ -242,16 +262,19 @@ class BackupRepository {
     });
   }
 
-  /// 恢复备份专用的清库实现（须在事务内调用）：只删 4 张业务表，
-  /// 偏好表整体保留（主题、通知设置、手动日期、停车倒计时等不受影响，
-  /// R2 修复口径："恢复只替换三类业务数据，偏好保留"）；但按前缀删掉
-  /// 提醒抑制键——恢复出来的车/项目拿的是全新雪花 id，旧 snooze/ack
-  /// 与新数据在语义上已无关联，不该继续生效。
+  /// 恢复备份专用的清库实现（须在事务内调用）：只删 6 张业务表
+  /// （4 张主业务表 + 加油预测设置 + 加油记录），偏好表整体保留（主题、
+  /// 通知设置、手动日期、停车倒计时等不受影响，R2 修复口径："恢复只替换
+  /// 业务数据，偏好保留"）；但按前缀删掉提醒抑制键——恢复出来的车/项目
+  /// 拿的是全新雪花 id，旧 snooze/ack 与新数据在语义上已无关联，不该
+  /// 继续生效。加油记录清表是备份 v3 补上的：不删会把恢复前残留的旧
+  /// 加油记录留在库里，变成指向已删车辆的孤儿行（ADR 0014）。
   Future<void> _clearRestorableDataInTransaction() async {
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();
     await database.delete(database.maintenanceItems).go();
     await database.delete(database.fuelPredictions).go();
+    await database.delete(database.fuelRecords).go();
     await database.delete(database.cars).go();
     await _preferences.clearReminderSuppressionKeys();
   }
@@ -278,7 +301,7 @@ class BackupRepository {
   /// 备份引用完整性校验（恢复前、事务外执行）：
   /// cars/items 的 id 齐全且不重复；每个 item 的 carsId 存在；
   /// 每条 record 的 carId 存在、每个 itemId 存在且与 record 同车
-  /// （跨车引用的备份直接拒绝）。
+  /// （跨车引用的备份直接拒绝）；加油预测设置与加油记录的 carId 存在。
   void _validateBackupReferences(BackupPayload payload) {
     final carIds = payload.cars.map((car) => car.id).whereType<int>().toSet();
     final itemCarIds = <int, int>{};
@@ -322,12 +345,18 @@ class BackupRepository {
         throw ArgumentError('Backup fuel prediction references missing car');
       }
     }
+    for (final fuelRecord in payload.fuelRecords) {
+      if (!carIds.contains(fuelRecord.carId)) {
+        throw ArgumentError('Backup fuel record references missing car');
+      }
+    }
   }
 
   /// 备份业务规则校验（恢复前、事务外执行，R35）：
-  /// 项目过实体 validate、记录过 RecordRules.validateRecord——
-  /// 与手工录入走同一套规则，篡改过的备份（负金额/负里程/空项目/
-  /// 非法间隔）在开事务前就被拒绝，保证"失败时未写入任何数据"。
+  /// 项目过实体 validate、记录过 RecordRules.validateRecord、加油预测
+  /// 设置与加油记录过实体 validate——与手工录入走同一套规则，篡改过的
+  /// 备份（负金额/负里程/空项目/非法间隔）在开事务前就被拒绝，保证
+  /// "失败时未写入任何数据"。
   /// 校验失败统一包装成中文 ArgumentError（UI 直接展示给用户）。
   void _validateBackupBusinessRules(BackupPayload payload) {
     for (final car in payload.cars) {
@@ -363,6 +392,15 @@ class BackupRepository {
       } on ArgumentError catch (error) {
         throw ArgumentError(
           '备份文件中存在无效数据（加油预测设置）：${error.message}',
+        );
+      }
+    }
+    for (final fuelRecord in payload.fuelRecords) {
+      try {
+        fuelRecord.validate();
+      } on ArgumentError catch (error) {
+        throw ArgumentError(
+          '备份文件中存在无效数据（加油记录 ${fuelRecord.date}）：${error.message}',
         );
       }
     }

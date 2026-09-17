@@ -13,6 +13,7 @@ import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/errors/lunio_error.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
@@ -1825,6 +1826,17 @@ void main() {
         sync: sync,
       ),
     );
+    final fuelRecordId = await fuelRepository.saveFuelRecord(
+      FuelRecord(
+        carId: carId,
+        date: const LocalDate(2026, 9, 10),
+        mileageKm: 12100,
+        volumeLiters: 41.5,
+        totalCostCents: 31200,
+        fullTank: true,
+        sync: sync,
+      ),
+    );
 
     final backup = await backupRepository.exportBackupPayload();
     expect(const BackupCodec().encode(backup), isNot(contains('preferences')));
@@ -1833,6 +1845,10 @@ void main() {
       isNot(contains('defaultMaintenanceItems')),
     );
     expect(const BackupCodec().encode(backup), isNot(contains('isDefault')));
+    expect(
+      const BackupCodec().encode(backup),
+      contains('"fuelRecords":[{"carId":'),
+    );
     await database.close();
     database = AppDatabase.inMemory();
     preferences = LunioPreferences(database);
@@ -1864,6 +1880,20 @@ void main() {
     await preferences.writeRaw(
       '${LunioPreferences.mileageUpdateInAppAcknowledgedOnPrefix}42',
       '2026-05-23',
+    );
+    // 恢复前目标库已有一条残留加油记录（fuel_records 无外键，指向不
+    // 存在的车也插得进）：恢复清表名单含新表后它应被一并清掉，不留
+    // 孤儿行（ADR 0014 过渡窗口的回归点）。
+    await fuelRepository.saveFuelRecord(
+      FuelRecord(
+        carId: 999,
+        date: const LocalDate(2026, 1, 1),
+        mileageKm: 1,
+        volumeLiters: 10,
+        totalCostCents: 1000,
+        fullTank: false,
+        sync: sync,
+      ),
     );
 
     await backupRepository.restoreBackupPayload(backup);
@@ -1902,6 +1932,20 @@ void main() {
     expect(restoredRecords.single.costCents, 10000);
     // 关联表 itemIds 同样指向重映射后的新项目 id。
     expect(restoredRecords.single.itemIds, [restoredItems.single.id]);
+    // 加油记录随备份恢复：carId 重映射为新车辆 id（漏换会让记录挂在
+    // 备份里的旧 id 下，公开查询查不到），业务字段全量往返。
+    expect(await database.select(database.fuelRecords).get(), hasLength(1));
+    final restoredFuelRecords = await fuelRepository.listFuelRecordsForCar(
+      restoredCar.id,
+    );
+    expect(restoredFuelRecords, hasLength(1));
+    expect(restoredFuelRecords.single.id, isNot(fuelRecordId));
+    expect(restoredFuelRecords.single.carId, restoredCar.id);
+    expect(restoredFuelRecords.single.date, const LocalDate(2026, 9, 10));
+    expect(restoredFuelRecords.single.mileageKm, 12100);
+    expect(restoredFuelRecords.single.volumeLiters, 41.5);
+    expect(restoredFuelRecords.single.totalCostCents, 31200);
+    expect(restoredFuelRecords.single.fullTank, isTrue);
     // 偏好保留：恢复只替换三类业务数据。
     expect(await preferences.readRaw('themeMode'), 'dark');
     expect(await preferences.readRaw('manualDate'), '2026-05-23');
@@ -1925,6 +1969,36 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  test('backup restore rejects fuel record referencing missing car', () async {
+    final (carId, _) = await seedCarAndItem();
+    final backup = await backupRepository.exportBackupPayload();
+    // 篡改出一条指向不存在车辆的加油记录：引用完整性预校验应拒绝。
+    final orphanFuelRecord = BackupPayload(
+      schemaVersion: BackupCodec.currentSchemaVersion,
+      cars: backup.cars,
+      maintenanceItems: backup.maintenanceItems,
+      records: backup.records,
+      fuelRecords: [
+        FuelRecord(
+          carId: carId + 424242,
+          date: const LocalDate(2026, 9, 10),
+          mileageKm: 100,
+          volumeLiters: 40,
+          totalCostCents: 30000,
+          fullTank: true,
+          sync: sync,
+        ),
+      ],
+    );
+
+    expect(
+      () => backupRepository.restoreBackupPayload(orphanFuelRecord),
+      throwsArgumentError,
+    );
+    // 预校验在事务外执行：库未被改动（残留行一个都没有写入）。
+    expect(await database.select(database.fuelRecords).get(), isEmpty);
   });
 
   test('backup restore rejects tampered business data before writing', () async {
