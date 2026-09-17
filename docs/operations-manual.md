@@ -52,39 +52,39 @@
 
 **sheet 键盘抬升**：键盘高度（`bottomInset`）垫在 sheet 容器**外侧**（`PrototypeSheetFrame` 返回 `Padding(bottom: bottomInset)`）：键盘弹出时 sheet 底边整体抬到键盘顶边、表面悬在键盘上方，滚动视口完整可见，点击底部输入框由 Flutter 焦点滚动滚入可见区；无键盘时外侧垫 0，sheet 照旧贴住屏幕底边不悬空。底部安全区（Home 横条）补在内容内侧、只补键盘没盖住的差额，总预留恒为 max(安全区, 键盘高度) 不叠加（2026-09-12 修复：此前键盘预留垫在滚动内容内部，长表单触顶高度上限后视口下半截仍被键盘盖住，编辑记录底部费用框点了看不见；抬升初版把安全区也垫外侧，无键盘时底部悬空一条缝，均已修）。配套约束：`bottomInset` 必须取 sheet 自己的 builder context（`MediaQuery.of(sheetContext)`，随键盘实时更新）；误用外层页面 context 会在 sheet 构建时定格为 0（records_page 曾踩，2026-09-12 修复）。
 
-**三大缓存失效入口**（`lib/app/providers.dart:312-366`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不再手排：
+**三大缓存失效入口**（`lib/app/providers.dart:351-413`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不再手排：
 
 | 函数 | 失效内容 | 谁在调 |
 |---|---|---|
-| `invalidateVehicleProviders` (:350) | 车辆/车型/项目/记录/加油记录 7 个 provider | 动作层车辆/项目/记录类函数 |
-| `invalidatePreferenceProviders` (:343) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
-| `invalidateAllAppDataProviders` (:364) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
+| `invalidateVehicleProviders` (:351) | 车辆/车型/项目/记录/加油记录 8 个 provider | 动作层车辆/项目/记录类函数 |
+| `invalidatePreferenceProviders` (:387) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
+| `invalidateAllAppDataProviders` (:408) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
 
 **Provider 依赖图**（`lib/app/providers.dart`，文件头有注释版；仓库按域拆分后：目录/加油/备份/主仓库各自独立挂数据库，偏好类 provider 统一挂偏好门面；**油价域 provider 定义在 `lib/features/shell/fuel/fuel_prices.dart`**，这里只画在本文件的锚点）：
 
 ```text
-appDatabaseProvider(:153)
-  ├─→ lunioPreferencesProvider(:161) ─ 偏好门面（下述偏好类 provider 的数据源）
-  │     ├─ developerModeProvider(:77) ─→ manualDatePreferenceProvider(:84) ─┐
-  │     ├─ themeModePreferenceProvider(:98)                                 │
-  │     ├─ notificationSettingsProvider(:105)                               ├─→ effectiveTodayProvider(:144)
-  │     ├─ parkingCountdownProvider(:113)                                   │   （另一输入 appDateContextProvider(:71)）
-  │     └─ 加油开关(:123)/当前车加油设置(:130)                               │
+appDatabaseProvider(:180)
+  ├─→ lunioPreferencesProvider(:188) ─ 偏好门面（下述偏好类 provider 的数据源）
+  │     ├─ developerModeProvider(:83) ─→ manualDatePreferenceProvider(:90) ─┐
+  │     ├─ themeModePreferenceProvider(:104)                                │
+  │     ├─ notificationSettingsProvider(:111)                               ├─→ effectiveTodayProvider(:171)
+  │     ├─ parkingCountdownProvider(:119)                                   │   （另一输入 appDateContextProvider(:77)）
+  │     └─ 加油开关(:129)/当前车加油设置(:136)                               │
   │        （省份/油品/手填价在 fuel_prices.dart，watch 偏好门面）           │
-  ├─→ builtInCatalogRepositoryProvider(:166)
-  │     └─→ defaultMaintenanceBootstrapProvider(:200)
-  │           ├─→ vehicleModelsProvider(:208)（另挂目录仓库）
-  │           └─→ carsProvider(:234)（另挂主仓库）
-  │                 └─→ appliedCarProvider(:243)（另挂主仓库）
-  │                       ├─→ appliedCarMaintenanceItemsProvider(:261)（另挂主仓库）
-  │                       ├─→ appliedCarRecordsProvider(:271)（另挂主仓库）
-  │                       └─→ appliedCarFuelRecordsProvider(:158)
-  │                             （另挂加油仓库 family :150，ADR 0014）
-  ├─→ fuelRepositoryProvider(:173)（另挂偏好门面）
+  ├─→ builtInCatalogRepositoryProvider(:193)
+  │     └─→ defaultMaintenanceBootstrapProvider(:227)
+  │           ├─→ vehicleModelsProvider(:235)（另挂目录仓库）
+  │           └─→ carsProvider(:261)（另挂主仓库）
+  │                 └─→ appliedCarProvider(:270)（另挂主仓库）
+  │                       ├─→ appliedCarMaintenanceItemsProvider(:288)（另挂主仓库）
+  │                       ├─→ appliedCarRecordsProvider(:298)（另挂主仓库）
+  │                       └─→ appliedCarFuelRecordsProvider(:159)
+  │                             （另挂加油仓库 family :151，ADR 0014）
+  ├─→ fuelRepositoryProvider(:200)（另挂偏好门面）
   │     └─ fuel_prices.dart：手填价、油价控制器 FuelPriceController、
   │        生效链（effectiveFuelPrice/effectiveFuelForecast/predictedFuelPrice）
-  ├─→ backupRepositoryProvider(:181)（另挂偏好门面）
-  └─→ lunioRepositoryProvider(:190)（另挂偏好门面 + 加油仓库）
+  ├─→ backupRepositoryProvider(:208)（另挂偏好门面）
+  └─→ lunioRepositoryProvider(:217)（另挂偏好门面 + 加油仓库）
 ```
 
 ---
@@ -101,13 +101,13 @@ appDatabaseProvider(:153)
 | 4 | `lib/app/app_router.dart:26 → appRouter` | 三条平级路由，初始 `/reminders`，每条渲染 `AppShell(selectedIndex: n)` |
 | 5 | `lib/features/shell/app_shell.dart:34 → AppShell` | 主壳首帧 build：watch 全部 provider（此时数据库才真正打开） |
 
-**注意**：数据库是**惰性**打开的——`appDatabaseProvider`（providers.dart:153）首次被 watch 时 `new AppDatabase()`，而 SQLite 文件连接由 Drift LazyDatabase 推迟到第一条 SQL（`lib/data/database/app_database.dart → _openConnection`，后台 isolate 打开 `lunio.sqlite`）。
+**注意**：数据库是**惰性**打开的——`appDatabaseProvider`（providers.dart:180）首次被 watch 时 `new AppDatabase()`，而 SQLite 文件连接由 Drift LazyDatabase 推迟到第一条 SQL（`lib/data/database/app_database.dart → _openConnection`，后台 isolate 打开 `lunio.sqlite`）。
 
 ### 1.2 首次进入（无任何数据）发生了什么
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `lib/app/providers.dart:200 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
+| 1 | `lib/app/providers.dart:227 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
 | 2 | `lib/data/repositories/built_in_catalog_repository.dart → BuiltInCatalogRepository.ensureBootstrapData()` → `_ensureVehicleModels` + `_ensureDefaultMaintenanceItems` | 从 asset `assets/data/catalog/`（templates.json + vehicles_a–z.json 字母分片）加载目录（**2026-09-01 动力类型改版后为 1675 条：懂车帝在售 1645 + 停售 30，车系名用懂车帝原名，每条带推荐动力类型；默认保养模板按动力类型分五组；同日起精简为每品牌最多 10 款热门车型，现共 1223 条**，见 ADR 0003），**按 catalogId 幂等对账**写入两张内置表 | `vehicle_models`、`vehicle_default_maintenance_items` 两表灌入/更新 |
 | 3 | `lib/features/shell/reminders/reminder_page.dart:102 → EmptyVehicleCard` | appliedCarProvider 返回 null → 显示"还没有车辆"卡片 | 无 |
 | 4 | `lib/features/shell/app_shell.dart:69-74 → NotificationSyncController` + `start()`（`reminders/notification_sync_controller.dart`，对 6 个数据 provider `listenManual` 且首拍即触发） | 系统通知开关为默认开 → 同步链对账系统真值并触发首启权限请求 | 见 1.3 |
@@ -135,7 +135,7 @@ appDatabaseProvider(:153)
 
 | 用户看到 | 代码位置 | 数据来源 |
 |---|---|---|
-| 品牌/车型/上路日期/当前里程 | `reminder_page.dart:76-97 → LunioHeroCard` | `appliedCarProvider`（providers.dart:243）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
+| 品牌/车型/上路日期/当前里程 | `reminder_page.dart:76-97 → LunioHeroCard` | `appliedCarProvider`（providers.dart:270）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
 | "到期概览"文案（超期 x / 到期 x / 全部正常） | `reminder_page.dart → reminderRows.when` + `reminder_rows.dart → dueOverviewText` | watch `reminderRowsProvider`（reminder_rows.dart：watch 车辆/项目/记录/今天四上游，英雄卡与列表共消费，数据变化只组装一遍）；loading"计算中"/error"加载失败"由页面 when 收口，文案函数只收就绪数据，空态经 `classifyReminderRows` 单一出口 |
 | 右上角"更新里程"按钮 | `reminder_page.dart:80 → showQuickMileageUpdateSheet` | 快捷改里程 sheet，见 2.1.1 |
 | 右上角"切换车辆"按钮（多车才显示） | `reminder_page.dart:69 → showVehicleSwitcher` | `vehicles.dart:430`，见 5.1.4 |
@@ -358,7 +358,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 ### 5.7 手动日期（开发者模式专属）
 
 1. 开发者模式：版本 footer **连点 5 次** → `profile_page.dart:156 → _handleVersionTap` → `shell_actions.dart → setDeveloperModeEnabled`（动作层：写 `developerModeEnabled`，关闭时**连带清 `manualDateEnabled`/`manualDate`/`fuelPredictionEnabled`**——加油预测开关入口只在开发者模式可见）；
-2. "手动日期"行 → `settings_data.dart:568 → showManualDateSheet`：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + 失效偏好家族）→ 反馈薄壳关 sheet + toast"手动日期已保存" → **`effectiveTodayProvider`（providers.dart:144）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
+2. "手动日期"行 → `settings_data.dart:568 → showManualDateSheet`：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + 失效偏好家族）→ 反馈薄壳关 sheet + toast"手动日期已保存" → **`effectiveTodayProvider`（providers.dart:171）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
 
 ### 5.8 主题切换
 
