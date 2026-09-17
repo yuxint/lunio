@@ -167,7 +167,8 @@ class LunioRepository {
 
   /// 删除车辆（事务级联删，无外键所以手工按序删）：
   /// 记录关联表 → 记录表 → 项目表 → appliedCarId 偏好（仅当指向本车）→
-  /// 加油预测行（经 FuelRepository，表知识不越过它的 seam）→ 车辆本身。
+  /// 加油预测行与加油记录（经 FuelRepository，表知识不越过它的 seam）→
+  /// 车辆本身。
   /// 删完按 AppliedCarRules 把应用车辆指向剩余 id 最小的车；没有剩余则清空。
   Future<void> deleteCar(int carId) {
     return database.transaction(() async {

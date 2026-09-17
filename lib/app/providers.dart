@@ -34,13 +34,16 @@
 //   │    ├─ effectiveTodayProvider（手动日期 ?? 系统今天）
 //   │    ├─ carsProvider ──> appliedCarProvider
 //   │    │                    ├─ appliedCarMaintenanceItemsProvider（派生自下面的 family）
-//   │    │                    └─ appliedCarRecordsProvider
+//   │    │                    ├─ appliedCarRecordsProvider
+//   │    │                    └─ appliedCarFuelRecordsProvider
+//   │    │                       （派生自 fuelRecordsForCarProvider）
 //   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
-//   └─ 加油域 provider：开关/当前车设置在本文件；省份/油品/手填价/
-//      数据源/油价控制器/生效链在 features/shell/fuel/fuel_prices.dart
+//   └─ 加油域 provider：开关/当前车设置/加油记录（family + applied 派生）
+//      在本文件；省份/油品/手填价/数据源/油价控制器/生效链在
+//      features/shell/fuel/fuel_prices.dart
 // ```
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -58,6 +61,7 @@ import '../data/repositories/fuel_repository.dart';
 import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
 import '../domain/entities/fuel_prediction.dart';
+import '../domain/entities/fuel_record.dart';
 import '../domain/entities/maintenance_item.dart';
 import '../domain/entities/maintenance_record.dart';
 import '../domain/entities/notification_settings.dart';
@@ -138,6 +142,27 @@ final appliedCarFuelPredictionProvider =
       return ref
           .watch(fuelRepositoryProvider)
           .getFuelPredictionForCar(car!.id!);
+    });
+
+/// 某辆车的加油记录全量列表（按日期、里程、id 升序——满箱段油耗口径的
+/// 锚定顺序，ADR 0014），按车 id 缓存的 family。加载、竞态、缓存、逐出
+/// 由 Riverpod 接管，写库后经 [invalidateVehicleProviders] 整族失效
+/// （同项目 family 的约定）。
+final fuelRecordsForCarProvider =
+    FutureProvider.family<List<FuelRecord>, int>((ref, carId) {
+      return ref.watch(fuelRepositoryProvider).listFuelRecordsForCar(carId);
+    });
+
+/// 应用车辆的加油记录全量列表。仿 [appliedCarFuelPredictionProvider] 的
+/// 派生模式：只承载"当前应用车辆解析 + 无车返回空列表"两条规则，
+/// 数据拉取统一走 [fuelRecordsForCarProvider]。
+final appliedCarFuelRecordsProvider =
+    FutureProvider<List<FuelRecord>>((ref) async {
+      final car = await ref.watch(appliedCarProvider.future);
+      if (car?.id == null) {
+        return const [];
+      }
+      return ref.watch(fuelRecordsForCarProvider(car!.id!).future);
     });
 
 /// 全局生效的"今天"：手动日期优先，否则系统今天。
@@ -332,6 +357,11 @@ void invalidateVehicleProviders(WidgetRef ref) {
   // family 整体逐出：项目 sheet 可能正看着非当前应用车辆（车辆卡入口），
   // 写库/删车/恢复备份后所有按车实例都要重查。
   ref.invalidate(maintenanceItemsForCarProvider);
+  // 加油记录按车 family 同口径整族逐出（ADR 0014）；applied 派生 provider
+  // 依赖 family 与 appliedCar，家族失效时会传导，这里显式列出与项目
+  // family 的既有写法对齐。
+  ref.invalidate(appliedCarFuelRecordsProvider);
+  ref.invalidate(fuelRecordsForCarProvider);
 }
 
 /// 偏好类缓存整体失效的共用实现。WidgetRef 和容器 Ref 是两个没有共同

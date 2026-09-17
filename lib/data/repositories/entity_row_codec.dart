@@ -12,6 +12,7 @@ import 'package:drift/drift.dart';
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart' as domain;
 import '../../domain/entities/fuel_prediction.dart' as domain;
+import '../../domain/entities/fuel_record.dart' as domain;
 import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
 import '../../domain/entities/powertrain_type.dart' as domain;
@@ -214,6 +215,43 @@ FuelPredictionsCompanion fuelPredictionCompanion(
     syncStatus: Value(prediction.sync.status.name),
     updatedAt: prediction.sync.updatedAt.toIso8601String(),
     version: Value(prediction.sync.version),
+  );
+}
+
+// ---------------- fuel_records ----------------
+
+/// 加油记录表行 → 实体（ADR 0014）。
+domain.FuelRecord fuelRecordFromRow(FuelRecordRow row) {
+  return domain.FuelRecord(
+    id: row.id,
+    carId: row.carId,
+    date: LocalDate.parse(row.date),
+    mileageKm: row.mileageKm,
+    volumeLiters: row.volumeLiters,
+    totalCostCents: row.totalCostCents,
+    fullTank: row.fullTank,
+    sync: SyncMetadata(
+      status: SyncStatus.values.byName(row.syncStatus),
+      updatedAt: DateTime.parse(row.updatedAt),
+      version: row.version,
+    ),
+  );
+}
+
+/// 加油记录实体 + 指定 id → 插入用 Companion（新增路径与恢复备份共用，
+/// 字段清单全库只有这一份；恢复路径随备份 v3 接入）。
+FuelRecordsCompanion fuelRecordCompanion(domain.FuelRecord record, int id) {
+  return FuelRecordsCompanion.insert(
+    id: Value(id),
+    carId: record.carId,
+    date: record.date.toString(),
+    mileageKm: record.mileageKm,
+    volumeLiters: record.volumeLiters,
+    totalCostCents: record.totalCostCents,
+    fullTank: record.fullTank,
+    syncStatus: Value(record.sync.status.name),
+    updatedAt: record.sync.updatedAt.toIso8601String(),
+    version: Value(record.sync.version),
   );
 }
 

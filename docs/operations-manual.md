@@ -56,7 +56,7 @@
 
 | 函数 | 失效内容 | 谁在调 |
 |---|---|---|
-| `invalidateVehicleProviders` (:312) | 车辆/车型/项目/记录 5 个 provider | 动作层车辆/项目/记录类函数 |
+| `invalidateVehicleProviders` (:350) | 车辆/车型/项目/记录/加油记录 7 个 provider | 动作层车辆/项目/记录类函数 |
 | `invalidatePreferenceProviders` (:343) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
 | `invalidateAllAppDataProviders` (:364) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
 
@@ -77,7 +77,9 @@ appDatabaseProvider(:153)
   │           └─→ carsProvider(:234)（另挂主仓库）
   │                 └─→ appliedCarProvider(:243)（另挂主仓库）
   │                       ├─→ appliedCarMaintenanceItemsProvider(:261)（另挂主仓库）
-  │                       └─→ appliedCarRecordsProvider(:271)（另挂主仓库）
+  │                       ├─→ appliedCarRecordsProvider(:271)（另挂主仓库）
+  │                       └─→ appliedCarFuelRecordsProvider(:158)
+  │                             （另挂加油仓库 family :150，ADR 0014）
   ├─→ fuelRepositoryProvider(:173)（另挂偏好门面）
   │     └─ fuel_prices.dart：手填价、油价控制器 FuelPriceController、
   │        生效链（effectiveFuelPrice/effectiveFuelForecast/predictedFuelPrice）
@@ -289,7 +291,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 #### 5.1.3 删除车辆
 
-车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**先 bump() 通知同步代数**作废在途任务，再执行 `repository.deleteCar`（lunio_repository.dart 主仓库，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车，经偏好门面）→加油预测行（借道 `FuelRepository.deleteForCar`）→车辆；删完按 AppliedCarRules 把应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**。R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001~9004 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ invalidate。
+车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**先 bump() 通知同步代数**作废在途任务，再执行 `repository.deleteCar`（lunio_repository.dart 主仓库，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车，经偏好门面）→加油预测行与加油记录（借道 `FuelRepository.deleteForCar`，ADR 0014）→车辆；删完按 AppliedCarRules 把应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**。R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001~9004 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ invalidate。
 
 #### 5.1.4 切换当前应用车辆
 
@@ -340,7 +342,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 5.5 清空数据
 
-我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**先 bump() 通知同步代数** → `backupRepository.clearAllData`（事务删 5 张表：4 张业务表 + 偏好表）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
+我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**先 bump() 通知同步代数** → `backupRepository.clearAllData`（事务删 7 张表：4 张业务表 + 加油预测设置表 + 加油记录表 + 偏好表，ADR 0014）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
 
 ### 5.6 通知设置
 

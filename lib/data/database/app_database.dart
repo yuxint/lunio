@@ -4,7 +4,7 @@
 // build_runner 生成 app_database.g.dart 里的类型安全查询代码
 // （那个文件是生成物，不要手改；表结构变更后跑 dart run build_runner build）。
 //
-// 通用约定（8 张表一致）：
+// 通用约定（9 张表一致）：
 //  - 主键 id 手工填 Snowflake 雪花 id（见 core/id/），不用自增；
 //  - 每张业务表都带 syncStatus/updatedAt/version 三列（云同步预留）；
 //  - 没有声明 FOREIGN KEY 外键——表间关联靠应用层维护
@@ -20,6 +20,7 @@
 //  - recordItems:         {carId, date, itemId}
 //  - appPreferences:      {key}
 //  - fuelPredictions:     {carId}                ← 一辆车一份加油预测设置
+//  - fuelRecords:         （故意不设唯一约束——同车同日多箱合法，ADR 0014）
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -249,6 +250,45 @@ class FuelPredictions extends Table {
   ];
 }
 
+/// 加油记录表（ADR 0014）：一次加油的流水——日期/里程/金额/升数/是否
+/// 加满五项，单价（金额÷升数）不落列、随时可算。
+/// 与保养记录（maintenance_records）的两个关键差异：
+///  - **故意不设** {carId, date} 唯一约束：同一天加两次油（长途两箱）
+///    合法，一天多条是常态而非脏数据；
+///  - 保存不联动车辆当前里程——保养记录是车辆里程的唯一写源
+///    （spec 用户故事 36），避免两个来源打架。
+/// carId 普通索引：加油卡按车拉流水是高频路径（与保养记录同先例）。
+@TableIndex(name: 'idx_fuel_records_car_id', columns: {#carId})
+@DataClassName('FuelRecordRow')
+class FuelRecords extends Table {
+  IntColumn get id => integer()();
+  IntColumn get carId => integer()();
+
+  /// 加油日期（yyyy-MM-dd）。
+  TextColumn get date => text()();
+
+  /// 加油时的里程（公里）。仅作流水记录，不回写 cars.currentMileageKm。
+  IntColumn get mileageKm => integer()();
+
+  /// 加油升数。与油箱容积同用 real（升，可带小数）。
+  RealColumn get volumeLiters => real()();
+
+  /// 加油总金额，单位分（与保养记录 costCents 同口径，避免浮点误差）。
+  IntColumn get totalCostCents => integer()();
+
+  /// 是否加满。满箱段油耗口径（full-to-full，ADR 0014）依赖它判定
+  /// "哪些记录闭合区间"。
+  BoolColumn get fullTank => boolean()();
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+  TextColumn get updatedAt => text()();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  // 故意不声明 uniqueKeys：同车同日多条加油合法（ADR 0014）。
+}
+
 // ---------------------------- 数据库与迁移 ----------------------------
 
 /// App 数据库。列出全部表后由 Drift 生成类型安全的 API
@@ -263,6 +303,7 @@ class FuelPredictions extends Table {
     MaintenanceRecordItems,
     AppPreferences,
     FuelPredictions,
+    FuelRecords,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -272,11 +313,11 @@ class AppDatabase extends _$AppDatabase {
   /// 测试构造：内存库（每个测试用例独立、不落盘）。
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
-  /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion=2，两者独立演进）。
+  /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion，两者独立演进）。
   /// 改表结构必须 +1：版本与库文件不一致时按 ADR 0005 删库重建，
   /// 不写升级分支。改完跑 build_runner。
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   /// 迁移策略（ADR 0005）：库文件版本与代码不一致（升或降）时，
   /// 删光全部表再重建，不保留任何升级路径。

@@ -4704,6 +4704,618 @@ class FuelPredictionsCompanion extends UpdateCompanion<FuelPredictionRow> {
   }
 }
 
+class $FuelRecordsTable extends FuelRecords
+    with TableInfo<$FuelRecordsTable, FuelRecordRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FuelRecordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _carIdMeta = const VerificationMeta('carId');
+  @override
+  late final GeneratedColumn<int> carId = GeneratedColumn<int>(
+    'car_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<String> date = GeneratedColumn<String>(
+    'date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mileageKmMeta = const VerificationMeta(
+    'mileageKm',
+  );
+  @override
+  late final GeneratedColumn<int> mileageKm = GeneratedColumn<int>(
+    'mileage_km',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _volumeLitersMeta = const VerificationMeta(
+    'volumeLiters',
+  );
+  @override
+  late final GeneratedColumn<double> volumeLiters = GeneratedColumn<double>(
+    'volume_liters',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _totalCostCentsMeta = const VerificationMeta(
+    'totalCostCents',
+  );
+  @override
+  late final GeneratedColumn<int> totalCostCents = GeneratedColumn<int>(
+    'total_cost_cents',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fullTankMeta = const VerificationMeta(
+    'fullTank',
+  );
+  @override
+  late final GeneratedColumn<bool> fullTank = GeneratedColumn<bool>(
+    'full_tank',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("full_tank" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<String> updatedAt = GeneratedColumn<String>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    carId,
+    date,
+    mileageKm,
+    volumeLiters,
+    totalCostCents,
+    fullTank,
+    syncStatus,
+    updatedAt,
+    version,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'fuel_records';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FuelRecordRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('car_id')) {
+      context.handle(
+        _carIdMeta,
+        carId.isAcceptableOrUnknown(data['car_id']!, _carIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_carIdMeta);
+    }
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateMeta);
+    }
+    if (data.containsKey('mileage_km')) {
+      context.handle(
+        _mileageKmMeta,
+        mileageKm.isAcceptableOrUnknown(data['mileage_km']!, _mileageKmMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mileageKmMeta);
+    }
+    if (data.containsKey('volume_liters')) {
+      context.handle(
+        _volumeLitersMeta,
+        volumeLiters.isAcceptableOrUnknown(
+          data['volume_liters']!,
+          _volumeLitersMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_volumeLitersMeta);
+    }
+    if (data.containsKey('total_cost_cents')) {
+      context.handle(
+        _totalCostCentsMeta,
+        totalCostCents.isAcceptableOrUnknown(
+          data['total_cost_cents']!,
+          _totalCostCentsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_totalCostCentsMeta);
+    }
+    if (data.containsKey('full_tank')) {
+      context.handle(
+        _fullTankMeta,
+        fullTank.isAcceptableOrUnknown(data['full_tank']!, _fullTankMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fullTankMeta);
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  FuelRecordRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FuelRecordRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      carId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}car_id'],
+      )!,
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date'],
+      )!,
+      mileageKm: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}mileage_km'],
+      )!,
+      volumeLiters: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}volume_liters'],
+      )!,
+      totalCostCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_cost_cents'],
+      )!,
+      fullTank: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}full_tank'],
+      )!,
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+    );
+  }
+
+  @override
+  $FuelRecordsTable createAlias(String alias) {
+    return $FuelRecordsTable(attachedDatabase, alias);
+  }
+}
+
+class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
+  final int id;
+  final int carId;
+
+  /// 加油日期（yyyy-MM-dd）。
+  final String date;
+
+  /// 加油时的里程（公里）。仅作流水记录，不回写 cars.currentMileageKm。
+  final int mileageKm;
+
+  /// 加油升数。与油箱容积同用 real（升，可带小数）。
+  final double volumeLiters;
+
+  /// 加油总金额，单位分（与保养记录 costCents 同口径，避免浮点误差）。
+  final int totalCostCents;
+
+  /// 是否加满。满箱段油耗口径（full-to-full，ADR 0014）依赖它判定
+  /// "哪些记录闭合区间"。
+  final bool fullTank;
+  final String syncStatus;
+  final String updatedAt;
+  final int version;
+  const FuelRecordRow({
+    required this.id,
+    required this.carId,
+    required this.date,
+    required this.mileageKm,
+    required this.volumeLiters,
+    required this.totalCostCents,
+    required this.fullTank,
+    required this.syncStatus,
+    required this.updatedAt,
+    required this.version,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['car_id'] = Variable<int>(carId);
+    map['date'] = Variable<String>(date);
+    map['mileage_km'] = Variable<int>(mileageKm);
+    map['volume_liters'] = Variable<double>(volumeLiters);
+    map['total_cost_cents'] = Variable<int>(totalCostCents);
+    map['full_tank'] = Variable<bool>(fullTank);
+    map['sync_status'] = Variable<String>(syncStatus);
+    map['updated_at'] = Variable<String>(updatedAt);
+    map['version'] = Variable<int>(version);
+    return map;
+  }
+
+  FuelRecordsCompanion toCompanion(bool nullToAbsent) {
+    return FuelRecordsCompanion(
+      id: Value(id),
+      carId: Value(carId),
+      date: Value(date),
+      mileageKm: Value(mileageKm),
+      volumeLiters: Value(volumeLiters),
+      totalCostCents: Value(totalCostCents),
+      fullTank: Value(fullTank),
+      syncStatus: Value(syncStatus),
+      updatedAt: Value(updatedAt),
+      version: Value(version),
+    );
+  }
+
+  factory FuelRecordRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FuelRecordRow(
+      id: serializer.fromJson<int>(json['id']),
+      carId: serializer.fromJson<int>(json['carId']),
+      date: serializer.fromJson<String>(json['date']),
+      mileageKm: serializer.fromJson<int>(json['mileageKm']),
+      volumeLiters: serializer.fromJson<double>(json['volumeLiters']),
+      totalCostCents: serializer.fromJson<int>(json['totalCostCents']),
+      fullTank: serializer.fromJson<bool>(json['fullTank']),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      updatedAt: serializer.fromJson<String>(json['updatedAt']),
+      version: serializer.fromJson<int>(json['version']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'carId': serializer.toJson<int>(carId),
+      'date': serializer.toJson<String>(date),
+      'mileageKm': serializer.toJson<int>(mileageKm),
+      'volumeLiters': serializer.toJson<double>(volumeLiters),
+      'totalCostCents': serializer.toJson<int>(totalCostCents),
+      'fullTank': serializer.toJson<bool>(fullTank),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+      'updatedAt': serializer.toJson<String>(updatedAt),
+      'version': serializer.toJson<int>(version),
+    };
+  }
+
+  FuelRecordRow copyWith({
+    int? id,
+    int? carId,
+    String? date,
+    int? mileageKm,
+    double? volumeLiters,
+    int? totalCostCents,
+    bool? fullTank,
+    String? syncStatus,
+    String? updatedAt,
+    int? version,
+  }) => FuelRecordRow(
+    id: id ?? this.id,
+    carId: carId ?? this.carId,
+    date: date ?? this.date,
+    mileageKm: mileageKm ?? this.mileageKm,
+    volumeLiters: volumeLiters ?? this.volumeLiters,
+    totalCostCents: totalCostCents ?? this.totalCostCents,
+    fullTank: fullTank ?? this.fullTank,
+    syncStatus: syncStatus ?? this.syncStatus,
+    updatedAt: updatedAt ?? this.updatedAt,
+    version: version ?? this.version,
+  );
+  FuelRecordRow copyWithCompanion(FuelRecordsCompanion data) {
+    return FuelRecordRow(
+      id: data.id.present ? data.id.value : this.id,
+      carId: data.carId.present ? data.carId.value : this.carId,
+      date: data.date.present ? data.date.value : this.date,
+      mileageKm: data.mileageKm.present ? data.mileageKm.value : this.mileageKm,
+      volumeLiters: data.volumeLiters.present
+          ? data.volumeLiters.value
+          : this.volumeLiters,
+      totalCostCents: data.totalCostCents.present
+          ? data.totalCostCents.value
+          : this.totalCostCents,
+      fullTank: data.fullTank.present ? data.fullTank.value : this.fullTank,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      version: data.version.present ? data.version.value : this.version,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FuelRecordRow(')
+          ..write('id: $id, ')
+          ..write('carId: $carId, ')
+          ..write('date: $date, ')
+          ..write('mileageKm: $mileageKm, ')
+          ..write('volumeLiters: $volumeLiters, ')
+          ..write('totalCostCents: $totalCostCents, ')
+          ..write('fullTank: $fullTank, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    carId,
+    date,
+    mileageKm,
+    volumeLiters,
+    totalCostCents,
+    fullTank,
+    syncStatus,
+    updatedAt,
+    version,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FuelRecordRow &&
+          other.id == this.id &&
+          other.carId == this.carId &&
+          other.date == this.date &&
+          other.mileageKm == this.mileageKm &&
+          other.volumeLiters == this.volumeLiters &&
+          other.totalCostCents == this.totalCostCents &&
+          other.fullTank == this.fullTank &&
+          other.syncStatus == this.syncStatus &&
+          other.updatedAt == this.updatedAt &&
+          other.version == this.version);
+}
+
+class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
+  final Value<int> id;
+  final Value<int> carId;
+  final Value<String> date;
+  final Value<int> mileageKm;
+  final Value<double> volumeLiters;
+  final Value<int> totalCostCents;
+  final Value<bool> fullTank;
+  final Value<String> syncStatus;
+  final Value<String> updatedAt;
+  final Value<int> version;
+  const FuelRecordsCompanion({
+    this.id = const Value.absent(),
+    this.carId = const Value.absent(),
+    this.date = const Value.absent(),
+    this.mileageKm = const Value.absent(),
+    this.volumeLiters = const Value.absent(),
+    this.totalCostCents = const Value.absent(),
+    this.fullTank = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.version = const Value.absent(),
+  });
+  FuelRecordsCompanion.insert({
+    this.id = const Value.absent(),
+    required int carId,
+    required String date,
+    required int mileageKm,
+    required double volumeLiters,
+    required int totalCostCents,
+    required bool fullTank,
+    this.syncStatus = const Value.absent(),
+    required String updatedAt,
+    this.version = const Value.absent(),
+  }) : carId = Value(carId),
+       date = Value(date),
+       mileageKm = Value(mileageKm),
+       volumeLiters = Value(volumeLiters),
+       totalCostCents = Value(totalCostCents),
+       fullTank = Value(fullTank),
+       updatedAt = Value(updatedAt);
+  static Insertable<FuelRecordRow> custom({
+    Expression<int>? id,
+    Expression<int>? carId,
+    Expression<String>? date,
+    Expression<int>? mileageKm,
+    Expression<double>? volumeLiters,
+    Expression<int>? totalCostCents,
+    Expression<bool>? fullTank,
+    Expression<String>? syncStatus,
+    Expression<String>? updatedAt,
+    Expression<int>? version,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (carId != null) 'car_id': carId,
+      if (date != null) 'date': date,
+      if (mileageKm != null) 'mileage_km': mileageKm,
+      if (volumeLiters != null) 'volume_liters': volumeLiters,
+      if (totalCostCents != null) 'total_cost_cents': totalCostCents,
+      if (fullTank != null) 'full_tank': fullTank,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (version != null) 'version': version,
+    });
+  }
+
+  FuelRecordsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? carId,
+    Value<String>? date,
+    Value<int>? mileageKm,
+    Value<double>? volumeLiters,
+    Value<int>? totalCostCents,
+    Value<bool>? fullTank,
+    Value<String>? syncStatus,
+    Value<String>? updatedAt,
+    Value<int>? version,
+  }) {
+    return FuelRecordsCompanion(
+      id: id ?? this.id,
+      carId: carId ?? this.carId,
+      date: date ?? this.date,
+      mileageKm: mileageKm ?? this.mileageKm,
+      volumeLiters: volumeLiters ?? this.volumeLiters,
+      totalCostCents: totalCostCents ?? this.totalCostCents,
+      fullTank: fullTank ?? this.fullTank,
+      syncStatus: syncStatus ?? this.syncStatus,
+      updatedAt: updatedAt ?? this.updatedAt,
+      version: version ?? this.version,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (carId.present) {
+      map['car_id'] = Variable<int>(carId.value);
+    }
+    if (date.present) {
+      map['date'] = Variable<String>(date.value);
+    }
+    if (mileageKm.present) {
+      map['mileage_km'] = Variable<int>(mileageKm.value);
+    }
+    if (volumeLiters.present) {
+      map['volume_liters'] = Variable<double>(volumeLiters.value);
+    }
+    if (totalCostCents.present) {
+      map['total_cost_cents'] = Variable<int>(totalCostCents.value);
+    }
+    if (fullTank.present) {
+      map['full_tank'] = Variable<bool>(fullTank.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(updatedAt.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FuelRecordsCompanion(')
+          ..write('id: $id, ')
+          ..write('carId: $carId, ')
+          ..write('date: $date, ')
+          ..write('mileageKm: $mileageKm, ')
+          ..write('volumeLiters: $volumeLiters, ')
+          ..write('totalCostCents: $totalCostCents, ')
+          ..write('fullTank: $fullTank, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4722,6 +5334,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $FuelPredictionsTable fuelPredictions = $FuelPredictionsTable(
     this,
   );
+  late final $FuelRecordsTable fuelRecords = $FuelRecordsTable(this);
   late final Index idxMaintenanceItemsCarsId = Index(
     'idx_maintenance_items_cars_id',
     'CREATE INDEX idx_maintenance_items_cars_id ON maintenance_items (cars_id)',
@@ -4733,6 +5346,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final Index idxMaintenanceRecordItemsRecordId = Index(
     'idx_maintenance_record_items_record_id',
     'CREATE INDEX idx_maintenance_record_items_record_id ON maintenance_record_items (maintenance_record_id)',
+  );
+  late final Index idxFuelRecordsCarId = Index(
+    'idx_fuel_records_car_id',
+    'CREATE INDEX idx_fuel_records_car_id ON fuel_records (car_id)',
   );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -4747,9 +5364,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     maintenanceRecordItems,
     appPreferences,
     fuelPredictions,
+    fuelRecords,
     idxMaintenanceItemsCarsId,
     idxMaintenanceRecordsCarId,
     idxMaintenanceRecordItemsRecordId,
+    idxFuelRecordsCarId,
   ];
 }
 
@@ -7108,6 +7727,301 @@ typedef $$FuelPredictionsTableProcessedTableManager =
       FuelPredictionRow,
       PrefetchHooks Function()
     >;
+typedef $$FuelRecordsTableCreateCompanionBuilder =
+    FuelRecordsCompanion Function({
+      Value<int> id,
+      required int carId,
+      required String date,
+      required int mileageKm,
+      required double volumeLiters,
+      required int totalCostCents,
+      required bool fullTank,
+      Value<String> syncStatus,
+      required String updatedAt,
+      Value<int> version,
+    });
+typedef $$FuelRecordsTableUpdateCompanionBuilder =
+    FuelRecordsCompanion Function({
+      Value<int> id,
+      Value<int> carId,
+      Value<String> date,
+      Value<int> mileageKm,
+      Value<double> volumeLiters,
+      Value<int> totalCostCents,
+      Value<bool> fullTank,
+      Value<String> syncStatus,
+      Value<String> updatedAt,
+      Value<int> version,
+    });
+
+class $$FuelRecordsTableFilterComposer
+    extends Composer<_$AppDatabase, $FuelRecordsTable> {
+  $$FuelRecordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get carId => $composableBuilder(
+    column: $table.carId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mileageKm => $composableBuilder(
+    column: $table.mileageKm,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get volumeLiters => $composableBuilder(
+    column: $table.volumeLiters,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalCostCents => $composableBuilder(
+    column: $table.totalCostCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get fullTank => $composableBuilder(
+    column: $table.fullTank,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FuelRecordsTableOrderingComposer
+    extends Composer<_$AppDatabase, $FuelRecordsTable> {
+  $$FuelRecordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get carId => $composableBuilder(
+    column: $table.carId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get mileageKm => $composableBuilder(
+    column: $table.mileageKm,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get volumeLiters => $composableBuilder(
+    column: $table.volumeLiters,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalCostCents => $composableBuilder(
+    column: $table.totalCostCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get fullTank => $composableBuilder(
+    column: $table.fullTank,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FuelRecordsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FuelRecordsTable> {
+  $$FuelRecordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get carId =>
+      $composableBuilder(column: $table.carId, builder: (column) => column);
+
+  GeneratedColumn<String> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<int> get mileageKm =>
+      $composableBuilder(column: $table.mileageKm, builder: (column) => column);
+
+  GeneratedColumn<double> get volumeLiters => $composableBuilder(
+    column: $table.volumeLiters,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get totalCostCents => $composableBuilder(
+    column: $table.totalCostCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get fullTank =>
+      $composableBuilder(column: $table.fullTank, builder: (column) => column);
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+}
+
+class $$FuelRecordsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FuelRecordsTable,
+          FuelRecordRow,
+          $$FuelRecordsTableFilterComposer,
+          $$FuelRecordsTableOrderingComposer,
+          $$FuelRecordsTableAnnotationComposer,
+          $$FuelRecordsTableCreateCompanionBuilder,
+          $$FuelRecordsTableUpdateCompanionBuilder,
+          (
+            FuelRecordRow,
+            BaseReferences<_$AppDatabase, $FuelRecordsTable, FuelRecordRow>,
+          ),
+          FuelRecordRow,
+          PrefetchHooks Function()
+        > {
+  $$FuelRecordsTableTableManager(_$AppDatabase db, $FuelRecordsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FuelRecordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FuelRecordsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FuelRecordsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> carId = const Value.absent(),
+                Value<String> date = const Value.absent(),
+                Value<int> mileageKm = const Value.absent(),
+                Value<double> volumeLiters = const Value.absent(),
+                Value<int> totalCostCents = const Value.absent(),
+                Value<bool> fullTank = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<String> updatedAt = const Value.absent(),
+                Value<int> version = const Value.absent(),
+              }) => FuelRecordsCompanion(
+                id: id,
+                carId: carId,
+                date: date,
+                mileageKm: mileageKm,
+                volumeLiters: volumeLiters,
+                totalCostCents: totalCostCents,
+                fullTank: fullTank,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int carId,
+                required String date,
+                required int mileageKm,
+                required double volumeLiters,
+                required int totalCostCents,
+                required bool fullTank,
+                Value<String> syncStatus = const Value.absent(),
+                required String updatedAt,
+                Value<int> version = const Value.absent(),
+              }) => FuelRecordsCompanion.insert(
+                id: id,
+                carId: carId,
+                date: date,
+                mileageKm: mileageKm,
+                volumeLiters: volumeLiters,
+                totalCostCents: totalCostCents,
+                fullTank: fullTank,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FuelRecordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FuelRecordsTable,
+      FuelRecordRow,
+      $$FuelRecordsTableFilterComposer,
+      $$FuelRecordsTableOrderingComposer,
+      $$FuelRecordsTableAnnotationComposer,
+      $$FuelRecordsTableCreateCompanionBuilder,
+      $$FuelRecordsTableUpdateCompanionBuilder,
+      (
+        FuelRecordRow,
+        BaseReferences<_$AppDatabase, $FuelRecordsTable, FuelRecordRow>,
+      ),
+      FuelRecordRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -7134,4 +8048,6 @@ class $AppDatabaseManager {
       $$AppPreferencesTableTableManager(_db, _db.appPreferences);
   $$FuelPredictionsTableTableManager get fuelPredictions =>
       $$FuelPredictionsTableTableManager(_db, _db.fuelPredictions);
+  $$FuelRecordsTableTableManager get fuelRecords =>
+      $$FuelRecordsTableTableManager(_db, _db.fuelRecords);
 }

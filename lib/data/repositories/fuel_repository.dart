@@ -1,14 +1,15 @@
-// 加油预测仓库（FuelRepository）：加油域的数据库读写出口。
+// 加油仓库（FuelRepository）：加油域的数据库读写出口。
 //
-// ≈ Java 里从大 Service 拆出的领域 Service：管三块互不重叠的数据——
+// ≈ Java 里从大 Service 拆出的领域 Service：管四块互不重叠的数据——
 //  1. 每车加油预测设置（fuel_predictions 表，剩余油量）；
-//  2. 油价缓存（上次拉取的单省价表 + 调价预告，JSON 存偏好，ADR 0006/0011）；
-//  3. 手填油价（"省份|油品" → 每升价，JSON 存偏好）。
+//  2. 每车加油记录（fuel_records 表，ADR 0014）；
+//  3. 油价缓存（上次拉取的单省价表 + 调价预告，JSON 存偏好，ADR 0006/0011）；
+//  4. 手填油价（"省份|油品" → 每升价，JSON 存偏好）。
 // 后两者是临时数据（不进备份），经 LunioPreferences 的 readRaw/writeRaw
 // 原语存取，key 常量登记在本模块（加油域的 key 不进偏好门面）。
 //
-// 与车辆域的关系：deleteCar 的事务内会调 [deleteForCar] 级联删预测行
-// （由主仓库组合调用），其余路径互不依赖。
+// 与车辆域的关系：deleteCar 的事务内会调 [deleteForCar] 级联删预测行与
+// 加油记录（由主仓库组合调用），其余路径互不依赖。
 import 'dart:convert';
 import 'dart:developer' as developer;
 
@@ -17,6 +18,8 @@ import 'package:drift/drift.dart';
 import '../../core/id/snowflake_id_generator.dart';
 import '../../domain/entities/fuel_prediction.dart' as domain;
 import '../../domain/entities/fuel_price.dart' as domain;
+import '../../domain/entities/fuel_record.dart' as domain;
+import '../../domain/entities/sync_metadata.dart';
 import '../database/app_database.dart';
 import '../preferences/app_preferences.dart';
 import 'entity_row_codec.dart';
@@ -82,12 +85,82 @@ class FuelRepository {
     );
   }
 
-  /// 删除某辆车的预测行（删除车辆的级联清理专用，须在主仓库的删车
-  /// 事务内调用）。
-  Future<void> deleteForCar(int carId) {
-    return (database.delete(
+  /// 删除某辆车的全部加油域数据（预测行 + 加油记录，ADR 0014；删除车辆
+  /// 的级联清理专用，须在主仓库的删车事务内调用）。
+  Future<void> deleteForCar(int carId) async {
+    await (database.delete(
       database.fuelPredictions,
     )..where((row) => row.carId.equals(carId))).go();
+    await (database.delete(
+      database.fuelRecords,
+    )..where((row) => row.carId.equals(carId))).go();
+  }
+
+  // ---------------- 每车加油记录（ADR 0014）----------------
+
+  /// 某辆车的全部加油记录，按（日期、里程、id）升序——这是满箱段油耗
+  /// 口径（full-to-full）的锚定顺序（ADR 0014），列表展示的"最近 5 条"
+  /// 由 UI 在此基准上自行倒序截取。
+  Future<List<domain.FuelRecord>> listFuelRecordsForCar(int carId) async {
+    final rows =
+        await (database.select(database.fuelRecords)
+              ..where((row) => row.carId.equals(carId))
+              ..orderBy([
+                (row) => OrderingTerm.asc(row.date),
+                (row) => OrderingTerm.asc(row.mileageKm),
+                (row) => OrderingTerm.asc(row.id),
+              ]))
+            .get();
+    return rows.map(fuelRecordFromRow).toList();
+  }
+
+  /// 新增加油记录。不联动车辆当前里程（保养记录是唯一写源，ADR 0014）。
+  /// 副作用：syncStatus 记 pendingUpdate、updatedAt 刷新（沿用加油域约定）。
+  /// 返回新生成的雪花 id。
+  Future<int> saveFuelRecord(domain.FuelRecord record) async {
+    record.validate();
+    final recordId = SnowflakeIdGenerator.instance.next();
+    final synced = record.copyWith(
+      sync: SyncMetadata(
+        status: SyncStatus.pendingUpdate,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await database
+        .into(database.fuelRecords)
+        .insert(fuelRecordCompanion(synced, recordId));
+    return recordId;
+  }
+
+  /// 编辑加油记录（按 id 整行更新业务字段；carId 不在更新范围——编辑
+  /// 不把记录挪到别的车）。不联动车辆当前里程。
+  /// 副作用：syncStatus 记 pendingUpdate、updatedAt 刷新。
+  Future<void> updateFuelRecord(domain.FuelRecord record) async {
+    final recordId = record.id;
+    if (recordId == null) {
+      throw ArgumentError('Fuel record id is required');
+    }
+    record.validate();
+    await (database.update(
+      database.fuelRecords,
+    )..where((row) => row.id.equals(recordId))).write(
+      FuelRecordsCompanion(
+        date: Value(record.date.toString()),
+        mileageKm: Value(record.mileageKm),
+        volumeLiters: Value(record.volumeLiters),
+        totalCostCents: Value(record.totalCostCents),
+        fullTank: Value(record.fullTank),
+        syncStatus: Value(SyncStatus.pendingUpdate.name),
+        updatedAt: Value(DateTime.now().toIso8601String()),
+      ),
+    );
+  }
+
+  /// 删除单条加油记录（按 id）。
+  Future<void> deleteFuelRecord(int recordId) {
+    return (database.delete(
+      database.fuelRecords,
+    )..where((row) => row.id.equals(recordId))).go();
   }
 
   // ---------------- 油价缓存（临时）----------------

@@ -222,11 +222,11 @@ class BackupRepository {
     });
   }
 
-  /// 清空数据（"我的"页入口）：事务内删 6 张表（4 张业务表
-  /// + 加油预测设置表 + 偏好表）。
+  /// 清空数据（"我的"页入口）：事务内删 7 张表（4 张业务表
+  /// + 加油预测设置表 + 加油记录表 + 偏好表）。
   /// 语义（用户确认过的口径）：清空车辆、保养项目、保养记录、加油预测
-  /// 设置和全部偏好设置（主题、通知、手动日期、开发者模式、停车倒计时、
-  /// 油价缓存、手填油价、snooze/ack）；
+  /// 设置、加油记录和全部偏好设置（主题、通知、手动日期、开发者模式、
+  /// 停车倒计时、油价缓存、手填油价、snooze/ack）；
   /// 默认车辆模型与默认保养项目两张目录表不动。
   /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录；
   /// 系统通知的取消由调用方（通知协调器 runAllDataClear）负责。
@@ -237,6 +237,7 @@ class BackupRepository {
       await database.delete(database.maintenanceRecords).go();
       await database.delete(database.maintenanceItems).go();
       await database.delete(database.fuelPredictions).go();
+      await database.delete(database.fuelRecords).go();
       await database.delete(database.cars).go();
     });
   }

@@ -22,6 +22,7 @@ import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_price.dart';
+import '../../../domain/entities/fuel_record.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
@@ -236,6 +237,25 @@ Future<void> notifyParkingCountdownExpired(WidgetRef ref) async {
 }
 
 // ---- 加油 ----
+
+/// 保存加油记录（按 id 分新增/编辑）：写库 → 失效车辆家族。加油记录
+/// 不联动车辆当前里程（保养记录是唯一写源，ADR 0014）。
+/// 确认框/关 sheet/toast 留调用方。
+Future<void> saveFuelRecord(WidgetRef ref, FuelRecord record) async {
+  final repository = ref.read(fuelRepositoryProvider);
+  if (record.id == null) {
+    await repository.saveFuelRecord(record);
+  } else {
+    await repository.updateFuelRecord(record);
+  }
+  invalidateVehicleProviders(ref);
+}
+
+/// 删除加油记录：写库 → 失效车辆家族（确认框由调用方负责弹）。
+Future<void> removeFuelRecord(WidgetRef ref, int recordId) async {
+  await ref.read(fuelRepositoryProvider).deleteFuelRecord(recordId);
+  invalidateVehicleProviders(ref);
+}
 
 /// 保存省份选择：写全局偏好 + 整族失效加油相关 provider。缓存是单省
 /// 价表（ADR 0011），换省后缓存省份不匹配 → 油价卡按"暂无数据"展示，

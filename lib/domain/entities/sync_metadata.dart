@@ -1,9 +1,9 @@
 // 云同步元数据：每张业务表都带的三个审计字段（为未来云同步预留）。
 //
-// 当前是纯本地 App：所有数据 status 恒为 synced，没有任何同步消费者；
-// 但字段已在建表时落库，并随备份 JSON 一起导出导入（嵌套 "sync" 对象），
-// 未来接云同步时可直接利用 pendingCreate/pendingUpdate/pendingDelete
-// 做增量上传（≈ 常见的"脏标记 + 版本号"同步方案）。
+// 当前是纯本地 App：没有任何同步消费者；但字段已在建表时落库，并随
+// 备份 JSON 一起导出导入（嵌套 "sync" 对象），未来接云同步时可直接利用
+// pendingCreate/pendingUpdate/pendingDelete 做增量上传（≈ 常见的
+// "脏标记 + 版本号"同步方案）。
 enum SyncStatus { synced, pendingCreate, pendingUpdate, pendingDelete }
 
 class SyncMetadata {
@@ -13,7 +13,9 @@ class SyncMetadata {
     this.version = 1,
   });
 
-  /// 同步状态标记。本地写入时全部记 synced。
+  /// 同步状态标记（云同步预留的脏标记，当前没有任何同步消费者）。
+  /// 取值不统一是既有事实：多数路径写 synced，加油仓库与主仓库部分
+  /// 路径写 pendingUpdate——未来接云同步时再归一口径。
   final SyncStatus status;
 
   /// 最后更新时间（时间戳，随备份导出）。

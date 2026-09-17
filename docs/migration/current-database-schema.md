@@ -1,8 +1,8 @@
 # 当前数据库表结构
 
 本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、车型目录
-asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `2`
-（ADR 0010）；备份 JSON `schemaVersion` 为 `2`（解码兼容读 v1，见下文
+asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
+（ADR 0014）；备份 JSON `schemaVersion` 为 `2`（解码兼容读 v1，见下文
 "备份契约边界"）。
 
 本文只记录当前代码事实，不记录历史版本演变。事实源是
@@ -10,7 +10,7 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `2`
 
 ## 版本和升级策略（ADR 0005）
 
-- 当前数据库：`schemaVersion = 2`。
+- 当前数据库：`schemaVersion = 3`。
 - 只服务全新安装：新装走 `createAll` 建全部表，然后 bootstrap 从 asset
   目录灌入车型目录与默认保养模板。
 - 库文件版本与代码不一致（无论升或降）时，`migration` 返回 Drift 的
@@ -217,6 +217,38 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `2`
 - 主键：`id`。
 - 唯一键：`car_id`。
 
+### `fuel_records`
+
+加油记录表（docs/adr/0014）：一次加油的流水，五项字段记一笔，单价
+（金额÷升数）不落列、展示层现算。
+
+字段：
+
+- `id`：主键。
+- `car_id`：所属车辆 ID，来源于 `cars.id`。
+- `date`：加油日期，格式 `yyyy-MM-dd`。
+- `mileage_km`：加油时里程，单位公里（仅流水快照）。
+- `volume_liters`：加油升数（real，与油箱容积同精度先例）。
+- `total_cost_cents`：加油总金额，单位分。
+- `full_tank`：是否加满（满箱段油耗口径依赖它判定区间闭合）。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：无（故意不设——同车同日多箱合法，docs/adr/0014）。
+- 普通索引：`car_id`（`idx_fuel_records_car_id`，按车拉流水）。
+
+业务注意：
+
+- 同一车辆同一天可以有多条加油记录，没有"同日查重"规则（与保养记录
+  口径刻意相反）。
+- 加油记录不联动车辆当前里程：`cars.current_mileage_km` 的唯一写源是
+  保养记录（docs/adr/0014）。
+- 列表读取固定按（日期、里程、id）升序——满箱段油耗口径的锚定顺序。
+
 ### `app_preferences`
 
 应用偏好表。用于当前应用车辆、手动日期、主题、通知设置、提醒抑制和停车倒计时等本地状态。
@@ -259,10 +291,10 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `2`
 
 ## 删除和恢复边界
 
-- 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联、加油预测设置，并清理指向该车的 `appliedCarId`。
-- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置和车辆。
+- 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联、加油预测设置、加油记录，并清理指向该车的 `appliedCarId`。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录和车辆。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
-- 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。
+- 恢复备份是 replace-import：先清空当前业务数据，再恢复备份内容，失败整体回滚。加油记录暂不在恢复替换范围内（备份 v3 接入时一并处理，docs/adr/0014）。
 
 ## 备份契约边界
 
@@ -290,6 +322,7 @@ v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没
 - 提醒延后/确认状态
 - 停车倒计时
 - 油价缓存与手填油价（临时数据）
+- 加油记录（`fuel_records` 表；备份 v3 接入前暂不导出，docs/adr/0014）
 
 恢复备份时，源车辆 ID 和项目 ID 会换成新雪花 ID（事务内维护旧→新对应表）；
 恢复完成后当前应用车辆写为第一辆恢复出的车辆。
