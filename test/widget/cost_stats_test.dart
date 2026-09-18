@@ -4,6 +4,7 @@
 // 播种必须在 pumpApp 之前：装配后直写库不会触发 provider 失效。
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/domain/entities/car.dart';
@@ -176,14 +177,19 @@ void main() {
       await pumpApp(tester, database: database);
       await openCostStatsPage(tester);
 
-      // 切"全部"：两车合并（280+100+52 = 432）。
+      // 切"全部"：两车合并（280+100+52 = 432）。轮询等待是静默返回的，
+      // 合并总额必须补硬断言：只出现在汇总卡"总花费"一处（今年花费
+      // 是 332、2026 横条也是 332，不会与 432 撞串）。
       await tester.tap(find.text('全部'));
       await pumpUntilFound(tester, find.text('¥432.00'));
+      expect(find.text('¥432.00'), findsOneWidget);
       expect(find.text('¥380.00'), findsNothing);
 
-      // 切车B：只看卡罗拉的记录。
+      // 切车B：只看卡罗拉的记录。¥52.00 出现在总花费/今年花费/2026 横条
+      // 三处（峰值标签是"峰值 ¥52.00"另一串，不计入）。
       await tester.tap(find.text('丰田 卡罗拉'));
       await pumpUntilFound(tester, find.text('¥52.00'));
+      expect(find.text('¥52.00'), findsNWidgets(3));
       expect(find.text('¥380.00'), findsNothing);
       expect(find.text('¥432.00'), findsNothing);
       // 项目占比只剩车B的机油费用。
@@ -231,6 +237,28 @@ void main() {
       expect(find.text('总花费'), findsNothing);
       // 回到我的页：花费统计设置行还在。
       expect(find.text('花费统计'), findsOneWidget);
+    });
+
+    testWidgets('车辆清单加载失败：错误页兜底且保留返回键', (tester) async {
+      final database = await seedTwoCarsWithRecords();
+      await pumpApp(
+        tester,
+        database: database,
+        extraOverrides: [
+          // 车辆清单 provider 直接抛错（应用车辆由它派生，一起失败）：
+          // 统计页必须给出错误页而不是停在整页 loading（错误分支曾经
+          // 不可达，carsProvider 失败时页面永久加载）。
+          carsProvider.overrideWith(
+            (ref) async => throw Exception('db down'),
+          ),
+        ],
+      );
+      await pushRouteViaNavigationChannel('/cost-stats');
+      await pumpUntilFound(tester, find.textContaining('加载失败'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('加载失败'), findsOneWidget);
+      // 错误分支也要有页内返回键（pushed 子页无底部导航可退）。
+      expect(find.byTooltip('返回'), findsOneWidget);
     });
   });
 

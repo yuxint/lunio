@@ -323,16 +323,22 @@ class LoadingPage extends StatelessWidget {
 }
 
 /// 页面级错误占位（提醒/记录/我的三页统一使用，§5.2）。
+/// [leading] 供不挂主壳层的 pushed 子页放返回键（tab 页有底部导航，
+/// 不传）。
 class ErrorPage extends StatelessWidget {
-  const ErrorPage({required this.title, required this.error});
+  const ErrorPage({required this.title, required this.error, this.leading});
 
   final String title;
   final Object error;
+
+  /// 可选 leading 位（如花费统计页的返回键），透传给 [LunioPage]。
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
     return LunioPage(
       title: title,
+      leading: leading,
       children: [LunioEmptyCard('加载失败：${friendlyError(error)}')],
     );
   }

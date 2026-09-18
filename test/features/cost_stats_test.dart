@@ -250,35 +250,45 @@ void main() {
 
     test('Top N 截断 + 降序 + 平局按名称稳定排序；占比分母含未进榜项目', () {
       final records = [
-        for (var i = 0; i < 6; i++)
+        for (var i = 0; i < 4; i++)
           _record(
             date: LocalDate(2026, 5, i + 1),
             costCents: 0,
             itemIds: [i + 1],
             itemCosts: [_cost(itemId: i + 1, cost: (6 - i) * 1000)],
           ),
-        // 与第 6 名同为 1000 的平局项：名称更小者应进榜。
+        // 与第 5 名同为 2000 的平局项：平局必须落在截断线上才能观察
+        // tie-break 方向——名称更小者进榜（项目5 进、项目6 出），
+        // 比较器方向变异（升/降互换或删掉）在这里才会红。
         _record(
           date: const LocalDate(2026, 5, 10),
           costCents: 0,
-          itemIds: [7],
-          itemCosts: [_cost(itemId: 7, cost: 1000)],
+          itemIds: [5],
+          itemCosts: [_cost(itemId: 5, cost: 2000)],
+        ),
+        _record(
+          date: const LocalDate(2026, 5, 11),
+          costCents: 0,
+          itemIds: [6],
+          itemCosts: [_cost(itemId: 6, cost: 2000)],
         ),
       ];
       final stats = buildCostStats(
         records: records,
         items: [
-          for (var i = 0; i < 7; i++) _item(id: i + 1, name: '项目${i + 1}'),
+          for (var i = 0; i < 6; i++) _item(id: i + 1, name: '项目${i + 1}'),
         ],
         today: _today,
       );
       expect(stats.topItems, hasLength(5));
-      // 降序：6000, 5000, 4000, 3000, 2000；1000 的两个都进不了前五。
+      // 降序：6000, 5000, 4000, 3000, 2000。
       expect(
         stats.topItems.map((row) => row.costCents).toList(),
         [6000, 5000, 4000, 3000, 2000],
       );
-      // 占比分母 = 全部 7 项之和 = 22000（含未进榜的 1000×2）。
+      // 平局方向：项目5 与项目6 同为 2000，名称更小的项目5 占第 5 名。
+      expect(stats.topItems.last.name, '项目5');
+      // 占比分母 = 全部 6 项之和 = 22000（含未进榜的 2000×1）。
       expect(stats.topItems[0].share, closeTo(6000 / 22000, 1e-9));
     });
 

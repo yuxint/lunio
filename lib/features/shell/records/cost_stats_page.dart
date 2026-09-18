@@ -90,17 +90,32 @@ class CostStatsPageState extends ConsumerState<CostStatsPage> {
   int? selectedCarId;
   bool hasUserChosen = false;
 
+  /// pushed 子页的返回键：数据分支给 LunioPage 的 leading 位，
+  /// 作用域解析失败/数据加载失败的 ErrorPage 分支也要给——否则页内
+  /// 没有任何返回途径（只剩 iOS 右滑/系统返回手势）。
+  Widget _backKey() => LunioIconButton(
+        icon: Icons.arrow_back_ios_new,
+        tooltip: '返回',
+        onPressed: () => context.pop(),
+      );
+
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     // 默认作用域 = 当前应用车辆；无车时落到 null（"全部"，实际渲染空态）。
-    // 当前应用车辆尚未解析时整页 loading，避免先用"全部"拉一遍再切换。
-    final appliedCarId = ref
-        .watch(appliedCarProvider)
-        .maybeWhen(data: (car) => car?.id, orElse: () => null);
-    final carsReady = ref
-        .watch(carsProvider)
-        .maybeWhen(data: (_) => true, orElse: () => false);
+    // 默认作用域解析阶段（用户还没点过 chips）：车辆清单或应用车辆任一
+    // 未就绪时整页 loading，避免先用"全部"拉一遍再切换；任一解析失败
+    // 直接错误页兜底（带返回键），不留在加载态。
+    final appliedAsync = ref.watch(appliedCarProvider);
+    final carsAsync = ref.watch(carsProvider);
+    final appliedCarId = appliedAsync.maybeWhen(
+      data: (car) => car?.id,
+      orElse: () => null,
+    );
+    final carsReady = carsAsync.maybeWhen(
+      data: (_) => true,
+      orElse: () => false,
+    );
     final int? scope;
     if (hasUserChosen) {
       scope = selectedCarId;
@@ -109,14 +124,31 @@ class CostStatsPageState extends ConsumerState<CostStatsPage> {
     } else {
       scope = null;
     }
+    // 默认作用域解析只在前两个分支处理（用户点过 chips 后车辆清单的
+    // 失败由数据 provider 的 error 分支兜住）。
+    final resolvingScope =
+        !hasUserChosen && (carsAsync.isLoading || appliedAsync.isLoading);
+    final scopeFailed =
+        !hasUserChosen && (carsAsync.hasError || appliedAsync.hasError);
     final Widget body;
-    if (!hasUserChosen && !carsReady) {
+    if (resolvingScope) {
       body = const LoadingPage(title: '花费统计');
+    } else if (scopeFailed) {
+      // 车辆清单失败优先报（应用车辆由它派生，通常一起失败）；
+      // scopeFailed 已保证至少一个 error，这里取到的不会是 null。
+      final gateError = carsAsync.maybeWhen(
+            error: (error, _) => error,
+            orElse: () => appliedAsync.maybeWhen(
+              error: (error, _) => error,
+              orElse: () => null,
+            ),
+          )!;
+      body = ErrorPage(title: '花费统计', error: gateError, leading: _backKey());
     } else {
       body = ref.watch(costStatsDataProvider(scope)).when(
             loading: () => const LoadingPage(title: '花费统计'),
             error: (error, stackTrace) =>
-                ErrorPage(title: '花费统计', error: error),
+                ErrorPage(title: '花费统计', error: error, leading: _backKey()),
             data: (data) => _buildContent(context, data, scope),
           );
     }
@@ -137,11 +169,7 @@ class CostStatsPageState extends ConsumerState<CostStatsPage> {
     );
     return LunioPage(
       title: '花费统计',
-      leading: LunioIconButton(
-        icon: Icons.arrow_back_ios_new,
-        tooltip: '返回',
-        onPressed: () => context.pop(),
-      ),
+      leading: _backKey(),
       bottomPadding: 24,
       children: [
         if (data.cars.isNotEmpty) ...[
