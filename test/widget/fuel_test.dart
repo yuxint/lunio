@@ -6,6 +6,7 @@ import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/core/theme/lunio_tokens.dart';
+import 'package:lunio/features/shell/fuel/fuel_records_card.dart';
 import 'package:lunio/features/shell/shared/shared_widgets.dart';
 
 import 'package:lunio/core/date/local_date.dart';
@@ -638,10 +639,12 @@ void main() {
 
   // ---- 加油记录卡（ADR 0014，票 05）----
 
-  /// 建车 + 打开开发者/加油开关 + 装配 App 并切到加油页。
+  /// 建车 + 打开开发者/加油开关 + 装配 App 后直泵加油记录卡。
+  /// 入口挂载点已在加油页注释隐藏（雏形先不对用户可见），测试绕过
+  /// 页面直接泵卡组件（pumpApp 的 child 参数）。
   /// 加油记录的播种必须在装配前完成（[buildRecords] 回调拿到 carId 后
   /// 同步写库，provider 首读才能看到），与夹具"播种在装配前"约定一致。
-  Future<({TestRepositories repository, int carId})> pumpFuelPage(
+  Future<({TestRepositories repository, int carId})> pumpRecordsCard(
     WidgetTester tester,
     List<FuelRecord> Function(int carId) buildRecords,
   ) async {
@@ -684,8 +687,7 @@ void main() {
     for (final record in buildRecords(carId)) {
       await repository.fuelRepository.saveFuelRecord(record);
     }
-    await pumpApp(tester, database: database);
-    await tester.tap(find.text('加油'));
+    await pumpApp(tester, database: database, child: const FuelRecordsCard());
     await tester.pumpAndSettle();
     return (repository: repository, carId: carId);
   }
@@ -712,10 +714,9 @@ void main() {
   testWidgets('fuel records card shows empty state and saves via form', (
     tester,
   ) async {
-    final fixture = await pumpFuelPage(tester, (carId) => []);
+    final fixture = await pumpRecordsCard(tester, (carId) => []);
 
-    // 页面标题与底部导航都叫"加油"（文案从"加油预测"改名，ADR 0014）。
-    expect(find.text('加油'), findsNWidgets(2));
+    // 入口已注释隐藏、测试直泵卡组件，页面标题断言不再适用。
     // 空态一行文案占位（不隐藏入口）。
     expect(find.text('还没有加油记录，点「记一笔」开始记录'), findsOneWidget);
 
@@ -758,7 +759,7 @@ void main() {
   testWidgets('fuel record row opens edit sheet prefilled and saves changes', (
     tester,
   ) async {
-    final fixture = await pumpFuelPage(
+    final fixture = await pumpRecordsCard(
       tester,
       (carId) => [
         fuelSeed(carId, date: '2026-05-10', mileageKm: 12000),
@@ -787,7 +788,7 @@ void main() {
   testWidgets('fuel record delete asks confirmation and removes the row', (
     tester,
   ) async {
-    final fixture = await pumpFuelPage(
+    final fixture = await pumpRecordsCard(
       tester,
       (carId) => [
         fuelSeed(carId, date: '2026-05-10', mileageKm: 12000),
@@ -814,7 +815,7 @@ void main() {
   testWidgets('fuel records list collapses to latest five with expand-all', (
     tester,
   ) async {
-    await pumpFuelPage(
+    await pumpRecordsCard(
       tester,
       (carId) => [
         for (var day = 1; day <= 6; day++)
@@ -840,7 +841,7 @@ void main() {
   testWidgets(
     'fuel records card shows average summary and per-row segment consumption',
     (tester) async {
-      await pumpFuelPage(
+      await pumpRecordsCard(
         tester,
         (carId) => [
           // 首条满箱：只做锚点（行内无本段油耗）。

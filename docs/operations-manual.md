@@ -1,6 +1,6 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-17 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 收拢见 5.10，加油记录见 docs/adr/0014）
+> 版本：2026-09-20 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 收拢见 5.10，加油记录见 docs/adr/0014）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
@@ -387,7 +387,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 5.10 加油页（/fuel，开发者开关打开时可见）
 
-页面：`fuel/fuel_page.dart → FuelPreviewPage`，**标题与底部导航同名"加油"**（2026-09-17 从"加油预测"改名，新增加油记录流水后原名不准确，ADR 0014；开发者开关本身仍叫"加油预测"）。三张卡自上而下：油价卡 → 加满预估卡 → 加油记录卡。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006 / ADR 0014）：
+页面：`fuel/fuel_page.dart → FuelPreviewPage`，**标题与底部导航同名"加油"**（2026-09-17 从"加油预测"改名，新增加油记录流水后原名不准确，ADR 0014；开发者开关本身仍叫"加油预测"）。当前可见**两张卡**：油价卡 → 加满预估卡；**加油记录卡已实现但入口注释隐藏**（2026-09-20 拍板：功能是雏形、细节待打磨，先不对用户可见——挂载行与 import 在 `fuel_page.dart` 注释并附放开说明，卡本体保留在 `fuel_records_card.dart`，widget 测试经 pumpApp 的 child 参数直泵卡；放开时取消两处注释即恢复三卡）。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006 / ADR 0014）：
 
 1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格行右侧动作按钮按状态切换（同一位置同一个按钮；价格文字与"— 元/升"占位价纯展示不可点）**：无手填价显示"手填"（主动作样式，唯一编辑入口）→ 点了 `showLunioModalSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理），保存走 `shell_actions.dart → saveFuelManualPrice`（动作层：写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ 单点失效 `fuelManualPriceProvider`）+ toast"手填油价已保存"；有手填价显示"重置"（弱化样式；**改手填价须先重置再重新手填**）→ 重置同样走动作层 `shell_actions.dart → saveFuelManualPrice`（pricePerLiter 传 null 删该组合键恢复数据源价 + 单点失效 `fuelManualPriceProvider`；原旁路已于 2026-09-09 收编，ADR 0007 的例外消除）+ toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示"— 元/升"占位价 + "暂无数据"胶囊，编辑同样走"手填"按钮**（油价获取中的加载态无按钮，不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，**按当前省份抓详情页** `/hubei.shtml` 等，一次一省 + 调价预告，见 ADR 0006/0011；`fuelPriceSourceProvider` 在 `fuel/fuel_prices.dart`，注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`（`fuel/fuel_prices.dart`，缓存优先/新鲜期/换省守卫/自动拉取的编排都在它的 build），缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是**单省价表**：换省后缓存省份不匹配 → 油价卡按"暂无数据"展示、**不自动拉取，点"刷新"再拉新省**，用户决策 2026-09-12；价格里的省份守卫保证旧省缓存不透出），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
 2. **预估下次油价块**（油价卡内，价格行下方）：标题"预估下次油价"（与"当前油价"同字号）；数值 = 生效价（手填优先）+ 调价预告变动中值（`FuelRules.predictedPricePerLiter`，先取整到分），价格旁带**涨跌箭头**（`Icons.trending_up`/`trending_down`，方向取预告 `trend`，与预估价的正负号同源；**红涨绿跌**复用语义 token：涨 `tokens.danger`、跌 `tokens.success`，见 DESIGN.md），右侧日期胶囊"X月X日调价"；展示样式与价格行一致（`_TagPill` 复用）。无预告/无基准价时显示"暂无调价预测"占位（无箭头），不算错误。**过期预告按无预告同占位**（调价日早于当前应用日期 `effectiveTodayProvider` 即过期，调价日当天仍有效；无年份预告按"离今天最近的同月日"定年，判定在 `FuelRules.isForecastExpired`，过滤统一走 `fuel/fuel_prices.dart → effectiveFuelForecastProvider`，ADR 0011 二轮修订）。

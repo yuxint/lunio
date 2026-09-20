@@ -35,7 +35,8 @@
    升）、totalCostCents（int 分）、fullTank（bool）+ sync 三列
    （syncStatus/updatedAt/version，全库约定）。无唯一约束；carId 普通
    索引 `idx_fuel_records_car_id`（按车拉流水，与保养记录同先例）。
-   数据库 `schemaVersion` 2→3（ADR 0005：版本不符删库重建，无升级分支）。
+   数据库 `schemaVersion` 2→3（ADR 0005 2026-09-20 修订：纯增量变更走
+   `onUpgrade` 增量迁移，v2 老库原地升级、存量数据保留）。
 2. **校验**（实体构造即校验 + 仓库写库前统一校验，与 FuelPrediction
    同先例）：里程 ≥ 0、金额 ≥ 0、升数 > 0（0 升的"加油"没有物理意义）。
    日期范围同保养记录（上路日期起、允许未来），属表单层规则（随加油页
@@ -72,8 +73,9 @@
 
 ## 后果
 
-- 数据库 schemaVersion 3：旧开发库下次启动自动删库重建（ADR 0005），
-  不是事故。
+- 数据库 schemaVersion 3：v2 老库升级经 `onUpgrade` 增量迁移只建
+  `fuel_records` 新表，存量数据保留（ADR 0005 2026-09-20 修订）；
+  回归在 `database_migration_test`。
 - 加油记录不进"同日查重"、不联动车辆里程——依赖"一天一条""里程随
   记录抬升"直觉写的新代码要小心，这两条规则只属于保养记录。
 - 油耗数字只在满箱段口径下成立：部分加油只贡献升数，不闭合区间；用户

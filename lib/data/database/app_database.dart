@@ -11,7 +11,8 @@
 //    （删除车辆时由 Repository 在事务里手工级联删除）。
 //
 // ⚠ 唯一约束是重要的业务边界（改字段前先看 docs/migration/current-database-schema.md
-// 与 docs/adr/0005：版本不符删库重建，改表必须把 schemaVersion +1）：
+// 与 docs/adr/0005：改表必须把 schemaVersion +1 并在 onUpgrade 补增量迁移，
+// 破坏性变更才删库重建）：
 //  - cars:                {brand, model, roadDate}
 //  - vehicleModels:       {catalogId}, {brand, model}
 //  - defaultItems:        {catalogId}, {powertrainType, itemName}
@@ -313,18 +314,32 @@ class AppDatabase extends _$AppDatabase {
   /// 测试构造：内存库（每个测试用例独立、不落盘）。
   AppDatabase.inMemory() : super(NativeDatabase.memory());
 
+  /// 测试构造：指定文件库（迁移测试用——内存库无法模拟"关掉再打开"，
+  /// 也就触发不了 onUpgrade）。生产代码不要用。
+  AppDatabase.forFile(File file) : super(NativeDatabase(file));
+
   /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion，两者独立演进）。
-  /// 改表结构必须 +1：版本与库文件不一致时按 ADR 0005 删库重建，
-  /// 不写升级分支。改完跑 build_runner。
+  /// 改表结构必须 +1，并在 onUpgrade 补对应增量分支（ADR 0005 及其
+  /// 2026-09-20 修订）。改完跑 build_runner。
   @override
   int get schemaVersion => 3;
 
-  /// 迁移策略（ADR 0005）：库文件版本与代码不一致（升或降）时，
-  /// 删光全部表再重建，不保留任何升级路径。
-  /// 全新安装走 onCreate 的 createAll，不经过这里。
-  /// 开发期改表结构：schemaVersion +1 即可，旧开发库下次启动自动清空重建。
+  /// 迁移策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写
+  /// onUpgrade 增量迁移，老库原地升级、存量数据保留——用户拍板"升级
+  /// 不得删库重建"；删库重建（destructiveFallback）只保留给破坏性变更
+  /// （改列类型/删表/改字段语义）。
+  /// 全新安装走 onCreate 的 createAll，不经过 onUpgrade。
   @override
-  MigrationStrategy get migration => destructiveFallback;
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          // v2 → v3（ADR 0014）：新增加油记录表，纯增量——只建新表，
+          // 不碰任何旧表，车辆/项目/记录等存量数据原样保留。
+          if (from < 3) {
+            await m.createTable(fuelRecords);
+          }
+        },
+      );
 }
 
 /// 惰性连接：只有第一条 SQL 真正执行时才打开数据库文件。

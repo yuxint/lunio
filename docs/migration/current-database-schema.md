@@ -8,16 +8,20 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 本文只记录当前代码事实，不记录历史版本演变。事实源是
 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
-## 版本和升级策略（ADR 0005）
+## 版本和升级策略（ADR 0005，2026-09-20 修订）
 
 - 当前数据库：`schemaVersion = 3`。
-- 只服务全新安装：新装走 `createAll` 建全部表，然后 bootstrap 从 asset
+- 全新安装走 `createAll` 建全部表，然后 bootstrap 从 asset
   目录灌入车型目录与默认保养模板。
-- 库文件版本与代码不一致（无论升或降）时，`migration` 返回 Drift 的
-  `destructiveFallback`：删光全部表再重建。系统不保留任何升级路径。
-- 改表纪律：改 Drift 表结构必须把 `schemaVersion` +1（+1 本身就是触发
-  删库重建的开关），改完跑 `dart run build_runner build`。
-- 正式上线后本策略作废，届时另立 ADR 恢复"版本号 +1 并补升级分支"的纪律。
+- 纯增量变更（新增表/列）走 `onUpgrade` 增量迁移，老库原地升级、
+  存量数据保留：v2→v3 只建 `fuel_records` 表（见
+  `app_database.dart` 的 `migration`）。
+- 破坏性变更（改列类型/删表/改字段语义）仍走
+  `destructiveFallback`：删光全部表再重建。
+- 改表纪律：改 Drift 表结构必须把 `schemaVersion` +1 并在 `onUpgrade`
+  补对应分支（纯增量加分支，破坏性变更不加分直接依赖删库重建），
+  改完跑 `dart run build_runner build`；纯增量迁移要配套
+  `database_migration_test` 式回归（老库升级数据不丢）。
 - 当前代码没有声明数据库外键约束；关联完整性由 Repository 在事务中校验和维护。
 
 ## 类型约定

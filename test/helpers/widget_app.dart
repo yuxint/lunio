@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +21,7 @@ import 'package:lunio/app/providers.dart';
 import 'package:lunio/app/lunio_app.dart';
 import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/core/notifications/lunio_notification_service.dart';
+import 'package:lunio/core/theme/lunio_theme.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
@@ -309,7 +311,10 @@ Future<void> pushRouteViaNavigationChannel(String url) async {
 
 /// 装配完整 App：内存数据库 + 测试目录 + 固定"今天"（2026-05-19）+
 /// 假油价源 + 全新通知服务实例（用例间不共享通知服务状态）。
-/// 返回数据库供用例体播种/断言。extraOverrides 供个别用例追加
+/// 返回数据库供用例体播种/断言。child 非空时不装配 LunioApp，改为在
+/// 同一 ProviderScope 里直接泵该组件（补齐主题/本地化/Scaffold 骨架）
+/// ——给"入口已在页面上注释隐藏、测试直泵组件"的场景用（如加油记录
+/// 卡）。extraOverrides 供个别用例追加
 /// provider 覆盖（如让模板 family 抛错验证失败路径）。Riverpod 3 未导出
 /// Override 类型，这里用 dynamic 承接，展开进 overrides 列表时由
 /// ProviderScope 的参数类型收窄。写库失败路径注入仓库替身走 repository
@@ -324,6 +329,7 @@ Future<AppDatabase> pumpApp(
   bool inAppNotificationsEnabled = false,
   FuelAdjustmentForecast? fuelForecast,
   List<dynamic> extraOverrides = const [],
+  Widget? child,
 }) async {
   final appDatabase = database ?? AppDatabase.inMemory();
   if (database == null) {
@@ -367,7 +373,18 @@ Future<AppDatabase> pumpApp(
         ),
         ...extraOverrides,
       ],
-      child: LunioApp(routerConfig: buildAppRouter()),
+      child: child != null
+          ? MaterialApp(
+              theme: buildLunioTheme(),
+              localizationsDelegates: const [
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [Locale('zh', 'Hans')],
+              home: Scaffold(body: child),
+            )
+          : LunioApp(routerConfig: buildAppRouter()),
     ),
   );
   for (var frame = 0; frame < 10; frame++) {
