@@ -86,7 +86,7 @@ appDatabaseProvider(:181)
   ├─→ backupRepositoryProvider(:209)（另挂偏好门面）
   └─→ lunioRepositoryProvider(:218)（另挂偏好门面 + 加油仓库）
         └─→ recordsForCarProvider(:302)（按车记录 family——花费统计页
-            单车/全部作用域，2026-09-17）
+            当前应用车辆作用域，2026-09-20 起不再有"全部"合并）
 ```
 
 ---
@@ -243,7 +243,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 1 | `MaintenanceRecordForm`（:504 起）第一步 | 日期（范围=上路日期~今天+365）、里程（默认车辆当前里程）、费用（元输入）、备注、**详细模式开关（ADR 0010，默认简洁、不持久化；编辑带项目费用的记录自动开启，`initState → detailMode`）**、项目多选 chip；编辑态可见"已禁用但被选过"的项目 | — |
 | 1a | 详细模式费用行（`_ItemCostRow`，勾选项目 chip 下方逐项展开） | 每个项目"材料费/工时费/项目费用"三个数字框。**自动算链**：材料、工时**任一非空**（未填侧按 0 求和；两格都 0 填 0.00；2026-09-12 修订，原规则要求两者都>0）→ 项目费用=两者之和；已填项目费用 → 总费用=合计。自动值可手改，**手改后不再自动覆盖**（清空=恢复自动；编辑记录打开时，存量项目费用≠材料+工时或存量总费用≠合计即视为已手改，避免预填的优惠价被自动算链冲掉）。算链、手改标记、费用草稿生命周期与提交清单收在 `records/record_cost_form_controller.dart → RecordCostFormController`（ADR 0010 唯一实现点，表单 State 只接线与重建；单测 `test/features/record_cost_form_controller_test.dart`）；**不一致纯提示**：项目费用≠材料+工时（任一非空时比，未填侧按 0；2026-09-12 同步修订）或总费用≠合计（有项目费用时）→ 该数字红字+框尾/行首黄色警告角标，不拦截保存（优惠等差异合法）。判定纯函数在 `record_rules.dart`（`itemCostMismatch`/`totalCostMismatch`/`sumItemCostCents`） | — |
 | 1b | 行内"新增"项目 | `records_page.dart → _addMaintenanceItem` → 弹项目表单（§5.2.2）→ 重拉列表 → **diff 出新 id 自动勾选**（`costForm.syncSelection` 同步费用草稿） | 新项目已落库 |
-| 2 | `_buildRecordDraft()`（:760）+ `costForm.buildItemCosts()` + `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项；费用不一致**不做**校验）→ 构造记录草稿（含项目费用列表；全空草稿跳过）→ 为每个选中项目建间隔输入草稿 | — |
+| 2 | `_buildRecordDraft()`（:760）+ `costForm.buildItemCosts()` + `_goToIntervalStep` | UI 校验（里程非负/费用非负/至少一项；费用不一致**不做**校验）→ 构造记录草稿（含项目费用列表；全空草稿跳过；**"材料/工时有值但项目费用为空"经 `RecordRules.normalizeItemCost` 按材料+工时补齐——2026-09-20 数据不变量**，正常交互下算链已回填，这里兜住编辑存量违规行未碰费用区直接保存等路径；编辑打开时 `_backfillMissingCosts` 立即回填显示，所见即所得）→ 为每个选中项目建间隔输入草稿 | — |
 | 2a | `_goToIntervalStep` → `_findMileageConflict` → `RecordRules.conflictingMileageRecord`（domain 纯函数） | **里程单调性软提示（2026-09-17 新增，新增与编辑都查——区别于步骤 0b 同日查重只查新增）**：草稿与该车全量记录构成"里程不随日期单调非降"（存在记录晚于草稿但里程更低，或早于草稿但里程更高；等里程不算冲突，同日跳过——同日由步骤 0b/唯一约束兜底；编辑经草稿自身 id 排除自己）→ `showConfirmDialog`"与已有记录不一致"（文案含参照记录日期+里程，按钮**仍要继续/返回修改**）：「仍要继续」→ 放行进第二步；「返回修改」/点遮罩 → 留在第一步改日期或里程。**纯提示不拦截保存、两分支都不写库**；provider 未就绪跳过检查（保存时既有校验兜底）。规则单测（含变异验证）`test/domain/record_rules_test.dart`，弹窗三态+编辑态 `test/widget/records_test.dart` | — |
 | 3 | 第二步 `_buildIntervalStep` | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步） | — |
 | 4 | `_submit()` → `records/record_interval_updates.dart → buildItemUpdates()` | 间隔草稿 → 待更新项目实体清单：正整数校验（规则收在 `MaintenanceRules.validateIntervals`，**与保养项目表单共用**，文案经 `intervalProblemText` 生成、带项目名前缀）；**有变化的项目**才生成 update 实体（`now` 注入重建实体的 sync 元数据）。草稿类与清单生成收在 `record_interval_updates.dart`（单测 `test/features/record_interval_updates_test.dart`；校验规则单测在 `test/domain/maintenance_rules_test.dart`） | — |
@@ -266,20 +266,19 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 按周期（整条记录） | 标题"保养记录" + 副标题"整条记录总费用 ¥xx" + 日期/里程/总费用指标格 + 备注（有才显示）+ 项目费用清单（每勾选项目一行：项目名 + 项目费用，未填显示"—"，填了材料/工时的加小字"材料 xx / 工时 xx"） | 展示永远取存储值：单项目以项目费用为准、整条记录以总费用为准；不一致的项目费用/总费用加黄色警告角标，**不做读时修正** |
 | 按项目（单项目） | 标题=项目名（无副标题）+ 日期/里程指标格 + 距上次时间/里程指标格 + 材料费/工时费一行（两者都未填整行不显示，只填一格另一格显示"—"）+ 项目费用格（保留不一致黄三角）。距上次参照点 = 该项目**上一条记录 → 本条**（`RecordRules.previousRecordForItem`：严格早于本条日期的最新一条，同车同日唯一保证可唯一定位；项目首条无上一条 → 两格都显示"—"） | 同上；差值经 `RecordRules.daysSinceLast` / `kmSinceLast` 计算，负值（补录乱序）/无上一条在 domain 折叠成 null，`formatters.dart → formatDaysSinceLast` / `formatKmSinceLast` 只把 null 显示"—" |
 
-### 4.5 花费统计（今年花费汇总行 + /cost-stats 统计页，2026-09-17 新增）
+### 4.5 花费统计（今年花费汇总行 + /cost-stats 统计页，2026-09-17 新增；2026-09-20 单车化 + 图表改版 + 优惠分摊）
 
-**纯读取聚合**：不动数据库、不走动作层（无写点）。聚合口径唯一实现在 `lib/features/shell/records/cost_stats.dart`（纯函数 `buildCostStats`，单测含变异验证 `test/features/cost_stats_test.dart`）：**总额/年度/月度用记录总费用（权威值）**，与项目费用合计不一致仍按总费用（ADR 0010 口径）；**项目占比 = 项目费用 ?? 材料+工时**（缺失一边按 0），三项全缺跳过该行，按**项目名**聚合（清单外归"未知项目"，多车同名自然合并）；近 12 个月窗口含当月往前推 11 个月（依赖 `LocalDate.addMonths` 负数月份，2026-09-17 修复其 floor 语义，回归测试在 `test/domain/app_date_context_test.dart`）。
+**纯读取聚合**：不动数据库、不走动作层（无写点）。聚合口径唯一实现在 `lib/features/shell/records/cost_stats.dart`（纯函数 `buildCostStats`，单测含变异验证 `test/features/cost_stats_test.dart`）：**总额/年度/月度用记录总费用（权威值）**，与项目费用合计不一致仍按总费用（ADR 0010 口径）；**项目占比 = 项目费用 ?? 材料+工时**（缺失一边按 0），三项全缺跳过该行，按**项目名**聚合（清单外归"未知项目"）；近 12 个月窗口含当月往前推 11 个月（依赖 `LocalDate.addMonths` 负数月份，2026-09-17 修复其 floor 语义，回归测试在 `test/domain/app_date_context_test.dart`）。**优惠分摊（2026-09-20）**：记录级总优惠 = Σ计费值 − 记录总费用（负差值 = 无优惠按 0；无计费值记录 Σ=0 自然不参与），按各项目计费值权重分摊（`allocateDiscount` 最大余数法，分摊合计与总优惠严格相等、每项分摊 ≤ 计费值），纯读时派生不改存储值；词汇见 CONTEXT.md「花费统计与优惠」。
 
 | 用户操作 | 代码位置 | 做了什么 |
 |---|---|---|
 | 记录页头部"今年花费"汇总行（**仅当前车有记录时显示**，金额=今年记录总费用） | `records_page.dart:1177 → _CostSummaryRow`（`costCentsForYear` 算今年值；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
 | 我的页「数据与工具」首行"花费统计 → 查看" | `profile_page.dart`（`ProfileSettingRow`，onTap `context.push`） | 进同一统计页 |
-| 统计页默认作用域 | `cost_stats_page.dart → CostStatsPageState.build` | 默认当前应用车辆（车辆清单/应用车辆解析完成前整页 loading，任一解析失败走错误页兜底、错误页带返回键）；无车时"全部"落空态 |
-| 切车辆 chips（每车一枚 + "全部"） | 同页 `_buildScopeChips` → `setState(selectedCarId)` | 作用域是页面 state；数据接缝 `costStatsDataProvider`（**family，key=车 id / null=全部**）：单车直取按车 family，"全部"逐车合并——复用 `recordsForCarProvider` / `maintenanceItemsForCarProvider`，无新 SQL；写库后经 `invalidateVehicleProviders` 整族失效传导重算 |
-| 统计页内容（自绘横条，无图表库） | 同页 `_buildSummaryCard` / `_buildYearCard` / `_buildItemCard` / `_buildTrendCard` | 汇总卡（总花费+今年花费）→ 按年横条（年份升序，条宽=相对最大年）→ 项目占比 Top 5（`costStatsTopItemCount`，花费降序、平局按名称）→ 近 12 个月小柱（旧→新，当月高亮，标题行右侧"峰值"）；无记录 → 空态卡（"暂无保养记录…"），无车 → "请先新增车辆" |
+| 统计页作用域（**永远当前应用车辆，2026-09-20 拍板移除"全部"/切车 chips**） | `cost_stats_page.dart → costStatsDataProvider`（**非 family**，watch `appliedCarProvider` + 按车 family） | 应用车辆解析完成前整页 loading，解析失败走错误页兜底（带返回键）；当前车辆名在标题副字"当前车辆：XX"展示；无车 → "请先新增车辆"空态 |
+| 统计页内容（全部 CustomPainter 自绘，无图表库；一次性入场动画 700ms，三卡共用同一 AnimationController） | 同页 `_buildSummaryCard` / `_buildYearCard` / `_buildDonutCard` / `_buildTrendCard` | 汇总卡（总花费+今年花费）→ 按年渐变胶囊条（年份升序，条宽=相对最大年 × 入场进度）→ **项目占比环形图**（一段一项目：实付实色弧 + 优惠同色半透明弧、切片留缝；Top 5 + "其他"段保完整圆；环心 = 项目口径实付合计 + "优惠 ¥x"副行；图例行 = 色点+项目名+实付+（有优惠时）"省 ¥x"；分段配色主色系五档派生自 LunioTokens）→ 近 12 个月平滑曲线 + 渐变面积（`_TrendPainter` 三次贝塞尔、`_WidthRevealClipper` 左→右展开，峰值月打点高亮，当月标签主色）；无记录 → 空态卡，无车 → "请先新增车辆" |
 | 返回 | 顶部栏 leading 返回键（`context.pop`）+ iOS 右滑返回（默认转场天然支持） | — |
 
-**路由**：`lib/app/app_router.dart:61 → /cost-stats` 是第一个**不挂主壳层的 pushed 子页**（不渲染 AppShell 无底部导航，页面自带 Scaffold；builder 默认 MaterialPage 转场）。`LunioPage`/`LunioTopBar`为此增加可选 `leading` 位（`lib/core/widgets/lunio_components.dart`）。widget 测试 `test/widget/cost_stats_test.dart`（渲染/切车/空态/两入口跳转/返回键）。
+**路由与安全区**：`lib/app/app_router.dart:61 → /cost-stats` 是第一个**不挂主壳层的 pushed 子页**（不渲染 AppShell 无底部导航，页面自带 Scaffold；builder 默认 MaterialPage 转场）。`LunioPage`/`LunioTopBar`为此增加可选 `leading` 位；**安全区由 `LunioPage` 内置 `SafeArea` 统一提供（2026-09-20）**——tab 页壳层（app_shell.dart:162）已包一层、嵌套幂等零行为变化，pushed 子页不挂壳层也能天生拿到顶部安全区与底部手势条避让（此前 /cost-stats 标题顶进状态栏的根因即"壳层包 SafeArea 而 pushed 页没人包"）。widget 测试 `test/widget/cost_stats_test.dart`（渲染/空态/优惠环形图/两入口跳转/返回键/错误页兜底）。
 
 ---
 
@@ -352,7 +351,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
 2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）再执行恢复；
-4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 6 张业务表（4 张主业务表 + 加油预测设置 + 加油记录）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
+4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 6 张业务表（4 张主业务表 + 加油预测设置 + 加油记录）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的存量行经 `RecordRules.normalizeItemCost` 按材料+工时补齐——2026-09-20 数据不变量，恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
 5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
 6. `invalidateAllAppDataProviders` → 全量刷新（车型目录由 bootstrap 自动重灌）；
 7. 失败分支：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框；其他 → toast。

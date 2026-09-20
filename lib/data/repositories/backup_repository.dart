@@ -174,8 +174,12 @@ class BackupRepository {
             );
           }
           // 项目费用按备份里的旧 itemId 取值，随行恢复（金额本身不需要
-          // 重映射，只有 itemId 要换成新雪花 id）。
+          // 重映射，只有 itemId 要换成新雪花 id）；"材料/工时有值但项目
+          // 费用为空"的存量行按材料+工时补齐（数据不变量，2026-09-20），
+          // 恢复不把违规数据带进新库。
           final cost = costsByItemId[itemId];
+          final normalizedCost =
+              cost == null ? null : RecordRules.normalizeItemCost(cost);
           await database
               .into(database.maintenanceRecordItems)
               .insert(
@@ -185,9 +189,9 @@ class BackupRepository {
                   carId: carId,
                   itemId: mappedItemId,
                   date: record.date,
-                  materialCostCents: cost?.materialCents,
-                  laborCostCents: cost?.laborCents,
-                  costCents: cost?.costCents,
+                  materialCostCents: normalizedCost?.materialCents,
+                  laborCostCents: normalizedCost?.laborCents,
+                  costCents: normalizedCost?.costCents,
                 ),
               );
         }

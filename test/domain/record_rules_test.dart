@@ -282,6 +282,41 @@ void main() {
     );
   });
 
+  test('normalize item cost fills missing cost from splits (invariant)', () {
+    // 材料+工时有值、项目费用空 → 补成两者之和（2026-09-20 数据不变量）。
+    final filled = RecordRules.normalizeItemCost(
+      const RecordItemCost(itemId: 1, materialCents: 15000, laborCents: 8000),
+    );
+    expect(filled.costCents, 23000);
+    expect(filled.materialCents, 15000);
+    expect(filled.laborCents, 8000);
+    // 只填材料（未填侧按 0）。
+    expect(
+      RecordRules.normalizeItemCost(
+        const RecordItemCost(itemId: 1, materialCents: 5000),
+      ).costCents,
+      5000,
+    );
+    // 材料 0 是明确的"没花钱"：同样触发补齐，项目费用落 0。
+    expect(
+      RecordRules.normalizeItemCost(
+        const RecordItemCost(itemId: 1, materialCents: 0),
+      ).costCents,
+      0,
+    );
+    // 项目费用已有值（含与材料+工时不一致的优惠价）→ 原样返回，不冲掉。
+    const discounted = RecordItemCost(
+      itemId: 1,
+      materialCents: 15000,
+      laborCents: 8000,
+      costCents: 12000,
+    );
+    expect(RecordRules.normalizeItemCost(discounted).costCents, 12000);
+    // 三项全空 → 原样返回。
+    const empty = RecordItemCost(itemId: 1);
+    expect(RecordRules.normalizeItemCost(empty).isEmpty, isTrue);
+  });
+
   test('total cost mismatch only when item cost sum is positive', () {
     // 没有任何项目费用（含简洁模式）：总费用纯手填，不比。
     expect(

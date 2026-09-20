@@ -374,7 +374,14 @@ Records are list-first, not chart-first. The record screen supports two display 
 
 ### Cost Statistics
 
-The cost statistics page is a pushed subpage (not a tab) reached from the records header row or the profile page. It is read-only aggregation rendered with self-drawn primitives — no chart library. Charts use only existing tokens: horizontal bars are rounded primary-color bars at ~82% alpha scaled to the in-section maximum (zero value draws nothing), and the 12-month trend is a row of equal-width mini columns with shallow neutral stubs for empty months and the current month labeled in primary. Each section lives in a standard card with a bold small-caps-style header; exact amounts always accompany bars, with the trend section showing only a peak value in its header trailing. Scope switching uses the records-style chips (selected = soft primary fill).
+The cost statistics page is a pushed subpage (not a tab) reached from the records header row or the profile page. It is read-only aggregation rendered with self-drawn primitives — no chart library — and its scope is always the applied vehicle (the vehicle name shows as the title subtitle; there is no "all vehicles" scope). Charts use only existing tokens and never hard-coded hex colors:
+
+- Yearly spend: gradient capsule bars (primary → primaryStrong, 12px tall, full radius) scaled to the largest year; zero-value years draw nothing.
+- Item share: a donut chart. One arc per item (Top 5 plus a single neutral "other" slice so the ring stays a complete circle); within each arc the paid part is solid and the allocated discount part is the same hue at ~38% alpha, so discounts read as bites taken out of the price composition. The ring center shows the item-scope paid total with a green discount sub-line; the legend on the right lists dot + item name + paid amount + a small green "saved" amount. Slice colors are a five-step ramp of the primary family (primary, secondary, and interpolations toward the ink token), with thin gaps between slices.
+- 12-month trend: a smooth curve (cubic segments) with a soft gradient area fill below (primary at 32% fading to 2%) and a highlighted dot on the peak month; the section header trailing still carries the exact peak amount. Current month label stays primary.
+- Entrance animation: one shared one-shot 700ms controller — bars grow by width, the donut sweeps open, the curve reveals left-to-right. No looping or idle animations.
+
+Safe-area handling lives in `LunioPage` itself, so every pushed subpage is correct by construction; exact amounts always accompany charts.
 
 ### Bottom Navigation
 

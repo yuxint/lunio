@@ -361,4 +361,159 @@ void main() {
       expect(december.costCents, 150);
     });
   });
+
+  group('优惠分摊（2026-09-20）', () {
+    test('按计费值权重分摊，最大余数法守恒', () {
+      // 总费用 300，机油计费 200 + 机滤 150 → 总优惠 50。
+      // 机油 exact 28.57 → 28.57 分摊 2857 分；机滤 exact 21.43 →
+      // floor 2142 + 最大余数补 1 分 = 2143，合计正好 5000（守恒）。
+      final stats = buildCostStats(
+        records: [
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 30000,
+            itemIds: [1, 2],
+            itemCosts: [
+              _cost(itemId: 1, cost: 20000),
+              _cost(itemId: 2, cost: 15000),
+            ],
+          ),
+        ],
+        items: [_item(id: 1, name: '机油'), _item(id: 2, name: '机滤')],
+        today: _today,
+      );
+      expect(stats.totalDiscountCents, 5000);
+      expect(stats.itemTotalCents, 35000);
+      expect(stats.itemsActualCents, 30000);
+      final oil = stats.topItems[0];
+      expect(oil.name, '机油');
+      expect(oil.discountCents, 2857);
+      expect(oil.actualCents, 17143);
+      final filter = stats.topItems[1];
+      expect(filter.discountCents, 2143);
+      expect(filter.actualCents, 12857);
+    });
+
+    test('负差值按无优惠计（clamp 到 0）', () {
+      // 总费用 300 > 计费值合计 200：不加价展示，优惠按 0。
+      final stats = buildCostStats(
+        records: [
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 30000,
+            itemIds: [1],
+            itemCosts: [_cost(itemId: 1, cost: 20000)],
+          ),
+        ],
+        items: [_item(id: 1, name: '机油')],
+        today: _today,
+      );
+      expect(stats.totalDiscountCents, 0);
+      expect(stats.itemsActualCents, 20000);
+      expect(stats.topItems.single.discountCents, 0);
+      expect(stats.topItems.single.actualCents, 20000);
+    });
+
+    test('没有任何计费值的记录不参与优惠统计', () {
+      // 简洁模式只填总费用：Σ计费值 = 0，差值 ≤ 0 自然为无优惠——
+      // 口径自动成立，无需特判。
+      final stats = buildCostStats(
+        records: [
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 99000,
+            itemIds: [1],
+            itemCosts: [_cost(itemId: 1)], // 三项全缺。
+          ),
+          _record(date: const LocalDate(2026, 5, 2), costCents: 50000),
+        ],
+        items: [_item(id: 1, name: '机油')],
+        today: _today,
+      );
+      expect(stats.totalDiscountCents, 0);
+      expect(stats.topItems, isEmpty);
+      expect(stats.itemsActualCents, 0);
+      // 总额口径不受影响。
+      expect(stats.totalCents, 149000);
+    });
+
+    test('跨记录按项目名合并优惠；优惠与无优惠记录混合', () {
+      final stats = buildCostStats(
+        records: [
+          // 有优惠：总费用 80 < 机油计费 100 → 优惠 20 全归机油。
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 8000,
+            itemIds: [1],
+            itemCosts: [_cost(itemId: 1, cost: 10000)],
+          ),
+          // 无优惠：计费合计 = 总费用。
+          _record(
+            date: const LocalDate(2026, 5, 2),
+            costCents: 6000,
+            itemIds: [1, 2],
+            itemCosts: [
+              _cost(itemId: 1, cost: 3000),
+              _cost(itemId: 2, cost: 3000),
+            ],
+          ),
+          // 有优惠：总费用 40 < 机滤计费 50 → 优惠 10 全归机滤。
+          _record(
+            date: const LocalDate(2026, 5, 3),
+            costCents: 4000,
+            itemIds: [2],
+            itemCosts: [_cost(itemId: 2, cost: 5000)],
+          ),
+        ],
+        items: [_item(id: 1, name: '机油'), _item(id: 2, name: '机滤')],
+        today: _today,
+      );
+      expect(stats.totalDiscountCents, 3000);
+      expect(stats.itemTotalCents, 21000);
+      expect(stats.itemsActualCents, 18000);
+      // 降序：机油 130 > 机滤 80。
+      expect(stats.topItems[0].name, '机油');
+      expect(stats.topItems[0].discountCents, 2000);
+      expect(stats.topItems[0].actualCents, 11000);
+      expect(stats.topItems[1].discountCents, 1000);
+      expect(stats.topItems[1].actualCents, 7000);
+    });
+
+    test('单条分摊不越过该项目计费值；多项守恒', () {
+      // 总费用 10，计费 A 70 + B 2 + C 3 = 75 → 优惠 65。
+      // A exact 60.67 → 6066 + 余数 1 = 6067（≤ 7000）、B 173、C 260，
+      // 合计 6500 守恒。
+      final stats = buildCostStats(
+        records: [
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 1000,
+            itemIds: [1, 2, 3],
+            itemCosts: [
+              _cost(itemId: 1, cost: 7000),
+              _cost(itemId: 2, cost: 200),
+              _cost(itemId: 3, cost: 300),
+            ],
+          ),
+        ],
+        items: [
+          _item(id: 1, name: '甲'),
+          _item(id: 2, name: '乙'),
+          _item(id: 3, name: '丙'),
+        ],
+        today: _today,
+      );
+      expect(stats.totalDiscountCents, 6500);
+      final discounts = {
+        for (final row in stats.topItems) row.name: row.discountCents,
+      };
+      expect(discounts['甲'], 6067);
+      expect(discounts['乙'], 173);
+      expect(discounts['丙'], 260);
+      // 每项分摊 ≤ 计费值。
+      for (final row in stats.topItems) {
+        expect(row.discountCents, lessThanOrEqualTo(row.costCents));
+      }
+    });
+  });
 }

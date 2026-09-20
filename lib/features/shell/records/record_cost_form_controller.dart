@@ -100,6 +100,9 @@ class RecordCostFormController {
     totalTouched = record != null &&
         record.costCents != RecordRules.sumItemCostCents(record.itemCosts);
     _syncDrafts(selectedItemIds, formItems);
+    // 存量补齐显示：不变量落地（2026-09-20）前的历史数据可能存在
+    // "材料/工时有值但项目费用为空"的行（详见 [_backfillMissingCosts]）。
+    _backfillMissingCosts();
   }
 
   /// 总费用输入框（第一步的"费用"字段）。
@@ -183,9 +186,12 @@ class RecordCostFormController {
 
   /// 提交用的项目费用列表（ADR 0010）：草稿只存在于勾选集中（勾选
   /// 同步的不变量），三个金额全空的草稿跳过；金额元→分四舍五入，
-  /// 空/非法 = 未填。不一致（项目费用 ≠ 材料+工时、总费用 ≠ 合计）
-  /// 在这里不做校验——按产品规则不一致是合法数据（如优惠），由界面
-  /// 红字黄三角提示。
+  /// 空/非法 = 未填；"材料/工时有值但项目费用为空"经
+  /// [RecordRules.normalizeItemCost] 按材料+工时补齐（数据不变量，
+  /// 2026-09-20——正常交互下算链已回填，这里兜住绕过输入事件的路径，
+  /// 如编辑存量违规行后未碰费用区直接保存）。不一致（项目费用 ≠
+  /// 材料+工时、总费用 ≠ 合计）在这里不做校验——按产品规则不一致
+  /// 是合法数据（如优惠），由界面红字黄三角提示。
   List<RecordItemCost> buildItemCosts() {
     final costs = <RecordItemCost>[];
     for (final draft in _drafts.values) {
@@ -193,20 +199,18 @@ class RecordCostFormController {
       if (itemId == null) {
         continue;
       }
-      final material = parseMoneyCents(draft.materialController.text);
-      final labor = parseMoneyCents(draft.laborController.text);
-      final cost = parseMoneyCents(draft.costController.text);
-      if (material == null && labor == null && cost == null) {
-        continue;
-      }
-      costs.add(
+      final normalized = RecordRules.normalizeItemCost(
         RecordItemCost(
           itemId: itemId,
-          materialCents: material,
-          laborCents: labor,
-          costCents: cost,
+          materialCents: parseMoneyCents(draft.materialController.text),
+          laborCents: parseMoneyCents(draft.laborController.text),
+          costCents: parseMoneyCents(draft.costController.text),
         ),
       );
+      if (normalized.isEmpty) {
+        continue;
+      }
+      costs.add(normalized);
     }
     return costs;
   }
@@ -295,6 +299,27 @@ class RecordCostFormController {
     return [
       for (final draft in _drafts.values) _draftToCost(draft),
     ];
+  }
+
+  /// 打开编辑时的存量补齐显示：项目费用为空但材料/工时有值的存量行
+  /// （不变量落地前写入的历史数据）立即按"材料+工时"回填，所见即
+  /// 所得——保存经 [buildItemCosts] 归一后与显示一致，避免"打开时
+  /// 空、保存后凭空多出值"。只补显示，不跑完整算链、不动总费用
+  /// （存量总费用按预填权威处理）；程序写入不记手改，后续输入仍
+  /// 自动跟随。
+  void _backfillMissingCosts() {
+    for (final draft in _drafts.values) {
+      if (draft.costTouched || draft.costController.text.isNotEmpty) {
+        continue;
+      }
+      final material = parseMoneyCents(draft.materialController.text);
+      final labor = parseMoneyCents(draft.laborController.text);
+      if (material == null && labor == null) {
+        continue;
+      }
+      draft.costController.text =
+          formatMoneyText((material ?? 0) + (labor ?? 0));
+    }
   }
 
   /// 单个草稿 → 输入态项目费用（金额从文本解析，空/非法 = 未填）。

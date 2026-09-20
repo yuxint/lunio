@@ -24,7 +24,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、偏好门面、各域仓库（主仓库/目录/加油/备份）、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好、通知服务等（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `features/shell/fuel/fuel_prices.dart`，与本文件互相 import 供失效名单逐出）。
 - `lib/features/shell/app_shell.dart`：主壳层入口，保留平级入口页面挂载（加油项按开关条件显示）、底部导航、生命周期监听和提醒通知同步触发。
 - `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒行组装、通知内容组装与调度 helper、桌面小组件快照组装与同步（`widget_snapshot.dart` / `widget_snapshot_controller.dart`）。
-- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互；花费统计的聚合纯函数（`cost_stats.dart`，总额/年度/月度用记录总费用权威值、项目占比按"项目费用 ?? 材料+工时、再缺跳过"）与独立统计页（`cost_stats_page.dart`，路由 `/cost-stats`）也在此。
+- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互；花费统计的聚合纯函数（`cost_stats.dart`，总额/年度/月度用记录总费用权威值、项目占比按"项目费用 ?? 材料+工时、再缺跳过"、优惠分摊按计费值权重最大余数法守恒）与独立统计页（`cost_stats_page.dart`，路由 `/cost-stats`，**作用域永远当前应用车辆**，三张图表全 CustomPainter 自绘、含优惠环形图）也在此。
 - `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档；加油记录卡与记一笔/编辑/删除表单在 `fuel_records_card.dart`，满箱段油耗口径纯函数在 domain 的 `FuelRules`）；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`；加油记录数据模型与满箱段油耗口径见 `docs/adr/0014`。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单提交运行器（`form_submit.dart`，`LunioFormSubmit` mixin：saving/errorText 生命周期 + friendlyError 翻译，新表单直接混入）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`）。
@@ -76,7 +76,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3（ADR 0014）、备份 JSON `schemaVersion` 为 3（ADR 0014）。数据库升级策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理）+ v3，其余版本直接拒绝。
 - 加油记录（ADR 0014）：`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于保养记录，写加油域代码时别套用保养记录的直觉。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同步考虑版本号、测试和文档。
-- 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。
+- 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。**数据不变量（2026-09-20）**：材料/工时任一有值 ⇒ 项目费用必有值——由表单算链 + 提交清单/备份恢复两写点的 `RecordRules.normalizeItemCost` 补齐共同保证，新写点不要破坏它。
 - 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`、`fuelPredictionEnabled`、`fuelProvince`（默认湖北）、`fuelGrade`、`fuelPriceCache`、`fuelManualPrices`（后两个是临时数据，不进备份）。不要把展示文案当作稳定标识。（`maintenanceDueEnabled` 已于 2026-08-29 移除：保养到期提醒是产品核心能力，不提供关闭入口，审查报告 R5；老库残留 key 无人读取，无害。）
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用主仓库（`LunioRepository`）与 `providers.dart` 里的现有模式。读偏好/写偏好走 `LunioPreferences` typed 方法。
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。
@@ -87,6 +87,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 ## UI 与交互约定
 
 - 主交互按 shell 子目录拆分；改 UI 前先从 `app_shell.dart` 定位入口，再读 `reminders/`、`records/`、`profile/` 或 `shared/` 的相关局部代码，避免跨区域重构。
+- 安全区统一由 `LunioPage` 内置 `SafeArea` 提供（2026-09-20）：tab 页的壳层也包一层、嵌套幂等；新的 pushed 子页用了 `LunioPage` 就天生有安全区，不要再自己包。
 - 视觉改动优先走 `LunioTokens` 和 `buildLunioTheme`，不要在页面里散落新的硬编码颜色。
 - 改全局视觉、产品原则或 token 时，同步检查 `DESIGN.md`。
 - 瞬时成功反馈使用页面内容区内的轻量 toast 风格；不要轻易改回系统底部 `SnackBar`，也不要贴近系统状态栏。

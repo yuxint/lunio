@@ -57,39 +57,47 @@ class LunioPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPadding),
-          sliver: SliverMainAxisGroup(
-            slivers: [
-              SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    LunioTopBar(
-                      title: title,
-                      subtitle: subtitle,
-                      leading: leading,
-                      trailing: trailing,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ),
-              ),
-              if (slivers != null)
-                ...slivers!
-              else
+    // 安全区由页面骨架统一负责：tab 页的壳层（app_shell.dart）自己也包
+    // 一层 SafeArea，嵌套幂等（内层看到的留白已被外层消费为 0），tab 页
+    // 零行为变化；不挂壳层的 pushed 子页（如 /cost-stats）没有壳层兜底，
+    // 从这里天生拿到安全区——顶部标题不再顶进状态栏，底部顺带获得
+    // 手势条避让。规则：用了 LunioPage 就有安全区，新 pushed 页不必
+    // 自己再包。
+    return SafeArea(
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(18, 2, 18, bottomPadding),
+            sliver: SliverMainAxisGroup(
+              slivers: [
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: children,
+                    children: [
+                      LunioTopBar(
+                        title: title,
+                        subtitle: subtitle,
+                        leading: leading,
+                        trailing: trailing,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                   ),
                 ),
-            ],
+                if (slivers != null)
+                  ...slivers!
+                else
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: children,
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

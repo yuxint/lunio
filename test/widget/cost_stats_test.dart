@@ -1,6 +1,7 @@
 // cost_stats 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）：
-// 统计页渲染（汇总/按年/项目占比/走势/默认当前车作用域）、车辆切换 chips、
-// 空态（无记录/无车）、记录页汇总行入口、我的页入口、返回键。
+// 统计页渲染（汇总/按年/项目占比环形/走势/默认应用车辆作用域 + 副标题
+// 车辆名）、空态（无记录/无车）、优惠环形图（环心 + 图例省额）、记录页
+// 汇总行入口、我的页入口、返回键。
 // 播种必须在 pumpApp 之前：装配后直写库不会触发 provider 失效。
 import 'package:flutter_test/flutter_test.dart';
 
@@ -135,6 +136,49 @@ Future<AppDatabase> seedCarWithoutRecords() async {
   return database;
 }
 
+/// 播种一辆车 + 一条带优惠的记录：机油计费 230（材料 150 + 工时 80），
+/// 总费用 180 → 记录级优惠 50（生效今天 = 2026-05-19）。
+Future<AppDatabase> seedCarWithDiscountRecord() async {
+  final database = AppDatabase.inMemory();
+  addTearDown(database.close);
+  final bundle = testRepository(database);
+  await bundle.ensureBootstrapData();
+  final carId = await createCarWithDefaultItems(
+    database,
+    Car(
+      brand: '本田',
+      model: '思域（燃油版）',
+      currentMileageKm: 12000,
+      roadDate: const LocalDate(2020, 1, 1),
+      sync: _sync,
+    ),
+  );
+  final oilId =
+      (await bundle.listMaintenanceItemsForCar(carId))
+          .firstWhere((item) => item.name == '机油')
+          .id!;
+  await bundle.repository.saveMaintenanceRecord(
+    MaintenanceRecord(
+      carId: carId,
+      date: const LocalDate(2026, 5, 1),
+      itemIds: [oilId],
+      itemCosts: [
+        RecordItemCost(
+          itemId: oilId,
+          materialCents: 15000,
+          laborCents: 8000,
+          costCents: 23000,
+        ),
+      ],
+      costCents: 18000,
+      mileageKm: 12000,
+      sync: _sync,
+    ),
+  );
+  await bundle.setAppliedCarId(carId);
+  return database;
+}
+
 /// 经深链通道打开统计页（go 语义落页，用于渲染/切换类断言；注意它
 /// 不是 push——返回键用例必须走真实入口），并等数据与转场动画就绪。
 Future<void> openCostStatsPage(WidgetTester tester) async {
@@ -145,58 +189,50 @@ Future<void> openCostStatsPage(WidgetTester tester) async {
 
 void main() {
   group('花费统计页', () {
-    testWidgets('默认当前车作用域：汇总/按年/项目占比/走势渲染', (tester) async {
+    testWidgets('默认应用车辆作用域：汇总/按年/项目占比/走势渲染', (tester) async {
       final database = await seedTwoCarsWithRecords();
       await pumpApp(tester, database: database);
       await openCostStatsPage(tester);
 
-      // 汇总卡：默认作用域 = 应用车辆（车A），不含车B。
+      // 汇总卡：作用域固定 = 应用车辆（车A），不含车B。
       expect(find.text('总花费'), findsOneWidget);
       expect(find.text('¥380.00'), findsOneWidget);
-      expect(find.text('¥280.00'), findsWidgets); // 今年花费 + 2026 年横条。
+      expect(find.text('¥280.00'), findsWidgets); // 今年花费 + 2026 年条。
       expect(find.text('¥52.00'), findsNothing);
-      // 按年花费：两个年份横条。
+      // 按年花费：两个年份渐变条。
       expect(find.text('按年花费'), findsOneWidget);
       expect(find.text('2025年'), findsOneWidget);
       expect(find.text('2026年'), findsOneWidget);
-      // 项目占比：项目名经清单解析（机油），未知项目不出现。
+      // 项目占比环形卡：项目名经清单解析（机油），未知项目不出现。
       expect(find.text('项目占比'), findsOneWidget);
       expect(find.text('机油'), findsOneWidget);
       expect(find.text('未知项目'), findsNothing);
-      // 近 12 个月走势 + 峰值（默认作用域峰值 = 280）。
+      // 近 12 个月走势 + 峰值（应用车辆峰值 = 280）。
       expect(find.text('近 12 个月走势'), findsOneWidget);
       expect(find.text('峰值 ¥280.00'), findsOneWidget);
-      // 车辆 chips：应用车辆与"全部"两枚（车B 也有，共三枚）。
-      expect(find.text('本田 思域（燃油版）'), findsOneWidget);
-      expect(find.text('丰田 卡罗拉'), findsOneWidget);
-      expect(find.text('全部'), findsOneWidget);
+      // 作用域固定当前应用车辆：副标题展示车辆名，无"全部"/切车 chips
+      //（2026-09-20 拍板：统计页不提供多车维度）。
+      expect(find.text('当前车辆：本田 思域（燃油版）'), findsOneWidget);
+      expect(find.text('丰田 卡罗拉'), findsNothing);
+      expect(find.text('全部'), findsNothing);
     });
 
-    testWidgets('车辆切换：全部合并两车、切回单车只看该车', (tester) async {
-      final database = await seedTwoCarsWithRecords();
+    testWidgets('优惠环形图：环心实付合计与累计优惠、图例省额', (tester) async {
+      final database = await seedCarWithDiscountRecord();
       await pumpApp(tester, database: database);
       await openCostStatsPage(tester);
 
-      // 切"全部"：两车合并（280+100+52 = 432）。轮询等待是静默返回的，
-      // 合并总额必须补硬断言：只出现在汇总卡"总花费"一处（今年花费
-      // 是 332、2026 横条也是 332，不会与 432 撞串）。
-      await tester.tap(find.text('全部'));
-      await pumpUntilFound(tester, find.text('¥432.00'));
-      expect(find.text('¥432.00'), findsOneWidget);
-      expect(find.text('¥380.00'), findsNothing);
-
-      // 切车B：只看卡罗拉的记录。¥52.00 出现在总花费/今年花费/2026 横条
-      // 三处（峰值标签是"峰值 ¥52.00"另一串，不计入）。
-      await tester.tap(find.text('丰田 卡罗拉'));
-      await pumpUntilFound(tester, find.text('¥52.00'));
-      expect(find.text('¥52.00'), findsNWidgets(3));
-      expect(find.text('¥380.00'), findsNothing);
-      expect(find.text('¥432.00'), findsNothing);
-      // 项目占比只剩车B的机油费用。
-      expect(find.text('峰值 ¥52.00'), findsOneWidget);
+      // 环心：项目口径实付合计 180（计费 230 − 优惠 50）+ 累计优惠副行。
+      expect(find.text('项目实付'), findsOneWidget);
+      expect(find.text('优惠 ¥50.00'), findsOneWidget);
+      // 图例：机油实付 180 + 省额小字。
+      expect(find.text('机油'), findsOneWidget);
+      expect(find.text('省 ¥50.00'), findsOneWidget);
+      // 实付 180 与汇总卡（总花费/今年花费）同串，多处出现不计数。
+      expect(find.text('¥180.00'), findsWidgets);
     });
 
-    testWidgets('有车无记录：空态卡 + chips 仍在', (tester) async {
+    testWidgets('有车无记录：空态卡 + 副标题仍在', (tester) async {
       final database = await seedCarWithoutRecords();
       await pumpApp(tester, database: database);
       await pushRouteViaNavigationChannel('/cost-stats');
@@ -206,8 +242,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('总花费'), findsNothing);
-      expect(find.text('本田 思域（燃油版）'), findsOneWidget);
-      expect(find.text('全部'), findsOneWidget);
+      expect(find.textContaining('当前车辆：'), findsOneWidget);
+      expect(find.text('全部'), findsNothing);
     });
 
     testWidgets('无车：提示先新增车辆', (tester) async {
@@ -218,7 +254,8 @@ void main() {
       await pumpApp(tester, database: database);
       await pushRouteViaNavigationChannel('/cost-stats');
       await pumpUntilFound(tester, find.text('请先新增车辆'));
-      // 无车不给车辆 chips。
+      // 无车没有副标题车辆名，也没有任何作用域切换。
+      expect(find.textContaining('当前车辆'), findsNothing);
       expect(find.text('全部'), findsNothing);
     });
 

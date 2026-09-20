@@ -79,6 +79,24 @@ class RecordRules {
         .fold(0, (sum, cents) => sum + cents);
   }
 
+  /// 项目费用缺失补齐（数据不变量，2026-09-20）：材料/工时任一有值时，
+  /// 项目费用必须落地（表单算链保证交互路径不会停在未填态，本函数把
+  /// 该保证延伸到写库点——表单提交与备份恢复，堵住"存量违规行原样
+  /// 存回/随备份入库"两条旁路）。项目费用已有值（含与材料+工时
+  /// 不一致的优惠价，手改保护对象）或三项全空时原样返回。
+  static RecordItemCost normalizeItemCost(RecordItemCost cost) {
+    if (cost.costCents != null ||
+        (cost.materialCents == null && cost.laborCents == null)) {
+      return cost;
+    }
+    return RecordItemCost(
+      itemId: cost.itemId,
+      materialCents: cost.materialCents,
+      laborCents: cost.laborCents,
+      costCents: (cost.materialCents ?? 0) + (cost.laborCents ?? 0),
+    );
+  }
+
   /// 项目费用与"材料费+工时费"是否不一致（红字黄三角的判定，ADR 0010）。
   /// 材料、工时任一非空即比（2026-09-12 修订：0 是明确的"没花钱"，与
   /// 未填不等价，未填一侧按 0 求和；原规则要求两者都 >0）——只填一个

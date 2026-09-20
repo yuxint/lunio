@@ -38,7 +38,7 @@
 //   │    │                    └─ appliedCarFuelRecordsProvider
 //   │    │                       （派生自 fuelRecordsForCarProvider）
 //   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
-//   │    ├─ recordsForCarProvider（按车记录 family：花费统计页单车/全部作用域）
+//   │    ├─ recordsForCarProvider（按车记录 family：花费统计页等按车消费者）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
@@ -296,7 +296,7 @@ final appliedCarMaintenanceItemsProvider =
     });
 
 /// 某辆车的保养记录全量列表，按车 id 缓存的 family（无分页）。花费统计
-/// 页的单车/全部两种作用域共用（"全部"把各车 family 实例合并聚合）；
+/// 页（作用域 = 当前应用车辆）等按车消费者共用；
 /// 加载、竞态、缓存、逐出由 Riverpod 接管，写库后经
 /// [invalidateVehicleProviders] 整族失效（同项目 family 的约定）。
 final recordsForCarProvider =

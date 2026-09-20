@@ -268,4 +268,41 @@ void main() {
     controller.syncSelection({1, 2}, items);
     expect(controller.drafts[2]!.costController.text, '8.88');
   });
+
+  test('legacy violating rows backfill missing cost on open (invariant)', () {
+    // 存量违规行（不变量落地前的数据）：材料/工时有值、项目费用空。
+    // 打开编辑立即按"材料+工时"回填显示（所见即所得），程序写入不记
+    // 手改；提交清单归一为有项目费用——存量行不再原样存回。
+    final record = makeRecord(
+      itemIds: const [1],
+      itemCosts: const [
+        RecordItemCost(itemId: 1, materialCents: 10000, laborCents: 5000),
+      ],
+      costCents: 15000,
+    );
+    final controller = buildController(record: record, selected: {1});
+    final draft = controller.drafts[1]!;
+
+    expect(draft.costController.text, '150.00');
+    expect(draft.costTouched, isFalse);
+    // 存量总费用按预填权威处理，不跑完整算链。
+    expect(controller.totalController.text, '150.00');
+    expect(controller.totalTouched, isTrue);
+
+    final costs = controller.buildItemCosts();
+    expect(costs, hasLength(1));
+    expect(costs.single.costCents, 15000);
+  });
+
+  test('buildItemCosts normalizes missing cost at submit (belt)', () {
+    // 绕过输入事件直接改草稿文本（程序态/异常路径）：材料有值、项目
+    // 费用空，提交清单也要按材料+工时补齐（数据不变量兜底）。
+    final controller = buildController(selected: {1});
+    controller.drafts[1]!.materialController.text = '100';
+
+    final costs = controller.buildItemCosts();
+    expect(costs, hasLength(1));
+    expect(costs.single.materialCents, 10000);
+    expect(costs.single.costCents, 10000);
+  });
 }

@@ -1436,6 +1436,52 @@ void main() {
   });
 
   test(
+      'backup restore normalizes item costs missing cost field (invariant)',
+      () async {
+    final (carId, oilId) = await seedCarAndItem();
+    // 违规形态存量行：材料/工时有值、项目费用为空（不变量落地前写入，
+    // 保存路径原样落库是合法现状——修复点在恢复，不把违规数据带进新库）。
+    await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [oilId],
+        itemCosts: [
+          RecordItemCost(itemId: oilId, materialCents: 15000, laborCents: 8000),
+        ],
+        costCents: 23000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+
+    final backup = await backupRepository.exportBackupPayload();
+    // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
+    await database.close();
+    database = AppDatabase.inMemory();
+    preferences = LunioPreferences(database);
+    backupRepository = BackupRepository(database, preferences);
+    fuelRepository = FuelRepository(database, preferences);
+    repository = LunioRepository(
+      database,
+      preferences: preferences,
+      fuel: fuelRepository,
+    );
+    await backupRepository.restoreBackupPayload(backup);
+
+    final restoredCar = (await database.select(database.cars).get()).single;
+    final restoredRecords = await repository.listMaintenanceRecordsForCar(
+      restoredCar.id,
+    );
+    expect(restoredRecords, hasLength(1));
+    final cost = restoredRecords.single.itemCosts.single;
+    // 恢复时按"材料+工时"补齐项目费用（2026-09-20 数据不变量）。
+    expect(cost.materialCents, 15000);
+    expect(cost.laborCents, 8000);
+    expect(cost.costCents, 23000);
+  });
+
+  test(
     'saves maintenance record and item intervals in one transaction',
     () async {
       final (carId, itemId) = await seedCarAndItem();
