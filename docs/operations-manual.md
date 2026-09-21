@@ -85,7 +85,7 @@ appDatabaseProvider(:181)
   │        生效链（effectiveFuelPrice/effectiveFuelForecast/predictedFuelPrice）
   ├─→ backupRepositoryProvider(:209)（另挂偏好门面）
   └─→ lunioRepositoryProvider(:218)（另挂偏好门面 + 加油仓库）
-        └─→ recordsForCarProvider(:302)（按车记录 family——花费统计页
+        └─→ recordsForCarProvider(:302)（按车记录 family——费用统计页
             当前应用车辆作用域，2026-09-20 起不再有"全部"合并）
 ```
 
@@ -266,25 +266,28 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 按周期（整条记录） | 标题"保养记录" + 副标题"整条记录总费用 ¥xx" + 日期/里程/总费用指标格 + 备注（有才显示）+ 项目费用清单（每勾选项目一行：项目名 + 项目费用，未填显示"—"，填了材料/工时的加小字"材料 xx / 工时 xx"） | 展示永远取存储值：单项目以项目费用为准、整条记录以总费用为准；不一致的项目费用/总费用加黄色警告角标，**不做读时修正** |
 | 按项目（单项目） | 标题=项目名（无副标题）+ 日期/里程指标格 + 距上次时间/里程指标格 + 材料费/工时费一行（两者都未填整行不显示，只填一格另一格显示"—"）+ 项目费用格（保留不一致黄三角）。距上次参照点 = 该项目**上一条记录 → 本条**（`RecordRules.previousRecordForItem`：严格早于本条日期的最新一条，同车同日唯一保证可唯一定位；项目首条无上一条 → 两格都显示"—"） | 同上；差值经 `RecordRules.daysSinceLast` / `kmSinceLast` 计算，负值（补录乱序）/无上一条在 domain 折叠成 null，`formatters.dart → formatDaysSinceLast` / `formatKmSinceLast` 只把 null 显示"—" |
 
-### 4.5 花费统计（今年花费汇总行 + /cost-stats 统计页，2026-09-17 新增；2026-09-20 单车化 + 图表改版 + 优惠分摊）
+### 4.5 费用统计（今年费用汇总行 + /cost-stats 统计页，2026-09-17 新增；2026-09-20 单车化 + 优惠分摊；2026-09-21 详情/钻取增强；2026-09-21 改版：改名"费用"、条形占比、年度走势、其他段守恒）
 
-**纯读取聚合**：不动数据库、不走动作层（无写点）。聚合口径唯一实现在 `lib/features/shell/records/cost_stats.dart`（纯函数 `buildCostStats`，单测含变异验证 `test/features/cost_stats_test.dart`）：**总额/年度/月度用记录总费用（权威值）**，与项目费用合计不一致仍按总费用（ADR 0010 口径）；**项目占比 = 项目费用 ?? 材料+工时**（缺失一边按 0），三项全缺跳过该行，按**项目名**聚合（清单外归"未知项目"）；近 12 个月窗口含当月往前推 11 个月（依赖 `LocalDate.addMonths` 负数月份，2026-09-17 修复其 floor 语义，回归测试在 `test/domain/app_date_context_test.dart`）。**优惠分摊（2026-09-20）**：记录级总优惠 = Σ计费值 − 记录总费用（负差值 = 无优惠按 0；无计费值记录 Σ=0 自然不参与），按各项目计费值权重分摊（`allocateDiscount` 最大余数法，分摊合计与总优惠严格相等、每项分摊 ≤ 计费值），纯读时派生不改存储值；词汇见 CONTEXT.md「花费统计与优惠」。
+**纯读取聚合**：不动数据库、不走动作层（无写点）。聚合口径唯一实现在 `lib/features/shell/records/cost_stats.dart`（纯函数 `buildCostStats`，单测含变异验证 `test/features/cost_stats_test.dart`）：**总额/年度/月度用记录总费用（权威值）**，与项目费用合计不一致仍按总费用（ADR 0010 口径）；**项目计费值 = 项目费用**（没填即不参与，材料/工时不做读侧兜底——不变量由写点 normalizeItemCost 保证，2026-09-21 拍板删兜底分支），按**项目名**聚合（清单外归"未知项目"），**全部项目列出不截断、按实付降序**；**年度走势**每年一点（= 该年总费用），跨度首条记录年 → 今年、无记录年补 0（不再有"近一年/近半年"窗口，也不再依赖 `addMonths`；其 floor 语义回归测试仍在 `test/domain/app_date_context_test.dart`）。**优惠分摊（2026-09-20）**：记录级总优惠 = Σ项目费用 − 记录总费用（负差值 = 无优惠按 0；无项目费用记录 Σ=0 自然不参与），按各项目费用权重分摊（`allocateDiscount` 泛型最大余数法，分摊合计与总优惠严格相等、每项分摊 ≤ 项目费用），纯读时派生不改存储值。**其他段守恒（2026-09-21）**：其他段 = 简洁模式记录的全部费用 + 单条记录"总费用超出项目费用合计"的差额，**总费用 ≡ Σ项目实付 + 其他段** 恒成立（此前"总花费 ≠ 项目实付"的口径缺口即由这两类无归属费用造成）；词汇见 CONTEXT.md「费用统计与优惠」。**汇总指标**：保养次数（总/今年）、单次均价（=总费用÷次数）、月均（=总费用÷首条记录月到当月的自然月数，全程摊薄、不随任何图表联动）、上次保养（`lastRecordDate` → 距今天数）。
 
 | 用户操作 | 代码位置 | 做了什么 |
 |---|---|---|
-| 记录页头部"今年花费"汇总行（**仅当前车有记录时显示**，金额=今年记录总费用） | `records_page.dart:1177 → _CostSummaryRow`（`costCentsForYear` 算今年值；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
-| 我的页「数据与工具」首行"花费统计 → 查看" | `profile_page.dart`（`ProfileSettingRow`，onTap `context.push`） | 进同一统计页 |
+| 记录页头部"今年费用"汇总行（**仅当前车有记录时显示**，金额=今年记录总费用） | `records_page.dart → _CostSummaryRow`（`costCentsForYear` 算今年值；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
+| 我的页「数据与工具」首行"费用统计 → 查看" | `profile_page.dart`（`ProfileSettingRow`，onTap `context.push`） | 进同一统计页 |
 | 统计页作用域（**永远当前应用车辆，2026-09-20 拍板移除"全部"/切车 chips**） | `cost_stats_page.dart → costStatsDataProvider`（**非 family**，watch `appliedCarProvider` + 按车 family） | 应用车辆解析完成前整页 loading，解析失败走错误页兜底（带返回键）；当前车辆名在标题副字"当前车辆：XX"展示；无车 → "请先新增车辆"空态 |
-| 统计页内容（全部 CustomPainter 自绘，无图表库；一次性入场动画 700ms，三卡共用同一 AnimationController） | 同页 `_buildSummaryCard` / `_buildYearCard` / `_buildDonutCard` / `_buildTrendCard` | 汇总卡（总花费+今年花费）→ 按年渐变胶囊条（年份升序，条宽=相对最大年 × 入场进度）→ **项目占比环形图**（一段一项目：实付实色弧 + 优惠同色半透明弧、切片留缝；Top 5 + "其他"段保完整圆；环心 = 项目口径实付合计 + "优惠 ¥x"副行；图例行 = 色点+项目名+实付+（有优惠时）"省 ¥x"；分段配色主色系五档派生自 LunioTokens）→ 近 12 个月平滑曲线 + 渐变面积（`_TrendPainter` 三次贝塞尔、`_WidthRevealClipper` 左→右展开，峰值月打点高亮，当月标签主色）；无记录 → 空态卡，无车 → "请先新增车辆" |
+| 汇总指标行 | 同页 `_buildMetricsCard` | 保养次数（副字"今年 n 次"）/ 单次均价 / 月均（全程摊薄定值）/ 上次保养（"n 天前"，当天为"今天"），四块一行 |
+| 项目占比 → 点项目行 → 项目档案 sheet | 同页 `_buildProjectCard` → `cost_item_history_sheet.dart → showCostItemHistorySheet`（`buildItemHistories` 聚合，按项目名映射） | 头部主数字 = 总费用 + "累计优惠 ¥x"小字（守恒锚点：各行相加 ≡ 总费用）；条形行 = 项目名 + 条（宽度=实付比例）+ 实付 +（省额）+ 下钻箭头，实付降序、全部项目不截断；末尾"其他"段（仅有缺口时出现，灰条）= 简洁模式费用 + 总费用超出项目合计的差额，不可下钻。档案头：次数/单次均价（累计实付÷次数）/累计计费三格 + 副字累计实付（有优惠附省额）；逐次明细日期倒序（日期、里程、实付 + 优惠小字）。费用全空的记录不进档案 |
+| 年度走势（≥2 个年份才展示，单年车整卡隐藏） | 同页 `_buildTrendCard` → `_TrendPainter`（`stats.years.length >= 2` 门卫） | 每年一点（= 该年总费用）、横轴年份标签（今年高亮）、平滑曲线 + 渐变面积 + 峰值年"峰值 ¥x"入图 + 上次保养年份空心环；画布 `width: double.infinity`——所在 Column 松约束下 CustomPaint 无子组件会收敛成 0 宽，曲线整卡不可见，2026-09-21 修复并留 widget 断言 `cost-trend-paint` 宽度 > 200 防回归 |
+| 统计页内容（占比卡为 Widget 条形、走势为 CustomPainter；一次性入场动画 700ms，各卡共用同一 AnimationController） | 同页 `_buildSummaryCard` / `_buildMetricsCard` / `_buildProjectCard` / `_buildTrendCard` | 汇总卡（总费用+今年费用）→ 指标行 → 项目占比条形列表（条形必须包在监听入场动画的 `AnimatedBuilder` 里——漏包会让条形停在进度 0"有时不渲染、点开才出来"，2026-09-21 修复并写进文件头注释）→ 年度走势卡（单年隐藏）；无记录 → 空态卡，无车 → "请先新增车辆" |
 | 返回 | 顶部栏 leading 返回键（`context.pop`）+ iOS 右滑返回（默认转场天然支持） | — |
 
-**路由与安全区**：`lib/app/app_router.dart:61 → /cost-stats` 是第一个**不挂主壳层的 pushed 子页**（不渲染 AppShell 无底部导航，页面自带 Scaffold；builder 默认 MaterialPage 转场）。`LunioPage`/`LunioTopBar`为此增加可选 `leading` 位；**安全区由 `LunioPage` 内置 `SafeArea` 统一提供（2026-09-20）**——tab 页壳层（app_shell.dart:162）已包一层、嵌套幂等零行为变化，pushed 子页不挂壳层也能天生拿到顶部安全区与底部手势条避让（此前 /cost-stats 标题顶进状态栏的根因即"壳层包 SafeArea 而 pushed 页没人包"）。widget 测试 `test/widget/cost_stats_test.dart`（渲染/空态/优惠环形图/两入口跳转/返回键/错误页兜底）。
+**路由与安全区**：`lib/app/app_router.dart:61 → /cost-stats` 是第一个**不挂主壳层的 pushed 子页**（不渲染 AppShell 无底部导航，页面自带 Scaffold；builder 默认 MaterialPage 转场）。`LunioPage`/`LunioTopBar`为此增加可选 `leading` 位；**安全区由 `LunioPage` 内置 `SafeArea` 统一提供（2026-09-20）**——tab 页壳层（app_shell.dart:162）已包一层、嵌套幂等零行为变化，pushed 子页不挂壳层也能天生拿到顶部安全区与底部手势条避让（此前 /cost-stats 标题顶进状态栏的根因即"壳层包 SafeArea 而 pushed 页没人包"）。`initialLocation` 支持 `--dart-define=LUNIO_INITIAL_ROUTE=...` 覆盖（仅模拟器截图/验收用，默认 `/reminders` 行为不变）。widget 测试 `test/widget/cost_stats_test.dart`（渲染/指标行/项目占比与守恒/单年隐藏/项目档案/优惠/空态/两入口跳转/返回键/错误页兜底）。
 
 ---
 
 ## 5. 我的页（/me）
 
-页面装配：`lib/features/shell/profile/profile_page.dart:27 → ProfilePreviewPage`（结构：我的车辆 / 数据与工具——首行「花费统计」进统计页（§4.5）/ 版本 footer）。
+页面装配：`lib/features/shell/profile/profile_page.dart:27 → ProfilePreviewPage`（结构：我的车辆 / 数据与工具——首行「费用统计」进统计页（§4.5）/ 版本 footer）。
 
 ### 5.1 车辆管理
 
@@ -398,7 +401,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
    - **记录行**：日期（ISO 紧凑形态）· 里程 + 金额；下行升数（两位小数）+ 本段油耗（该行闭合的满箱段自身油耗 `x.x L/100km`）；无闭合段（首条满箱 / 部分加油 / 段里程非增折叠）显示"—"。**行点按进编辑**（无冗余编辑图标）。列表倒序（最近优先）默认只显示最近 **5** 条，超出折叠出"展开全部"/"收起"按钮；空态一行文案"还没有加油记录，点「记一笔」开始记录"。
    - **记一笔/编辑表单**（`showFuelRecordFormSheet`，新增与编辑共用一个 sheet）：五项字段——加油日期（`showSimpleDatePicker`，范围同保养记录：上路日期起、允许未来；**无同日查重**——同车同日多箱合法）+ 里程/金额/升数（`LunioNumberField`，里程整数、金额与升数两位小数）+ 加满开关（**默认开**）；单价 = 金额 ÷ 升数**只读展示**（金额与升数填了才出数值，否则"—"；不可手填）。保存走 `LunioFormSubmit` mixin（saving/行内错误生命周期）→ `shell_actions.dart → saveFuelRecord`（动作层按 id 分新增/编辑 + 整族失效，ADR 0007）→ toast"加油记录已保存"。
    - **删除**：只在编辑态出现（表单底部 danger 按钮）→ 确认框"删除加油记录"（确认框在调用方弹，动作经动作层 `removeFuelRecord`）→ toast"加油记录已删除"。
-   - **不联动**：保存加油记录**不更新**车辆当前里程（保养记录是唯一写源，ADR 0014）；加油记录也不进保养花费统计（先各算各的）。
+   - **不联动**：保存加油记录**不更新**车辆当前里程（保养记录是唯一写源，ADR 0014）；加油记录也不进保养费用统计（先各算各的）。
 
 ---
 

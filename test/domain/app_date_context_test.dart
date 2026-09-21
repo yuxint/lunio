@@ -25,7 +25,7 @@ void main() {
   });
 
   test('add negative months steps back across year with floor semantics', () {
-    // 花费统计的"近 12 个月"窗口靠负数月份往前推（2026-05 - 11月 =
+    // 负数月份 floor 语义回归锚（2026-05 - 11月 =
     // 2025-06）。Dart ~/ 向零截断与 % 非负余数不配对，负数月份曾算成
     // 年份不动（2026-05 - 11月 = 2026-06），此用例锁住修复。
     expect(const LocalDate(2026, 5, 19).addMonths(-11).toString(), '2025-06-19');

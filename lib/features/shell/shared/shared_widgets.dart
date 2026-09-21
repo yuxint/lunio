@@ -331,7 +331,7 @@ class ErrorPage extends StatelessWidget {
   final String title;
   final Object error;
 
-  /// 可选 leading 位（如花费统计页的返回键），透传给 [LunioPage]。
+  /// 可选 leading 位（如费用统计页的返回键），透传给 [LunioPage]。
   final Widget? leading;
 
   @override

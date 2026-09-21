@@ -1,8 +1,8 @@
-// cost_stats.dart 的纯函数单测：总费用权威值口径、年度分组、项目占比
-// 的 null 口径（项目费用 ?? 材料+工时、全缺跳过）、Top N 截断、近 12 个
-// 月窗口边界。不打 widget、不连数据库——直接构造实体（仿
-// record_rows_test 的构造手法）。
-// 断言全部用精确值：常量被变异（窗口长度、口径分支、排序方向等）时
+// cost_stats.dart 的纯函数单测：总费用权威值口径、年度走势（首年到
+// 今年补 0）、项目占比口径（计费值=项目费用、全缺跳过、实付降序、
+// 其他段守恒）、月均全程摊薄、优惠分摊守恒。不打 widget、不连数据库
+// ——直接构造实体（仿 record_rows_test 的构造手法）。
+// 断言全部用精确值：常量被变异（口径分支、排序方向、分母口径等）时
 // 至少一条断言会红，即变异验证。
 
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +17,7 @@ final _sync = SyncMetadata(
   updatedAt: DateTime(2026, 1, 1),
 );
 
-/// 固定"今天"= 2026-05-19（与 widget 夹具的生效今天同月，便于对窗口）。
+/// 固定"今天"= 2026-05-19（与 widget 夹具的生效今天同月，便于对跨度）。
 final _today = const LocalDate(2026, 5, 19);
 
 MaintenanceItem _item({required int id, required String name}) =>
@@ -58,9 +58,17 @@ RecordItemCost _cost({
       costCents: cost,
     );
 
+/// 守恒断言（口径锚点）：Σ项目实付 + 其他段 ≡ 总费用（cost_stats.dart
+/// 文件头"守恒"条目的测试面）。
+void _expectConservation(CostStats stats) {
+  final actualSum = stats.topItems
+      .fold(0, (sum, row) => sum + row.actualCents);
+  expect(actualSum + stats.otherCents, stats.totalCents);
+}
+
 void main() {
   group('空记录', () {
-    test('全 0 + 空列表 + 12 个月补 0', () {
+    test('全 0 + 空列表（走势点位也为空，页面据此隐藏走势卡）', () {
       final stats = buildCostStats(
         records: const [],
         items: const [],
@@ -70,17 +78,12 @@ void main() {
       expect(stats.thisYearCents, 0);
       expect(stats.years, isEmpty);
       expect(stats.topItems, isEmpty);
-      expect(stats.months, hasLength(12));
-      expect(stats.months.every((point) => point.costCents == 0), isTrue);
-      // 窗口 = 2025-06 起、2026-05 止（含当月，往前推 11 个月）。
-      expect(stats.months.first.year, 2025);
-      expect(stats.months.first.month, 6);
-      expect(stats.months.last.year, 2026);
-      expect(stats.months.last.month, 5);
+      expect(stats.otherCents, 0);
+      expect(stats.monthlyAvgCents, 0);
     });
   });
 
-  group('总额与今年花费（记录总费用权威值）', () {
+  group('总额与今年费用（记录总费用权威值）', () {
     test('总费用与项目费用合计不一致时仍按总费用（ADR 0010）', () {
       final stats = buildCostStats(
         records: [
@@ -96,6 +99,10 @@ void main() {
       );
       expect(stats.totalCents, 28000);
       expect(stats.thisYearCents, 28000);
+      // 项目口径只用项目费用 23000；总费用多出的 5000 进其他段。
+      expect(stats.topItems.single.costCents, 23000);
+      expect(stats.otherCents, 5000);
+      _expectConservation(stats);
     });
 
     test('今年只计今年记录，去年不计', () {
@@ -123,8 +130,8 @@ void main() {
     });
   });
 
-  group('按年横条', () {
-    test('年份升序 + 相对最大年的条宽比例', () {
+  group('年度走势', () {
+    test('首条记录年 → 今年逐点铺满，比例相对峰值年', () {
       final stats = buildCostStats(
         records: [
           _record(date: const LocalDate(2026, 2, 1), costCents: 20000),
@@ -145,34 +152,84 @@ void main() {
       expect(stats.years[2].costCents, 20000);
       expect(stats.years[2].fraction, closeTo(2 / 3, 1e-9));
     });
+
+    test('中间无记录年补 0，横轴连续', () {
+      final stats = buildCostStats(
+        records: [
+          _record(date: const LocalDate(2026, 2, 1), costCents: 20000),
+          _record(date: const LocalDate(2024, 4, 1), costCents: 10000),
+        ],
+        items: const [],
+        today: _today,
+      );
+      expect(stats.years.map((point) => point.year).toList(),
+          [2024, 2025, 2026]);
+      expect(stats.years[1].year, 2025);
+      expect(stats.years[1].costCents, 0);
+      expect(stats.years[1].fraction, 0.0);
+    });
+
+    test('同一年多条记录合并；单年只有一个点位', () {
+      final stats = buildCostStats(
+        records: [
+          _record(date: const LocalDate(2026, 2, 1), costCents: 5000),
+          _record(date: const LocalDate(2026, 5, 1), costCents: 20000),
+        ],
+        items: const [],
+        today: _today,
+      );
+      expect(stats.years, hasLength(1));
+      expect(stats.years.single.costCents, 25000);
+      expect(stats.years.single.fraction, 1.0);
+    });
   });
 
   group('项目占比口径', () {
-    test('项目费用优先于材料+工时；缺失时回退；单边缺失按 0', () {
+    test('计费值 = 项目费用；材料/工时不参与读侧口径', () {
       final stats = buildCostStats(
         records: [
-          // 项目费用填了：取项目费用 200（无视 材料150+工时80=230）。
+          // 项目费用 200 权威：无视 材料150+工时80=230。
           _record(
             date: const LocalDate(2026, 5, 1),
-            costCents: 0,
+            costCents: 20000,
             itemIds: [1],
             itemCosts: [
               _cost(itemId: 1, material: 15000, labor: 8000, cost: 20000),
             ],
           ),
-          // 项目费用缺：取材料+工时 = 230。
+        ],
+        items: [_item(id: 1, name: '机油')],
+        today: _today,
+      );
+      expect(stats.topItems.single.costCents, 20000);
+      // 总费用 = 项目费用 → 无优惠、无其他段。
+      expect(stats.topItems.single.actualCents, 20000);
+      expect(stats.otherCents, 0);
+    });
+
+    test('项目费用没填即不参与统计（材料/工时有值也不兜底）；该记录费用进其他段', () {
+      final stats = buildCostStats(
+        records: [
+          // 三项全缺 → 项目不进占比。
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 99000,
+            itemIds: [1],
+            itemCosts: [_cost(itemId: 1)],
+          ),
+          // 材料/工时有值但项目费用没填（不变量外的存量形态）：同样
+          // 不兜底，不进占比；记录费用进其他段守恒。
           _record(
             date: const LocalDate(2026, 5, 2),
-            costCents: 0,
+            costCents: 10000,
             itemIds: [2],
             itemCosts: [_cost(itemId: 2, material: 15000, labor: 8000)],
           ),
-          // 工时缺：材料 50 按 50 计（缺失一边按 0）。
+          // 连 itemCosts 都没有（简洁模式）。
           _record(
             date: const LocalDate(2026, 5, 3),
-            costCents: 0,
+            costCents: 50000,
             itemIds: [3],
-            itemCosts: [_cost(itemId: 3, material: 5000)],
           ),
         ],
         items: [
@@ -182,38 +239,10 @@ void main() {
         ],
         today: _today,
       );
-      final byName = {
-        for (final row in stats.topItems) row.name: row.costCents,
-      };
-      expect(byName['机油'], 20000);
-      expect(byName['机滤'], 23000);
-      expect(byName['空调滤'], 5000);
-      // 占比分母 = 项目口径总和 200+230+50 = 480（不含记录总费用）。
-      final oil = stats.topItems.firstWhere((row) => row.name == '机油');
-      expect(oil.share, closeTo(20000 / 48000, 1e-9));
-    });
-
-    test('三项全缺跳过该行；itemCosts 空的记录不进占比', () {
-      final stats = buildCostStats(
-        records: [
-          _record(
-            date: const LocalDate(2026, 5, 1),
-            costCents: 99000,
-            itemIds: [1],
-            itemCosts: [_cost(itemId: 1)], // 三项全缺 → 跳过。
-          ),
-          _record(
-            date: const LocalDate(2026, 5, 2),
-            costCents: 10000,
-            itemIds: [2], // 无 itemCosts → 该行无计费值。
-          ),
-        ],
-        items: [_item(id: 1, name: '机油'), _item(id: 2, name: '机滤')],
-        today: _today,
-      );
       expect(stats.topItems, isEmpty);
-      // 总额口径不受影响：仍按记录总费用。
-      expect(stats.totalCents, 109000);
+      // 三条记录的费用全部无归属 → 其他段全额吸收，守恒成立。
+      expect(stats.otherCents, 159000);
+      _expectConservation(stats);
     });
 
     test('清单外项目归「未知项目」；同名项目跨记录合并', () {
@@ -221,13 +250,13 @@ void main() {
         records: [
           _record(
             date: const LocalDate(2026, 5, 1),
-            costCents: 0,
+            costCents: 10000,
             itemIds: [99],
             itemCosts: [_cost(itemId: 99, cost: 10000)],
           ),
           _record(
             date: const LocalDate(2026, 5, 2),
-            costCents: 0,
+            costCents: 5000,
             itemIds: [1, 2],
             itemCosts: [
               _cost(itemId: 1, cost: 3000),
@@ -243,32 +272,31 @@ void main() {
       );
       expect(stats.topItems, hasLength(2));
       expect(stats.topItems[0].name, '未知项目');
-      expect(stats.topItems[0].costCents, 10000);
+      expect(stats.topItems[0].actualCents, 10000);
       expect(stats.topItems[1].name, '机油');
-      expect(stats.topItems[1].costCents, 5000); // 同名两条合计。
+      expect(stats.topItems[1].actualCents, 5000); // 同名两条合计。
     });
 
-    test('Top N 截断 + 降序 + 平局按名称稳定排序；占比分母含未进榜项目', () {
+    test('全部项目列出（不截断）+ 实付降序 + 平局按名称稳定排序', () {
       final records = [
         for (var i = 0; i < 4; i++)
           _record(
             date: LocalDate(2026, 5, i + 1),
-            costCents: 0,
+            costCents: (6 - i) * 1000,
             itemIds: [i + 1],
             itemCosts: [_cost(itemId: i + 1, cost: (6 - i) * 1000)],
           ),
-        // 与第 5 名同为 2000 的平局项：平局必须落在截断线上才能观察
-        // tie-break 方向——名称更小者进榜（项目5 进、项目6 出），
+        // 与项目5 实付同为 2000 的平局项：名称更小者排前（项目5 在前），
         // 比较器方向变异（升/降互换或删掉）在这里才会红。
         _record(
           date: const LocalDate(2026, 5, 10),
-          costCents: 0,
+          costCents: 2000,
           itemIds: [5],
           itemCosts: [_cost(itemId: 5, cost: 2000)],
         ),
         _record(
           date: const LocalDate(2026, 5, 11),
-          costCents: 0,
+          costCents: 2000,
           itemIds: [6],
           itemCosts: [_cost(itemId: 6, cost: 2000)],
         ),
@@ -280,92 +308,50 @@ void main() {
         ],
         today: _today,
       );
-      expect(stats.topItems, hasLength(5));
-      // 降序：6000, 5000, 4000, 3000, 2000。
+      // 不截断：6 个项目全部列出。
+      expect(stats.topItems, hasLength(6));
+      // 实付降序：6000, 5000, 4000, 3000, 2000, 2000。
       expect(
-        stats.topItems.map((row) => row.costCents).toList(),
-        [6000, 5000, 4000, 3000, 2000],
+        stats.topItems.map((row) => row.actualCents).toList(),
+        [6000, 5000, 4000, 3000, 2000, 2000],
       );
-      // 平局方向：项目5 与项目6 同为 2000，名称更小的项目5 占第 5 名。
-      expect(stats.topItems.last.name, '项目5');
-      // 占比分母 = 全部 6 项之和 = 22000（含未进榜的 2000×1）。
-      expect(stats.topItems[0].share, closeTo(6000 / 22000, 1e-9));
+      // 平局方向：项目5 与项目6 同为 2000，名称更小的项目5 排前。
+      expect(stats.topItems[4].name, '项目5');
+      expect(stats.topItems[5].name, '项目6');
+      _expectConservation(stats);
     });
 
-    test('条宽比例相对 Top 内最大值', () {
+    test('条宽比例相对全部行（含其他段）最大实付', () {
       final stats = buildCostStats(
         records: [
           _record(
             date: const LocalDate(2026, 5, 1),
-            costCents: 0,
+            costCents: 40000,
             itemIds: [1],
             itemCosts: [_cost(itemId: 1, cost: 40000)],
           ),
           _record(
             date: const LocalDate(2026, 5, 2),
-            costCents: 0,
+            costCents: 10000,
             itemIds: [2],
             itemCosts: [_cost(itemId: 2, cost: 10000)],
           ),
+          // 简洁模式 80000：其他段成为最大行，所有条以它为满宽基准。
+          _record(date: const LocalDate(2026, 5, 3), costCents: 80000),
         ],
         items: [_item(id: 1, name: '机油'), _item(id: 2, name: '机滤')],
         today: _today,
       );
-      expect(stats.topItems[0].fraction, 1.0);
-      expect(stats.topItems[1].fraction, closeTo(0.25, 1e-9));
-    });
-  });
-
-  group('近 12 个月走势', () {
-    test('窗口边界：11 个月前计入、12 个月前不计、当月计入', () {
-      final stats = buildCostStats(
-        records: [
-          // 窗口起点当月（2025-06）：计入。
-          _record(date: const LocalDate(2025, 6, 30), costCents: 100),
-          // 窗口外一个月（2025-05）：不计。
-          _record(date: const LocalDate(2025, 5, 31), costCents: 999),
-          // 当月（2026-05）：计入。
-          _record(date: const LocalDate(2026, 5, 19), costCents: 300),
-        ],
-        items: const [],
-        today: _today,
-      );
-      expect(stats.months.first.costCents, 100); // 2025-06。
-      expect(stats.months[11].costCents, 300); // 2026-05。
-      // 其余月份全部为 0（含窗口外的 2025-05 不出现在任何点位）。
-      expect(
-        stats.months.sublist(1, 11).every((point) => point.costCents == 0),
-        isTrue,
-      );
-      // 条高相对峰值月（300）。
-      expect(stats.months.first.fraction, closeTo(100 / 300, 1e-9));
-      expect(stats.months[11].fraction, 1.0);
-    });
-
-    test('同月多条记录合并；跨年 12 个点连续（12月→1月）', () {
-      final stats = buildCostStats(
-        records: [
-          _record(date: const LocalDate(2025, 12, 1), costCents: 100),
-          _record(date: const LocalDate(2025, 12, 20), costCents: 50),
-        ],
-        items: const [],
-        today: const LocalDate(2026, 2, 15),
-      );
-      // 窗口 = 2025-03 ~ 2026-02，2025-12 是第 10 个点。
-      expect(stats.months, hasLength(12));
-      expect(stats.months.first.year, 2025);
-      expect(stats.months.first.month, 3);
-      final december = stats.months[9];
-      expect(december.year, 2025);
-      expect(december.month, 12);
-      expect(december.costCents, 150);
+      expect(stats.otherCents, 80000);
+      expect(stats.topItems[0].fraction, closeTo(40000 / 80000, 1e-9));
+      expect(stats.topItems[1].fraction, closeTo(10000 / 80000, 1e-9));
     });
   });
 
   group('优惠分摊（2026-09-20）', () {
-    test('按计费值权重分摊，最大余数法守恒', () {
+    test('按项目费用权重分摊，最大余数法守恒', () {
       // 总费用 300，机油计费 200 + 机滤 150 → 总优惠 50。
-      // 机油 exact 28.57 → 28.57 分摊 2857 分；机滤 exact 21.43 →
+      // 机油 exact 28.57 → 2857 分；机滤 exact 21.43 →
       // floor 2142 + 最大余数补 1 分 = 2143，合计正好 5000（守恒）。
       final stats = buildCostStats(
         records: [
@@ -383,8 +369,6 @@ void main() {
         today: _today,
       );
       expect(stats.totalDiscountCents, 5000);
-      expect(stats.itemTotalCents, 35000);
-      expect(stats.itemsActualCents, 30000);
       final oil = stats.topItems[0];
       expect(oil.name, '机油');
       expect(oil.discountCents, 2857);
@@ -392,10 +376,12 @@ void main() {
       final filter = stats.topItems[1];
       expect(filter.discountCents, 2143);
       expect(filter.actualCents, 12857);
+      _expectConservation(stats);
     });
 
-    test('负差值按无优惠计（clamp 到 0）', () {
-      // 总费用 300 > 计费值合计 200：不加价展示，优惠按 0。
+    test('总费用超出项目合计：差额进其他段，项目实付不被摊高', () {
+      // 总费用 300 > 计费值合计 200：不加价展示，优惠按 0，多出的
+      // 100 归其他段（归属诚实，机油不被"摊"到 300）。
       final stats = buildCostStats(
         records: [
           _record(
@@ -409,12 +395,13 @@ void main() {
         today: _today,
       );
       expect(stats.totalDiscountCents, 0);
-      expect(stats.itemsActualCents, 20000);
       expect(stats.topItems.single.discountCents, 0);
       expect(stats.topItems.single.actualCents, 20000);
+      expect(stats.otherCents, 10000);
+      _expectConservation(stats);
     });
 
-    test('没有任何计费值的记录不参与优惠统计', () {
+    test('没有任何计费值的记录不参与优惠统计，费用进其他段', () {
       // 简洁模式只填总费用：Σ计费值 = 0，差值 ≤ 0 自然为无优惠——
       // 口径自动成立，无需特判。
       final stats = buildCostStats(
@@ -423,7 +410,7 @@ void main() {
             date: const LocalDate(2026, 5, 1),
             costCents: 99000,
             itemIds: [1],
-            itemCosts: [_cost(itemId: 1)], // 三项全缺。
+            itemCosts: [_cost(itemId: 1)], // 项目费用没填。
           ),
           _record(date: const LocalDate(2026, 5, 2), costCents: 50000),
         ],
@@ -432,7 +419,7 @@ void main() {
       );
       expect(stats.totalDiscountCents, 0);
       expect(stats.topItems, isEmpty);
-      expect(stats.itemsActualCents, 0);
+      expect(stats.otherCents, 149000);
       // 总额口径不受影响。
       expect(stats.totalCents, 149000);
     });
@@ -469,14 +456,14 @@ void main() {
         today: _today,
       );
       expect(stats.totalDiscountCents, 3000);
-      expect(stats.itemTotalCents, 21000);
-      expect(stats.itemsActualCents, 18000);
-      // 降序：机油 130 > 机滤 80。
+      expect(stats.otherCents, 0);
+      // 实付降序：机油 110 > 机滤 70。
       expect(stats.topItems[0].name, '机油');
       expect(stats.topItems[0].discountCents, 2000);
       expect(stats.topItems[0].actualCents, 11000);
       expect(stats.topItems[1].discountCents, 1000);
       expect(stats.topItems[1].actualCents, 7000);
+      _expectConservation(stats);
     });
 
     test('单条分摊不越过该项目计费值；多项守恒', () {
@@ -514,6 +501,190 @@ void main() {
       for (final row in stats.topItems) {
         expect(row.discountCents, lessThanOrEqualTo(row.costCents));
       }
+      _expectConservation(stats);
+    });
+
+    test('守恒样例（grill 定稿例）：优惠 + 简洁模式 + 超额差额混合', () {
+      // A 详细模式：机油 300 + 机滤 100 = 400，总费用 380（优惠 20：
+      // 机油摊 15、机滤摊 5 → 实付 285/95）；B 简洁模式 200；C 漏填：
+      // 洗车 50、总费用 80（差额 30）。总费用 660 = 285+95+50+230。
+      final stats = buildCostStats(
+        records: [
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 38000,
+            itemIds: [1, 2],
+            itemCosts: [
+              _cost(itemId: 1, cost: 30000),
+              _cost(itemId: 2, cost: 10000),
+            ],
+          ),
+          _record(date: const LocalDate(2026, 5, 2), costCents: 20000),
+          _record(
+            date: const LocalDate(2026, 5, 3),
+            costCents: 8000,
+            itemIds: [3],
+            itemCosts: [_cost(itemId: 3, cost: 5000)],
+          ),
+        ],
+        items: [
+          _item(id: 1, name: '机油'),
+          _item(id: 2, name: '机滤'),
+          _item(id: 3, name: '洗车'),
+        ],
+        today: _today,
+      );
+      expect(stats.totalCents, 66000);
+      expect(stats.totalDiscountCents, 2000);
+      // 实付降序：机油 285 > 机滤 95 > 洗车 50。
+      expect(
+        stats.topItems.map((row) => row.name).toList(),
+        ['机油', '机滤', '洗车'],
+      );
+      expect(stats.topItems[0].actualCents, 28500);
+      expect(stats.topItems[0].discountCents, 1500);
+      expect(stats.topItems[1].actualCents, 9500);
+      expect(stats.topItems[1].discountCents, 500);
+      expect(stats.topItems[2].actualCents, 5000);
+      // 其他段 = 简洁模式 200 + 超额差额 30 = 230。
+      expect(stats.otherCents, 23000);
+      _expectConservation(stats);
+    });
+  });
+
+  group('汇总指标', () {
+    test('次数/今年次数/单次均价/上次保养日期', () {
+      final stats = buildCostStats(
+        records: [
+          _record(date: const LocalDate(2026, 5, 1), costCents: 28000),
+          _record(date: const LocalDate(2025, 3, 1), costCents: 10000),
+        ],
+        items: const [],
+        today: _today,
+      );
+      expect(stats.recordCount, 2);
+      expect(stats.thisYearRecordCount, 1);
+      // 38000 ÷ 2 = 19000。
+      expect(stats.avgPerVisitCents, 19000);
+      expect(stats.lastRecordDate, const LocalDate(2026, 5, 1));
+      // 空记录：全 0 + 上次为 null。
+      final empty = buildCostStats(
+        records: const [],
+        items: const [],
+        today: _today,
+      );
+      expect(empty.recordCount, 0);
+      expect(empty.avgPerVisitCents, 0);
+      expect(empty.lastRecordDate, isNull);
+    });
+
+    test('月均 = 总费用 ÷ 首条记录月到当月的自然月数（全程摊薄）', () {
+      // 首条 2025-03 → 今天 2026-05：跨度 15 个月（含首尾与中间无
+      // 记录月），38000/15 = 2533.33 → 2533。
+      final stats = buildCostStats(
+        records: [
+          _record(date: const LocalDate(2026, 5, 1), costCents: 28000),
+          _record(date: const LocalDate(2025, 3, 1), costCents: 10000),
+        ],
+        items: const [],
+        today: _today,
+      );
+      expect(stats.monthlyAvgCents, 2533);
+      // 同月两条只算一个月：28000/1 = 28000。
+      final single = buildCostStats(
+        records: [
+          _record(date: const LocalDate(2026, 5, 1), costCents: 28000),
+          _record(date: const LocalDate(2026, 5, 20), costCents: 12000),
+        ],
+        items: const [],
+        today: _today,
+      );
+      expect(single.monthlyAvgCents, 40000);
+      // 全部记录晚于生效今天（异常数据）：按 1 个月摊，不除 0。
+      final future = buildCostStats(
+        records: [
+          _record(date: const LocalDate(2026, 6, 1), costCents: 28000),
+        ],
+        items: const [],
+        today: _today,
+      );
+      expect(future.monthlyAvgCents, 28000);
+    });
+  });
+
+  group('项目档案（2026-09-21）', () {
+    test('逐次明细日期倒序 + 计费值/分摊优惠/实付', () {
+      final histories = buildItemHistories(
+        [
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 30000,
+            itemIds: [1, 2],
+            itemCosts: [
+              _cost(itemId: 1, cost: 20000),
+              _cost(itemId: 2, cost: 15000),
+            ],
+          ),
+          _record(
+            date: const LocalDate(2025, 3, 1),
+            costCents: 10000,
+            itemIds: [1],
+            itemCosts: [_cost(itemId: 1, cost: 10000)],
+          ),
+        ],
+        [_item(id: 1, name: '机油'), _item(id: 2, name: '机滤')],
+      );
+      expect(histories.map((history) => history.name).toList(), [
+        '机油',
+        '机滤',
+      ]); // 累计计费值降序。
+      final oil = histories.first;
+      expect(oil.count, 2);
+      expect(oil.totalValueCents, 30000);
+      expect(oil.totalDiscountCents, 2857); // 与占比卡同一分摊结果。
+      expect(oil.totalActualCents, 27143);
+      expect(oil.avgActualCents, 13572); // 27143 ÷ 2 四舍五入。
+      // 日期倒序：2026 在前。
+      expect(oil.entries.first.date, const LocalDate(2026, 5, 1));
+      expect(oil.entries.first.valueCents, 20000);
+      expect(oil.entries.first.discountCents, 2857);
+      expect(oil.entries.first.actualCents, 17143);
+      expect(oil.entries.last.date, const LocalDate(2025, 3, 1));
+      expect(oil.entries.last.discountCents, 0);
+      final filter = histories.last;
+      expect(filter.count, 1);
+      expect(filter.totalDiscountCents, 2143);
+      expect(filter.avgActualCents, 12857);
+    });
+
+    test('无计费值记录不进档案；未知项目照常聚合', () {
+      final histories = buildItemHistories(
+        [
+          // 费用全空的记录（今年那两条 ¥0.00 的形态）：不进档案。
+          _record(
+            date: const LocalDate(2026, 4, 12),
+            costCents: 0,
+            itemIds: [1],
+            itemCosts: [_cost(itemId: 1)],
+          ),
+          _record(
+            date: const LocalDate(2026, 3, 7),
+            costCents: 0,
+            itemIds: [1],
+          ),
+          _record(
+            date: const LocalDate(2026, 5, 1),
+            costCents: 8000,
+            itemIds: [99],
+            itemCosts: [_cost(itemId: 99, cost: 10000)],
+          ),
+        ],
+        [_item(id: 1, name: '机油')],
+      );
+      expect(histories, hasLength(1));
+      expect(histories.single.name, '未知项目');
+      expect(histories.single.count, 1);
+      // 机油今年两次都没填费用 → 档案里不存在机油。
     });
   });
 }

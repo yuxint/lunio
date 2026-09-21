@@ -38,7 +38,7 @@
 //   │    │                    └─ appliedCarFuelRecordsProvider
 //   │    │                       （派生自 fuelRecordsForCarProvider）
 //   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
-//   │    ├─ recordsForCarProvider（按车记录 family：花费统计页等按车消费者）
+//   │    ├─ recordsForCarProvider（按车记录 family：费用统计页等按车消费者）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
@@ -295,7 +295,7 @@ final appliedCarMaintenanceItemsProvider =
       return ref.watch(maintenanceItemsForCarProvider(car!.id!).future);
     });
 
-/// 某辆车的保养记录全量列表，按车 id 缓存的 family（无分页）。花费统计
+/// 某辆车的保养记录全量列表，按车 id 缓存的 family（无分页）。费用统计
 /// 页（作用域 = 当前应用车辆）等按车消费者共用；
 /// 加载、竞态、缓存、逐出由 Riverpod 接管，写库后经
 /// [invalidateVehicleProviders] 整族失效（同项目 family 的约定）。
@@ -369,7 +369,7 @@ void invalidateVehicleProviders(WidgetRef ref) {
   // family 整体逐出：项目 sheet 可能正看着非当前应用车辆（车辆卡入口），
   // 写库/删车/恢复备份后所有按车实例都要重查。
   ref.invalidate(maintenanceItemsForCarProvider);
-  // 保养记录按车 family（花费统计页在用）同口径整族逐出，避免统计页
+  // 保养记录按车 family（费用统计页在用）同口径整族逐出，避免统计页
   // 缓存住已删除/已修改的旧记录。
   ref.invalidate(recordsForCarProvider);
   // 加油记录按车 family 同口径整族逐出（ADR 0014）；applied 派生 provider

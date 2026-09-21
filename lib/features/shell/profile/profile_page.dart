@@ -94,8 +94,8 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
           title: '数据与工具',
           children: [
             ProfileSettingRow(
-              title: '花费统计',
-              subtitle: '总花费、按年对比、项目占比、月度走势',
+              title: '费用统计',
+              subtitle: '总费用、项目占比、年度走势',
               trailingLabel: '查看',
               onTap: () => context.push('/cost-stats'),
             ),

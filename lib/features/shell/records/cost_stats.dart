@@ -1,8 +1,8 @@
-// 花费统计组装层（cost_stats.dart）：记录页头部"今年花费"汇总行与
+// 费用统计组装层（cost_stats.dart）：记录页头部"今年费用"汇总行与
 // 独立统计页（/cost-stats）共用的聚合口径。
 //
-// 职责：输入全量保养记录 + 项目清单 + 生效今天，输出总花费、今年花费、
-// 按年横条、项目占比 Top N、近 12 个月走势、优惠分摊六份视图模型。与
+// 职责：输入全量保养记录 + 项目清单 + 生效今天，输出总费用、今年费用、
+// 年度走势、项目占比（含"其他"段）、汇总指标五份视图模型。与
 // record_rows.dart 同构（features 层纯函数组装，无 provider、无副作用）；
 // 统计页的数据接缝（按作用域拉记录/项目）在 cost_stats_page.dart，
 // 本文件只管"拿到数据后怎么算"。
@@ -12,14 +12,20 @@
 // 口径（spec 拍板，与 ADR 0010 的软提示模型一致）：
 //  - 总额/年度/月度一律用记录总费用 costCents（权威值，实体必填）；
 //    与项目费用合计不一致时仍按总费用算，不做读时修正；
-//  - 项目占比＝项目费用 ?? 材料+工时（缺失的一边按 0），三项全缺跳过
-//    该行——未填不按 0 计，占比不失真也不虚增；
+//  - 项目计费值＝项目费用（没填则该项目不参与统计）。材料费/工时费
+//    不参与读侧口径——"材料/工时任一有值 ⇒ 项目费用必有值"的数据
+//    不变量由写点的 normalizeItemCost 共同保证（2026-09-21 拍板删除
+//    读侧兜底分支，口径唯一）；
 //  - 项目占比按"项目名"聚合（经项目清单解析，查不到归"未知项目"），
-//    多车"全部"作用域下不同车的同名项目自然合并成一类；
-//  - 优惠分摊（2026-09-20）：记录级总优惠 = Σ计费值 − 记录总费用
-//    （负差值 = 无优惠，按 0 计；没有任何计费值的记录 Σ=0 差值必 ≤ 0，
-//    自然不参与，无需特判），按各项目计费值权重摊到项目，最大余数法
-//    取整保证分摊合计与总优惠严格相等。纯读时派生，不改存储值。
+//    列出全部项目不截断，按实付从多到少排；
+//  - 优惠分摊：记录级总优惠 = Σ项目费用 − 记录总费用（负差值 = 无
+//    优惠，按 0 计；没有任何项目费用的记录 Σ=0 差值必 ≤ 0，自然不
+//    参与，无需特判），按各项目费用权重摊到项目，最大余数法取整保证
+//    分摊合计与总优惠严格相等。纯读时派生，不改存储值；
+//  - 守恒（2026-09-21）：总费用 ≡ Σ项目实付 + 其他段。其他段吸收
+//    无法归属到项目的钱——简洁模式记录（没填项目费用）的全部费用 +
+//    单条记录"总费用超出项目费用合计"的差额——保证汇总卡总费用与
+//    占比卡各行相加永远相等，不再出现"总花费 ≠ 项目实付"的口径缺口。
 //
 // 本文件全部是纯函数与纯数据，无写库、无副作用，可直接单测。
 
@@ -28,14 +34,8 @@ import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
 
-/// 项目占比排行榜长度（Top N 的 N）。
-const costStatsTopItemCount = 5;
-
-/// 近 12 个月走势的窗口长度（含当月）。
-const costStatsMonthWindow = 12;
-
-/// 某一年花费合计（记录总费用权威值逐条求和）。
-/// 记录页"今年花费"汇总行与年度分组共用这一个口径。
+/// 某一年费用合计（记录总费用权威值逐条求和）。
+/// 记录页"今年费用"汇总行与年度分组共用这一个口径。
 int costCentsForYear(List<MaintenanceRecord> records, int year) {
   var total = 0;
   for (final record in records) {
@@ -46,9 +46,9 @@ int costCentsForYear(List<MaintenanceRecord> records, int year) {
   return total;
 }
 
-/// 年度横条：年份 + 花费 + 条宽比例（相对最大年，0~1，自绘横条用）。
-class CostYearBar {
-  const CostYearBar({
+/// 年度走势点：年份 + 该年总费用 + 条高比例（相对峰值年，0~1）。
+class CostYearPoint {
+  const CostYearPoint({
     required this.year,
     required this.costCents,
     required this.fraction,
@@ -57,121 +57,116 @@ class CostYearBar {
   final int year;
   final int costCents;
 
-  /// 条宽比例：本年花费 ÷ 最大年花费（花费为 0 时为 0）。
+  /// 条高比例：本年费用 ÷ 峰值年费用（费用为 0 时为 0）。
   final double fraction;
 }
 
-/// 项目占比行：项目名 + 花费 + 占比 + 条宽比例 + 分摊优惠/实付。
+/// 项目占比行：项目名 + 计费值 + 分摊优惠/实付 + 条宽比例。
 class CostItemShareRow {
   const CostItemShareRow({
     required this.name,
     required this.costCents,
-    required this.share,
-    required this.fraction,
     required this.discountCents,
     required this.actualCents,
+    required this.fraction,
   });
 
   final String name;
+
+  /// 计费值（项目口径，口径见 [itemCostValue]）。
   final int costCents;
 
-  /// 占比：本项目花费 ÷ 项目口径总花费（分母含未进 Top N 的项目，
-  /// 0~1；分母为 0 时为 0）。
-  final double share;
-
-  /// 条宽比例：本项目花费 ÷ Top 内最大花费（0~1）。
-  final double fraction;
-
   /// 分摊优惠（分）：本项目名聚合到的优惠之和（优惠分摊口径见文件头），
-  /// 恒 ≤ [costCents]（单条记录内分摊不会超过该项目计费值）。
+  /// 恒 ≤ [costCents]（单条记录内分摊不会超过该项目费用）。
   final int discountCents;
 
   /// 实付（分）= [costCents] − [discountCents]。
   final int actualCents;
-}
 
-/// 月度走势点：年 + 月 + 花费 + 条高比例（相对峰值月，0~1）。
-class CostMonthPoint {
-  const CostMonthPoint({
-    required this.year,
-    required this.month,
-    required this.costCents,
-    required this.fraction,
-  });
-
-  final int year;
-  final int month;
-  final int costCents;
-
-  /// 条高比例：本月花费 ÷ 窗口内峰值月花费（0~1）。
+  /// 条宽比例：本项目实付 ÷ 全部行（含"其他"段）最大实付（0~1），
+  /// 同一把尺子保证各行条宽可比、"其他"条不越界。
   final double fraction;
 }
 
-/// 花费统计聚合结果（一次算齐的只读视图模型，渲染层直接消费）。
+/// 费用统计聚合结果（一次算齐的只读视图模型，渲染层直接消费）。
 class CostStats {
   const CostStats({
     required this.totalCents,
     required this.thisYearCents,
     required this.years,
     required this.topItems,
-    required this.months,
+    required this.otherCents,
     required this.totalDiscountCents,
-    required this.itemsActualCents,
-    required this.itemTotalCents,
+    required this.recordCount,
+    required this.thisYearRecordCount,
+    required this.avgPerVisitCents,
+    required this.monthlyAvgCents,
+    required this.lastRecordDate,
   });
 
-  /// 总花费（全部记录总费用之和）。
+  /// 总费用（全部记录总费用之和）。守恒锚点：Σ[topItems] 实付 +
+  /// [otherCents] 恒等于此值。
   final int totalCents;
 
-  /// 今年（生效今天所在年）花费。
+  /// 今年（生效今天所在年）费用。
   final int thisYearCents;
 
-  /// 按年横条（年份升序）。
-  final List<CostYearBar> years;
+  /// 年度走势点（首条记录年 → 今年，年份升序，中间无记录年补 0
+  /// 保证横轴连续；无记录时为空——单年车由页面整卡隐藏走势）。
+  final List<CostYearPoint> years;
 
-  /// 项目占比 Top N（花费降序，最多 [costStatsTopItemCount] 行）。
+  /// 项目占比行（全部项目不截断，实付降序，平局按名称稳定排序）。
   final List<CostItemShareRow> topItems;
 
-  /// 近 12 个月走势（旧 → 新，含当月，固定 [costStatsMonthWindow] 个点）。
-  final List<CostMonthPoint> months;
+  /// 其他段（分）：无项目可归属的费用——简洁模式记录的全部费用 +
+  /// 单条记录"总费用超出项目费用合计"的差额（0 = 无缺口，页面不渲染）。
+  final int otherCents;
 
   /// 累计优惠（分）：所有参与记录分摊到项目上的优惠之和（0 = 无优惠）。
   final int totalDiscountCents;
 
-  /// 项目口径实付合计（分）= [itemTotalCents] − [totalDiscountCents]。
-  /// 环形图环心的金额用它；与记录总费用口径（[totalCents]）不同源，
-  /// 展示时不要混用。
-  final int itemsActualCents;
+  /// 保养记录总条数（不看费用是否填写）。
+  final int recordCount;
 
-  /// 项目口径计费值合计（分），项目占比的分母（含未进 Top N 的项目）。
-  final int itemTotalCents;
+  /// 今年（生效今天所在年）记录条数。
+  final int thisYearRecordCount;
+
+  /// 单次平均费用（分）= 总费用 ÷ 记录条数（记录总费用口径；
+  /// 无记录时为 0）。
+  final int avgPerVisitCents;
+
+  /// 月均（分）= 总费用 ÷ 自然月跨度（首条记录月 → 当月，含首尾与
+  /// 中间无记录月，全程摊薄；2026-09-21 拍板不随任何图表切换联动）。
+  /// 无记录时为 0。
+  final int monthlyAvgCents;
+
+  /// 最后一条保养记录的日期（无记录时为 null）。「上次保养距今」用。
+  final LocalDate? lastRecordDate;
 }
 
-/// 单条项目费用行的计费值：项目费用优先，缺则材料+工时（缺失一边按 0），
-/// 三项全缺返回 null（调用方跳过该行）。这是"项目占比"口径的唯一实现点。
-int? itemCostValue(RecordItemCost cost) {
-  if (cost.costCents != null) {
-    return cost.costCents;
-  }
-  if (cost.materialCents != null || cost.laborCents != null) {
-    return (cost.materialCents ?? 0) + (cost.laborCents ?? 0);
-  }
-  return null;
-}
+/// 项目计费值：参与费用统计的金额 = 项目费用；没填返回 null（该项目
+/// 不参与统计）。材料费/工时费不做读侧兜底——"材料/工时任一有值 ⇒
+/// 项目费用必有值"的不变量由写点的 normalizeItemCost 保证（2026-09-21
+/// 拍板删除兜底分支）。这是项目占比、优惠分摊、项目档案共用的唯一
+/// 口径实现点。
+int? itemCostValue(RecordItemCost cost) => cost.costCents;
 
-/// 把一笔记录级优惠按权重（各项目计费值占比）分摊并累计进
-/// [discountByName]。最大余数法：先按比例向下取整，再把剩余的分数
-/// 逐分给小数部分最大的项目（平局按传入顺序，保证可复现）——分摊
-/// 合计与总优惠严格相等，不留一分钱差额。每项分摊 ≤ 该项计费值
-/// （优惠 ≤ 计费值合计，取整后 ≤ 向上取整 ≤ 计费值）。纯函数。
-void allocateDiscount(
-  List<MapEntry<String, int>> entries,
+/// 把一笔记录级优惠按权重（各项目费用占比）分摊，返回每项的分摊
+/// 优惠。最大余数法：先按比例向下取整，再把剩余的分数逐分给小数部分
+/// 最大的项（平局按传入顺序，保证可复现）——分摊合计与 [discount]
+/// 严格相等，不留一分钱差额。每项分摊 ≤ 该项费用（优惠 ≤ 费用
+/// 合计，取整后 ≤ 向上取整 ≤ 费用）。纯函数；K 由调用方选（项目名
+/// 或项目 id）。
+Map<K, int> allocateDiscount<K>(
+  List<MapEntry<K, int>> entries,
   int discount,
-  Map<String, int> discountByName,
 ) {
+  final result = <K, int>{
+    for (final entry in entries) entry.key: 0,
+  };
   final valueSum = entries.fold(0, (sum, entry) => sum + entry.value);
-  if (valueSum <= 0) {
-    return; // 权重全 0 无从分摊（当前口径下不可达，防御性兜底）。
+  if (valueSum <= 0 || discount <= 0) {
+    return result; // 权重全 0 无从分摊（当前口径下不可达，防御性兜底）。
   }
   final floors = <int>[];
   final remainders = <int>[];
@@ -193,43 +188,185 @@ void allocateDiscount(
     left -= 1;
   }
   for (var index = 0; index < entries.length; index++) {
-    final name = entries[index].key;
-    discountByName[name] = (discountByName[name] ?? 0) + floors[index];
+    result[entries[index].key] = floors[index];
   }
+  return result;
 }
 
-/// 花费统计聚合唯一入口：全量记录 + 项目清单 + 生效今天 → 完整视图模型。
-/// 纯函数，不感知作用域——调用方传哪份记录就算哪份（单车/全部由上游
-/// 数据接缝决定）。空记录返回全 0 与空列表（页面据此渲染空态）。
+/// 项目档案里的单次明细：日期、里程、计费值、分摊优惠、实付。
+class CostItemHistoryEntry {
+  const CostItemHistoryEntry({
+    required this.date,
+    required this.mileageKm,
+    required this.valueCents,
+    required this.discountCents,
+    required this.actualCents,
+  });
+
+  final LocalDate date;
+  final int mileageKm;
+
+  /// 该次该项目的计费值（项目口径，同 [itemCostValue]）。
+  final int valueCents;
+
+  /// 该次记录的总优惠分摊到本项目的部分（0 = 该次无优惠）。
+  final int discountCents;
+
+  /// 实付 = [valueCents] − [discountCents]。
+  final int actualCents;
+}
+
+/// 单个保养项目的档案：累计计费值/实付/优惠、次数、单次均价、逐次明细
+/// （日期倒序）。「项目占比 → 点项目 → 项目档案 sheet」的数据源。
+class CostItemHistory {
+  const CostItemHistory({
+    required this.name,
+    required this.entries,
+    required this.totalValueCents,
+    required this.totalActualCents,
+    required this.totalDiscountCents,
+  });
+
+  final String name;
+
+  /// 逐次明细（日期倒序；只含有计费值的次数——费用全空的记录无从
+  /// 计算金额，不进档案）。
+  final List<CostItemHistoryEntry> entries;
+
+  /// 累计计费值（分）。
+  final int totalValueCents;
+
+  /// 累计实付（分）= [totalValueCents] − [totalDiscountCents]。
+  final int totalActualCents;
+
+  /// 累计分摊优惠（分）。
+  final int totalDiscountCents;
+
+  /// 次数（= [entries].length，有计费值的次数）。
+  int get count => entries.length;
+
+  /// 单次均价（分）= 累计实付 ÷ 次数（次数为 0 时为 0）。
+  int get avgActualCents =>
+      count == 0 ? 0 : (totalActualCents / count).round();
+}
+
+/// 项目档案聚合唯一入口：逐条记录跑与 [buildCostStats] 同一套优惠分摊
+/// （保证档案里的分摊数字与占比卡一致），按项目 id 收单次明细后按日期
+/// 倒序。纯函数。
+List<CostItemHistory> buildItemHistories(
+  List<MaintenanceRecord> records,
+  List<MaintenanceItem> items,
+) {
+  // itemId → 聚合累加器。
+  final entriesByItem = <int, List<CostItemHistoryEntry>>{};
+  final valueByItem = <int, int>{};
+  final discountByItem = <int, int>{};
+  for (final record in records) {
+    final namedEntries = <MapEntry<int, int>>[];
+    for (final cost in record.itemCosts) {
+      final value = itemCostValue(cost);
+      if (value == null) {
+        continue;
+      }
+      namedEntries.add(MapEntry(cost.itemId, value));
+    }
+    if (namedEntries.isEmpty) {
+      continue;
+    }
+    // 该记录的优惠分摊（与占比卡同口径，按项目 id 直接分摊）。
+    final valueSum =
+        namedEntries.fold(0, (sum, entry) => sum + entry.value);
+    final discount = valueSum - record.costCents;
+    final discountByItemId =
+        discount > 0 ? allocateDiscount(namedEntries, discount) : null;
+    for (final entry in namedEntries) {
+      final itemDiscount = discountByItemId?[entry.key] ?? 0;
+      entriesByItem
+          .putIfAbsent(entry.key, () => [])
+          .add(
+            CostItemHistoryEntry(
+              date: record.date,
+              mileageKm: record.mileageKm,
+              valueCents: entry.value,
+              discountCents: itemDiscount,
+              actualCents: entry.value - itemDiscount,
+            ),
+          );
+      valueByItem[entry.key] = (valueByItem[entry.key] ?? 0) + entry.value;
+      discountByItem[entry.key] =
+          (discountByItem[entry.key] ?? 0) + itemDiscount;
+    }
+  }
+  final histories = <CostItemHistory>[];
+  for (final itemId in entriesByItem.keys) {
+    final entries = entriesByItem[itemId]!
+      ..sort((a, b) {
+        final byDate = _dateKey(b.date).compareTo(_dateKey(a.date));
+        // 同日多条（同车同日唯一约束在记录级，这里防御性按里程倒序）。
+        return byDate != 0 ? byDate : b.mileageKm.compareTo(a.mileageKm);
+      });
+    histories.add(
+      CostItemHistory(
+        name: itemById(items, itemId)?.name ?? '未知项目',
+        entries: entries,
+        totalValueCents: valueByItem[itemId] ?? 0,
+        totalDiscountCents: discountByItem[itemId] ?? 0,
+        totalActualCents:
+            (valueByItem[itemId] ?? 0) - (discountByItem[itemId] ?? 0),
+      ),
+    );
+  }
+  // 累计计费值降序（与项目占比排序同向），保证档案列表可复现。
+  histories.sort((a, b) => b.totalValueCents.compareTo(a.totalValueCents));
+  return histories;
+}
+
+/// LocalDate → 可比较整数键（年*10000+月*100+日），免依赖实体比较接口。
+int _dateKey(LocalDate date) =>
+    date.year * 10000 + date.month * 100 + date.day;
+
+/// 费用统计聚合唯一入口：全量记录 + 项目清单 + 生效今天 → 完整视图模型。
+/// 纯函数，不感知作用域——调用方传哪份记录就算哪份（作用域永远当前
+/// 应用车辆，由上游数据接缝决定）。空记录返回全 0 与空列表（页面据此
+/// 渲染空态）。
 CostStats buildCostStats({
   required List<MaintenanceRecord> records,
   required List<MaintenanceItem> items,
   required LocalDate today,
-  int topItemCount = costStatsTopItemCount,
 }) {
   final totalCents = records.fold(0, (sum, record) => sum + record.costCents);
+  final recordCount = records.length;
 
-  // 按年分组（年份升序）；条宽相对最大年。
+  // 年度走势：从首条记录年到今年逐点铺满，无记录年补 0 保证横轴连续。
   final centsByYear = <int, int>{};
+  var firstYear = today.year;
   for (final record in records) {
-    centsByYear[record.date.year] =
-        (centsByYear[record.date.year] ?? 0) + record.costCents;
+    final year = record.date.year;
+    centsByYear[year] = (centsByYear[year] ?? 0) + record.costCents;
+    if (year < firstYear) {
+      firstYear = year;
+    }
   }
   final maxYearCents =
       centsByYear.values.fold(0, (max, cents) => cents > max ? cents : max);
   final years = [
-    for (final year in (centsByYear.keys.toList()..sort()))
-      CostYearBar(
-        year: year,
-        costCents: centsByYear[year]!,
-        fraction: maxYearCents == 0 ? 0.0 : centsByYear[year]! / maxYearCents,
-      ),
+    if (records.isNotEmpty)
+      for (var year = firstYear; year <= today.year; year++)
+        CostYearPoint(
+          year: year,
+          costCents: centsByYear[year] ?? 0,
+          fraction:
+              maxYearCents == 0 ? 0.0 : (centsByYear[year] ?? 0) / maxYearCents,
+        ),
   ];
 
-  // 项目占比 + 优惠分摊：按解析出的项目名聚合计费值（口径见
-  // itemCostValue）。优惠按记录逐条分摊后累计到项目名上。
+  // 项目占比 + 优惠分摊 + 其他段：一次遍历同步完成。项目按解析出的
+  // 项目名聚合计费值（口径见 itemCostValue）；优惠按记录逐条分摊后
+  // 累计到项目名上；无归属的钱（简洁模式费用、总费用超出合计的差额）
+  // 计入其他段，保证守恒。
   final centsByName = <String, int>{};
   final discountByName = <String, int>{};
+  var otherCents = 0;
   for (final record in records) {
     final entries = <MapEntry<String, int>>[];
     for (final cost in record.itemCosts) {
@@ -242,77 +379,106 @@ CostStats buildCostStats({
       entries.add(MapEntry(name, value));
     }
     if (entries.isEmpty) {
+      // 简洁模式记录：钱花了但没有项目可归属，全额进其他段。
+      otherCents += record.costCents;
       continue;
     }
     final valueSum = entries.fold(0, (sum, entry) => sum + entry.value);
-    // 总优惠 = Σ计费值 − 记录总费用；负差值（总费用更高）= 无优惠。
-    // 没有任何计费值的记录在上面 continue——"简洁模式记录不参与"
-    // 由这两条口径自然成立，无需特判。
+    // 总费用超出项目费用合计的差额同样无处归属 → 其他段（负差值 =
+    // 有优惠，走下面的分摊，不动其他段）。
+    if (record.costCents > valueSum) {
+      otherCents += record.costCents - valueSum;
+    }
+    // 总优惠 = Σ计费值 − 记录总费用；负差值按无优惠计。"没有任何
+    // 计费值的记录不参与"由上面的 continue 自然成立，无需特判。
     final discount = valueSum - record.costCents;
     if (discount <= 0) {
       continue;
     }
-    allocateDiscount(entries, discount, discountByName);
+    final allocated = allocateDiscount(entries, discount);
+    for (final finalEntry in allocated.entries) {
+      discountByName[finalEntry.key] =
+          (discountByName[finalEntry.key] ?? 0) + finalEntry.value;
+    }
   }
   final totalDiscountCents = discountByName.values
       .fold(0, (sum, cents) => sum + cents);
-  final itemTotalCents =
-      centsByName.values.fold(0, (sum, cents) => sum + cents);
-  final namesByCents = centsByName.keys.toList()
+
+  // 实付 = 计费值 − 分摊优惠；条宽同一把尺（含其他段的最大实付）。
+  final actualByName = <String, int>{
+    for (final entry in centsByName.entries)
+      entry.key: entry.value - (discountByName[entry.key] ?? 0),
+  };
+  var barMaxCents = otherCents;
+  for (final actual in actualByName.values) {
+    if (actual > barMaxCents) {
+      barMaxCents = actual;
+    }
+  }
+  // 实付从多到少（页面条形列表的展示顺序）；平局按名称稳定排序。
+  final namesByActual = actualByName.keys.toList()
     ..sort((left, right) {
-      final byCents = centsByName[right]!.compareTo(centsByName[left]!);
-      // 花费相同按名称稳定排序，保证 Top N 截断结果可复现。
-      return byCents != 0 ? byCents : left.compareTo(right);
+      final byActual = actualByName[right]!.compareTo(actualByName[left]!);
+      return byActual != 0 ? byActual : left.compareTo(right);
     });
-  final maxItemCents =
-      namesByCents.isEmpty ? 0 : centsByName[namesByCents.first]!;
   final topItems = [
-    for (final name in namesByCents.take(topItemCount))
+    for (final name in namesByActual)
       CostItemShareRow(
         name: name,
         costCents: centsByName[name]!,
-        share: itemTotalCents == 0 ? 0.0 : centsByName[name]! / itemTotalCents,
-        fraction:
-            maxItemCents == 0 ? 0.0 : centsByName[name]! / maxItemCents,
         discountCents: discountByName[name] ?? 0,
-        actualCents: centsByName[name]! - (discountByName[name] ?? 0),
+        actualCents: actualByName[name]!,
+        fraction:
+            barMaxCents == 0 ? 0.0 : actualByName[name]! / barMaxCents,
       ),
   ];
 
-  // 近 12 个月走势：窗口 = 含当月往前推 11 个月（旧 → 新，固定 12 个点，
-  // 无记录的月补 0，保证横轴月份连续）。月份 key = 年*12+(月-1)。
-  final startMonth = LocalDate(today.year, today.month, 1)
-      .addMonths(-(costStatsMonthWindow - 1));
-  final startKey = startMonth.year * 12 + startMonth.month - 1;
-  final centsByMonthKey = <int, int>{};
+  // 月均：首条记录月 → 当月的自然月数（含首尾与中间无记录月，
+  // 全程摊薄）。
+  var firstMonthKey = -1;
   for (final record in records) {
     final key = record.date.year * 12 + record.date.month - 1;
-    if (key >= startKey && key < startKey + costStatsMonthWindow) {
-      centsByMonthKey[key] = (centsByMonthKey[key] ?? 0) + record.costCents;
+    if (firstMonthKey == -1 || key < firstMonthKey) {
+      firstMonthKey = key;
     }
   }
-  final maxMonthCents = centsByMonthKey.values
-      .fold(0, (max, cents) => cents > max ? cents : max);
-  final months = [
-    for (var offset = 0; offset < costStatsMonthWindow; offset++)
-      CostMonthPoint(
-        year: (startKey + offset) ~/ 12,
-        month: (startKey + offset) % 12 + 1,
-        costCents: centsByMonthKey[startKey + offset] ?? 0,
-        fraction: maxMonthCents == 0
-            ? 0.0
-            : (centsByMonthKey[startKey + offset] ?? 0) / maxMonthCents,
-      ),
-  ];
+  final todayKey = today.year * 12 + today.month - 1;
+  var monthSpan = 0;
+  if (firstMonthKey >= 0) {
+    monthSpan = todayKey - firstMonthKey + 1;
+    if (monthSpan < 1) {
+      // 全部记录晚于生效今天（异常数据）时按 1 个月摊，避免除 0。
+      monthSpan = 1;
+    }
+  }
+
+  // 汇总指标：次数（总/今年）、单次均价、上次保养日期。
+  final thisYearRecordCount = records
+      .where((record) => record.date.year == today.year)
+      .length;
+  LocalDate? lastRecordDate;
+  var lastRecordKey = -1;
+  for (final record in records) {
+    final key = _dateKey(record.date);
+    if (key > lastRecordKey) {
+      lastRecordKey = key;
+      lastRecordDate = record.date;
+    }
+  }
 
   return CostStats(
     totalCents: totalCents,
     thisYearCents: costCentsForYear(records, today.year),
     years: years,
     topItems: topItems,
-    months: months,
+    otherCents: otherCents,
     totalDiscountCents: totalDiscountCents,
-    itemsActualCents: itemTotalCents - totalDiscountCents,
-    itemTotalCents: itemTotalCents,
+    recordCount: recordCount,
+    thisYearRecordCount: thisYearRecordCount,
+    avgPerVisitCents:
+        recordCount == 0 ? 0 : (totalCents / recordCount).round(),
+    monthlyAvgCents:
+        monthSpan == 0 ? 0 : (totalCents / monthSpan).round(),
+    lastRecordDate: lastRecordDate,
   );
 }

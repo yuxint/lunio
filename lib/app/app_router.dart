@@ -8,7 +8,7 @@
 // 导航里（开关在开发者模式 → 我的页）；路由本身常驻，开关关闭时
 // AppShell 会把 /fuel 重定向回 /me（见 app_shell.dart）。
 //
-// /cost-stats（花费统计）是第一个不挂主壳层的 pushed 子页：不渲染
+// /cost-stats（费用统计）是第一个不挂主壳层的 pushed 子页：不渲染
 // AppShell（无底部导航），从记录页汇总行/我的页设置行 push 进栈，
 // 默认转场（MaterialPage，iOS 右滑返回天然可用），返回键在页面
 // LunioTopBar 的 leading 位。其余 tab 路由约定不变。
@@ -27,11 +27,16 @@ final appRouter = buildAppRouter();
 
 /// 构建 GoRouter 实例。四个 GoRoute 对应底部导航的入口（selectedIndex
 /// 语义：0=提醒 1=记录 2=加油 3=我的，加油项是否显示由 AppShell 按开关
-/// 决定），另有一个 pushed 子页 /cost-stats（花费统计）。
+/// 决定），另有一个 pushed 子页 /cost-stats（费用统计）。
 GoRouter buildAppRouter() {
   return GoRouter(
-    // 冷启动后的初始页面：提醒页（产品默认首屏）。
-    initialLocation: '/reminders',
+    // 冷启动后的初始页面：提醒页（产品默认首屏）。可用 dart-define 覆盖
+    //（仅模拟器截图/验收用；正常构建与测试不带该参数，行为不变）：
+    // flutter build ios --simulator --dart-define=LUNIO_INITIAL_ROUTE=/cost-stats
+    initialLocation: const String.fromEnvironment(
+      'LUNIO_INITIAL_ROUTE',
+      defaultValue: '/reminders',
+    ),
     routes: [
       GoRoute(
         path: '/reminders',

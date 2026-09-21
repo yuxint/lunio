@@ -68,7 +68,7 @@ class MaintenanceRecord {
   /// 项目；不在列表里的项目 = 费用全空。itemId 必须都在 itemIds 内。
   final List<RecordItemCost> itemCosts;
 
-  /// 花费，单位"分"。0 表示未记录金额。
+  /// 费用，单位"分"。0 表示未记录金额。
   final int costCents;
 
   /// 保养时的里程（公里）。写入后会触发车辆里程"只增"同步。

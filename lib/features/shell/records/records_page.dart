@@ -108,7 +108,7 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           items: items,
           selections: selections,
         );
-        // 头部"今年花费"汇总行（记录非空才显示，整行可点进花费统计页）。
+        // 头部"今年费用"汇总行（记录非空才显示，整行可点进费用统计页）。
         // 生效今天未就绪时兜底系统日期——与我的页 today 取值同款模式。
         final today = ref
             .watch(effectiveTodayProvider)
@@ -1172,8 +1172,8 @@ Future<void> deleteMaintenanceRecordItem(
 // 金额展示/解析（formatMoneyCents/parseMoneyCents/formatMoneyText）
 // 已升入共享 formatters.dart，经 shell_shared.dart barrel 使用。
 
-/// 头部"今年花费"汇总行（记录非空才显示）：金额口径见 cost_stats.dart
-/// （记录总费用权威值），整行可点进花费统计页（/cost-stats）。
+/// 头部"今年费用"汇总行（记录非空才显示）：金额口径见 cost_stats.dart
+/// （记录总费用权威值），整行可点进费用统计页（/cost-stats）。
 class _CostSummaryRow extends StatelessWidget {
   const _CostSummaryRow({required this.thisYearCents, required this.onTap});
 
@@ -1196,7 +1196,7 @@ class _CostSummaryRow extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  '今年花费',
+                  '今年费用',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: tokens.muted,
                   ),
@@ -1211,7 +1211,7 @@ class _CostSummaryRow extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  '花费统计',
+                  '费用统计',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: tokens.muted,
                   ),
