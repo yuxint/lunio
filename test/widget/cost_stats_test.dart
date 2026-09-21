@@ -229,6 +229,17 @@ void main() {
         find.byKey(const ValueKey('cost-trend-paint')),
       );
       expect(trendPaint.width, greaterThan(200));
+      // 条形统一起点 + 同一比例尺（Table 三列全表定宽）：机油行与"其他"
+      // 行的条形左边缘相同，宽度比 = 实付比（330 : 50）。轨道若随行内
+      // 内容宽窄变化（旧行式布局），比例会失真、此处即红。
+      final oilBar = tester.getRect(
+        find.byKey(const ValueKey('cost-bar-机油')),
+      );
+      final otherBar = tester.getRect(
+        find.byKey(const ValueKey('cost-bar-其他')),
+      );
+      expect(oilBar.left, otherBar.left);
+      expect(oilBar.width / otherBar.width, closeTo(33000 / 5000, 0.05));
       // 作用域固定当前应用车辆：副标题展示车辆名，无"全部"/切车 chips
       //（2026-09-20 拍板：统计页不提供多车维度）。
       expect(find.text('当前车辆：本田 思域（燃油版）'), findsOneWidget);

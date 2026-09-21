@@ -327,9 +327,13 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
   /// 主数字 = 总费用（守恒锚点：各行相加 ≡ 总费用，口径见
   /// cost_stats.dart 文件头），旁边累计优惠小字；末尾"其他"段（仅有
   /// 缺口时出现）装无归属的钱，不可下钻；点项目行打开该项目档案 sheet
-  /// （[showCostItemHistorySheet]）。条形入场时按宽度生长——必须包在
-  /// AnimatedBuilder 里，否则动画期间本子树不重建、条形停在进度 0
-  /// （历史 bug：按年条漏包导致"有时不渲染、点开才出来"）。
+  /// （[showCostItemHistorySheet]）。列表用 Table 三列布局——项目名列
+  /// 与数值列都取全表最宽（IntrinsicColumnWidth），所有行的条形从同
+  /// 一起点、同一把像素尺开始画（项目名宽窄不一或实付位数不同都会让
+  /// 各行条形的起点/轨道长度参差，比例随之失真）；条形入场时按宽度
+  /// 生长——必须包在 AnimatedBuilder 里，否则动画期间本子树不重建、
+  /// 条形停在进度 0（历史 bug：按年条漏包导致"有时不渲染、点开才
+  /// 出来"）。
   Widget _buildProjectCard(
     BuildContext context,
     CostStats stats,
@@ -379,39 +383,42 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
           AnimatedBuilder(
             animation: _entrance,
             builder: (context, _) {
-              return Column(
+              return Table(
+                columnWidths: const {
+                  // 项目名列与数值列取全表最宽：条形统一起点 + 统一轨道。
+                  0: IntrinsicColumnWidth(),
+                  1: FlexColumnWidth(),
+                  2: IntrinsicColumnWidth(),
+                },
+                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                 children: [
                   for (final row in stats.topItems)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _ProjectBarRow(
-                        name: row.name,
-                        actualCents: row.actualCents,
-                        discountCents: row.discountCents,
-                        fraction: row.fraction,
-                        progress: _entrance.value,
-                        barColor: tokens.primary,
-                        onTap: () {
-                          final history = historyByName[row.name];
-                          if (history != null) {
-                            showCostItemHistorySheet(context, history);
-                          }
-                        },
-                      ),
+                    _projectBarRow(
+                      context,
+                      name: row.name,
+                      actualCents: row.actualCents,
+                      discountCents: row.discountCents,
+                      fraction: row.fraction,
+                      progress: _entrance.value,
+                      barColor: tokens.primary,
+                      onTap: () {
+                        final history = historyByName[row.name];
+                        if (history != null) {
+                          showCostItemHistorySheet(context, history);
+                        }
+                      },
                     ),
                   // "其他"段：无归属费用的聚合（简洁模式费用 + 总费用
                   // 超出项目合计的差额），不是项目、不可下钻。
                   if (stats.otherCents > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _ProjectBarRow(
-                        name: '其他',
-                        actualCents: stats.otherCents,
-                        discountCents: 0,
-                        fraction: barMaxFraction(stats),
-                        progress: _entrance.value,
-                        barColor: tokens.surface3,
-                      ),
+                    _projectBarRow(
+                      context,
+                      name: '其他',
+                      actualCents: stats.otherCents,
+                      discountCents: 0,
+                      fraction: barMaxFraction(stats),
+                      progress: _entrance.value,
+                      barColor: tokens.surface3,
                     ),
                 ],
               );
@@ -419,6 +426,101 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
           ),
         ],
       ),
+    );
+  }
+
+  /// 条形列表一行（TableRow）：项目名 | 条形轨道 | 实付（+省额+下钻
+  /// 箭头）。三个单元格各自包 TableRowInkWell（高亮横跨整行），[onTap]
+  /// 为空（"其他"段）时整行不响应；"其他"行灰条、无优惠无箭头。
+  TableRow _projectBarRow(
+    BuildContext context, {
+    required String name,
+    required int actualCents,
+    required int discountCents,
+    required double fraction,
+    required double progress,
+    required Color barColor,
+    VoidCallback? onTap,
+  }) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final widthFactor = (fraction * progress).clamp(0.0, 1.0);
+    TableCell cell(Widget child) => TableCell(
+          child: TableRowInkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: child,
+            ),
+          ),
+        );
+    return TableRow(
+      children: [
+        cell(
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 96),
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ),
+        cell(
+          // 轨道左右各留 8px：条形不贴项目名与金额（比例尺仍全表统一）。
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: widthFactor <= 0
+                ? const SizedBox(height: 12)
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: widthFactor,
+                      child: Container(
+                        // key 供 widget 测试断言"统一起点 + 同一比例尺"。
+                        key: ValueKey('cost-bar-$name'),
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: barColor,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        cell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                formatMoneyCents(actualCents),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              if (discountCents > 0) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '省 ${formatMoneyCents(discountCents)}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: tokens.success,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+              if (onTap != null) ...[
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.chevron_right,
+                  size: 14,
+                  color: tokens.muted,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -497,96 +599,6 @@ double barMaxFraction(CostStats stats) {
     }
   }
   return maxCents == 0 ? 0.0 : stats.otherCents / maxCents;
-}
-
-/// 项目占比一行：项目名 + 条形（宽度 = 实付比例 × 入场进度，从 0
-/// 生长）+ 实付金额 +（有分摊优惠时）省额小字 + 下钻箭头；[onTap]
-/// 非空时整行可点打开项目档案。"其他"段同构复用（灰条、无优惠、
-/// 无下钻）。
-class _ProjectBarRow extends StatelessWidget {
-  const _ProjectBarRow({
-    required this.name,
-    required this.actualCents,
-    required this.discountCents,
-    required this.fraction,
-    required this.progress,
-    required this.barColor,
-    this.onTap,
-  });
-
-  final String name;
-  final int actualCents;
-  final int discountCents;
-  final double fraction;
-  final double progress;
-  final Color barColor;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final widthFactor = (fraction * progress).clamp(0.0, 1.0);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Row(
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 96),
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: widthFactor <= 0
-                ? const SizedBox.shrink()
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: FractionallySizedBox(
-                      widthFactor: widthFactor,
-                      child: Container(
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: barColor,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            formatMoneyCents(actualCents),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          if (discountCents > 0) ...[
-            const SizedBox(width: 4),
-            Text(
-              '省 ${formatMoneyCents(discountCents)}',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: tokens.success,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ],
-          if (onTap != null) ...[
-            const SizedBox(width: 2),
-            Icon(
-              Icons.chevron_right,
-              size: 14,
-              color: tokens.muted,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 }
 
 /// 走势卡的左→右展开裁剪：露出宽 = 宽度 × 入场进度。
