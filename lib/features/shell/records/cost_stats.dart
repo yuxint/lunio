@@ -1,5 +1,5 @@
-// 费用统计组装层（cost_stats.dart）：记录页头部"今年费用"汇总行与
-// 独立统计页（/cost-stats）共用的聚合口径。
+// 费用统计组装层（cost_stats.dart）：记录页头部"今年保养"汇总行的
+// 保养口径与独立统计页（/cost-stats）共用的聚合口径。
 //
 // 职责：输入全量保养记录 + 项目清单 + 生效今天，输出总费用、今年费用、
 // 年度走势、项目占比（含"其他"段）、汇总指标五份视图模型。与
@@ -35,7 +35,7 @@ import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
 
 /// 某一年费用合计（记录总费用权威值逐条求和）。
-/// 记录页"今年费用"汇总行与年度分组共用这一个口径。
+/// 记录页"今年保养"汇总行与年度分组共用这一个口径。
 int costCentsForYear(List<MaintenanceRecord> records, int year) {
   var total = 0;
   for (final record in records) {

@@ -48,6 +48,18 @@ void main() {
     addTearDown(upgraded.close);
     final fuelRows = await upgraded.select(upgraded.fuelRecords).get();
     expect(fuelRows, isEmpty, reason: '迁移应只建表，不写入数据');
+    // v3 的 fuel_records 结构以 ADR 0015（2026-09-22 就地重定义）为准：
+    // 迁移建出的必须是新五字段结构，不是旧五字段（里程/加满已删）。
+    final columnRows = await upgraded
+        .customSelect('PRAGMA table_info(fuel_records)')
+        .get();
+    final columnNames = columnRows.map((row) => row.data['name']).toSet();
+    expect(
+      columnNames,
+      containsAll(['grade', 'unit_price_cents', 'payable_cents', 'actual_cents']),
+    );
+    expect(columnNames, isNot(contains('mileage_km')));
+    expect(columnNames, isNot(contains('full_tank')));
     final carRows = await upgraded.select(upgraded.cars).get();
     expect(carRows, hasLength(1), reason: '升级不得丢存量数据');
     expect(carRows.single.brand, '大众');

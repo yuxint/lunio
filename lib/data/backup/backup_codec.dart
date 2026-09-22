@@ -10,19 +10,26 @@
 //                  mileageKm, note, sync } ],
 //   "fuelPrediction": { "province": "湖北", "gradeCode": "92" },
 //   "fuelPredictions": [ { carId, fuelPercent, sync } ],
-//   "fuelRecords": [ { carId, date, mileageKm, volumeLiters, totalCostCents,
-//                      fullTank, sync } ]
+//   "fuelRecords": [ { carId, date, grade, unitPriceCents, payableCents,
+//                      actualCents, volumeLiters, sync } ]
 // }
 // itemCosts 条目：{ itemId, materialCents, laborCents, costCents }，
 // 三个金额都可空（null = 未填），只写有内容的项目（ADR 0010）。
 // fuelRecords 条目不带 id：行 id 恢复时重新生成雪花，备份里没有引用
-// 它的地方（与 fuelPredictions 同先例；ADR 0014）。
+// 它的地方（与 fuelPredictions 同先例；ADR 0014）。volumeLiters 导出
+// 仅为镜像库内预留列，恢复时由实体按 应付÷单价 重算（ADR 0015）。
 //
 // 版本兼容（ADR 0010 确立先例：纯增量缺失按空读入）：解码接受 v1/v2/v3
 // ——v2 只比 v1 多 itemCosts 字段，v1 条目没有它就等于"全部项目费用未
 // 填"；v3 只比 v2 多 fuelRecords 字段，v1/v2 没有它就等于"没有加油记录"。
 // 这不是 ADR 0005 禁止的"旧字段语义变化回退"。除此之外的版本直接拒绝，
 // 不做字段回退。油价缓存与手填油价是临时数据，不进备份。
+//
+// ⚠ v3 例外（ADR 0015，2026-09-22）：fuelRecords 的条目结构在版本号
+// 不变的前提下就地重定义过一次（旧五字段 日期/里程/金额/升数/加满 →
+// 新五字段 日期/油品/单价/应付/实付）。含旧结构加油条目的 v3 备份文件
+// 解码会失败、整单被拒——拍板依据：记录卡在旧结构存续期间一直被屏蔽，
+// 不存在含加油条目的真实备份（ADR 0015"你的操作顺序"一节）。
 //
 // ⚠ 契约边界（改字段前必读）：
 //  - 不包含偏好（主题/应用车辆/通知设置/snooze 等）；
@@ -35,6 +42,7 @@ import 'dart:convert';
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart';
 import '../../domain/entities/fuel_prediction.dart';
+import '../../domain/entities/fuel_price.dart';
 import '../../domain/entities/fuel_record.dart';
 import '../../domain/entities/maintenance_item.dart';
 import '../../domain/entities/maintenance_record.dart';
@@ -294,22 +302,26 @@ final class BackupCodec {
     return {
       'carId': record.carId,
       'date': record.date.toString(),
-      'mileageKm': record.mileageKm,
+      'grade': record.grade.code,
+      'unitPriceCents': record.unitPriceCents,
+      'payableCents': record.payableCents,
+      'actualCents': record.actualCents,
       'volumeLiters': record.volumeLiters,
-      'totalCostCents': record.totalCostCents,
-      'fullTank': record.fullTank,
       'sync': record.sync.toJson(),
     };
   }
 
+  /// 容积不读备份里的存值——实体构造时按 应付÷单价 重算（派生值
+  /// 唯一算法在实体，恢复后的行与重存的行字节一致）。
   FuelRecord _fuelRecordFromJson(Map<String, Object?> json) {
     return FuelRecord(
       carId: json['carId'] as int,
       date: LocalDate.parse(json['date'] as String),
-      mileageKm: json['mileageKm'] as int,
-      volumeLiters: (json['volumeLiters'] as num).toDouble(),
-      totalCostCents: json['totalCostCents'] as int,
-      fullTank: json['fullTank'] as bool,
+      grade: FuelGrade.tryParse(json['grade'] as String) ??
+          FuelGrade.gasoline92,
+      unitPriceCents: json['unitPriceCents'] as int,
+      payableCents: json['payableCents'] as int,
+      actualCents: json['actualCents'] as int?,
       sync: SyncMetadata.fromJson(
         (json['sync'] as Map).cast<String, Object?>(),
       ),

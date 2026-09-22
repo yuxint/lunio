@@ -251,13 +251,14 @@ class FuelPredictions extends Table {
   ];
 }
 
-/// 加油记录表（ADR 0014）：一次加油的流水——日期/里程/金额/升数/是否
-/// 加满五项，单价（金额÷升数）不落列、随时可算。
-/// 与保养记录（maintenance_records）的两个关键差异：
+/// 加油记录表（ADR 0015，2026-09-22 就地重定义 v3 结构）：一次加油的
+/// 流水——日期/油品/单价/应付金额/实付金额五项输入，容积（应付÷单价）
+/// 由实体算好落列**预留**（页面暂不展示，与 cars.tankCapacityLiters
+/// 油箱容积不是一回事）。
+/// 与保养记录（maintenance_records）的两个关键差异（沿 ADR 0014）：
 ///  - **故意不设** {carId, date} 唯一约束：同一天加两次油（长途两箱）
 ///    合法，一天多条是常态而非脏数据；
-///  - 保存不联动车辆当前里程——保养记录是车辆里程的唯一写源
-///    （spec 用户故事 36），避免两个来源打架。
+///  - 不联动车辆当前里程——保养记录是车辆里程的唯一写源。
 /// carId 普通索引：加油卡按车拉流水是高频路径（与保养记录同先例）。
 @TableIndex(name: 'idx_fuel_records_car_id', columns: {#carId})
 @DataClassName('FuelRecordRow')
@@ -268,18 +269,24 @@ class FuelRecords extends Table {
   /// 加油日期（yyyy-MM-dd）。
   TextColumn get date => text()();
 
-  /// 加油时的里程（公里）。仅作流水记录，不回写 cars.currentMileageKm。
-  IntColumn get mileageKm => integer()();
+  /// 油品（FuelGrade 的稳定 code：'92'/'95'/'98'/'0'）。
+  TextColumn get grade => text()();
 
-  /// 加油升数。与油箱容积同用 real（升，可带小数）。
+  /// 每升单价，单位"分"（8.15 元/升存 815）。用户输入的权威值。
+  IntColumn get unitPriceCents => integer()();
+
+  /// 应付金额（加油机口径 = 单价 × 容积），单位分，与保养记录
+  /// costCents 同口径避免浮点误差。
+  IntColumn get payableCents => integer()();
+
+  /// 实付金额（优惠后实际支付），单位分。可空：null = 未填（无优惠，
+  /// 统计与展示取应付金额）。
+  IntColumn get actualCents => integer().nullable()();
+
+  /// 加油容积（升，两位小数）＝应付金额 ÷ 单价，由实体在构造时算好
+  /// 落列。**预留字段**：页面暂不展示，供将来油耗等功能使用。
   RealColumn get volumeLiters => real()();
 
-  /// 加油总金额，单位分（与保养记录 costCents 同口径，避免浮点误差）。
-  IntColumn get totalCostCents => integer()();
-
-  /// 是否加满。满箱段油耗口径（full-to-full，ADR 0014）依赖它判定
-  /// "哪些记录闭合区间"。
-  BoolColumn get fullTank => boolean()();
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
   IntColumn get version => integer().withDefault(const Constant(1))();
@@ -333,8 +340,10 @@ class AppDatabase extends _$AppDatabase {
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
-          // v2 → v3（ADR 0014）：新增加油记录表，纯增量——只建新表，
-          // 不碰任何旧表，车辆/项目/记录等存量数据原样保留。
+          // v2 → v3：新增加油记录表，纯增量——只建新表，不碰任何旧表，
+          // 车辆/项目/记录等存量数据原样保留。表结构以 ADR 0015
+          // （2026-09-22 就地重定义）为准：老 v3 库（旧五字段结构）不跑
+          // 本分支、也不兼容新代码，必须卸载重装（见 ADR 0015）。
           if (from < 3) {
             await m.createTable(fuelRecords);
           }

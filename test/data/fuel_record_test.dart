@@ -1,6 +1,6 @@
-// 加油记录数据层测试（ADR 0014）：CRUD 往返、同车同日两条合法（无
-// {carId, date} 唯一约束）、排序口径（日期/里程/id 升序）、校验拒绝、
-// 删车级联、清空数据清新表、不联动车辆当前里程。
+// 加油记录数据层测试（ADR 0015 重定义模型）：CRUD 往返、同车同日两条
+// 合法（无 {carId, date} 唯一约束）、排序口径（日期/id 升序）、校验拒绝、
+// 容积派生落库（预留）、删车级联、清空数据清新表、不联动车辆当前里程。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
@@ -10,6 +10,7 @@ import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
+import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
@@ -75,33 +76,32 @@ void main() {
   FuelRecord buildRecord(
     int carId, {
     required LocalDate date,
-    required int mileageKm,
-    double volumeLiters = 40,
-    int totalCostCents = 30000,
-    bool fullTank = true,
+    FuelGrade grade = FuelGrade.gasoline92,
+    required int unitPriceCents,
+    required int payableCents,
+    int? actualCents,
   }) {
     return FuelRecord(
       carId: carId,
       date: date,
-      mileageKm: mileageKm,
-      volumeLiters: volumeLiters,
-      totalCostCents: totalCostCents,
-      fullTank: fullTank,
+      grade: grade,
+      unitPriceCents: unitPriceCents,
+      payableCents: payableCents,
+      actualCents: actualCents,
       sync: sync,
     );
   }
 
   group('加油记录 CRUD', () {
-    test('新增后读回：字段全量往返，返回雪花 id', () async {
+    test('新增后读回：字段全量往返，返回雪花 id，容积按应付÷单价落库', () async {
       final carId = await seedCar();
       final recordId = await fuelRepository.saveFuelRecord(
         buildRecord(
           carId,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 12000,
-          volumeLiters: 41.5,
-          totalCostCents: 31200,
-          fullTank: false,
+          unitPriceCents: 815,
+          payableCents: 33415,
+          actualCents: 30000,
         ),
       );
 
@@ -111,17 +111,24 @@ void main() {
       expect(saved.id, recordId);
       expect(saved.carId, carId);
       expect(saved.date, const LocalDate(2026, 9, 10));
-      expect(saved.mileageKm, 12000);
-      expect(saved.volumeLiters, 41.5);
-      expect(saved.totalCostCents, 31200);
-      expect(saved.fullTank, isFalse);
+      expect(saved.grade, FuelGrade.gasoline92);
+      expect(saved.unitPriceCents, 815);
+      expect(saved.payableCents, 33415);
+      expect(saved.actualCents, 30000);
+      // 容积 = 33415 ÷ 815 = 41.0 升（实体派生、两位小数，预留字段）。
+      expect(saved.volumeLiters, 41.0);
     });
 
     test('编辑按 id 整行更新，行数不变；carId 不随编辑挪车', () async {
       final carId = await seedCar();
       final otherCarId = await seedCar(model: '21款雅阁');
       final recordId = await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 100),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+        ),
       );
 
       // 草稿误带了别的车 id：编辑只更新业务字段，不把记录挪到别的车。
@@ -129,29 +136,33 @@ void main() {
         buildRecord(
           otherCarId,
           date: const LocalDate(2026, 9, 11),
-          mileageKm: 520,
-          volumeLiters: 35.25,
-          totalCostCents: 26000,
-          fullTank: false,
+          grade: FuelGrade.gasoline95,
+          unitPriceCents: 855,
+          payableCents: 26000,
+          actualCents: 25000,
         ).copyWith(id: recordId),
       );
 
-      final rows = await database.select(database.fuelRecords).get();
-      expect(rows, hasLength(1));
       final updated = await fuelRepository.listFuelRecordsForCar(carId);
+      expect(updated, hasLength(1));
       expect(updated.single.carId, carId);
       expect(updated.single.date, const LocalDate(2026, 9, 11));
-      expect(updated.single.mileageKm, 520);
-      expect(updated.single.volumeLiters, 35.25);
-      expect(updated.single.totalCostCents, 26000);
-      expect(updated.single.fullTank, isFalse);
+      expect(updated.single.grade, FuelGrade.gasoline95);
+      expect(updated.single.unitPriceCents, 855);
+      expect(updated.single.payableCents, 26000);
+      expect(updated.single.actualCents, 25000);
     });
 
     test('编辑未入库记录（id 为 null）被拒绝', () async {
       final carId = await seedCar();
       expect(
         () => fuelRepository.updateFuelRecord(
-          buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 1),
+          buildRecord(
+            carId,
+            date: const LocalDate(2026, 9, 10),
+            unitPriceCents: 815,
+            payableCents: 30000,
+          ),
         ),
         throwsArgumentError,
       );
@@ -160,10 +171,20 @@ void main() {
     test('删除单条：目标行消失，其余不动', () async {
       final carId = await seedCar();
       final keepId = await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 9), mileageKm: 100),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 9),
+          unitPriceCents: 815,
+          payableCents: 30000,
+        ),
       );
       final dropId = await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 500),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+        ),
       );
 
       await fuelRepository.deleteFuelRecord(dropId);
@@ -183,78 +204,93 @@ void main() {
     test('同车同日两条合法（无 {carId, date} 唯一约束，同日两箱）', () async {
       final carId = await seedCar();
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 100),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 20000,
+        ),
       );
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 600),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 20000,
+        ),
       );
 
       final records = await fuelRepository.listFuelRecordsForCar(carId);
       expect(records, hasLength(2));
     });
 
-    test('列表按（日期、里程、id）升序——满箱段口径的锚定顺序', () async {
+    test('列表按（日期、id）升序——同日两条按写入顺序排', () async {
       final carId = await seedCar();
       await fuelRepository.saveFuelRecord(
         buildRecord(
           carId,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 300,
+          unitPriceCents: 815,
+          payableCents: 30000,
         ),
       );
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 9), mileageKm: 200),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 9),
+          unitPriceCents: 815,
+          payableCents: 20000,
+        ),
       );
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 100),
-      );
-      // 同日同里程 tie-break 走 id 升序（雪花 id 单调，保存顺序即 id 序）。
-      await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 9), mileageKm: 200),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 10000,
+        ),
       );
 
       final records = await fuelRepository.listFuelRecordsForCar(carId);
-      expect(
-        records.map((r) => (r.date, r.mileageKm)).toList(),
-        [
-          (const LocalDate(2026, 9, 9), 200),
-          (const LocalDate(2026, 9, 9), 200),
-          (const LocalDate(2026, 9, 10), 100),
-          (const LocalDate(2026, 9, 10), 300),
-        ],
-      );
-      // tie-break 断言：前两条同日同里程，id 严格升序。
-      expect(records[0].id! < records[1].id!, isTrue);
+      expect(records.map((r) => r.date).toList(), [
+        const LocalDate(2026, 9, 9),
+        const LocalDate(2026, 9, 10),
+        const LocalDate(2026, 9, 10),
+      ]);
+      // 同日 tie-break 走 id 升序（雪花 id 单调，保存顺序即 id 序）。
+      expect(records[1].id! < records[2].id!, isTrue);
     });
   });
 
-  group('校验', () {
-    test('负里程被拒绝', () async {
-      expect(
-        () => buildRecord(0, date: const LocalDate(2026, 9, 10), mileageKm: -1),
-        throwsArgumentError,
-      );
-    });
-
-    test('负金额被拒绝', () async {
+  group('校验与容积派生', () {
+    test('0 单价与负单价被拒绝（单价必须 > 0）', () async {
       expect(
         () => buildRecord(
           0,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 100,
-          totalCostCents: -1,
+          unitPriceCents: 0,
+          payableCents: 30000,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => buildRecord(
+          0,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: -815,
+          payableCents: 30000,
         ),
         throwsArgumentError,
       );
     });
 
-    test('0 升与负升数被拒绝（升数必须 > 0）', () async {
+    test('0 应付与负应付被拒绝（应付必须 > 0）', () async {
       expect(
         () => buildRecord(
           0,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 100,
-          volumeLiters: 0,
+          unitPriceCents: 815,
+          payableCents: 0,
         ),
         throwsArgumentError,
       );
@@ -262,11 +298,65 @@ void main() {
         () => buildRecord(
           0,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 100,
-          volumeLiters: -0.1,
+          unitPriceCents: 815,
+          payableCents: -1,
         ),
         throwsArgumentError,
       );
+    });
+
+    test('负实付被拒绝；实付为 0（全额券）与大于应付合法', () async {
+      expect(
+        () => buildRecord(
+          0,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+          actualCents: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        buildRecord(
+          0,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+          actualCents: 0,
+        ),
+        isA<FuelRecord>(),
+      );
+      expect(
+        buildRecord(
+          0,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+          actualCents: 31000,
+        ),
+        isA<FuelRecord>(),
+      );
+    });
+
+    test('容积 = 应付÷单价 四舍五入两位小数；effectiveCost 实付优先', () async {
+      // 30000 ÷ 815 = 36.8098… → 36.81。
+      final withActual = buildRecord(
+        0,
+        date: const LocalDate(2026, 9, 10),
+        unitPriceCents: 815,
+        payableCents: 30000,
+        actualCents: 27000,
+      );
+      expect(withActual.volumeLiters, 36.81);
+      expect(withActual.effectiveCostCents, 27000);
+      // 实付没填：统计口径取应付。
+      final withoutActual = buildRecord(
+        0,
+        date: const LocalDate(2026, 9, 10),
+        unitPriceCents: 815,
+        payableCents: 30000,
+      );
+      expect(withoutActual.effectiveCostCents, 30000);
     });
   });
 
@@ -277,7 +367,12 @@ void main() {
         FuelPrediction(carId: carId, fuelPercent: 50),
       );
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 100),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+        ),
       );
 
       await repository.deleteCar(carId);
@@ -290,13 +385,19 @@ void main() {
       final carId = await seedCar();
       final otherCarId = await seedCar(model: '21款雅阁');
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 100),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+        ),
       );
       await fuelRepository.saveFuelRecord(
         buildRecord(
           otherCarId,
           date: const LocalDate(2026, 9, 11),
-          mileageKm: 200,
+          unitPriceCents: 815,
+          payableCents: 20000,
         ),
       );
 
@@ -309,7 +410,12 @@ void main() {
     test('清空数据同时清掉加油记录表', () async {
       final carId = await seedCar();
       await fuelRepository.saveFuelRecord(
-        buildRecord(carId, date: const LocalDate(2026, 9, 10), mileageKm: 100),
+        buildRecord(
+          carId,
+          date: const LocalDate(2026, 9, 10),
+          unitPriceCents: 815,
+          payableCents: 30000,
+        ),
       );
 
       await backupRepository.clearAllData();
@@ -319,23 +425,24 @@ void main() {
   });
 
   group('里程不联动', () {
-    test('加油记录里程高于车辆当前里程时不回写车辆里程（保养记录是唯一写源）',
-        () async {
+    test('加油记录不回写车辆当前里程（保养记录是唯一写源）', () async {
       final carId = await seedCar(currentMileageKm: 10000);
-      // 新增路径：里程 20000 高于车辆 10000。
+      // 新增路径。
       final recordId = await fuelRepository.saveFuelRecord(
         buildRecord(
           carId,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 20000,
+          unitPriceCents: 815,
+          payableCents: 30000,
         ),
       );
-      // 编辑路径：里程再抬到 30000。
+      // 编辑路径。
       await fuelRepository.updateFuelRecord(
         buildRecord(
           carId,
           date: const LocalDate(2026, 9, 11),
-          mileageKm: 30000,
+          unitPriceCents: 855,
+          payableCents: 31000,
         ).copyWith(id: recordId),
       );
 

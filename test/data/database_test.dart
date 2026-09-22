@@ -13,6 +13,7 @@ import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/errors/lunio_error.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
@@ -1876,10 +1877,9 @@ void main() {
       FuelRecord(
         carId: carId,
         date: const LocalDate(2026, 9, 10),
-        mileageKm: 12100,
-        volumeLiters: 41.5,
-        totalCostCents: 31200,
-        fullTank: true,
+        grade: FuelGrade.gasoline92,
+        unitPriceCents: 750,
+        payableCents: 31200,
         sync: sync,
       ),
     );
@@ -1934,10 +1934,9 @@ void main() {
       FuelRecord(
         carId: 999,
         date: const LocalDate(2026, 1, 1),
-        mileageKm: 1,
-        volumeLiters: 10,
-        totalCostCents: 1000,
-        fullTank: false,
+        grade: FuelGrade.gasoline92,
+        unitPriceCents: 750,
+        payableCents: 1000,
         sync: sync,
       ),
     );
@@ -1988,10 +1987,12 @@ void main() {
     expect(restoredFuelRecords.single.id, isNot(fuelRecordId));
     expect(restoredFuelRecords.single.carId, restoredCar.id);
     expect(restoredFuelRecords.single.date, const LocalDate(2026, 9, 10));
-    expect(restoredFuelRecords.single.mileageKm, 12100);
-    expect(restoredFuelRecords.single.volumeLiters, 41.5);
-    expect(restoredFuelRecords.single.totalCostCents, 31200);
-    expect(restoredFuelRecords.single.fullTank, isTrue);
+    expect(restoredFuelRecords.single.grade, FuelGrade.gasoline92);
+    expect(restoredFuelRecords.single.unitPriceCents, 750);
+    expect(restoredFuelRecords.single.payableCents, 31200);
+    expect(restoredFuelRecords.single.actualCents, isNull);
+    // 容积由实体按 应付÷单价 重算：31200 ÷ 750 = 41.6（预留字段）。
+    expect(restoredFuelRecords.single.volumeLiters, 41.6);
     // 偏好保留：恢复只替换三类业务数据。
     expect(await preferences.readRaw('themeMode'), 'dark');
     expect(await preferences.readRaw('manualDate'), '2026-05-23');
@@ -2030,10 +2031,9 @@ void main() {
         FuelRecord(
           carId: carId + 424242,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 100,
-          volumeLiters: 40,
-          totalCostCents: 30000,
-          fullTank: true,
+          grade: FuelGrade.gasoline92,
+          unitPriceCents: 750,
+          payableCents: 30000,
           sync: sync,
         ),
       ],

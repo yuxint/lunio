@@ -2,7 +2,8 @@
 //
 // ≈ Java 里从大 Service 拆出的领域 Service：管四块互不重叠的数据——
 //  1. 每车加油预测设置（fuel_predictions 表，剩余油量）；
-//  2. 每车加油记录（fuel_records 表，ADR 0014）；
+//  2. 每车加油记录（fuel_records 表，ADR 0015 重定义了 ADR 0014 的
+//     五字段流水模型）；
 //  3. 油价缓存（上次拉取的单省价表 + 调价预告，JSON 存偏好，ADR 0006/0011）；
 //  4. 手填油价（"省份|油品" → 每升价，JSON 存偏好）。
 // 后两者是临时数据（不进备份），经 LunioPreferences 的 readRaw/writeRaw
@@ -98,16 +99,14 @@ class FuelRepository {
 
   // ---------------- 每车加油记录（ADR 0014）----------------
 
-  /// 某辆车的全部加油记录，按（日期、里程、id）升序——这是满箱段油耗
-  /// 口径（full-to-full）的锚定顺序（ADR 0014），列表展示的"最近 5 条"
-  /// 由 UI 在此基准上自行倒序截取。
+  /// 某辆车的全部加油记录，按（日期、id）升序——升序锚定写入顺序，
+  /// 列表展示的"最近 5 条"由 UI 在此基准上自行倒序截取。
   Future<List<domain.FuelRecord>> listFuelRecordsForCar(int carId) async {
     final rows =
         await (database.select(database.fuelRecords)
               ..where((row) => row.carId.equals(carId))
               ..orderBy([
                 (row) => OrderingTerm.asc(row.date),
-                (row) => OrderingTerm.asc(row.mileageKm),
                 (row) => OrderingTerm.asc(row.id),
               ]))
             .get();
@@ -133,7 +132,7 @@ class FuelRepository {
   }
 
   /// 编辑加油记录（按 id 整行更新业务字段；carId 不在更新范围——编辑
-  /// 不把记录挪到别的车）。不联动车辆当前里程。
+  /// 不把记录挪到别的车）。不联动车辆当前里程。容积随实体构造重算。
   /// 副作用：syncStatus 记 pendingUpdate、updatedAt 刷新。
   Future<void> updateFuelRecord(domain.FuelRecord record) async {
     final recordId = record.id;
@@ -146,10 +145,11 @@ class FuelRepository {
     )..where((row) => row.id.equals(recordId))).write(
       FuelRecordsCompanion(
         date: Value(record.date.toString()),
-        mileageKm: Value(record.mileageKm),
+        grade: Value(record.grade.code),
+        unitPriceCents: Value(record.unitPriceCents),
+        payableCents: Value(record.payableCents),
+        actualCents: Value(record.actualCents),
         volumeLiters: Value(record.volumeLiters),
-        totalCostCents: Value(record.totalCostCents),
-        fullTank: Value(record.fullTank),
         syncStatus: Value(SyncStatus.pendingUpdate.name),
         updatedAt: Value(DateTime.now().toIso8601String()),
       ),

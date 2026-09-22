@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
@@ -244,10 +245,10 @@ void main() {
         FuelRecord(
           carId: 1,
           date: const LocalDate(2026, 9, 10),
-          mileageKm: 12100,
-          volumeLiters: 41.5,
-          totalCostCents: 31200,
-          fullTank: false,
+          grade: FuelGrade.gasoline95,
+          unitPriceCents: 855,
+          payableCents: 34200,
+          actualCents: 32000,
           sync: sync,
         ),
       ],
@@ -264,10 +265,12 @@ void main() {
     final record = decoded.fuelRecords.single;
     expect(record.carId, 1);
     expect(record.date, const LocalDate(2026, 9, 10));
-    expect(record.mileageKm, 12100);
-    expect(record.volumeLiters, 41.5);
-    expect(record.totalCostCents, 31200);
-    expect(record.fullTank, isFalse);
+    expect(record.grade, FuelGrade.gasoline95);
+    expect(record.unitPriceCents, 855);
+    expect(record.payableCents, 34200);
+    expect(record.actualCents, 32000);
+    // 容积不读备份存值：实体按 应付÷单价 重算（34200 ÷ 855 = 40.0）。
+    expect(record.volumeLiters, 40.0);
 
     // v2 备份（没有 fuelRecords 字段）可以导入：加油记录按空读入
     // （ADR 0014 的纯增量兼容，沿用 ADR 0010 的 itemCosts 先例）。
@@ -283,12 +286,12 @@ void main() {
     expect(v2.fuelRecords, isEmpty);
     expect(v2.cars.single.brand, '本田');
 
-    // 篡改出非法加油数据（0 升）：实体构造即校验，解码直接拒绝，
+    // 篡改出非法加油数据（0 应付金额）：实体构造即校验，解码直接拒绝，
     // 非法数据不会静默进入恢复路径。
-    final badVolumeJson = encoded.replaceFirst(
-      '"volumeLiters":41.5',
-      '"volumeLiters":0',
+    final badPayableJson = encoded.replaceFirst(
+      '"payableCents":34200',
+      '"payableCents":0',
     );
-    expect(() => codec.decode(badVolumeJson), throwsArgumentError);
+    expect(() => codec.decode(badPayableJson), throwsArgumentError);
   });
 }

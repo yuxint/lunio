@@ -15,7 +15,10 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
   目录灌入车型目录与默认保养模板。
 - 纯增量变更（新增表/列）走 `onUpgrade` 增量迁移，老库原地升级、
   存量数据保留：v2→v3 只建 `fuel_records` 表（见
-  `app_database.dart` 的 `migration`）。
+  `app_database.dart` 的 `migration`）。⚠ 例外（docs/adr/0015，
+  2026-09-22）：`fuel_records` 的表结构在版本号不变的前提下就地
+  重定义过一次（旧五字段 里程/加满模型 → 新五字段 应付/实付模型），
+  旧 v3 库与新代码不兼容，必须卸载重装，不提供升级路径。
 - 破坏性变更（改列类型/删表/改字段语义）仍走
   `destructiveFallback`：删光全部表再重建。
 - 改表纪律：改 Drift 表结构必须把 `schemaVersion` +1 并在 `onUpgrade`
@@ -223,18 +226,22 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 
 ### `fuel_records`
 
-加油记录表（docs/adr/0014）：一次加油的流水，五项字段记一笔，单价
-（金额÷升数）不落列、展示层现算。
+加油记录表（docs/adr/0015，2026-09-22 就地重定义 v3 结构）：一次加油
+的流水，五项输入字段记一笔（日期/油品/单价/应付/实付）；容积由实体按
+应付÷单价算好落列**预留**（页面暂不展示，与 `cars.tank_capacity_liters`
+油箱容积不是同一概念）。
 
 字段：
 
 - `id`：主键。
 - `car_id`：所属车辆 ID，来源于 `cars.id`。
 - `date`：加油日期，格式 `yyyy-MM-dd`。
-- `mileage_km`：加油时里程，单位公里（仅流水快照）。
-- `volume_liters`：加油升数（real，与油箱容积同精度先例）。
-- `total_cost_cents`：加油总金额，单位分。
-- `full_tank`：是否加满（满箱段油耗口径依赖它判定区间闭合）。
+- `grade`：油品（FuelGrade 稳定 code：`92`/`95`/`98`/`0`）。
+- `unit_price_cents`：每升单价，单位分（8.15 元/升存 815）。
+- `payable_cents`：应付金额（加油机口径 = 单价 × 容积），单位分。
+- `actual_cents`：实付金额，单位分，**可空**（null = 未填，统计与
+  展示取应付）。
+- `volume_liters`：加油容积（升，两位小数）＝应付÷单价，预留字段。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
 - `version`：同步/冲突预留版本号，默认 `1`。
@@ -251,7 +258,9 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
   口径刻意相反）。
 - 加油记录不联动车辆当前里程：`cars.current_mileage_km` 的唯一写源是
   保养记录（docs/adr/0014）。
-- 列表读取固定按（日期、里程、id）升序——满箱段油耗口径的锚定顺序。
+- 列表读取固定按（日期、id）升序。
+- 费用统计口径：实付金额优先、没填取应付（实体 `effectiveCostCents`，
+  docs/adr/0015）。
 
 ### `app_preferences`
 

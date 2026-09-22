@@ -4737,16 +4737,47 @@ class $FuelRecordsTable extends FuelRecords
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _mileageKmMeta = const VerificationMeta(
-    'mileageKm',
+  static const VerificationMeta _gradeMeta = const VerificationMeta('grade');
+  @override
+  late final GeneratedColumn<String> grade = GeneratedColumn<String>(
+    'grade',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _unitPriceCentsMeta = const VerificationMeta(
+    'unitPriceCents',
   );
   @override
-  late final GeneratedColumn<int> mileageKm = GeneratedColumn<int>(
-    'mileage_km',
+  late final GeneratedColumn<int> unitPriceCents = GeneratedColumn<int>(
+    'unit_price_cents',
     aliasedName,
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payableCentsMeta = const VerificationMeta(
+    'payableCents',
+  );
+  @override
+  late final GeneratedColumn<int> payableCents = GeneratedColumn<int>(
+    'payable_cents',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _actualCentsMeta = const VerificationMeta(
+    'actualCents',
+  );
+  @override
+  late final GeneratedColumn<int> actualCents = GeneratedColumn<int>(
+    'actual_cents',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _volumeLitersMeta = const VerificationMeta(
     'volumeLiters',
@@ -4758,31 +4789,6 @@ class $FuelRecordsTable extends FuelRecords
     false,
     type: DriftSqlType.double,
     requiredDuringInsert: true,
-  );
-  static const VerificationMeta _totalCostCentsMeta = const VerificationMeta(
-    'totalCostCents',
-  );
-  @override
-  late final GeneratedColumn<int> totalCostCents = GeneratedColumn<int>(
-    'total_cost_cents',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _fullTankMeta = const VerificationMeta(
-    'fullTank',
-  );
-  @override
-  late final GeneratedColumn<bool> fullTank = GeneratedColumn<bool>(
-    'full_tank',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("full_tank" IN (0, 1))',
-    ),
   );
   static const VerificationMeta _syncStatusMeta = const VerificationMeta(
     'syncStatus',
@@ -4824,10 +4830,11 @@ class $FuelRecordsTable extends FuelRecords
     id,
     carId,
     date,
-    mileageKm,
+    grade,
+    unitPriceCents,
+    payableCents,
+    actualCents,
     volumeLiters,
-    totalCostCents,
-    fullTank,
     syncStatus,
     updatedAt,
     version,
@@ -4863,13 +4870,44 @@ class $FuelRecordsTable extends FuelRecords
     } else if (isInserting) {
       context.missing(_dateMeta);
     }
-    if (data.containsKey('mileage_km')) {
+    if (data.containsKey('grade')) {
       context.handle(
-        _mileageKmMeta,
-        mileageKm.isAcceptableOrUnknown(data['mileage_km']!, _mileageKmMeta),
+        _gradeMeta,
+        grade.isAcceptableOrUnknown(data['grade']!, _gradeMeta),
       );
     } else if (isInserting) {
-      context.missing(_mileageKmMeta);
+      context.missing(_gradeMeta);
+    }
+    if (data.containsKey('unit_price_cents')) {
+      context.handle(
+        _unitPriceCentsMeta,
+        unitPriceCents.isAcceptableOrUnknown(
+          data['unit_price_cents']!,
+          _unitPriceCentsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_unitPriceCentsMeta);
+    }
+    if (data.containsKey('payable_cents')) {
+      context.handle(
+        _payableCentsMeta,
+        payableCents.isAcceptableOrUnknown(
+          data['payable_cents']!,
+          _payableCentsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_payableCentsMeta);
+    }
+    if (data.containsKey('actual_cents')) {
+      context.handle(
+        _actualCentsMeta,
+        actualCents.isAcceptableOrUnknown(
+          data['actual_cents']!,
+          _actualCentsMeta,
+        ),
+      );
     }
     if (data.containsKey('volume_liters')) {
       context.handle(
@@ -4881,25 +4919,6 @@ class $FuelRecordsTable extends FuelRecords
       );
     } else if (isInserting) {
       context.missing(_volumeLitersMeta);
-    }
-    if (data.containsKey('total_cost_cents')) {
-      context.handle(
-        _totalCostCentsMeta,
-        totalCostCents.isAcceptableOrUnknown(
-          data['total_cost_cents']!,
-          _totalCostCentsMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_totalCostCentsMeta);
-    }
-    if (data.containsKey('full_tank')) {
-      context.handle(
-        _fullTankMeta,
-        fullTank.isAcceptableOrUnknown(data['full_tank']!, _fullTankMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_fullTankMeta);
     }
     if (data.containsKey('sync_status')) {
       context.handle(
@@ -4942,21 +4961,25 @@ class $FuelRecordsTable extends FuelRecords
         DriftSqlType.string,
         data['${effectivePrefix}date'],
       )!,
-      mileageKm: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}mileage_km'],
+      grade: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}grade'],
       )!,
+      unitPriceCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}unit_price_cents'],
+      )!,
+      payableCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}payable_cents'],
+      )!,
+      actualCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}actual_cents'],
+      ),
       volumeLiters: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}volume_liters'],
-      )!,
-      totalCostCents: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}total_cost_cents'],
-      )!,
-      fullTank: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}full_tank'],
       )!,
       syncStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -4986,18 +5009,23 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
   /// 加油日期（yyyy-MM-dd）。
   final String date;
 
-  /// 加油时的里程（公里）。仅作流水记录，不回写 cars.currentMileageKm。
-  final int mileageKm;
+  /// 油品（FuelGrade 的稳定 code：'92'/'95'/'98'/'0'）。
+  final String grade;
 
-  /// 加油升数。与油箱容积同用 real（升，可带小数）。
+  /// 每升单价，单位"分"（8.15 元/升存 815）。用户输入的权威值。
+  final int unitPriceCents;
+
+  /// 应付金额（加油机口径 = 单价 × 容积），单位分，与保养记录
+  /// costCents 同口径避免浮点误差。
+  final int payableCents;
+
+  /// 实付金额（优惠后实际支付），单位分。可空：null = 未填（无优惠，
+  /// 统计与展示取应付金额）。
+  final int? actualCents;
+
+  /// 加油容积（升，两位小数）＝应付金额 ÷ 单价，由实体在构造时算好
+  /// 落列。**预留字段**：页面暂不展示，供将来油耗等功能使用。
   final double volumeLiters;
-
-  /// 加油总金额，单位分（与保养记录 costCents 同口径，避免浮点误差）。
-  final int totalCostCents;
-
-  /// 是否加满。满箱段油耗口径（full-to-full，ADR 0014）依赖它判定
-  /// "哪些记录闭合区间"。
-  final bool fullTank;
   final String syncStatus;
   final String updatedAt;
   final int version;
@@ -5005,10 +5033,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
     required this.id,
     required this.carId,
     required this.date,
-    required this.mileageKm,
+    required this.grade,
+    required this.unitPriceCents,
+    required this.payableCents,
+    this.actualCents,
     required this.volumeLiters,
-    required this.totalCostCents,
-    required this.fullTank,
     required this.syncStatus,
     required this.updatedAt,
     required this.version,
@@ -5019,10 +5048,13 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
     map['id'] = Variable<int>(id);
     map['car_id'] = Variable<int>(carId);
     map['date'] = Variable<String>(date);
-    map['mileage_km'] = Variable<int>(mileageKm);
+    map['grade'] = Variable<String>(grade);
+    map['unit_price_cents'] = Variable<int>(unitPriceCents);
+    map['payable_cents'] = Variable<int>(payableCents);
+    if (!nullToAbsent || actualCents != null) {
+      map['actual_cents'] = Variable<int>(actualCents);
+    }
     map['volume_liters'] = Variable<double>(volumeLiters);
-    map['total_cost_cents'] = Variable<int>(totalCostCents);
-    map['full_tank'] = Variable<bool>(fullTank);
     map['sync_status'] = Variable<String>(syncStatus);
     map['updated_at'] = Variable<String>(updatedAt);
     map['version'] = Variable<int>(version);
@@ -5034,10 +5066,13 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
       id: Value(id),
       carId: Value(carId),
       date: Value(date),
-      mileageKm: Value(mileageKm),
+      grade: Value(grade),
+      unitPriceCents: Value(unitPriceCents),
+      payableCents: Value(payableCents),
+      actualCents: actualCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(actualCents),
       volumeLiters: Value(volumeLiters),
-      totalCostCents: Value(totalCostCents),
-      fullTank: Value(fullTank),
       syncStatus: Value(syncStatus),
       updatedAt: Value(updatedAt),
       version: Value(version),
@@ -5053,10 +5088,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
       id: serializer.fromJson<int>(json['id']),
       carId: serializer.fromJson<int>(json['carId']),
       date: serializer.fromJson<String>(json['date']),
-      mileageKm: serializer.fromJson<int>(json['mileageKm']),
+      grade: serializer.fromJson<String>(json['grade']),
+      unitPriceCents: serializer.fromJson<int>(json['unitPriceCents']),
+      payableCents: serializer.fromJson<int>(json['payableCents']),
+      actualCents: serializer.fromJson<int?>(json['actualCents']),
       volumeLiters: serializer.fromJson<double>(json['volumeLiters']),
-      totalCostCents: serializer.fromJson<int>(json['totalCostCents']),
-      fullTank: serializer.fromJson<bool>(json['fullTank']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       version: serializer.fromJson<int>(json['version']),
@@ -5069,10 +5105,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
       'id': serializer.toJson<int>(id),
       'carId': serializer.toJson<int>(carId),
       'date': serializer.toJson<String>(date),
-      'mileageKm': serializer.toJson<int>(mileageKm),
+      'grade': serializer.toJson<String>(grade),
+      'unitPriceCents': serializer.toJson<int>(unitPriceCents),
+      'payableCents': serializer.toJson<int>(payableCents),
+      'actualCents': serializer.toJson<int?>(actualCents),
       'volumeLiters': serializer.toJson<double>(volumeLiters),
-      'totalCostCents': serializer.toJson<int>(totalCostCents),
-      'fullTank': serializer.toJson<bool>(fullTank),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'version': serializer.toJson<int>(version),
@@ -5083,10 +5120,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
     int? id,
     int? carId,
     String? date,
-    int? mileageKm,
+    String? grade,
+    int? unitPriceCents,
+    int? payableCents,
+    Value<int?> actualCents = const Value.absent(),
     double? volumeLiters,
-    int? totalCostCents,
-    bool? fullTank,
     String? syncStatus,
     String? updatedAt,
     int? version,
@@ -5094,10 +5132,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
     id: id ?? this.id,
     carId: carId ?? this.carId,
     date: date ?? this.date,
-    mileageKm: mileageKm ?? this.mileageKm,
+    grade: grade ?? this.grade,
+    unitPriceCents: unitPriceCents ?? this.unitPriceCents,
+    payableCents: payableCents ?? this.payableCents,
+    actualCents: actualCents.present ? actualCents.value : this.actualCents,
     volumeLiters: volumeLiters ?? this.volumeLiters,
-    totalCostCents: totalCostCents ?? this.totalCostCents,
-    fullTank: fullTank ?? this.fullTank,
     syncStatus: syncStatus ?? this.syncStatus,
     updatedAt: updatedAt ?? this.updatedAt,
     version: version ?? this.version,
@@ -5107,14 +5146,19 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
       id: data.id.present ? data.id.value : this.id,
       carId: data.carId.present ? data.carId.value : this.carId,
       date: data.date.present ? data.date.value : this.date,
-      mileageKm: data.mileageKm.present ? data.mileageKm.value : this.mileageKm,
+      grade: data.grade.present ? data.grade.value : this.grade,
+      unitPriceCents: data.unitPriceCents.present
+          ? data.unitPriceCents.value
+          : this.unitPriceCents,
+      payableCents: data.payableCents.present
+          ? data.payableCents.value
+          : this.payableCents,
+      actualCents: data.actualCents.present
+          ? data.actualCents.value
+          : this.actualCents,
       volumeLiters: data.volumeLiters.present
           ? data.volumeLiters.value
           : this.volumeLiters,
-      totalCostCents: data.totalCostCents.present
-          ? data.totalCostCents.value
-          : this.totalCostCents,
-      fullTank: data.fullTank.present ? data.fullTank.value : this.fullTank,
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
           : this.syncStatus,
@@ -5129,10 +5173,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
           ..write('id: $id, ')
           ..write('carId: $carId, ')
           ..write('date: $date, ')
-          ..write('mileageKm: $mileageKm, ')
+          ..write('grade: $grade, ')
+          ..write('unitPriceCents: $unitPriceCents, ')
+          ..write('payableCents: $payableCents, ')
+          ..write('actualCents: $actualCents, ')
           ..write('volumeLiters: $volumeLiters, ')
-          ..write('totalCostCents: $totalCostCents, ')
-          ..write('fullTank: $fullTank, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -5145,10 +5190,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
     id,
     carId,
     date,
-    mileageKm,
+    grade,
+    unitPriceCents,
+    payableCents,
+    actualCents,
     volumeLiters,
-    totalCostCents,
-    fullTank,
     syncStatus,
     updatedAt,
     version,
@@ -5160,10 +5206,11 @@ class FuelRecordRow extends DataClass implements Insertable<FuelRecordRow> {
           other.id == this.id &&
           other.carId == this.carId &&
           other.date == this.date &&
-          other.mileageKm == this.mileageKm &&
+          other.grade == this.grade &&
+          other.unitPriceCents == this.unitPriceCents &&
+          other.payableCents == this.payableCents &&
+          other.actualCents == this.actualCents &&
           other.volumeLiters == this.volumeLiters &&
-          other.totalCostCents == this.totalCostCents &&
-          other.fullTank == this.fullTank &&
           other.syncStatus == this.syncStatus &&
           other.updatedAt == this.updatedAt &&
           other.version == this.version);
@@ -5173,10 +5220,11 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
   final Value<int> id;
   final Value<int> carId;
   final Value<String> date;
-  final Value<int> mileageKm;
+  final Value<String> grade;
+  final Value<int> unitPriceCents;
+  final Value<int> payableCents;
+  final Value<int?> actualCents;
   final Value<double> volumeLiters;
-  final Value<int> totalCostCents;
-  final Value<bool> fullTank;
   final Value<String> syncStatus;
   final Value<String> updatedAt;
   final Value<int> version;
@@ -5184,10 +5232,11 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
     this.id = const Value.absent(),
     this.carId = const Value.absent(),
     this.date = const Value.absent(),
-    this.mileageKm = const Value.absent(),
+    this.grade = const Value.absent(),
+    this.unitPriceCents = const Value.absent(),
+    this.payableCents = const Value.absent(),
+    this.actualCents = const Value.absent(),
     this.volumeLiters = const Value.absent(),
-    this.totalCostCents = const Value.absent(),
-    this.fullTank = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.version = const Value.absent(),
@@ -5196,28 +5245,30 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
     this.id = const Value.absent(),
     required int carId,
     required String date,
-    required int mileageKm,
+    required String grade,
+    required int unitPriceCents,
+    required int payableCents,
+    this.actualCents = const Value.absent(),
     required double volumeLiters,
-    required int totalCostCents,
-    required bool fullTank,
     this.syncStatus = const Value.absent(),
     required String updatedAt,
     this.version = const Value.absent(),
   }) : carId = Value(carId),
        date = Value(date),
-       mileageKm = Value(mileageKm),
+       grade = Value(grade),
+       unitPriceCents = Value(unitPriceCents),
+       payableCents = Value(payableCents),
        volumeLiters = Value(volumeLiters),
-       totalCostCents = Value(totalCostCents),
-       fullTank = Value(fullTank),
        updatedAt = Value(updatedAt);
   static Insertable<FuelRecordRow> custom({
     Expression<int>? id,
     Expression<int>? carId,
     Expression<String>? date,
-    Expression<int>? mileageKm,
+    Expression<String>? grade,
+    Expression<int>? unitPriceCents,
+    Expression<int>? payableCents,
+    Expression<int>? actualCents,
     Expression<double>? volumeLiters,
-    Expression<int>? totalCostCents,
-    Expression<bool>? fullTank,
     Expression<String>? syncStatus,
     Expression<String>? updatedAt,
     Expression<int>? version,
@@ -5226,10 +5277,11 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
       if (id != null) 'id': id,
       if (carId != null) 'car_id': carId,
       if (date != null) 'date': date,
-      if (mileageKm != null) 'mileage_km': mileageKm,
+      if (grade != null) 'grade': grade,
+      if (unitPriceCents != null) 'unit_price_cents': unitPriceCents,
+      if (payableCents != null) 'payable_cents': payableCents,
+      if (actualCents != null) 'actual_cents': actualCents,
       if (volumeLiters != null) 'volume_liters': volumeLiters,
-      if (totalCostCents != null) 'total_cost_cents': totalCostCents,
-      if (fullTank != null) 'full_tank': fullTank,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (version != null) 'version': version,
@@ -5240,10 +5292,11 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
     Value<int>? id,
     Value<int>? carId,
     Value<String>? date,
-    Value<int>? mileageKm,
+    Value<String>? grade,
+    Value<int>? unitPriceCents,
+    Value<int>? payableCents,
+    Value<int?>? actualCents,
     Value<double>? volumeLiters,
-    Value<int>? totalCostCents,
-    Value<bool>? fullTank,
     Value<String>? syncStatus,
     Value<String>? updatedAt,
     Value<int>? version,
@@ -5252,10 +5305,11 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
       id: id ?? this.id,
       carId: carId ?? this.carId,
       date: date ?? this.date,
-      mileageKm: mileageKm ?? this.mileageKm,
+      grade: grade ?? this.grade,
+      unitPriceCents: unitPriceCents ?? this.unitPriceCents,
+      payableCents: payableCents ?? this.payableCents,
+      actualCents: actualCents ?? this.actualCents,
       volumeLiters: volumeLiters ?? this.volumeLiters,
-      totalCostCents: totalCostCents ?? this.totalCostCents,
-      fullTank: fullTank ?? this.fullTank,
       syncStatus: syncStatus ?? this.syncStatus,
       updatedAt: updatedAt ?? this.updatedAt,
       version: version ?? this.version,
@@ -5274,17 +5328,20 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
     if (date.present) {
       map['date'] = Variable<String>(date.value);
     }
-    if (mileageKm.present) {
-      map['mileage_km'] = Variable<int>(mileageKm.value);
+    if (grade.present) {
+      map['grade'] = Variable<String>(grade.value);
+    }
+    if (unitPriceCents.present) {
+      map['unit_price_cents'] = Variable<int>(unitPriceCents.value);
+    }
+    if (payableCents.present) {
+      map['payable_cents'] = Variable<int>(payableCents.value);
+    }
+    if (actualCents.present) {
+      map['actual_cents'] = Variable<int>(actualCents.value);
     }
     if (volumeLiters.present) {
       map['volume_liters'] = Variable<double>(volumeLiters.value);
-    }
-    if (totalCostCents.present) {
-      map['total_cost_cents'] = Variable<int>(totalCostCents.value);
-    }
-    if (fullTank.present) {
-      map['full_tank'] = Variable<bool>(fullTank.value);
     }
     if (syncStatus.present) {
       map['sync_status'] = Variable<String>(syncStatus.value);
@@ -5304,10 +5361,11 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
           ..write('id: $id, ')
           ..write('carId: $carId, ')
           ..write('date: $date, ')
-          ..write('mileageKm: $mileageKm, ')
+          ..write('grade: $grade, ')
+          ..write('unitPriceCents: $unitPriceCents, ')
+          ..write('payableCents: $payableCents, ')
+          ..write('actualCents: $actualCents, ')
           ..write('volumeLiters: $volumeLiters, ')
-          ..write('totalCostCents: $totalCostCents, ')
-          ..write('fullTank: $fullTank, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -7732,10 +7790,11 @@ typedef $$FuelRecordsTableCreateCompanionBuilder =
       Value<int> id,
       required int carId,
       required String date,
-      required int mileageKm,
+      required String grade,
+      required int unitPriceCents,
+      required int payableCents,
+      Value<int?> actualCents,
       required double volumeLiters,
-      required int totalCostCents,
-      required bool fullTank,
       Value<String> syncStatus,
       required String updatedAt,
       Value<int> version,
@@ -7745,10 +7804,11 @@ typedef $$FuelRecordsTableUpdateCompanionBuilder =
       Value<int> id,
       Value<int> carId,
       Value<String> date,
-      Value<int> mileageKm,
+      Value<String> grade,
+      Value<int> unitPriceCents,
+      Value<int> payableCents,
+      Value<int?> actualCents,
       Value<double> volumeLiters,
-      Value<int> totalCostCents,
-      Value<bool> fullTank,
       Value<String> syncStatus,
       Value<String> updatedAt,
       Value<int> version,
@@ -7778,23 +7838,28 @@ class $$FuelRecordsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<int> get mileageKm => $composableBuilder(
-    column: $table.mileageKm,
+  ColumnFilters<String> get grade => $composableBuilder(
+    column: $table.grade,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get unitPriceCents => $composableBuilder(
+    column: $table.unitPriceCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get payableCents => $composableBuilder(
+    column: $table.payableCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get actualCents => $composableBuilder(
+    column: $table.actualCents,
     builder: (column) => ColumnFilters(column),
   );
 
   ColumnFilters<double> get volumeLiters => $composableBuilder(
     column: $table.volumeLiters,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get totalCostCents => $composableBuilder(
-    column: $table.totalCostCents,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get fullTank => $composableBuilder(
-    column: $table.fullTank,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7838,23 +7903,28 @@ class $$FuelRecordsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<int> get mileageKm => $composableBuilder(
-    column: $table.mileageKm,
+  ColumnOrderings<String> get grade => $composableBuilder(
+    column: $table.grade,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get unitPriceCents => $composableBuilder(
+    column: $table.unitPriceCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get payableCents => $composableBuilder(
+    column: $table.payableCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get actualCents => $composableBuilder(
+    column: $table.actualCents,
     builder: (column) => ColumnOrderings(column),
   );
 
   ColumnOrderings<double> get volumeLiters => $composableBuilder(
     column: $table.volumeLiters,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get totalCostCents => $composableBuilder(
-    column: $table.totalCostCents,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get fullTank => $composableBuilder(
-    column: $table.fullTank,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -7892,21 +7962,28 @@ class $$FuelRecordsTableAnnotationComposer
   GeneratedColumn<String> get date =>
       $composableBuilder(column: $table.date, builder: (column) => column);
 
-  GeneratedColumn<int> get mileageKm =>
-      $composableBuilder(column: $table.mileageKm, builder: (column) => column);
+  GeneratedColumn<String> get grade =>
+      $composableBuilder(column: $table.grade, builder: (column) => column);
+
+  GeneratedColumn<int> get unitPriceCents => $composableBuilder(
+    column: $table.unitPriceCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get payableCents => $composableBuilder(
+    column: $table.payableCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get actualCents => $composableBuilder(
+    column: $table.actualCents,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<double> get volumeLiters => $composableBuilder(
     column: $table.volumeLiters,
     builder: (column) => column,
   );
-
-  GeneratedColumn<int> get totalCostCents => $composableBuilder(
-    column: $table.totalCostCents,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<bool> get fullTank =>
-      $composableBuilder(column: $table.fullTank, builder: (column) => column);
 
   GeneratedColumn<String> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
@@ -7954,10 +8031,11 @@ class $$FuelRecordsTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<int> carId = const Value.absent(),
                 Value<String> date = const Value.absent(),
-                Value<int> mileageKm = const Value.absent(),
+                Value<String> grade = const Value.absent(),
+                Value<int> unitPriceCents = const Value.absent(),
+                Value<int> payableCents = const Value.absent(),
+                Value<int?> actualCents = const Value.absent(),
                 Value<double> volumeLiters = const Value.absent(),
-                Value<int> totalCostCents = const Value.absent(),
-                Value<bool> fullTank = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<int> version = const Value.absent(),
@@ -7965,10 +8043,11 @@ class $$FuelRecordsTableTableManager
                 id: id,
                 carId: carId,
                 date: date,
-                mileageKm: mileageKm,
+                grade: grade,
+                unitPriceCents: unitPriceCents,
+                payableCents: payableCents,
+                actualCents: actualCents,
                 volumeLiters: volumeLiters,
-                totalCostCents: totalCostCents,
-                fullTank: fullTank,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,
@@ -7978,10 +8057,11 @@ class $$FuelRecordsTableTableManager
                 Value<int> id = const Value.absent(),
                 required int carId,
                 required String date,
-                required int mileageKm,
+                required String grade,
+                required int unitPriceCents,
+                required int payableCents,
+                Value<int?> actualCents = const Value.absent(),
                 required double volumeLiters,
-                required int totalCostCents,
-                required bool fullTank,
                 Value<String> syncStatus = const Value.absent(),
                 required String updatedAt,
                 Value<int> version = const Value.absent(),
@@ -7989,10 +8069,11 @@ class $$FuelRecordsTableTableManager
                 id: id,
                 carId: carId,
                 date: date,
-                mileageKm: mileageKm,
+                grade: grade,
+                unitPriceCents: unitPriceCents,
+                payableCents: payableCents,
+                actualCents: actualCents,
                 volumeLiters: volumeLiters,
-                totalCostCents: totalCostCents,
-                fullTank: fullTank,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,

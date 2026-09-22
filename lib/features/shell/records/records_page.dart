@@ -43,6 +43,7 @@ import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
+import '../../../domain/entities/fuel_record.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
@@ -50,6 +51,7 @@ import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 import 'cost_stats.dart';
+import 'fuel_cost_stats.dart';
 import 'record_cost_form_controller.dart';
 import 'record_detail_sheet.dart';
 import 'record_interval_updates.dart';
@@ -88,6 +90,11 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           data: (value) => value,
           orElse: () => const <MaintenanceItem>[],
         );
+    // 头部"今年加油"数据源：应用车辆的加油记录。加载失败/未就绪按 0
+    // 处理（头部金额少一块不挡记录列表主功能）。
+    final fuelRecords = ref
+        .watch(appliedCarFuelRecordsProvider)
+        .maybeWhen(data: (value) => value, orElse: () => const <FuelRecord>[]);
     // 三页统一 loading/error 形态（§5.2）：与提醒页同构，
     // 记录 provider 就绪前整页占位。
     return records.when(
@@ -108,8 +115,9 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           items: items,
           selections: selections,
         );
-        // 头部"今年费用"汇总行（记录非空才显示，整行可点进费用统计页）。
-        // 生效今天未就绪时兜底系统日期——与我的页 today 取值同款模式。
+        // 头部"今年保养 + 今年加油"汇总行（任一非空就显示，整行可点
+        // 进费用统计页）。生效今天未就绪时兜底系统日期——与我的页
+        // today 取值同款模式。
         final today = ref
             .watch(effectiveTodayProvider)
             .maybeWhen(
@@ -123,9 +131,18 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (value.isNotEmpty) ...[
+                  if (value.isNotEmpty || fuelRecords.isNotEmpty) ...[
                     _CostSummaryRow(
-                      thisYearCents: costCentsForYear(value, today.year),
+                      thisYearMaintenanceCents: costCentsForYear(
+                        value,
+                        today.year,
+                      ),
+                      showMaintenance: value.isNotEmpty,
+                      thisYearFuelCents: fuelCostCentsForYear(
+                        fuelRecords,
+                        today.year,
+                      ),
+                      showFuel: fuelRecords.isNotEmpty,
                       onTap: () => context.push('/cost-stats'),
                     ),
                     const SizedBox(height: 14),
@@ -942,15 +959,14 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
     }
   }
 
-  /// 弹自绘日期选择器（初始值 = 当前选中日期）。
+  /// 弹自绘日期选择器（初始值 = 当前选中日期）。范围：上路日期起、
+  /// **上限今天**——不能未来（2026-09-22 拍板，与加油记录同规则）。
   Future<LocalDate?> _showDatePicker() {
     return showSimpleDatePicker(
       context,
       initialDate: recordDate,
       firstDate: widget.car.roadDate,
-      lastDate: LocalDate.fromDateTime(
-        widget.today.toDateTime().add(const Duration(days: 365)),
-      ),
+      lastDate: widget.today,
       today: widget.today,
     );
   }
@@ -1172,17 +1188,42 @@ Future<void> deleteMaintenanceRecordItem(
 // 金额展示/解析（formatMoneyCents/parseMoneyCents/formatMoneyText）
 // 已升入共享 formatters.dart，经 shell_shared.dart barrel 使用。
 
-/// 头部"今年费用"汇总行（记录非空才显示）：金额口径见 cost_stats.dart
-/// （记录总费用权威值），整行可点进费用统计页（/cost-stats）。
+/// 头部"今年保养 + 今年加油"汇总行（任一非空就显示）：保养金额口径
+/// 见 cost_stats.dart（记录总费用权威值），加油金额口径见
+/// fuel_cost_stats.dart（实付优先），整行可点进费用统计页（/cost-stats）。
+/// 两段各自按域有无记录显隐（2026-09-22 二轮反馈：无加油记录不显示
+/// "今年加油"；无保养记录对称地不显示"今年保养"），不显示 ¥0.00 占位。
 class _CostSummaryRow extends StatelessWidget {
-  const _CostSummaryRow({required this.thisYearCents, required this.onTap});
+  const _CostSummaryRow({
+    required this.thisYearMaintenanceCents,
+    required this.showMaintenance,
+    required this.thisYearFuelCents,
+    required this.showFuel,
+    required this.onTap,
+  });
 
-  final int thisYearCents;
+  final int thisYearMaintenanceCents;
+
+  /// 保养段是否显示（当前车无保养记录时隐藏）。
+  final bool showMaintenance;
+
+  final int thisYearFuelCents;
+
+  /// 加油段是否显示（当前车无加油记录时隐藏）。
+  final bool showFuel;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: tokens.muted,
+    );
+    final moneyStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+      color: tokens.primary,
+      fontWeight: FontWeight.w800,
+    );
     return LunioCard(
       padding: EdgeInsets.zero,
       child: Material(
@@ -1195,20 +1236,21 @@ class _CostSummaryRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
-                Text(
-                  '今年费用',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: tokens.muted,
+                if (showMaintenance) ...[
+                  Text('今年保养', style: labelStyle),
+                  const SizedBox(width: 8),
+                  Text(
+                    formatMoneyCents(thisYearMaintenanceCents),
+                    style: moneyStyle,
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  formatMoneyCents(thisYearCents),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: tokens.primary,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                ],
+                if (showMaintenance && showFuel)
+                  const SizedBox(width: 14),
+                if (showFuel) ...[
+                  Text('今年加油', style: labelStyle),
+                  const SizedBox(width: 8),
+                  Text(formatMoneyCents(thisYearFuelCents), style: moneyStyle),
+                ],
                 const Spacer(),
                 Text(
                   '费用统计',

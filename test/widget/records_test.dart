@@ -64,6 +64,31 @@ Future<AppDatabase> seedCostedRecord({
   return database;
 }
 
+/// 查重弹窗夹具：预播种一辆上路日期较早（2026-05-10）的无记录车——
+/// 记录日期上限改"不能未来"（2026-09-22）后，可选日期只剩过去；
+/// 上路日期提前才能在查重测试里选到"无记录的过去日期"。
+Future<AppDatabase> seedCarWithEarlyRoadDate() async {
+  final database = AppDatabase.inMemory();
+  addTearDown(database.close);
+  final bundle = testRepository(database);
+  await bundle.ensureBootstrapData();
+  final carId = await createCarWithDefaultItems(
+    database,
+    Car(
+      brand: '本田',
+      model: '思域（燃油版）',
+      currentMileageKm: 12000,
+      roadDate: const LocalDate(2026, 5, 10),
+      sync: SyncMetadata(
+        status: SyncStatus.pendingCreate,
+        updatedAt: DateTime(2026, 5, 19),
+      ),
+    ),
+  );
+  await bundle.setAppliedCarId(carId);
+  return database;
+}
+
 /// 里程单调性软提示夹具：预播种一辆车（当前里程 12000）+ 若干记录，
 /// [records] 为 (日期, 里程) 列表，逐条经主仓库写入（机油一项，费用 0）。
 /// 必须在 pumpApp 之前建库播种：App 装配后再经仓库直接写库不会触发
@@ -154,7 +179,7 @@ void main() {
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
     expect(find.textContaining('2026-05-19 · 13,000 km'), findsOneWidget);
-    // 按项目行卡不展示金额；屏上唯一的 ¥428.00 是头部"今年费用"汇总行
+    // 按项目行卡不展示金额；屏上唯一的 ¥428.00 是头部"今年保养/今年加油"汇总行
     // （2026-05-19 记录在生效今天所在年）。
     expect(find.textContaining('¥428.00'), findsOneWidget);
   });
@@ -482,7 +507,7 @@ void main() {
     expect(find.text('保养记录'), findsNWidgets(2));
     expect(find.textContaining('整条记录总费用'), findsOneWidget);
     expect(find.text('总费用'), findsOneWidget);
-    // 卡片上的总费用与弹窗指标格各一份，加头部"今年费用"汇总行一份
+    // 卡片上的总费用与弹窗指标格各一份，加头部"今年保养/今年加油"汇总行一份
     // （记录日期在生效今天所在年），共三处（sheet 打开时卡片仍在树下）。
     expect(find.text('¥280.00'), findsNWidgets(3));
     expect(find.text('项目费用'), findsOneWidget);
@@ -519,7 +544,7 @@ void main() {
     expect(find.text('项目费用'), findsOneWidget);
     expect(find.text('¥230.00'), findsOneWidget);
     // 按项目弹窗不再展示整条记录总费用（格子和副标题都已移除）；屏上
-    // 唯一的 ¥280.00 是头部"今年费用"汇总行（记录日期在生效今天所在年）。
+    // 唯一的 ¥280.00 是头部"今年保养/今年加油"汇总行（记录日期在生效今天所在年）。
     expect(find.text('总费用'), findsNothing);
     expect(find.text('¥280.00'), findsOneWidget);
     expect(find.textContaining('整条记录总费用'), findsNothing);
@@ -621,8 +646,10 @@ void main() {
   testWidgets(
     'duplicate dialog back reopens date picker and rechecks picked date',
     (tester) async {
-      await pumpApp(tester);
-      await createDefaultCar(tester);
+      // 日期上限改"不能未来"（2026-09-22）后，默认向导车（上路日期 =
+      // 今天）没有任何"无记录的可选日"，改用上路日期较早的播种车。
+      final database = await seedCarWithEarlyRoadDate();
+      await pumpApp(tester, database: database);
       await createDefaultRecord(tester);
 
       await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
@@ -634,9 +661,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('选择日期'), findsOneWidget);
 
-      // 换到无记录的 5-20（不能选 5-18：在车辆上路日期之前，格子禁用）
-      // → 不再弹窗，正常停在第一步。
-      await tester.tap(find.text('20'));
+      // 换到无记录的 5-18（上路日期 5-10 之后、今天 5-19 之前——日期
+      // 上限改"不能未来"后未来格子已禁用）→ 不再弹窗，正常停在第一步。
+      await tester.tap(find.text('18'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('确定'));
       await tester.pumpAndSettle();
@@ -646,7 +673,7 @@ void main() {
       // 再选回今天（2026-05-19）：选完立即再弹查重框。
       // （点日期值文本而非"保养日期"标签——标签中心命中 InputDecorator，
       // 会有 tap 命中告警。）
-      await tester.tap(find.text('2026年5月20日'));
+      await tester.tap(find.text('2026年5月18日'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('今天'));
       await tester.pumpAndSettle();

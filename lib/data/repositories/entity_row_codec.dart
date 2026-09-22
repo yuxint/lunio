@@ -12,6 +12,7 @@ import 'package:drift/drift.dart';
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart' as domain;
 import '../../domain/entities/fuel_prediction.dart' as domain;
+import '../../domain/entities/fuel_price.dart' as domain;
 import '../../domain/entities/fuel_record.dart' as domain;
 import '../../domain/entities/maintenance_item.dart' as domain;
 import '../../domain/entities/maintenance_record.dart' as domain;
@@ -220,16 +221,17 @@ FuelPredictionsCompanion fuelPredictionCompanion(
 
 // ---------------- fuel_records ----------------
 
-/// 加油记录表行 → 实体（ADR 0014）。
+/// 加油记录表行 → 实体（ADR 0015）。油品 code 未知时回退默认 92
+/// （与省份默认值同款防御；正常数据不会走到）。
 domain.FuelRecord fuelRecordFromRow(FuelRecordRow row) {
   return domain.FuelRecord(
     id: row.id,
     carId: row.carId,
     date: LocalDate.parse(row.date),
-    mileageKm: row.mileageKm,
-    volumeLiters: row.volumeLiters,
-    totalCostCents: row.totalCostCents,
-    fullTank: row.fullTank,
+    grade: domain.FuelGrade.tryParse(row.grade) ?? domain.FuelGrade.gasoline92,
+    unitPriceCents: row.unitPriceCents,
+    payableCents: row.payableCents,
+    actualCents: row.actualCents,
     sync: SyncMetadata(
       status: SyncStatus.values.byName(row.syncStatus),
       updatedAt: DateTime.parse(row.updatedAt),
@@ -239,16 +241,17 @@ domain.FuelRecord fuelRecordFromRow(FuelRecordRow row) {
 }
 
 /// 加油记录实体 + 指定 id → 插入用 Companion（新增路径与恢复备份共用，
-/// 字段清单全库只有这一份；恢复路径随备份 v3 接入）。
+/// 字段清单全库只有这一份）。容积不在这里赋值——实体构造时已算好。
 FuelRecordsCompanion fuelRecordCompanion(domain.FuelRecord record, int id) {
   return FuelRecordsCompanion.insert(
     id: Value(id),
     carId: record.carId,
     date: record.date.toString(),
-    mileageKm: record.mileageKm,
+    grade: record.grade.code,
+    unitPriceCents: record.unitPriceCents,
+    payableCents: record.payableCents,
+    actualCents: Value(record.actualCents),
     volumeLiters: record.volumeLiters,
-    totalCostCents: record.totalCostCents,
-    fullTank: record.fullTank,
     syncStatus: Value(record.sync.status.name),
     updatedAt: record.sync.updatedAt.toIso8601String(),
     version: Value(record.sync.version),

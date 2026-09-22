@@ -7,16 +7,19 @@
 // 不在栈内时不渲染底部导航，因此 LunioPage 的 bottomPadding 用小值。
 //
 // 结构（全部纯读取聚合，无写库、无动作层参与）：
-//   1. 汇总卡：总费用 + 今年费用；
+//   1. 汇总卡：总费用 + 今年保养（有加油记录追加今年加油栏）；
 //   2. 汇总指标行：保养次数（今年小字）/ 单次均价 / 月均（全程摊薄，
 //      不随任何图表联动）/ 上次保养距今；
 //   3. 项目占比：横向条形列表——按实付从多到少排、全部项目不截断，
 //      头部主数字 = 总费用（守恒锚点：各行相加 ≡ 总费用，2026-09-21），
 //      末尾"其他"段吸收无归属的钱；点项目行下钻项目档案 sheet
 //      （cost_item_history_sheet.dart）；
-//   4. 费用走势：年度曲线——每年一点（= 该年总费用），峰值标注 +
+//   4. 保养费用走势：年度曲线——每年一点（= 该年总费用），峰值标注 +
 //      上次保养年份高亮；不足两个年份（单年车）整卡不展示
-//      （2026-09-21 拍板）。
+//      （2026-09-21 拍板）；
+//   5. 加油费用卡（2026-09-22 新增，ADR 0015，固定页面最后）：加油
+//      年度行（每年一行，点行切换）+ 选中年的 12 个月条形；金额口径 =
+//      实付优先、没填取应付（fuel_cost_stats.dart）。
 // 作用域永远是当前应用车辆（2026-09-20 拍板：不提供"全部"/多车切换，
 // 想看别的车先去切换应用车辆），当前车辆名在标题副字展示。
 // 图表语言：项目占比为 Widget 条形、走势为 CustomPainter 自绘（无图表
@@ -39,18 +42,21 @@ import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
+import '../../../domain/entities/fuel_record.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
 import 'cost_item_history_sheet.dart';
 import 'cost_stats.dart';
+import 'fuel_cost_stats.dart';
 
 /// 统计页要用的全部数据：当前应用车辆名（null = 无车）、该车记录、
-/// 项目清单（项目名解析用）、生效今天。
+/// 加油记录、项目清单（项目名解析用）、生效今天。
 class CostStatsPageData {
   const CostStatsPageData({
     required this.carName,
     required this.records,
+    required this.fuelRecords,
     required this.items,
     required this.today,
   });
@@ -59,6 +65,9 @@ class CostStatsPageData {
   final String? carName;
 
   final List<MaintenanceRecord> records;
+
+  /// 当前应用车辆的加油记录（加油费用卡数据源）。
+  final List<FuelRecord> fuelRecords;
   final List<MaintenanceItem> items;
   final LocalDate today;
 }
@@ -76,15 +85,20 @@ final costStatsDataProvider = FutureProvider<CostStatsPageData>((ref) async {
     return CostStatsPageData(
       carName: null,
       records: const [],
+      fuelRecords: const [],
       items: const [],
       today: today,
     );
   }
   final records = await ref.watch(recordsForCarProvider(car.id!).future);
   final items = await ref.watch(maintenanceItemsForCarProvider(car.id!).future);
+  final fuelRecords = await ref.watch(
+    fuelRecordsForCarProvider(car.id!).future,
+  );
   return CostStatsPageData(
     carName: '${car.brand} ${car.model}',
     records: records,
+    fuelRecords: fuelRecords,
     items: items,
     today: today,
   );
@@ -193,26 +207,58 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
       children: [
         if (data.carName == null)
           const LunioEmptyCard('请先新增车辆')
-        else if (data.records.isEmpty)
-          const LunioEmptyCard('暂无保养记录，记一笔保养后这里会生成费用统计。')
+        else if (data.records.isEmpty && data.fuelRecords.isEmpty)
+          const LunioEmptyCard('暂无保养/加油记录，记一笔后这里会生成费用统计。')
         else ...[
-          _buildSummaryCard(context, stats),
-          const SizedBox(height: 12),
-          _buildMetricsCard(context, data.today, stats),
-          const SizedBox(height: 12),
-          _buildProjectCard(context, stats, historyByName),
-          // 走势卡只在两年及以上才展示（单年车没有走势可看）。
-          if (stats.years.length >= 2) ...[
+          // 保养汇总卡（保养记录非空才渲染）；加油费用卡固定放页面
+          // 最后（2026-09-22 二轮反馈），保养区只有加油时降为轻提示。
+          if (data.records.isNotEmpty) ...[
+            _buildSummaryCard(
+              context,
+              stats,
+              hasFuel: data.fuelRecords.isNotEmpty,
+              thisYearFuelCents: fuelCostCentsForYear(
+                data.fuelRecords,
+                data.today.year,
+              ),
+            ),
             const SizedBox(height: 12),
-            _buildTrendCard(context, data.today, stats),
+          ],
+          if (data.records.isEmpty)
+            const LunioEmptyCard('暂无保养记录，记一笔保养后这里会生成保养费用统计。')
+          else ...[
+            _buildMetricsCard(context, data.today, stats),
+            const SizedBox(height: 12),
+            _buildProjectCard(context, stats, historyByName),
+            // 走势卡只在两年及以上才展示（单年车没有走势可看）。
+            if (stats.years.length >= 2) ...[
+              const SizedBox(height: 12),
+              _buildTrendCard(context, data.today, stats),
+            ],
+          ],
+          if (data.fuelRecords.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _FuelCostCard(
+              fuelRecords: data.fuelRecords,
+              today: data.today,
+              entrance: _entrance,
+            ),
           ],
         ],
       ],
     );
   }
 
-  /// 汇总卡：总费用 + 今年费用两栏。
-  Widget _buildSummaryCard(BuildContext context, CostStats stats) {
+  /// 汇总卡：总费用 + 今年保养两栏；有加油记录时追加"今年加油"第三栏
+  /// （2026-09-22 二轮反馈：无加油记录不显示该栏，不留 ¥0.00 占位）。
+  /// 总费用口径仍是保养记录总费用（占比卡的守恒锚点），加油看下方
+  /// 加油费用卡。
+  Widget _buildSummaryCard(
+    BuildContext context,
+    CostStats stats, {
+    required bool hasFuel,
+    required int thisYearFuelCents,
+  }) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     Widget column(String label, int cents) => Expanded(
           child: Column(
@@ -242,7 +288,14 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
           column('总费用', stats.totalCents),
           Container(width: 1, height: 40, color: tokens.line),
           const SizedBox(width: 14),
-          column('今年费用', stats.thisYearCents),
+          // 2026-09-22 改名：加油费用卡进页后"今年费用"有歧义，
+          // 明示为保养口径（加油看下方加油费用卡）。
+          column('今年保养', stats.thisYearCents),
+          if (hasFuel) ...[
+            Container(width: 1, height: 40, color: tokens.line),
+            const SizedBox(width: 14),
+            column('今年加油', thisYearFuelCents),
+          ],
         ],
       ),
     );
@@ -537,7 +590,7 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     return LunioCard(
       child: LunioSection(
-        title: '费用走势',
+        title: '保养费用走势',
         children: [
           const SizedBox(height: 6),
           AnimatedBuilder(
@@ -581,6 +634,240 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
                   ),
                 ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 加油费用卡（2026-09-22 新增，ADR 0015）：加油年度行（每年一行——
+/// 年份 + 条形 + 合计，点行切换下方月份图）+ 选中年的 12 个月条形。
+/// 金额口径 = 实付优先、没填取应付（fuel_cost_stats.dart 纯函数），
+/// 与保养各卡的守恒/优惠口径互不掺和。
+/// 有 state（选中年）：统计页里唯一带内嵌状态的小件；默认选中生效
+/// 今天所在年（无记录年显示全 0 条，属预期）。
+class _FuelCostCard extends StatefulWidget {
+  const _FuelCostCard({
+    required this.fuelRecords,
+    required this.today,
+    required this.entrance,
+  });
+
+  final List<FuelRecord> fuelRecords;
+  final LocalDate today;
+
+  /// 页面级一次性入场动画（0→1）：年度条按宽度生长、月份条按高度
+  /// 长高，与项目占比/走势共用同一份进度（页面注释的历史 bug：条形
+  /// 必须包在监听动画的 AnimatedBuilder 里）。
+  final Animation<double> entrance;
+
+  @override
+  State<_FuelCostCard> createState() => _FuelCostCardState();
+}
+
+class _FuelCostCardState extends State<_FuelCostCard> {
+  /// 月份图选中的年份（null = 未初始化，build 首帧取生效今天所在年）。
+  int? _selectedYear;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final stats = buildFuelCostStats(
+      records: widget.fuelRecords,
+      today: widget.today,
+    );
+    final selectedYear =
+        _selectedYear ?? widget.today.year;
+    return LunioCard(
+      child: LunioSection(
+        title: '加油费用',
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    // 2026-09-22 二轮反馈：与记录页头部/汇总卡同词——
+                    // 本卡作用域就是加油，"总费用"即加油总花费。
+                    '总费用',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: tokens.muted),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    formatMoneyCents(stats.totalCents),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                '${stats.recordCount} 笔',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: tokens.muted),
+              ),
+            ],
+          ),
+          // 年度行：年份 | 条形（相对最大年，宽度随入场动画生长）|
+          // 合计。选中年主色加粗，未选中灰调；点行切换月份图。
+          AnimatedBuilder(
+            animation: widget.entrance,
+            builder: (context, _) {
+              final maxYearCents = stats.yearRows.fold(
+                0,
+                (max, row) => row.costCents > max ? row.costCents : max,
+              );
+              return Column(
+                children: [
+                  for (final row in stats.yearRows)
+                    _yearRow(context, row, maxYearCents, row.year == selectedYear),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          // 选中年的 12 个月条形：月份数字为轴，条高相对当年最大月。
+          AnimatedBuilder(
+            animation: widget.entrance,
+            builder: (context, _) {
+              final months = fuelMonthlyCents(
+                widget.fuelRecords,
+                selectedYear,
+              );
+              final maxMonthCents = months.fold(
+                0,
+                (max, cents) => cents > max ? cents : max,
+              );
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < 12; i++)
+                    _monthBar(
+                      context,
+                      month: i + 1,
+                      cents: months[i],
+                      fraction: maxMonthCents == 0
+                          ? 0.0
+                          : months[i] / maxMonthCents,
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 年度行：'2026年' | 条形轨道 | 合计金额。整行可点（切换月份图）。
+  Widget _yearRow(
+    BuildContext context,
+    FuelCostYearRow row,
+    int maxYearCents,
+    bool selected,
+  ) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final fraction = maxYearCents == 0
+        ? 0.0
+        : row.costCents / maxYearCents;
+    final widthFactor = (fraction * widget.entrance.value).clamp(0.0, 1.0);
+    return InkWell(
+      onTap: () => setState(() => _selectedYear = row.year),
+      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 52,
+              child: Text(
+                '${row.year}年',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: selected ? tokens.ink : tokens.muted,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: widthFactor,
+                  child: Container(
+                    height: 8,
+                    color: selected ? tokens.primary : tokens.primarySoft,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 88,
+              child: Text(
+                formatMoneyCents(row.costCents),
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: selected ? tokens.ink : tokens.muted,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 月份条形一列：细条（高度按当年最大月比例、随入场动画长高）+
+  /// 月份数字轴。0 元月份画 2dp 灰色基线桩（可看见"这个月没花钱"）。
+  Widget _monthBar(
+    BuildContext context, {
+    required int month,
+    required int cents,
+    required double fraction,
+  }) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    const maxBarHeight = 44.0;
+    final hasCost = cents > 0;
+    final barHeight = hasCost
+        ? (fraction * maxBarHeight * widget.entrance.value).clamp(3.0, maxBarHeight)
+        : 2.0;
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          SizedBox(
+            height: maxBarHeight,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                width: 10,
+                height: barHeight,
+                decoration: BoxDecoration(
+                  color: hasCost ? tokens.primary : tokens.line,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$month月',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: tokens.muted,
+              fontSize: 9,
+            ),
           ),
         ],
       ),

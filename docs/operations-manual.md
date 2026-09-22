@@ -1,6 +1,6 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-20 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 收拢见 5.10，加油记录见 docs/adr/0014）
+> 版本：2026-09-22 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 收拢见 5.10，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
@@ -266,19 +266,20 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 按周期（整条记录） | 标题"保养记录" + 副标题"整条记录总费用 ¥xx" + 日期/里程/总费用指标格 + 备注（有才显示）+ 项目费用清单（每勾选项目一行：项目名 + 项目费用，未填显示"—"，填了材料/工时的加小字"材料 xx / 工时 xx"） | 展示永远取存储值：单项目以项目费用为准、整条记录以总费用为准；不一致的项目费用/总费用加黄色警告角标，**不做读时修正** |
 | 按项目（单项目） | 标题=项目名（无副标题）+ 日期/里程指标格 + 距上次时间/里程指标格 + 材料费/工时费一行（两者都未填整行不显示，只填一格另一格显示"—"）+ 项目费用格（保留不一致黄三角）。距上次参照点 = 该项目**上一条记录 → 本条**（`RecordRules.previousRecordForItem`：严格早于本条日期的最新一条，同车同日唯一保证可唯一定位；项目首条无上一条 → 两格都显示"—"） | 同上；差值经 `RecordRules.daysSinceLast` / `kmSinceLast` 计算，负值（补录乱序）/无上一条在 domain 折叠成 null，`formatters.dart → formatDaysSinceLast` / `formatKmSinceLast` 只把 null 显示"—" |
 
-### 4.5 费用统计（今年费用汇总行 + /cost-stats 统计页，2026-09-17 新增；2026-09-20 单车化 + 优惠分摊；2026-09-21 详情/钻取增强；2026-09-21 改版：改名"费用"、条形占比、年度走势、其他段守恒）
+### 4.5 费用统计（今年保养/今年加油汇总行 + /cost-stats 统计页，2026-09-17 新增；2026-09-20 单车化 + 优惠分摊；2026-09-21 详情/钻取增强；2026-09-21 改版：条形占比、年度走势、其他段守恒；2026-09-22 新增加油费用卡，汇总行拆今年保养/今年加油，ADR 0015）
 
 **纯读取聚合**：不动数据库、不走动作层（无写点）。聚合口径唯一实现在 `lib/features/shell/records/cost_stats.dart`（纯函数 `buildCostStats`，单测含变异验证 `test/features/cost_stats_test.dart`）：**总额/年度/月度用记录总费用（权威值）**，与项目费用合计不一致仍按总费用（ADR 0010 口径）；**项目计费值 = 项目费用**（没填即不参与，材料/工时不做读侧兜底——不变量由写点 normalizeItemCost 保证，2026-09-21 拍板删兜底分支），按**项目名**聚合（清单外归"未知项目"），**全部项目列出不截断、按实付降序**；**年度走势**每年一点（= 该年总费用），跨度首条记录年 → 今年、无记录年补 0（不再有"近一年/近半年"窗口，也不再依赖 `addMonths`；其 floor 语义回归测试仍在 `test/domain/app_date_context_test.dart`）。**优惠分摊（2026-09-20）**：记录级总优惠 = Σ项目费用 − 记录总费用（负差值 = 无优惠按 0；无项目费用记录 Σ=0 自然不参与），按各项目费用权重分摊（`allocateDiscount` 泛型最大余数法，分摊合计与总优惠严格相等、每项分摊 ≤ 项目费用），纯读时派生不改存储值。**其他段守恒（2026-09-21）**：其他段 = 简洁模式记录的全部费用 + 单条记录"总费用超出项目费用合计"的差额，**总费用 ≡ Σ项目实付 + 其他段** 恒成立（此前"总花费 ≠ 项目实付"的口径缺口即由这两类无归属费用造成）；词汇见 CONTEXT.md「费用统计与优惠」。**汇总指标**：保养次数（总/今年）、单次均价（=总费用÷次数）、月均（=总费用÷首条记录月到当月的自然月数，全程摊薄、不随任何图表联动）、上次保养（`lastRecordDate` → 距今天数）。
 
 | 用户操作 | 代码位置 | 做了什么 |
 |---|---|---|
-| 记录页头部"今年费用"汇总行（**仅当前车有记录时显示**，金额=今年记录总费用） | `records_page.dart → _CostSummaryRow`（`costCentsForYear` 算今年值；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
+| 记录页头部汇总行（**保养或加油任一非空即显示**）："今年保养 ¥x" + "今年加油 ¥y"（2026-09-22 由单一"今年费用"拆分；**两段按域各自显隐**——无加油记录不显示"今年加油"，无保养记录对称隐藏"今年保养"，不留 ¥0.00 占位） | `records_page.dart → _CostSummaryRow`（保养口径 `costCentsForYear`、加油口径 `fuelCostCentsForYear`（`fuel_cost_stats.dart`，实付优先）；加油记录 watch `appliedCarFuelRecordsProvider`，未就绪按 0；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
 | 我的页「数据与工具」首行"费用统计 → 查看" | `profile_page.dart`（`ProfileSettingRow`，onTap `context.push`） | 进同一统计页 |
-| 统计页作用域（**永远当前应用车辆，2026-09-20 拍板移除"全部"/切车 chips**） | `cost_stats_page.dart → costStatsDataProvider`（**非 family**，watch `appliedCarProvider` + 按车 family） | 应用车辆解析完成前整页 loading，解析失败走错误页兜底（带返回键）；当前车辆名在标题副字"当前车辆：XX"展示；无车 → "请先新增车辆"空态 |
+| 统计页作用域（**永远当前应用车辆，2026-09-20 拍板移除"全部"/切车 chips**） | `cost_stats_page.dart → costStatsDataProvider`（**非 family**，watch `appliedCarProvider` + 按车 family；2026-09-22 起同源拉 `fuelRecordsForCarProvider` 供加油费用卡） | 应用车辆解析完成前整页 loading，解析失败走错误页兜底（带返回键）；当前车辆名在标题副字"当前车辆：XX"展示；无车 → "请先新增车辆"空态 |
+| 加油费用卡（2026-09-22 新增，ADR 0015；`fuelRecords` 非空才渲染，**固定页面最后**） | 同页 `_FuelCostCard`（聚合在 `fuel_cost_stats.dart` 纯函数 `buildFuelCostStats` / `fuelMonthlyCents`，实付优先口径） | 头部"总费用 ¥x · n 笔"（2026-09-22 二轮反馈由"总加油"改名——本卡作用域就是加油，与记录页头部/汇总卡同词）；年度行 = 年份 | 条形（相对最大年、随入场动画生长）| 合计，**最近年在前、中间无记录年补 0**，点行切换下方月份图年份（默认生效今天所在年）；月份图 = 选中年 12 个月条形（0 元月画灰色基线桩）；有内嵌选中 state（统计页唯一） | 
 | 汇总指标行 | 同页 `_buildMetricsCard` | 保养次数（副字"今年 n 次"）/ 单次均价 / 月均（全程摊薄定值）/ 上次保养（"n 天前"，当天为"今天"），四块一行 |
 | 项目占比 → 点项目行 → 项目档案 sheet | 同页 `_buildProjectCard` → `cost_item_history_sheet.dart → showCostItemHistorySheet`（`buildItemHistories` 聚合，按项目名映射） | 头部主数字 = 总费用 + "累计优惠 ¥x"小字（守恒锚点：各行相加 ≡ 总费用）；列表为 Table 三列布局——项目名列与数值列取全表最宽（IntrinsicColumnWidth），**所有行的条形统一起点、同一比例尺**（2026-09-21 拍板；行内自适应宽度会让起点参差、条形比例失真），条形容器带 `cost-bar-<项目名>` key 供 widget 断言；条形行 = 项目名 + 条（宽度=实付比例）+ 实付 +（省额）+ 下钻箭头，实付降序、全部项目不截断；末尾"其他"段（仅有缺口时出现，灰条）= 简洁模式费用 + 总费用超出项目合计的差额，不可下钻。档案头：次数/单次均价（累计实付÷次数）/累计计费三格 + 副字累计实付（有优惠附省额）；逐次明细日期倒序（日期、里程、实付 + 优惠小字）。费用全空的记录不进档案 |
-| 年度走势（≥2 个年份才展示，单年车整卡隐藏） | 同页 `_buildTrendCard` → `_TrendPainter`（`stats.years.length >= 2` 门卫） | 每年一点（= 该年总费用）、横轴年份标签（今年高亮）、平滑曲线 + 渐变面积 + 峰值年"峰值 ¥x"入图 + 上次保养年份空心环；画布 `width: double.infinity`——所在 Column 松约束下 CustomPaint 无子组件会收敛成 0 宽，曲线整卡不可见，2026-09-21 修复并留 widget 断言 `cost-trend-paint` 宽度 > 200 防回归 |
-| 统计页内容（占比卡为 Widget 条形、走势为 CustomPainter；一次性入场动画 700ms，各卡共用同一 AnimationController） | 同页 `_buildSummaryCard` / `_buildMetricsCard` / `_buildProjectCard` / `_buildTrendCard` | 汇总卡（总费用+今年费用）→ 指标行 → 项目占比条形列表（条形必须包在监听入场动画的 `AnimatedBuilder` 里——漏包会让条形停在进度 0"有时不渲染、点开才出来"，2026-09-21 修复并写进文件头注释）→ 年度走势卡（单年隐藏）；无记录 → 空态卡，无车 → "请先新增车辆" |
+| 保养费用走势（2026-09-22 由"费用走势"改名；≥2 个年份才展示，单年车整卡隐藏） | 同页 `_buildTrendCard` → `_TrendPainter`（`stats.years.length >= 2` 门卫） | 每年一点（= 该年总费用）、横轴年份标签（今年高亮）、平滑曲线 + 渐变面积 + 峰值年"峰值 ¥x"入图 + 上次保养年份空心环；画布 `width: double.infinity`——所在 Column 松约束下 CustomPaint 无子组件会收敛成 0 宽，曲线整卡不可见，2026-09-21 修复并留 widget 断言 `cost-trend-paint` 宽度 > 200 防回归 |
+| 统计页内容（占比卡为 Widget 条形、走势为 CustomPainter；一次性入场动画 700ms，各卡共用同一 AnimationController） | 同页 `_buildSummaryCard` / `_buildMetricsCard` / `_buildProjectCard` / `_buildTrendCard` / `_FuelCostCard` | 汇总卡（**总费用 + 今年保养，有加油记录追加"今年加油"第三栏**（2026-09-22 二轮反馈：无加油记录不显示该栏））→ 指标行 → 项目占比条形列表（条形必须包在监听入场动画的 `AnimatedBuilder` 里——漏包会让条形停在进度 0"有时不渲染、点开才出来"，2026-09-21 修复并写进文件头注释）→ **保养费用走势卡**（2026-09-22 由"费用走势"改名；单年隐藏）→ **加油费用卡（固定页面最后，`fuelRecords` 非空才渲染）**；保养+加油都无记录 → 空态卡，只有加油 → 保养区降一行"暂无保养记录"轻提示，无车 → "请先新增车辆" |
 | 返回 | 顶部栏 leading 返回键（`context.pop`）+ iOS 右滑返回（默认转场天然支持） | — |
 
 **路由与安全区**：`lib/app/app_router.dart:61 → /cost-stats` 是第一个**不挂主壳层的 pushed 子页**（不渲染 AppShell 无底部导航，页面自带 Scaffold；builder 默认 MaterialPage 转场）。`LunioPage`/`LunioTopBar`为此增加可选 `leading` 位；**安全区由 `LunioPage` 内置 `SafeArea` 统一提供（2026-09-20）**——tab 页壳层（app_shell.dart:162）已包一层、嵌套幂等零行为变化，pushed 子页不挂壳层也能天生拿到顶部安全区与底部手势条避让（此前 /cost-stats 标题顶进状态栏的根因即"壳层包 SafeArea 而 pushed 页没人包"）。`initialLocation` 支持 `--dart-define=LUNIO_INITIAL_ROUTE=...` 覆盖（仅模拟器截图/验收用，默认 `/reminders` 行为不变）。widget 测试 `test/widget/cost_stats_test.dart`（渲染/指标行/项目占比与守恒/单年隐藏/项目档案/优惠/空态/两入口跳转/返回键/错误页兜底）。
@@ -342,7 +343,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 我的页"备份数据" → `settings_data.dart:170 → exportBackup`：
 
-1. `backupRepository.exportBackupPayload`——4 张业务表 + 加油设置 + 加油记录全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 3（v2 条目含记录的项目费用 `itemCosts`，ADR 0010；v3 增加油记录数组 `fuelRecords`，ADR 0014）；
+1. `backupRepository.exportBackupPayload`——4 张业务表 + 加油设置 + 加油记录全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 3（v2 条目含记录的项目费用 `itemCosts`，ADR 0010；v3 增加油记录数组 `fuelRecords`——条目为 ADR 0015 应付/实付结构 {carId, date, grade, unitPriceCents, payableCents, actualCents, volumeLiters, sync}，容积恢复时由实体按应付÷单价重算）；
 2. `BackupCodec().encode`（lib/data/backup/backup_codec.dart）——手写 JSON 序列化；
 3. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`；
 4. 成功/失败 toast。
@@ -352,7 +353,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 我的页"恢复数据" → `settings_data.dart → restoreBackupFromFile`：
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
-2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入）；
+2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015 v3 就地重定义，前提=屏蔽期无真实加油数据）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）再执行恢复；
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 6 张业务表（4 张主业务表 + 加油预测设置 + 加油记录）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的存量行经 `RecordRules.normalizeItemCost` 按材料+工时补齐——2026-09-20 数据不变量，恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
 5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
@@ -389,19 +390,19 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 5.10 加油页（/fuel，开发者开关打开时可见）
 
-页面：`fuel/fuel_page.dart → FuelPreviewPage`，**标题与底部导航同名"加油"**（2026-09-17 从"加油预测"改名，新增加油记录流水后原名不准确，ADR 0014；开发者开关本身仍叫"加油预测"）。当前可见**两张卡**：油价卡 → 加满预估卡；**加油记录卡已实现但入口注释隐藏**（2026-09-20 拍板：功能是雏形、细节待打磨，先不对用户可见——挂载行与 import 在 `fuel_page.dart` 注释并附放开说明，卡本体保留在 `fuel_records_card.dart`，widget 测试经 pumpApp 的 child 参数直泵卡；放开时取消两处注释即恢复三卡）。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006 / ADR 0014）：
+页面：`fuel/fuel_page.dart → FuelPreviewPage`，**标题与底部导航同名"加油"**（2026-09-17 从"加油预测"改名，新增加油记录流水后原名不准确，ADR 0014；开发者开关本身仍叫"加油预测"）。当前可见**三张卡**：油价卡 → 加满预估卡 → 加油记录卡（**记录卡于 2026-09-22 按 ADR 0015 重定义后重新挂载**，取代 2026-09-20 的入口注释隐藏）。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006 / ADR 0015）：
 
 1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格行右侧动作按钮按状态切换（同一位置同一个按钮；价格文字与"— 元/升"占位价纯展示不可点）**：无手填价显示"手填"（主动作样式，唯一编辑入口）→ 点了 `showLunioModalSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理），保存走 `shell_actions.dart → saveFuelManualPrice`（动作层：写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ 单点失效 `fuelManualPriceProvider`）+ toast"手填油价已保存"；有手填价显示"重置"（弱化样式；**改手填价须先重置再重新手填**）→ 重置同样走动作层 `shell_actions.dart → saveFuelManualPrice`（pricePerLiter 传 null 删该组合键恢复数据源价 + 单点失效 `fuelManualPriceProvider`；原旁路已于 2026-09-09 收编，ADR 0007 的例外消除）+ toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示"— 元/升"占位价 + "暂无数据"胶囊，编辑同样走"手填"按钮**（油价获取中的加载态无按钮，不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，**按当前省份抓详情页** `/hubei.shtml` 等，一次一省 + 调价预告，见 ADR 0006/0011；`fuelPriceSourceProvider` 在 `fuel/fuel_prices.dart`，注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`（`fuel/fuel_prices.dart`，缓存优先/新鲜期/换省守卫/自动拉取的编排都在它的 build），缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是**单省价表**：换省后缓存省份不匹配 → 油价卡按"暂无数据"展示、**不自动拉取，点"刷新"再拉新省**，用户决策 2026-09-12；价格里的省份守卫保证旧省缓存不透出），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
 2. **预估下次油价块**（油价卡内，价格行下方）：标题"预估下次油价"（与"当前油价"同字号）；数值 = 生效价（手填优先）+ 调价预告变动中值（`FuelRules.predictedPricePerLiter`，先取整到分），价格旁带**涨跌箭头**（`Icons.trending_up`/`trending_down`，方向取预告 `trend`，与预估价的正负号同源；**红涨绿跌**复用语义 token：涨 `tokens.danger`、跌 `tokens.success`，见 DESIGN.md），右侧日期胶囊"X月X日调价"；展示样式与价格行一致（`_TagPill` 复用）。无预告/无基准价时显示"暂无调价预测"占位（无箭头），不算错误。**过期预告按无预告同占位**（调价日早于当前应用日期 `effectiveTodayProvider` 即过期，调价日当天仍有效；无年份预告按"离今天最近的同月日"定年，判定在 `FuelRules.isForecastExpired`，过滤统一走 `fuel/fuel_prices.dart → effectiveFuelForecastProvider`，ADR 0011 二轮修订）。
 3. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，领域清单 `fuelProvinces` 31 项限高 320 可滚动、打开时定位到当前项；清单归属见 ADR 0001 附注）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北，偏好门面兜底），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
 4. **加满预估卡（滚动定档）**：表头四列"当前油量 / 可加油量 / 加满价格 / 调价后价格"（`_TierHeaderRow`，列宽比例与 `_TierRow` 一致）。全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动；`_RowSnapScrollPhysics` 吸附整行边界（**按父物理自然弹道投射停点再取最近整行**，照搬官方 `FixedExtentScrollPhysics` 模式——快速甩动可连滚多档、慢速就近弹回，停点严格对齐整行），`ScrollEnd` 后第一行档位 = 剩余油量，自动 `saveFuelPrediction` 写 `fuel_predictions`（默认 50%，从没滚动过不落库）；进入页面定位到已存档位在第一行。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。当前油量 = 档位/100 × 容积（`FuelRules.litersInTank`）；可加油量 =（100−档位）/100 × 容积（`FuelRules.litersToFill`）；加满价格 = 可加油量 × 生效价（`FuelRules.fullTankCostCents`，分存储）；调价后价格 = 可加油量 × 预估价（`fuel_prices.dart → predictedFuelPriceProvider`，无预告时显示"—"）；第一行档位高亮、无"（当前）"文字。
 5. **油箱容积入口在车辆管理**：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
-6. **加油记录卡**（`fuel/fuel_records_card.dart → FuelRecordsCard`，ADR 0014）：
-   - **摘要行**：平均油耗 `x.x L/100km · 每公里 ¥x.xx`，满箱段口径聚合（`FuelRules.averageFuelConsumptionPer100Km` / `averageCostPerKm`）；无有效段不显示。
-   - **记录行**：日期（ISO 紧凑形态）· 里程 + 金额；下行升数（两位小数）+ 本段油耗（该行闭合的满箱段自身油耗 `x.x L/100km`）；无闭合段（首条满箱 / 部分加油 / 段里程非增折叠）显示"—"。**行点按进编辑**（无冗余编辑图标）。列表倒序（最近优先）默认只显示最近 **5** 条，超出折叠出"展开全部"/"收起"按钮；空态一行文案"还没有加油记录，点「记一笔」开始记录"。
-   - **记一笔/编辑表单**（`showFuelRecordFormSheet`，新增与编辑共用一个 sheet）：五项字段——加油日期（`showSimpleDatePicker`，范围同保养记录：上路日期起、允许未来；**无同日查重**——同车同日多箱合法）+ 里程/金额/升数（`LunioNumberField`，里程整数、金额与升数两位小数）+ 加满开关（**默认开**）；单价 = 金额 ÷ 升数**只读展示**（金额与升数填了才出数值，否则"—"；不可手填）。保存走 `LunioFormSubmit` mixin（saving/行内错误生命周期）→ `shell_actions.dart → saveFuelRecord`（动作层按 id 分新增/编辑 + 整族失效，ADR 0007）→ toast"加油记录已保存"。
+6. **加油记录卡**（`fuel/fuel_records_card.dart → FuelRecordsCard`，ADR 0015，2026-09-22 重定义）：
+   - **摘要行**：`累计加油 ¥x · n 笔`，金额口径 = 实付优先、没填取应付（`FuelRecord.effectiveCostCents`）。
+   - **记录行**：日期（ISO 紧凑形态）· 油品（92# 等）+ 金额（实付优先）；下行 `¥x.xx/升`，实付低于应付时带"省 ¥x"小字（实付 ≥ 应付不算省）。**行点按进编辑**（无冗余编辑图标）。列表倒序（最近优先）默认只显示最近 **5** 条，超出折叠出"展开全部"/"收起"按钮；空态一行文案"还没有加油记录，点「记一笔」开始记录"。
+   - **记一笔/编辑表单**（`showFuelRecordFormSheet`，新增与编辑共用一个 sheet）：五项字段——加油日期（`showSimpleDatePicker`，**上路日期起、上限今天，不能选未来**（2026-09-22 拍板，与保养记录同规则）；**无同日查重**——同车同日多箱合法）+ 油品（一行胶囊 92#/95#/98#/0#，**默认 92#**）+ 单价（`LunioNumberField` 元/升两位小数；**新增态且表单油品 = 油价卡油品时预填生效价**（手填价 > 数据源价，`showFuelRecordFormSheet` 里读 `effectiveFuelPriceProvider`），只在开表单时生效一次、切油品不重算，可改）+ 应付金额（必填，元两位小数）→ **箭头按钮（Icons.east，tooltip"同应付"）** → 实付金额（**选填**，点箭头一键回填应付值；留空 = 无优惠存 null）。校验：单价/应付必须大于 0、实付填了必须非负。保存走 `LunioFormSubmit` mixin → `shell_actions.dart → saveFuelRecord`（动作层按 id 分新增/编辑 + 整族失效，ADR 0007）→ toast"加油记录已保存"。容积 = 应付÷单价由实体构造时算好落库**预留**，页面任何地方不展示。
    - **删除**：只在编辑态出现（表单底部 danger 按钮）→ 确认框"删除加油记录"（确认框在调用方弹，动作经动作层 `removeFuelRecord`）→ toast"加油记录已删除"。
-   - **不联动**：保存加油记录**不更新**车辆当前里程（保养记录是唯一写源，ADR 0014）；加油记录也不进保养费用统计（先各算各的）。
+   - **不联动**：保存加油记录**不更新**车辆当前里程（保养记录是唯一写源）；加油记录不进保养费用统计（统计页另立加油费用卡，见 4.5）。满箱段油耗口径已随重定义删除（`FuelRules` 的段划分/均值函数与卡上油耗 UI 不复存在）。
 
 ---
 

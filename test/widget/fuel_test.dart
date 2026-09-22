@@ -6,6 +6,7 @@ import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/core/theme/lunio_tokens.dart';
+import 'package:lunio/features/shell/fuel/fuel_prices.dart';
 import 'package:lunio/features/shell/fuel/fuel_records_card.dart';
 import 'package:lunio/features/shell/shared/shared_widgets.dart';
 
@@ -637,17 +638,17 @@ void main() {
     expect(find.text('重置'), findsNothing);
   });
 
-  // ---- 加油记录卡（ADR 0014，票 05）----
+  // ---- 加油记录卡（ADR 0015，2026-09-22 重定义版）----
 
-  /// 建车 + 打开开发者/加油开关 + 装配 App 后直泵加油记录卡。
-  /// 入口挂载点已在加油页注释隐藏（雏形先不对用户可见），测试绕过
-  /// 页面直接泵卡组件（pumpApp 的 child 参数）。
+  /// 建车 + 打开开发者/加油开关 + 装配 App 后直泵加油记录卡（卡已重新
+  /// 挂回加油页，直泵只为聚焦本组件）。
   /// 加油记录的播种必须在装配前完成（[buildRecords] 回调拿到 carId 后
   /// 同步写库，provider 首读才能看到），与夹具"播种在装配前"约定一致。
   Future<({TestRepositories repository, int carId})> pumpRecordsCard(
     WidgetTester tester,
-    List<FuelRecord> Function(int carId) buildRecords,
-  ) async {
+    List<FuelRecord> Function(int carId) buildRecords, {
+    List<dynamic> extraOverrides = const [],
+  }) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
@@ -687,27 +688,33 @@ void main() {
     for (final record in buildRecords(carId)) {
       await repository.fuelRepository.saveFuelRecord(record);
     }
-    await pumpApp(tester, database: database, child: const FuelRecordsCard());
+    await pumpApp(
+      tester,
+      database: database,
+      child: const FuelRecordsCard(),
+      extraOverrides: extraOverrides,
+    );
     await tester.pumpAndSettle();
     return (repository: repository, carId: carId);
   }
 
-  /// 加油记录播种造数（金额/升数给常用默认值，fullTank 默认加满）。
+  /// 加油记录播种造数（92# / 单价 8.15 / 应付 300 默认，实付默认不填；
+  /// 容积不传——实体按 应付÷单价 自算）。
   FuelRecord fuelSeed(
     int carId, {
     required String date,
-    required int mileageKm,
-    double volumeLiters = 40,
-    int totalCostCents = 30000,
-    bool fullTank = true,
+    FuelGrade grade = FuelGrade.gasoline92,
+    int unitPriceCents = 815,
+    int payableCents = 30000,
+    int? actualCents,
   }) {
     return FuelRecord(
       carId: carId,
       date: LocalDate.parse(date),
-      mileageKm: mileageKm,
-      volumeLiters: volumeLiters,
-      totalCostCents: totalCostCents,
-      fullTank: fullTank,
+      grade: grade,
+      unitPriceCents: unitPriceCents,
+      payableCents: payableCents,
+      actualCents: actualCents,
     );
   }
 
@@ -716,44 +723,83 @@ void main() {
   ) async {
     final fixture = await pumpRecordsCard(tester, (carId) => []);
 
-    // 入口已注释隐藏、测试直泵卡组件，页面标题断言不再适用。
     // 空态一行文案占位（不隐藏入口）。
     expect(find.text('还没有加油记录，点「记一笔」开始记录'), findsOneWidget);
 
-    // 记一笔：表单 sheet，填里程/金额/升数三格（日期默认生效今天）。
+    // 记一笔：表单 sheet，填单价/应付两格（日期默认生效今天，实付留空
+    // = 无优惠）。
     await tester.tap(find.text('记一笔'));
     await tester.pumpAndSettle();
     expect(find.text('记一笔加油'), findsOneWidget);
-    await tester.enterText(find.byType(TextField).at(0), '12300');
+    await tester.enterText(find.byType(TextField).at(0), '8.15');
     await tester.enterText(find.byType(TextField).at(1), '300');
     await tester.pump();
-    // 单价 = 金额 ÷ 升数，只读展示：升数未填时给占位。
-    expect(find.text('—'), findsWidgets);
-    await tester.enterText(find.byType(TextField).at(2), '40');
-    await tester.pump();
-    expect(find.text('7.50 元/升'), findsOneWidget);
-    // 加满开关默认开。
-    final fullTankSwitch = tester.widget<Switch>(
-      find.byType(Switch).first,
-    );
-    expect(fullTankSwitch.value, isTrue);
-
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await tester.pumpAndSettle();
 
-    // 行出现（默认日期 2026-05-19 · 12,300 km / ¥300.00）；
-    // 只有一条满箱不闭合 → 无摘要行。
-    expect(find.textContaining('2026-05-19 · 12,300 km'), findsOneWidget);
+    // 行出现（默认日期 2026-05-19 · 92#，金额取应付 ¥300.00）；
+    // 实付没填 → 无"省"小字。
+    expect(find.textContaining('2026-05-19 · 92#'), findsOneWidget);
     expect(find.text('¥300.00'), findsOneWidget);
-    expect(find.textContaining('平均油耗'), findsNothing);
+    expect(find.textContaining('省 '), findsNothing);
+    expect(find.text('累计加油 ¥300.00 · 1 笔'), findsOneWidget);
     final records = await fixture.repository
         .listFuelRecordsForCar(fixture.carId);
     expect(records, hasLength(1));
     expect(records.first.date, const LocalDate(2026, 5, 19));
-    expect(records.first.mileageKm, 12300);
-    expect(records.first.totalCostCents, 30000);
-    expect(records.first.volumeLiters, 40);
-    expect(records.first.fullTank, isTrue);
+    expect(records.first.grade, FuelGrade.gasoline92);
+    expect(records.first.unitPriceCents, 815);
+    expect(records.first.payableCents, 30000);
+    expect(records.first.actualCents, isNull);
+    // 容积 = 30000 ÷ 815 = 36.81（预留落库）。
+    expect(records.first.volumeLiters, 36.81);
+  });
+
+  testWidgets('arrow quick-fill copies payable into actual and saves discount', (
+    tester,
+  ) async {
+    final fixture = await pumpRecordsCard(tester, (carId) => []);
+
+    await tester.tap(find.text('记一笔'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '8.15');
+    await tester.enterText(find.byType(TextField).at(1), '300');
+    await tester.pump();
+    // 点应付→实付中间的箭头：实付一键回填应付。
+    await tester.tap(find.byTooltip('同应付'));
+    await tester.pump();
+    expect(find.widgetWithText(TextField, '300'), findsWidgets);
+    // 再把实付手改成优惠价 270 保存。
+    await tester.enterText(find.byType(TextField).at(2), '270');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    // 行金额取实付 ¥270.00，带"省 ¥30.00"小字；单价行 ¥8.15/升。
+    expect(find.text('¥270.00'), findsOneWidget);
+    expect(find.text('省 ¥30.00'), findsOneWidget);
+    expect(find.text('¥8.15/升'), findsOneWidget);
+    final records = await fixture.repository
+        .listFuelRecordsForCar(fixture.carId);
+    expect(records.single.actualCents, 27000);
+  });
+
+  testWidgets('unit price prefills from effective price when grades match', (
+    tester,
+  ) async {
+    // 生效价 7.61（夹具假油价源湖北 92#）+ 油价卡油品默认 92# → 预填。
+    await pumpRecordsCard(
+      tester,
+      (carId) => [],
+      extraOverrides: [
+        effectiveFuelPriceProvider.overrideWithValue(7.61),
+        fuelGradeProvider.overrideWith((ref) => FuelGrade.gasoline92),
+      ],
+    );
+
+    await tester.tap(find.text('记一笔'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, '7.61'), findsOneWidget);
   });
 
   testWidgets('fuel record row opens edit sheet prefilled and saves changes', (
@@ -762,27 +808,27 @@ void main() {
     final fixture = await pumpRecordsCard(
       tester,
       (carId) => [
-        fuelSeed(carId, date: '2026-05-10', mileageKm: 12000),
+        fuelSeed(carId, date: '2026-05-10', actualCents: 27000),
       ],
     );
 
-    // 行点按进编辑，五项字段预填（单价 = 300 ÷ 40 = 7.50 一并展示）。
-    await tester.tap(find.textContaining('2026-05-10 · 12,000 km'));
+    // 行点按进编辑，字段预填（单价 8.15 / 应付 300.00 / 实付 270.00）。
+    await tester.tap(find.textContaining('2026-05-10 · 92#'));
     await tester.pumpAndSettle();
     expect(find.text('编辑加油记录'), findsOneWidget);
-    expect(find.widgetWithText(TextField, '12000'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '8.15'), findsOneWidget);
     expect(find.widgetWithText(TextField, '300.00'), findsOneWidget);
-    expect(find.widgetWithText(TextField, '40.0'), findsOneWidget);
-    expect(find.text('7.50 元/升'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '270.00'), findsOneWidget);
 
-    // 改里程保存：行与库都更新。
-    await tester.enterText(find.byType(TextField).at(0), '12100');
+    // 改应付保存：行金额不变（实付 270 仍是口径值），库里应付更新。
+    await tester.enterText(find.byType(TextField).at(1), '310');
     await tester.tap(find.widgetWithText(FilledButton, '保存修改'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('2026-05-10 · 12,100 km'), findsOneWidget);
     final records = await fixture.repository
         .listFuelRecordsForCar(fixture.carId);
-    expect(records.single.mileageKm, 12100);
+    expect(records.single.payableCents, 31000);
+    expect(records.single.actualCents, 27000);
+    expect(records.single.volumeLiters, 38.04);
   });
 
   testWidgets('fuel record delete asks confirmation and removes the row', (
@@ -791,11 +837,11 @@ void main() {
     final fixture = await pumpRecordsCard(
       tester,
       (carId) => [
-        fuelSeed(carId, date: '2026-05-10', mileageKm: 12000),
+        fuelSeed(carId, date: '2026-05-10'),
       ],
     );
 
-    await tester.tap(find.textContaining('2026-05-10 · 12,000 km'));
+    await tester.tap(find.textContaining('2026-05-10 · 92#'));
     await tester.pumpAndSettle();
     // 编辑态里的"删除"按钮 → 确认框（调用方弹），确认后行与库都清掉。
     await tester.tap(find.text('删除'));
@@ -819,7 +865,7 @@ void main() {
       tester,
       (carId) => [
         for (var day = 1; day <= 6; day++)
-          fuelSeed(carId, date: '2026-05-0$day', mileageKm: 10000 + day * 100),
+          fuelSeed(carId, date: '2026-05-0$day'),
       ],
     );
 
@@ -838,47 +884,19 @@ void main() {
     expect(find.textContaining('2026-05-01'), findsNothing);
   });
 
-  testWidgets(
-    'fuel records card shows average summary and per-row segment consumption',
-    (tester) async {
-      await pumpRecordsCard(
-        tester,
-        (carId) => [
-          // 首条满箱：只做锚点（行内无本段油耗）。
-          fuelSeed(
-            carId,
-            date: '2026-05-01',
-            mileageKm: 10000,
-            volumeLiters: 20,
-            totalCostCents: 15000,
-          ),
-          // 中间部分加油：计入段升数/金额，不闭合段。
-          fuelSeed(
-            carId,
-            date: '2026-05-05',
-            mileageKm: 10200,
-            volumeLiters: 10,
-            totalCostCents: 8000,
-            fullTank: false,
-          ),
-          // 闭合条：段 = 40 升 / 500 km → 8.0 L/100km；每公里 0.66 元。
-          fuelSeed(
-            carId,
-            date: '2026-05-10',
-            mileageKm: 10500,
-            volumeLiters: 30,
-            totalCostCents: 25000,
-          ),
-        ],
-      );
+  testWidgets('fuel records card aggregates summary across discounts', (
+    tester,
+  ) async {
+    await pumpRecordsCard(
+      tester,
+      (carId) => [
+        // 实付 270 优惠一笔 + 实付没填一笔（取应付 300）。
+        fuelSeed(carId, date: '2026-05-01', actualCents: 27000),
+        fuelSeed(carId, date: '2026-05-02'),
+      ],
+    );
 
-      // 摘要行 = 全部有效段聚合（此例只有一段）：8.0 L/100km · ¥0.66。
-      expect(
-        find.text('平均油耗 8.0 L/100km · 每公里 ¥0.66'),
-        findsOneWidget,
-      );
-      // 行内本段油耗只挂在闭合行上（05-10），全局唯一。
-      expect(find.text('8.0 L/100km'), findsOneWidget);
-    },
-  );
+    // 摘要行 = 实付优先逐笔求和：270 + 300 = ¥570.00 · 2 笔。
+    expect(find.text('累计加油 ¥570.00 · 2 笔'), findsOneWidget);
+  });
 }

@@ -46,8 +46,7 @@ import '../../../domain/rules/fuel_rules.dart';
 import '../shared/form_submit.dart';
 import '../shared/formatters.dart';
 import 'fuel_prices.dart';
-// 卡入口注释隐藏后此导入暂不使用（放开挂载点时一并取消注释）。
-// import 'fuel_records_card.dart';
+import 'fuel_records_card.dart';
 import '../shared/modal_feedback.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
@@ -105,11 +104,11 @@ class _FuelContent extends ConsumerWidget {
             savedPercent: prediction?.fuelPercent,
           ),
         ),
-        // 加油记录卡暂不挂载（用户拍板 2026-09-20：功能是雏形，细节待
-        // 打磨，先不对用户可见）。卡本体与测试保留（FuelRecordsCard 是
-        // 公开组件，widget 测试直接泵它），打磨完取消下面两行注释即放开。
-        // const SizedBox(height: 12),
-        // const FuelRecordsCard(),
+        // 加油记录卡（ADR 0015 重定义版）2026-09-22 重新挂载：五字段
+        // 精简录入（日期/油品/单价/应付/实付），取代 2026-09-20 屏蔽的
+        // 雏形版。
+        const SizedBox(height: 12),
+        const FuelRecordsCard(),
       ],
     );
   }

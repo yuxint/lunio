@@ -24,8 +24,8 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、偏好门面、各域仓库（主仓库/目录/加油/备份）、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好、通知服务等（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `features/shell/fuel/fuel_prices.dart`，与本文件互相 import 供失效名单逐出）。
 - `lib/features/shell/app_shell.dart`：主壳层入口，保留平级入口页面挂载（加油项按开关条件显示）、底部导航、生命周期监听和提醒通知同步触发。
 - `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒行组装、通知内容组装与调度 helper、桌面小组件快照组装与同步（`widget_snapshot.dart` / `widget_snapshot_controller.dart`）。
-- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互；费用统计的聚合纯函数（`cost_stats.dart`，总额/年度/月度用记录总费用权威值、项目计费值=项目费用没填不参与、优惠分摊按费用权重最大余数法守恒、其他段守恒（总费用≡Σ项目实付+其他）、月均按首条记录月到当月全程摊薄、项目档案逐次明细）与独立统计页（`cost_stats_page.dart`，路由 `/cost-stats`，**作用域永远当前应用车辆**，项目占比为按实付降序的横向条形列表（全部项目不截断）、年度走势每年一点且单年车整卡隐藏；项目档案 sheet 在 `cost_item_history_sheet.dart`）也在此。
-- `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档；加油记录卡与记一笔/编辑/删除表单在 `fuel_records_card.dart`，满箱段油耗口径纯函数在 domain 的 `FuelRules`）；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`；加油记录数据模型与满箱段油耗口径见 `docs/adr/0014`。
+- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互；费用统计的聚合纯函数（`cost_stats.dart`，总额/年度/月度用记录总费用权威值、项目计费值=项目费用没填不参与、优惠分摊按费用权重最大余数法守恒、其他段守恒（总费用≡Σ项目实付+其他）、月均按首条记录月到当月全程摊薄、项目档案逐次明细）与独立统计页（`cost_stats_page.dart`，路由 `/cost-stats`，**作用域永远当前应用车辆**，项目占比为按实付降序的横向条形列表（全部项目不截断）、年度走势每年一点且单年车整卡隐藏；项目档案 sheet 在 `cost_item_history_sheet.dart`）；加油费用聚合纯函数独立在 `fuel_cost_stats.dart`（口径=实付优先、没填取应付，见 ADR 0015），与保养口径互不掺和。2026-09-22 起统计页新增独立加油费用卡（按年+按月，固定页面最后、头部标签「总费用」）、汇总卡改「总费用｜今年保养｜今年加油」三栏（无加油记录隐藏第三栏）、走势卡改名「保养费用走势」、页面空态守卫放宽为保养+加油都无记录；记录页头部汇总行=「今年保养 + 今年加油」，两段按域各自显隐。
+- `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档；加油记录卡与记一笔/编辑/删除表单在 `fuel_records_card.dart`，2026-09-22 重定义为日期/油品/单价/应付/实付五字段（容积由实体按应付÷单价算好落库预留、页面不展示；单价在表单油品=油价卡油品时预填生效价；应付与实付之间的箭头即「同应付」快捷回填））；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`；加油记录数据模型（应付/实付模型、容积预留、v3 就地重定义）见 `docs/adr/0015`（取代 0014 的模型部分；满箱段油耗口径已删除）。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单提交运行器（`form_submit.dart`，`LunioFormSubmit` mixin：saving/errorText 生命周期 + friendlyError 翻译，新表单直接混入）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`）。
   - `reminders/parking_countdown.dart`：停车倒计时卡片、表单和时间选择器（保存/清除走动作层 `shell_actions.dart`）。
@@ -52,10 +52,10 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/data/repositories/`：数据层按域拆分的仓库家族（共享行↔实体↔Companion 编解码在 `entity_row_codec.dart`，一张表的字段清单全库只有一份）：
   - `lunio_repository.dart`：主仓库——车辆/保养项目/保养记录核心域的事务与校验（应用车辆回退统一走 AppliedCarRules）；
   - `built_in_catalog_repository.dart`：车型目录与默认模板两张内置表 + 首启 bootstrap 幂等对账；
-  - `fuel_repository.dart`：加油预测设置表 + 加油记录表（ADR 0014）+ 油价缓存/手填油价（临时偏好经偏好门面原语存取）；
+  - `fuel_repository.dart`：加油预测设置表 + 加油记录表（ADR 0015 重定义模型）+ 油价缓存/手填油价（临时偏好经偏好门面原语存取）；
   - `backup_repository.dart`：备份导出/恢复/清空数据（恢复与手工录入共用同一份 Companion 字段清单）。
 - `lib/data/preferences/app_preferences.dart`：偏好门面（`LunioPreferences`）——全部偏好 key 常量、编解码与 typed 读写的唯一出口，新偏好进这里加 typed 方法，不要在调用方拼 key 字符串。停车倒计时偏好与提醒抑制 key 前缀也登记在此。
-- `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝）。
+- `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝；v3 的 fuelRecords 条目结构经 ADR 0015 就地重定义，旧结构条目解码即拒）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
@@ -73,8 +73,8 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 ## 数据与契约注意点
 
-- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3（ADR 0014）、备份 JSON `schemaVersion` 为 3（ADR 0014）。数据库升级策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理）+ v3，其余版本直接拒绝。
-- 加油记录（ADR 0014）：`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于保养记录，写加油域代码时别套用保养记录的直觉。
+- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3、备份 JSON `schemaVersion` 为 3（两者的加油结构经 ADR 0015 于 2026-09-22 就地重定义：旧 v3 库不兼容新代码必须卸载重装，含旧结构加油条目的 v3 备份恢复被拒，例外详情见 ADR 0015 与 docs/migration/current-database-schema.md）。数据库升级策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理）+ v3，其余版本直接拒绝。
+- 加油记录（ADR 0015，2026-09-22 重定义）：五项输入=日期（上限今天）/油品（默认 92#）/单价/应付金额/实付金额（选填），容积=应付÷单价由实体算好落库**预留**（页面不展示，与油箱容积无关）；统计口径=实付优先、没填取应付（`FuelRecord.effectiveCostCents` 唯一实现点）。`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于加油记录，别套用保养记录的直觉。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同步考虑版本号、测试和文档。
 - 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。**数据不变量（2026-09-20）**：材料/工时任一有值 ⇒ 项目费用必有值——由表单算链 + 提交清单/备份恢复两写点的 `RecordRules.normalizeItemCost` 补齐共同保证，新写点不要破坏它。
 - 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`、`fuelPredictionEnabled`、`fuelProvince`（默认湖北）、`fuelGrade`、`fuelPriceCache`、`fuelManualPrices`（后两个是临时数据，不进备份）。不要把展示文案当作稳定标识。（`maintenanceDueEnabled` 已于 2026-08-29 移除：保养到期提醒是产品核心能力，不提供关闭入口，审查报告 R5；老库残留 key 无人读取，无害。）
