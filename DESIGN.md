@@ -44,72 +44,84 @@ colors:
   toast-background: "#111827"
   toast-text: "#ffffff"
 typography:
-  display-lg:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: 34px
-    fontWeight: 780
-    lineHeight: 1.08
-    letterSpacing: 0em
+  # 2026-09-24 字号治理：本节重写为与 Flutter 实现（lunio_theme.dart
+  # textTheme + 各组件）一致的刻度，删除 web 原型时期从未落地的
+  # 34/28/21/16 档与 780/760/720 非标准字重。
+  # 字重阶梯：400 正文 / 600 半粗（输入框 label、辅助强调）/ 700 粗
+  # （标签、卡标题、按钮、图表金额）/ 800 特粗（页面标题、大数字）。
+  # 不使用 w900；全 App 最小字号 10px。
+  # fontFamily 统一为 "Inter, SF Pro Text, PingFang SC, Microsoft YaHei,
+  # sans-serif" 回退链（见 lunio_theme.dart fontFamilyFallback），各档
+  # 不再重复声明。
   page-title:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: 28px
-    fontWeight: 780
+    fontSize: 27px
+    fontWeight: 800
     lineHeight: 1.12
-    letterSpacing: 0em
-  sheet-title:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: 21px
-    fontWeight: 780
-    lineHeight: 1.2
-    letterSpacing: 0em
-  card-title-lg:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    note: 页面标题（LunioTopBar，textTheme.headlineLarge）
+  hero-metric:
+    fontSize: 23px
+    fontWeight: 800
+    note: 车辆卡 hero 指标值（FittedBox 防溢出）
+  card-title:
     fontSize: 20px
-    fontWeight: 760
+    fontWeight: 700
     lineHeight: 1.25
-    letterSpacing: 0em
-  section-title:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    note: 卡内大标题/大金额（textTheme.titleLarge）
+  item-title:
     fontSize: 17px
-    fontWeight: 760
+    fontWeight: 700
     lineHeight: 1.2
-    letterSpacing: 0em
-  record-title:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: 16px
-    fontWeight: 780
-    lineHeight: 1.2
-    letterSpacing: 0em
-  body-md:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    note: 列表项标题（textTheme.titleMedium）
+  section-title:
     fontSize: 15px
+    fontWeight: 700
+    lineHeight: 1.2
+    note: 卡片分组标题（LunioSection，2026-09-24 从 12/w800 归位，textTheme.titleSmall）
+  input-label:
+    fontSize: 15px
+    fontWeight: 600
+    note: 输入框 label / 浮动 label
+  body-md:
+    fontSize: 14px
     fontWeight: 400
-    lineHeight: 1.7
-    letterSpacing: 0em
+    lineHeight: 1.55
+    note: 正文（textTheme.bodyMedium）
   body-sm:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 13px
     fontWeight: 400
     lineHeight: 1.4
-    letterSpacing: 0em
+    note: 辅助说明（textTheme.bodySmall）
   label-md:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 13px
-    fontWeight: 720
+    fontWeight: 700
     lineHeight: 1.35
-    letterSpacing: 0em
+    note: 强调标签/按钮/Toast 文字（textTheme.labelLarge、SnackBar）
   label-sm:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 12px
-    fontWeight: 720
+    fontWeight: 700
     lineHeight: 1.35
-    letterSpacing: 0em
-  nav-label:
-    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, SF Pro Text, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    note: 次级标签（textTheme.labelSmall）
+  chart-amount:
+    fontSize: 12px
+    fontWeight: 700
+    note: 图表柱顶金额（费用统计坐标系柱状图；金额槽高 ≥ 字号行高，FittedBox 不得回缩）
+  chart-axis-label:
     fontSize: 11px
-    fontWeight: 720
+    fontWeight: 500
+    note: 图表轴标签（高亮侧 700）
+  chart-axis-tick:
+    fontSize: 10.5px
+    fontWeight: 400
+    note: 图表纵轴刻度（subtle 色）
+  micro-sub:
+    fontSize: 10px
+    fontWeight: 400
+    note: 指标卡副字等最小档——全 App 字号下限
+  nav-label:
+    fontSize: 11px
+    fontWeight: 700
     lineHeight: 1.2
-    letterSpacing: 0em
+    note: 底部导航标签
 spacing:
   xxs: 2px
   xs: 4px

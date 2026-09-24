@@ -858,7 +858,7 @@ void main() {
     );
   });
 
-  testWidgets('fuel records list collapses to latest five with expand-all', (
+  testWidgets('fuel records beyond five scroll inside the card', (
     tester,
   ) async {
     await pumpRecordsCard(
@@ -869,19 +869,58 @@ void main() {
       ],
     );
 
-    // 默认收起：只显示最近 5 条（05-02 ~ 05-06），最早的 05-01 折叠。
-    expect(find.textContaining('2026-05-01'), findsNothing);
-    expect(find.textContaining('2026-05-02'), findsOneWidget);
-    expect(find.text('展开全部'), findsOneWidget);
-
-    await tester.tap(find.text('展开全部'));
-    await tester.pumpAndSettle();
+    // 2026-09-24 第五轮拍板：删除"展开全部/收起"按钮；6 条 > 5 → 收进
+    // 固定 5 行高的卡内滚动窗口，右侧常显滚动条。首屏 = 最近 5 条。
+    expect(find.text('展开全部'), findsNothing);
+    expect(find.text('收起'), findsNothing);
+    expect(find.byType(Scrollbar), findsOneWidget);
+    // 全部行都在树里（ earliest 05-01 只是滚出窗口下方）。
     expect(find.textContaining('2026-05-01'), findsOneWidget);
-    expect(find.text('收起'), findsOneWidget);
+    final viewport = tester.getRect(find.byType(Scrollbar));
+    expect(
+      tester.getRect(find.textContaining('2026-05-01')).top,
+      greaterThan(viewport.bottom),
+    );
 
-    await tester.tap(find.text('收起'));
+    // 卡内向上拖到底：最早一条露进窗口。
+    await tester.drag(
+      find.textContaining('2026-05-06'),
+      const Offset(0, -200),
+    );
     await tester.pumpAndSettle();
-    expect(find.textContaining('2026-05-01'), findsNothing);
+    expect(
+      tester.getRect(find.textContaining('2026-05-01')).bottom,
+      lessThanOrEqualTo(viewport.bottom),
+    );
+
+    // 停稳吸附整行（2026-09-24 复验反馈，与加满预估同一套
+    // RowSnapScrollPhysics，纯手势对齐不记录）：惯性甩动停稳后偏移必
+    // 须落在 60 的整数倍（行槽高）上。
+    await tester.fling(
+      find.textContaining('2026-05-06'),
+      const Offset(0, -300),
+      800,
+    );
+    await tester.pumpAndSettle();
+    final position = tester
+        .state<ScrollableState>(find.byType(Scrollable))
+        .position;
+    expect(position.pixels % 60, closeTo(0, 0.5));
+  });
+
+  testWidgets('fuel records within five render naturally without scrollbar', (
+    tester,
+  ) async {
+    await pumpRecordsCard(
+      tester,
+      (carId) => [
+        for (var day = 1; day <= 5; day++)
+          fuelSeed(carId, date: '2026-05-0$day'),
+      ],
+    );
+    // 恰好 5 条不超量：自然排布、无滚动窗口。
+    expect(find.byType(Scrollbar), findsNothing);
+    expect(find.textContaining('2026-05-01'), findsOneWidget);
   });
 
   testWidgets('fuel records card aggregates summary across discounts', (

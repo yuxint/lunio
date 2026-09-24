@@ -6,8 +6,9 @@
 //   - 头部「加油记录」+「记一笔」按钮（新增表单 sheet 入口）；
 //   - 摘要行：累计加油金额（实付优先口径）+ 笔数；
 //   - 记录行：日期 · 油品 + 实付（没填实付显示应付），下行单价 +
-//     优惠小字；行点按进编辑；默认只显示最近 5 条，超出折叠，可
-//     「展开全部」/「收起」；
+//     优惠小字；行点按进编辑；超过 5 条收进固定高度的卡内滚动窗口
+//     （右侧常显滚动条，2026-09-24 第五轮：删除"展开全部/收起"按钮，
+//     免掉展开后要滚到底才能收起的来回横跳）；
 //   - 空态：一行文案占位（不隐藏入口）。
 //
 // 数据流：watch appliedCarFuelRecordsProvider（按当前用车派生，写库后
@@ -45,11 +46,22 @@ class FuelRecordsCard extends ConsumerStatefulWidget {
 }
 
 class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
-  /// 折叠态默认显示的最近条数（产品拍板：超过一屏太长，默认收 5 条）。
-  static const int _collapsedCount = 5;
+  /// 卡内滚动窗口默认显示的最近条数（产品拍板：超过一屏太长）。
+  static const int _visibleCount = 5;
 
-  /// 是否展开全部（只影响显示条数）。
-  bool _expanded = false;
+  /// 单条记录行的固定槽高：行内上下 padding 16 + 正文两行实测 ~58
+  /// （bodyMedium 14×1.55 + bodySmall 13×1.4 + 2 间距），取 60 留余量
+  /// 防文字溢出。固定槽保证滚动窗口高度 = 恰好 [_visibleCount] 行。
+  static const double _rowExtent = 60.0;
+
+  /// 记录列表卡内滚动的控制器（超过 [_visibleCount] 条时挂右侧滚动条）。
+  final ScrollController _listScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _listScroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +106,10 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
     );
   }
 
-  /// 卡主体：摘要行 + 记录行（倒序 = 最近优先，折叠截断）+ 展开开关。
+  /// 卡主体：摘要行 + 记录行（倒序 = 最近优先）。超过 [_visibleCount]
+  /// 条时收进固定高度的卡内滚动窗口（右侧常显滚动条；2026-09-24 第五
+  /// 轮拍板删除"展开全部/收起"按钮——展开后要滚到底才能收起的来回横
+  /// 跳没了，滚轮直接看全部）；不超过则按实际行数自然排布（无滚动条）。
   /// 记录为空时一行空态文案（不隐藏"记一笔"入口）。
   Widget _buildBody(BuildContext context, List<FuelRecord> records) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
@@ -112,9 +127,10 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
       (sum, record) => sum + record.effectiveCostCents,
     );
     final newestFirst = records.reversed.toList();
-    final visibleRows = _expanded
-        ? newestFirst
-        : newestFirst.take(_collapsedCount).toList();
+    Widget row(FuelRecord record) => _FuelRecordRow(
+          record: record,
+          onEdit: () => showFuelRecordFormSheet(context, ref, record: record),
+        );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -127,19 +143,36 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
           ),
         ),
         const SizedBox(height: 2),
-        for (final record in visibleRows) ...[
-          _FuelRecordRow(
-            record: record,
-            onEdit: () => showFuelRecordFormSheet(context, ref, record: record),
-          ),
-        ],
-        if (records.length > _collapsedCount)
-          Center(
-            child: TextButton(
-              onPressed: () => setState(() => _expanded = !_expanded),
-              child: Text(_expanded ? '收起' : '展开全部'),
+        if (records.length > _visibleCount)
+          // 超量：固定 [_visibleCount] 行高的卡内滚动窗口，右侧常显 3dp
+          // 细滚动条（每行套固定槽高，窗口高度才恒等于整数行）。滚动停
+          // 稳吸附整行（2026-09-24 复验反馈，与加满预估同一套
+          // [RowSnapScrollPhysics]——只对齐不记录，无写库）；内容右缩进
+          // 12dp 给拇指让位——否则右对齐的金额与滚动条拇指重叠。
+          Scrollbar(
+            controller: _listScroll,
+            thumbVisibility: true,
+            thickness: 3,
+            radius: const Radius.circular(2),
+            child: SizedBox(
+              height: _visibleCount * _rowExtent,
+              child: SingleChildScrollView(
+                controller: _listScroll,
+                physics: const RowSnapScrollPhysics(rowExtent: _rowExtent),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    children: [
+                      for (final record in newestFirst)
+                        SizedBox(height: _rowExtent, child: row(record)),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
+          )
+        else
+          for (final record in newestFirst) row(record),
       ],
     );
   }

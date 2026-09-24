@@ -69,6 +69,14 @@ ThemeData buildLunioTheme({Brightness brightness = Brightness.light}) {
         fontWeight: FontWeight.w700,
         height: 1.2,
       ),
+      // 卡片/分组标题档（LunioSection 等）：2026-09-24 字号治理新增——
+      // 过去卡标题借用 labelSmall(12) 手工加粗，视觉上"标题比正文小气"。
+      titleSmall: TextStyle(
+        color: tokens.ink,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+      ),
       bodyMedium: TextStyle(
         color: tokens.muted,
         fontSize: 14,

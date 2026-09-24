@@ -10,30 +10,37 @@
 //   1. 汇总卡：总费用 + 今年保养（有加油记录追加今年加油栏）；
 //   2. 汇总指标行：保养次数（今年小字）/ 单次均价 / 月均（全程摊薄，
 //      不随任何图表联动）/ 上次保养距今；
-//   3. 项目占比：横向条形列表——按实付从多到少排、全部项目不截断，
-//      头部主数字 = 总费用（守恒锚点：各行相加 ≡ 总费用，2026-09-21），
-//      末尾"其他"段吸收无归属的钱；点项目行下钻项目档案 sheet
+//   3. 项目占比：100% 堆叠条 + 紧凑明细行（2026-09-24 C 方案改版，
+//      替代每行条形轨道）——按实付降序分段、主色深→浅、"其他"段灰色；
+//      行 = 色点 | 项目名 | 百分比 | 省额 | 实付，三个数值列固定槽右对
+//      齐；头部一行 = 总费用标签 + 金额 + 累计优惠（2026-09-24 第五轮
+//      压扁，守恒锚点：各行相加 ≡ 总费用），点项目行下钻项目档案
 //      （cost_item_history_sheet.dart）；
-//   4. 保养费用走势：年度柱状图（2026-09-23 改版，取代年度曲线）——
-//      每年一柱 = 该年总费用，横向滚动、柱顶标金额、今年柱主色高亮；
-//      不足 2 条记录整卡不展示（单年车多条记录也展示）；
-//   5. 加油费用卡（2026-09-22 新增，ADR 0015，固定页面最后；
-//      2026-09-23 改版删年度行）：头部总费用 + N 笔 + 全历史连续月度
-//      柱（横向滚动、初始停最右、柱顶标金额、「26.9」式轴标签）；金额
-//      口径 = 实付优先、没填取应付（fuel_cost_stats.dart）。
+//   4. 保养费用（2026-09-24 由"保养费用走势"改名并改 A 方案坐标系
+//      柱状图）——每年一柱 = 该年总费用，柱色统一主色（第五轮：删今
+//      年柱高亮），纵轴刻度 + 虚线网格线、柱顶标金额；图表行为与加油
+//      卡统一：放得下铺满卡宽、超一屏横向滚动（底部滚动条、初始停最
+//      右）；不足 2 条记录整卡不展示；
+//   5. 加油费用卡（2026-09-22 新增，ADR 0015，固定页面最后；2026-09-23
+//      删年度行，2026-09-24 加坐标系，同日第五轮头部一行化）：头部一行
+//      = 总费用 + 月均（"N 笔"删除，月均口径见 fuel_cost_stats.dart）
+//      + 全历史连续月度柱（纵轴固定左侧 + 虚线网格线，柱顶标金额、
+//      「26.9」式轴标签）；金额口径 = 实付优先、没填取应付。
 // 作用域永远是当前应用车辆（2026-09-20 拍板：不提供"全部"/多车切换，
 // 想看别的车先去切换应用车辆），当前车辆名在标题副字展示。
-// 图表语言：全部为 Widget 柱形（无图表库、无 CustomPainter），颜色派
-// 生自 LunioTokens；动效只做一次性入场（条形生长），进页面播一次，
-// 不做持续循环。所有随入场动画变宽/变高的条形必须包在监听 [_entrance]
-// 的 AnimatedBuilder 里——历史上按年条漏包导致"有时不渲染、点开才
-// 出来"的 bug（动画只重建 AnimatedBuilder 子树）。
+// 图表语言：柱形为 Widget 组装、网格线为自绘虚线 painter（无图表库），
+// 颜色派生自 LunioTokens；动效只做一次性入场（条形生长/堆叠条长出），
+// 进页面播一次，不做持续循环。所有随入场动画变宽/变高的条形必须包在
+// 监听 [_entrance] 的 AnimatedBuilder 里——历史上按年条漏包导致"有时
+// 不渲染、点开才出来"的 bug（动画只重建 AnimatedBuilder 子树）。
 // 聚合口径统一收在 cost_stats.dart（纯函数），本文件只负责"把当前车
 // 的数据拿到"与渲染；无车辆/无记录时给空态卡。
 // Java 类比：一个只读报表页——provider ≈ 按当前车参数化的查询服务，
 // 页面本身只做组装结果的表达。
 // ignore_for_file: use_key_in_widget_constructors
 // ignore_for_file: library_private_types_in_public_api
+
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -236,11 +243,7 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
             // 没有对比意义）。
             if (data.records.length >= 2) ...[
               const SizedBox(height: 12),
-              _YearTrendCard(
-                years: stats.years,
-                thisYear: data.today.year,
-                entrance: _entrance,
-              ),
+              _YearTrendCard(years: stats.years, entrance: _entrance),
             ],
           ],
           if (data.fuelRecords.isNotEmpty) ...[
@@ -344,7 +347,7 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
-                      ?.copyWith(color: tokens.muted, fontSize: 9),
+                      ?.copyWith(color: tokens.muted, fontSize: 10),
                 ),
             ],
           ),
@@ -383,48 +386,57 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
     );
   }
 
-  /// 项目占比卡：横向条形列表，按实付从多到少、全部项目不截断；头部
-  /// 主数字 = 总费用（守恒锚点：各行相加 ≡ 总费用，口径见
-  /// cost_stats.dart 文件头），旁边累计优惠小字；末尾"其他"段（仅有
-  /// 缺口时出现）装无归属的钱，不可下钻；点项目行打开该项目档案 sheet
-  /// （[showCostItemHistorySheet]）。列表用 Table 三列布局——项目名列
-  /// 与数值列都取全表最宽（IntrinsicColumnWidth），所有行的条形从同
-  /// 一起点、同一把像素尺开始画（项目名宽窄不一或实付位数不同都会让
-  /// 各行条形的起点/轨道长度参差，比例随之失真）；条形入场时按宽度
-  /// 生长——必须包在 AnimatedBuilder 里，否则动画期间本子树不重建、
-  /// 条形停在进度 0（历史 bug：按年条漏包导致"有时不渲染、点开才
-  /// 出来"）。
+  /// 项目占比卡（2026-09-24 C 方案改版）：一条 100% 堆叠条看结构 +
+  /// 紧凑行列表看明细，替代原"每行一条形轨道"的列表。头部一行 = 总
+  /// 费用标签 + 金额（15/w800，2026-09-24 第五轮由两行压成一行）+ 累
+  /// 计优惠小字（守恒锚点：各行相加 ≡ 总费用）；堆叠条按实付降序分段
+  /// （主色透明度由深到浅），"其他"段灰色吸收无归属的钱；明细行 =
+  /// 色点 | 项目名 | 百分比 | 省额 | 实付，三个数值列固定槽右对齐（百
+  /// 分比/省额/实付各自成一条垂直线，2026-09-24 用户点名要求），无优
+  /// 惠的行省槽留空。点项目行下钻项目档案 sheet
+  /// （cost_item_history_sheet.dart），"其他"段不可下钻。
   Widget _buildProjectCard(
     BuildContext context,
     CostStats stats,
     Map<String, CostItemHistory> historyByName,
   ) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    // 堆叠条与明细行共用同一份行清单（其他段收尾，仅在有缺口时出现）。
+    final rows = [
+      ...stats.topItems,
+      if (stats.otherCents > 0)
+        CostItemShareRow(
+          name: '其他',
+          costCents: 0,
+          discountCents: 0,
+          actualCents: stats.otherCents,
+          fraction: 0,
+        ),
+    ];
     return LunioCard(
       child: LunioSection(
         title: '项目占比',
         children: [
+          // 头部一行：标签 12 muted + 金额 15/w800 基线对齐，右侧累计
+          // 优惠（无优惠整段省略，不留占位）。
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '总费用',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: tokens.muted),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    formatMoneyCents(stats.totalCents),
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                ],
+              Text(
+                '总费用',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: tokens.muted),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                formatMoneyCents(stats.totalCents),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const Spacer(),
               if (stats.totalDiscountCents > 0)
@@ -440,174 +452,178 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
                 ),
             ],
           ),
+          const SizedBox(height: 10),
+          // 100% 堆叠条：分段宽度 = 实付占比（flex 按分值），入场时整体
+          // 从左往右长出（FractionallySizedBox 随入场动画放大）。
           AnimatedBuilder(
             animation: _entrance,
             builder: (context, _) {
-              return Table(
-                columnWidths: const {
-                  // 项目名列与数值列取全表最宽：条形统一起点 + 统一轨道。
-                  0: IntrinsicColumnWidth(),
-                  1: FlexColumnWidth(),
-                  2: IntrinsicColumnWidth(),
-                },
-                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-                children: [
-                  for (final row in stats.topItems)
-                    _projectBarRow(
-                      context,
-                      name: row.name,
-                      actualCents: row.actualCents,
-                      discountCents: row.discountCents,
-                      fraction: row.fraction,
-                      progress: _entrance.value,
-                      barColor: tokens.primary,
-                      onTap: () {
-                        final history = historyByName[row.name];
-                        if (history != null) {
-                          showCostItemHistorySheet(context, history);
-                        }
-                      },
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: _entrance.value.clamp(0.0, 1.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: SizedBox(
+                      height: 14,
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < rows.length; i++)
+                            Flexible(
+                              flex: rows[i].actualCents,
+                              fit: FlexFit.tight,
+                              child: Container(
+                                key: ValueKey('cost-seg-${rows[i].name}'),
+                                color: _stackColor(context, rows, i),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  // "其他"段：无归属费用的聚合（简洁模式费用 + 总费用
-                  // 超出项目合计的差额），不是项目、不可下钻。
-                  if (stats.otherCents > 0)
-                    _projectBarRow(
-                      context,
-                      name: '其他',
-                      actualCents: stats.otherCents,
-                      discountCents: 0,
-                      fraction: barMaxFraction(stats),
-                      progress: _entrance.value,
-                      barColor: tokens.surface3,
-                    ),
-                ],
+                  ),
+                ),
               );
             },
+          ),
+          const SizedBox(height: 10),
+          Column(
+            children: [
+              for (var i = 0; i < rows.length; i++)
+                _shareRow(
+                  context,
+                  row: rows[i],
+                  color: _stackColor(context, rows, i),
+                  totalCents: stats.totalCents,
+                  history: historyByName[rows[i].name],
+                ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  /// 条形列表一行（TableRow）：项目名 | 条形轨道 | 实付（+省额+下钻
-  /// 箭头）。三个单元格各自包 TableRowInkWell（高亮横跨整行），[onTap]
-  /// 为空（"其他"段）时整行不响应；"其他"行灰条、无优惠无箭头。
-  TableRow _projectBarRow(
-    BuildContext context, {
-    required String name,
-    required int actualCents,
-    required int discountCents,
-    required double fraction,
-    required double progress,
-    required Color barColor,
-    VoidCallback? onTap,
-  }) {
+  /// 堆叠条/色点的分段颜色：项目行按实付名次取主色透明度阶梯（深→
+  /// 浅），"其他"段固定灰（surface3）。[rows] 为含其他段的完整行清单。
+  Color _stackColor(
+    BuildContext context,
+    List<CostItemShareRow> rows,
+    int index,
+  ) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final widthFactor = (fraction * progress).clamp(0.0, 1.0);
-    TableCell cell(Widget child) => TableCell(
-          child: TableRowInkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: child,
-            ),
-          ),
-        );
-    return TableRow(
-      children: [
-        cell(
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 96),
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ),
-        cell(
-          // 轨道左右各留 8px：条形不贴项目名与金额（比例尺仍全表统一）。
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: widthFactor <= 0
-                ? const SizedBox(height: 12)
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: FractionallySizedBox(
-                      widthFactor: widthFactor,
-                      child: Container(
-                        // key 供 widget 测试断言"统一起点 + 同一比例尺"。
-                        key: ValueKey('cost-bar-$name'),
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: barColor,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
-        ),
-        cell(
-          // 固定宽槽右对齐（2026-09-23 拍板）：实付槽 + 省槽各占固定
-          // 宽度、文本右对齐（FittedBox 只缩不放），没有优惠的行省槽
-          // 留空——两列各自成一条垂直线，不再跟着实付位数左右漂。
-          Row(
-            children: [
-              SizedBox(
-                width: 64,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    formatMoneyCents(actualCents),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              SizedBox(
-                width: 56,
-                child: discountCents > 0
-                    ? FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          '省 ${formatMoneyCents(discountCents)}',
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: tokens.success,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                        ),
-                      )
-                    : null,
-              ),
-              if (onTap != null) ...[
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.chevron_right,
-                  size: 14,
-                  color: tokens.muted,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
+    if (rows[index].name == '其他') {
+      return tokens.surface3;
+    }
+    return tokens.primary.withValues(
+      alpha: (0.85 - index * 0.14).clamp(0.30, 0.85),
     );
   }
 
+  /// 占比明细一行：色点 | 项目名（截断）| 百分比 | 省额 | 实付。三个
+  /// 数值列固定槽右对齐（FittedBox 只缩不放），无优惠的行省槽留空、
+  /// 保证省额列竖向对齐；[history] 为空（"其他"段）整行不可点。行内
+  /// 不再画条形轨道——结构感由上方堆叠条承担。
+  Widget _shareRow(
+    BuildContext context, {
+    required CostItemShareRow row,
+    required Color color,
+    required int totalCents,
+    required CostItemHistory? history,
+  }) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final pct = totalCents == 0
+        ? 0
+        : (row.actualCents / totalCents * 100).round();
+    return InkWell(
+      onTap: history == null
+          ? null
+          : () => showCostItemHistorySheet(context, history),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                row.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              key: ValueKey('cost-pct-${row.name}'),
+              width: 34,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  '$pct%',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: tokens.muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              key: ValueKey('cost-save-${row.name}'),
+              width: 52,
+              child: row.discountCents > 0
+                  ? FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '省 ${formatMoneyCents(row.discountCents)}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(
+                              color: tokens.success,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 6),
+            SizedBox(
+              key: ValueKey('cost-amt-${row.name}'),
+              width: 64,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  formatMoneyCents(row.actualCents),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
-
-/// 加油费用卡（2026-09-22 新增，ADR 0015；2026-09-23 改版删年度行）：
-/// 头部「总费用 + N 笔」+ 全历史连续月度柱（[_BarStrip]：横向滚动、
-/// 初始停最右、柱顶标金额、「26.9」式轴标签）。金额口径 = 实付优先、
-/// 没填取应付（fuel_cost_stats.dart 纯函数），与保养各卡的守恒/优惠
-/// 口径互不掺和。
+/// 加油费用卡（2026-09-22 新增，ADR 0015；2026-09-23 删年度行；
+/// 2026-09-24 加坐标系，同日第五轮头部一行化）：头部一行 = 「总费用」
+/// 标签 + 金额（15/w800）+ 右侧「月均」（"N 笔"删除，月均 = 总费用 ÷
+/// 首条加油记录月到当月全程摊薄，口径见 fuel_cost_stats.dart）+ 全历
+/// 史连续月度柱（[_AxesColumnChart]：纵轴固定左侧 + 虚线网格线，柱顶
+/// 标金额、「26.9」式轴标签，超一屏滚动/底部滚动条/初始停最右）。金额
+/// 口径 = 实付优先、没填取应付，与保养各卡的守恒/优惠口径互不掺和。
 class _FuelCostCard extends StatelessWidget {
   const _FuelCostCard({
     required this.fuelRecords,
@@ -619,52 +635,45 @@ class _FuelCostCard extends StatelessWidget {
   final LocalDate today;
 
   /// 页面级一次性入场动画（0→1）：月份柱按高度长高，与其他卡共用同一
-  /// 份进度（页面注释的历史 bug：条形必须包在监听动画的 AnimatedBuilder
-  /// 里）。
+  /// 份进度（页面文件头注释的历史 bug：条形必须包在监听动画的
+  /// AnimatedBuilder 里）。
   final Animation<double> entrance;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final stats = buildFuelCostStats(records: fuelRecords);
+    final stats = buildFuelCostStats(records: fuelRecords, today: today);
     final months = fuelMonthlyCents(fuelRecords, today);
-    var maxMonthCents = 0;
-    for (final point in months) {
-      if (point.costCents > maxMonthCents) {
-        maxMonthCents = point.costCents;
-      }
-    }
     return LunioCard(
       child: LunioSection(
         title: '加油费用',
         children: [
+          // 头部一行：总费用标签 + 金额基线对齐，右侧月均小字（与占比
+          // 卡的"累计优惠"同位同层级）。
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    // 2026-09-22 二轮反馈：与记录页头部/汇总卡同词——
-                    // 本卡作用域就是加油，"总费用"即加油总花费。
-                    '总费用',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: tokens.muted),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    formatMoneyCents(stats.totalCents),
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
-                ],
+              Text(
+                // 2026-09-22 二轮反馈：与记录页头部/汇总卡同词——
+                // 本卡作用域就是加油，"总费用"即加油总花费。
+                '总费用',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: tokens.muted),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                formatMoneyCents(stats.totalCents),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const Spacer(),
               Text(
-                '${stats.recordCount} 笔',
+                '月均 ${formatMoneyCents(stats.monthlyAvgCents)}',
                 style: Theme.of(context)
                     .textTheme
                     .labelSmall
@@ -673,18 +682,13 @@ class _FuelCostCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          _BarStrip(
+          _AxesColumnChart(
             entrance: entrance,
             items: [
               for (final point in months)
-                _BarStripItem(
-                  amountCents: point.costCents,
-                  barFraction: maxMonthCents == 0
-                      ? 0.0
-                      : point.costCents / maxMonthCents,
-                  barColor: tokens.primary,
+                _ColumnItem(
+                  valueCents: point.costCents,
                   axisLabel: '${point.year % 100}.${point.month}',
-                  highlight: false,
                   barKey: ValueKey(
                     'fuel-month-bar-${point.year}-${point.month}',
                   ),
@@ -697,15 +701,15 @@ class _FuelCostCard extends StatelessWidget {
   }
 }
 
-/// 保养费用走势卡（2026-09-23 改版：年度曲线改年度柱状图）：每年一柱
-/// = 该年记录总费用合计（复用 stats.years 的年度聚合），横向滚动、
-/// 柱顶标金额、今年柱主色高亮（往年浅色）；曲线的三装饰（峰值浮标/
-/// 上次保养空心环/渐变面积）随改版删除。不足 2 条记录由调用方整卡
-/// 隐藏（cost_stats_page 的内容组装处）。
+/// 保养费用卡（2026-09-24 改版：由"保养费用走势"改名并改 A 方案坐标
+/// 系柱状图；同日第五轮：柱色统一主色、删今年柱高亮、图表行为与加油
+/// 卡统一）：每年一柱 = 该年记录总费用合计（复用 stats.years 的年度聚
+/// 合），纵轴刻度 + 虚线网格线、柱顶标金额；放得下铺满卡宽、年份多到
+/// 超一屏才横向滚动（底部滚动条、初始停最右，见 [_AxesColumnChart]）。
+/// 不足 2 条记录由调用方整卡隐藏（cost_stats_page 的内容组装处）。
 class _YearTrendCard extends StatelessWidget {
   const _YearTrendCard({
     required this.years,
-    required this.thisYear,
     required this.entrance,
   });
 
@@ -713,42 +717,25 @@ class _YearTrendCard extends StatelessWidget {
   /// 记录总费用权威值）。
   final List<CostYearPoint> years;
 
-  /// 生效今天所在年（高亮柱）。
-  final int thisYear;
-
   final Animation<double> entrance;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
     return LunioCard(
       child: LunioSection(
-        title: '保养费用走势',
+        title: '保养费用',
         children: [
           const SizedBox(height: 6),
-          // 一屏约 3 柱（2026-09-24 反馈）：列宽 = 视口宽 ÷ 3，柱距随
-          // 机型自适应；柱体加粗到 28 配合拉开的柱距。
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return _BarStrip(
-                columnWidth: constraints.maxWidth / 3,
-                barWidth: 28,
-                entrance: entrance,
-                items: [
-                  for (final point in years)
-                    _BarStripItem(
-                      amountCents: point.costCents,
-                      barFraction: point.fraction,
-                      barColor: point.year == thisYear
-                          ? tokens.primary
-                          : tokens.primarySoft,
-                      axisLabel: '${point.year}',
-                      highlight: point.year == thisYear,
-                      barKey: ValueKey('cost-year-bar-${point.year}'),
-                    ),
-                ],
-              );
-            },
+          _AxesColumnChart(
+            entrance: entrance,
+            items: [
+              for (final point in years)
+                _ColumnItem(
+                  valueCents: point.costCents,
+                  axisLabel: '${point.year}',
+                  barKey: ValueKey('cost-year-bar-${point.year}'),
+                ),
+            ],
           ),
         ],
       ),
@@ -756,66 +743,64 @@ class _YearTrendCard extends StatelessWidget {
   }
 }
 
-/// 柱状条的一列数据：柱顶金额 + 柱体比例 + 轴标签。走势年度柱与加油
-/// 月度柱共用（[_BarStrip]），渲染层不感知业务语义。
-class _BarStripItem {
-  const _BarStripItem({
-    required this.amountCents,
-    required this.barFraction,
-    required this.barColor,
+/// 坐标系柱状图的一列数据（2026-09-24 A 方案）：柱值 + 轴标签。刻度与
+/// 柱高比例由 [_AxesColumnChart] 按全部柱值统一计算（同一把尺）；柱体
+/// 颜色统一主色（2026-09-24 第五轮拍板，无高亮语义）。
+class _ColumnItem {
+  const _ColumnItem({
+    required this.valueCents,
     required this.axisLabel,
-    required this.highlight,
     required this.barKey,
   });
 
-  /// 柱顶金额（分）；0 = 无花费，不标金额（只留灰色基线桩）。
-  final int amountCents;
-
-  /// 柱高比例（0~1，相对本组最大值，调用方算好）。
-  final double barFraction;
-
-  /// 柱体颜色（调用方按高亮语义给：今年主色/其余浅色）。
-  final Color barColor;
+  /// 柱值（分）；0 = 无花费，柱顶不标金额（只留灰色基线桩）。
+  final int valueCents;
 
   /// 柱下轴标签（年度柱「2024」/ 月度柱「26.9」）。
   final String axisLabel;
-
-  /// 高亮列：柱顶金额与轴标签加粗主色（当前只有一个消费者=今年柱）。
-  final bool highlight;
 
   /// 柱体 key（widget 测试按 key 断言柱存在与几何）。
   final Key barKey;
 }
 
-/// 横向滚动的柱状条（走势年度柱与加油月度柱共用，2026-09-23）：每列
-/// 固定 48px——柱顶金额槽 + 柱体 + 轴标签；内容比视口宽时初始定位到
-/// 最右端（最近的时间在视野内，2026-09-23 拍板）。柱高随入场动画
-/// 长高——整条包在监听 [entrance] 的 AnimatedBuilder 里（页面注释的
-/// 历史 bug：漏包导致"有时不渲染、点开才出来"）。
-class _BarStrip extends StatefulWidget {
-  const _BarStrip({
+/// 坐标系柱状图（2026-09-24 A 方案；同日第五轮行为统一）：左侧纵轴固
+/// 定（0 / 半峰 / 峰三条刻度金额，步进自适应取整、峰刻度 ≥ 最大柱值）
+/// + 横向虚线网格线 + 柱列；柱顶标金额、轴标签在柱下，柱体统一主色。
+/// 行为单一（第五轮拍板，保养年度柱与加油月度柱同一套）：列放得下视
+/// 口时等分铺满、无滚动条；放不下时定宽横向滚动，底部常显 3dp 细滚动
+/// 条、初始停最右——纵轴不随滚动消失，金额参照始终可见。柱高随入场
+/// 动画长高——整图包在监听 [entrance] 的 AnimatedBuilder 里（页面文件
+/// 头注释的历史 bug：漏包导致条形停在进度 0）。
+class _AxesColumnChart extends StatefulWidget {
+  const _AxesColumnChart({
     required this.items,
     required this.entrance,
-    this.columnWidth = 48,
-    this.barWidth = 16,
   });
 
-  final List<_BarStripItem> items;
+  final List<_ColumnItem> items;
   final Animation<double> entrance;
 
-  /// 列宽。加油月度柱用默认 48（一屏约 7 个月）；保养走势卡传视口宽
-  /// ÷ 3（一屏约 3 柱、柱距拉开，2026-09-24 反馈），由调用方用
-  /// LayoutBuilder 按实际视口算——任何机型都正好一屏 3 柱。
-  final double columnWidth;
-
-  /// 柱体宽。走势柱加粗到 28（列宽变大后 16 太瘦），月度柱默认 16。
-  final double barWidth;
-
   @override
-  State<_BarStrip> createState() => _BarStripState();
+  State<_AxesColumnChart> createState() => _AxesColumnChartState();
 }
 
-class _BarStripState extends State<_BarStrip> {
+class _AxesColumnChartState extends State<_AxesColumnChart> {
+  /// 纵轴列宽 / 滚动模式列宽（第五轮 48→64：一屏约 4~5 个月，拉开柱
+  /// 顶金额的间距）/ 柱体宽（年度柱与月度柱统一）/ 金额槽高 / 柱区高 /
+  /// 轴标签槽高（含上间距）。金额槽 16 = 12px 字号的实际行高
+  /// （2026-09-24 二轮提字号：槽只有 12 时 FittedBox 会把 12px 文字再
+  /// 缩回 ~9px，等于白提——槽高必须 ≥ 字号行高，提字号才算数）。
+  static const _axisWidth = 34.0;
+  static const _columnWidth = 64.0;
+  static const _barWidth = 16.0;
+  static const _amountSlot = 16.0;
+  static const _barMaxHeight = 96.0;
+  static const _labelSlot = 18.0;
+
+  /// 列总高：金额槽 + 间距 + 柱区 + 轴标签槽。
+  static const _plotHeight =
+      _amountSlot + 3 + _barMaxHeight + 4 + _labelSlot;
+
   final ScrollController _scroll = ScrollController();
 
   /// 初始定位只做一次：之后的重建（数据刷新/入场动画重建）不再打断
@@ -845,65 +830,230 @@ class _BarStripState extends State<_BarStrip> {
     });
   }
 
+  /// 刻度三档（0 / 半峰 / 峰）：步进取整到常见金额档（¥50 → ¥1 万），
+  /// 取第一个 ≥ 最大柱值一半的步进，峰刻度 = 步进 × 2 ≥ 最大柱值——
+  /// 最高柱顶不会顶穿网格线。返回 [0, 半峰, 峰]，单位分。
+  List<int> _ticks(int maxValueCents) {
+    const steps = [
+      5000,
+      10000,
+      20000,
+      25000,
+      50000,
+      100000,
+      200000,
+      250000,
+      500000,
+      1000000,
+    ];
+    for (final step in steps) {
+      if (step >= maxValueCents / 2) {
+        return [0, step, step * 2];
+      }
+    }
+    final top = (maxValueCents / 1000000).ceil() * 1000000;
+    return [0, top ~/ 2, top];
+  }
+
+  /// 刻度金额文案（整数元，不带小数——轴上两位小数太挤）。
+  String _tickLabel(int cents) => '¥${(cents / 100).round()}';
+
   @override
   Widget build(BuildContext context) {
     _scheduleJumpToEnd();
     return AnimatedBuilder(
       animation: widget.entrance,
       builder: (context, _) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          controller: _scroll,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (final item in widget.items)
-                _barColumn(context, item, widget.entrance.value),
-            ],
-          ),
+        final tokens = Theme.of(context).extension<LunioTokens>()!;
+        final maxCents = widget.items.fold(
+          0,
+          (max, item) => item.valueCents > max ? item.valueCents : max,
+        );
+        final ticks = _ticks(maxCents);
+        final topTick = ticks[2];
+        // 柱区底部（基线）在列内的 y 坐标；柱高按峰刻度归一（而非按最
+        // 大柱值），柱顶不会越过峰刻度线。
+        final baseY = _plotHeight - _labelSlot;
+        double yFor(int cents) => baseY -
+            (topTick == 0 ? 0.0 : (cents / topTick) * _barMaxHeight);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 纵轴：固定在左，不随滚动区移动（滚动时金额参照可见）。
+            SizedBox(
+              width: _axisWidth,
+              height: _plotHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final tick in ticks)
+                    Positioned(
+                      top: yFor(tick) - 6,
+                      right: 0,
+                      child: SizedBox(
+                        width: _axisWidth - 4,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            _tickLabel(tick),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  fontSize: 10.5,
+                                  color: tokens.subtle,
+                                ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 统一行为（第五轮）：内容宽（列数 × 列宽）放得下视口
+                  // 就等分铺满、无滚动条；放不下才定宽横向滚动 + 底部常
+                  // 显细滚动条。保养年度柱与加油月度柱走同一套逻辑。
+                  final needsScroll =
+                      widget.items.length * _columnWidth >
+                          constraints.maxWidth;
+                  if (!needsScroll) {
+                    return _plot(context, ticks, yFor, tokens);
+                  }
+                  // 视口取整放下整数根柱：柱宽在 64 基础上微调放大（≤+
+                  // 一柱的分摊），滚动范围因此必然是柱宽整数倍——初始停
+                  // 最右时左右两缘都是完整的月/年，不露半根（2026-09-24
+                  // 五轮复验反馈）。
+                  final visibleColumns =
+                      (constraints.maxWidth / _columnWidth).floor();
+                  final columnWidth =
+                      constraints.maxWidth / visibleColumns;
+                  _scheduleJumpToEnd();
+                  return Scrollbar(
+                    controller: _scroll,
+                    thumbVisibility: true,
+                    thickness: 3,
+                    radius: const Radius.circular(2),
+                    // 底边留 6dp 给滚动条：拇指画在留白条上，与轴标签
+                    // 拉开间距（五轮复验反馈：3dp 太贴）。
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        controller: _scroll,
+                        // 停稳吸附整柱（2026-09-24 复验反馈，与加满预估
+                        // 同一套吸附物理，按校准后的柱宽取整步长）——手动
+                        // 拖停后两缘仍保持完整的月/年；纯手势层对齐，
+                        // 不做任何持久化。
+                        physics: RowSnapScrollPhysics(rowExtent: columnWidth),
+                        child: _plot(
+                          context,
+                          ticks,
+                          yFor,
+                          tokens,
+                          columnWidth: columnWidth,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );
   }
 
-  /// 柱状一列（宽 = [_BarStrip.columnWidth]）：金额槽（固定高，0 元
-  /// 留空保证各行柱体对齐）+ 柱体（高相对组内最大，随入场动画长高；
-  /// 0 元画 2dp 灰桩）+ 轴标签。金额居中在柱体正上方（列宽加大后
-  /// 右对齐会漂离柱体）。
-  Widget _barColumn(
+  /// 绘图区：虚线网格线（三条，含基线）铺满全宽 + 柱列。[columnWidth]
+  /// 为 null（放得下）宽 = 视口宽、柱列等分；否则（滚动模式）宽 = 列数
+  /// × [columnWidth]（随内容一起滚，列宽由调用方取整校准过）。
+  Widget _plot(
     BuildContext context,
-    _BarStripItem item,
-    double progress,
-  ) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    const maxBarHeight = 44.0;
-    final hasCost = item.amountCents > 0;
-    final barHeight = hasCost
-        ? (item.barFraction * maxBarHeight * progress).clamp(3.0, maxBarHeight)
-        : 2.0;
-    final amountColor =
-        item.highlight ? tokens.ink : tokens.muted;
-    final axisColor = item.highlight ? tokens.primary : tokens.muted;
+    List<int> ticks,
+    double Function(int) yFor,
+    LunioTokens tokens, {
+    double? columnWidth,
+  }) {
+    final stretch = columnWidth == null;
     return SizedBox(
-      width: widget.columnWidth,
+      height: _plotHeight,
+      width: stretch ? null : widget.items.length * columnWidth,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (final tick in ticks)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: yFor(tick),
+              child: SizedBox(
+                height: 1,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: _DashedLinePainter(color: tokens.line),
+                ),
+              ),
+            ),
+          Positioned.fill(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final item in widget.items)
+                  _column(
+                    context,
+                    item,
+                    ticks[2],
+                    widget.entrance.value,
+                    columnWidth: columnWidth,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 柱状一列：金额槽（0 元留空）+ 柱体（高按峰刻度归一、随入场动画
+  /// 长高；0 元画 2dp 灰桩，有花费统一主色）+ 轴标签。铺满模式等分视
+  /// 口、滚动模式定宽（[columnWidth]）。
+  Widget _column(
+    BuildContext context,
+    _ColumnItem item,
+    int topTick,
+    double progress, {
+    double? columnWidth,
+  }) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final hasCost = item.valueCents > 0;
+    final fraction = topTick == 0 ? 0.0 : item.valueCents / topTick;
+    final barHeight = hasCost
+        ? (fraction * _barMaxHeight * progress).clamp(3.0, _barMaxHeight)
+        : 2.0;
+    final Widget column = SizedBox(
+      width: columnWidth,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            height: 12,
+            height: _amountSlot,
             child: hasCost
                 ? FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.center,
                     child: Text(
-                      formatMoneyCents(item.amountCents),
+                      formatMoneyCents(item.valueCents),
                       style: Theme.of(context)
                           .textTheme
                           .labelSmall
                           ?.copyWith(
-                            fontSize: 9,
-                            color: amountColor,
+                            fontSize: 12,
+                            color: tokens.muted,
                             fontWeight: FontWeight.w700,
                           ),
                     ),
@@ -912,15 +1062,15 @@ class _BarStripState extends State<_BarStrip> {
           ),
           const SizedBox(height: 3),
           SizedBox(
-            height: maxBarHeight,
+            height: _barMaxHeight,
             child: Align(
               alignment: Alignment.bottomCenter,
               child: Container(
                 key: item.barKey,
-                width: widget.barWidth,
+                width: _barWidth,
                 height: barHeight,
                 decoration: BoxDecoration(
-                  color: hasCost ? item.barColor : tokens.line,
+                  color: hasCost ? tokens.primary : tokens.line,
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
@@ -932,27 +1082,40 @@ class _BarStripState extends State<_BarStrip> {
             textAlign: TextAlign.center,
             maxLines: 1,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontSize: 9,
-                  color: axisColor,
-                  fontWeight: item.highlight ? FontWeight.w800 : FontWeight.w500,
+                  fontSize: 11,
+                  color: tokens.muted,
+                  fontWeight: FontWeight.w500,
                 ),
           ),
         ],
       ),
     );
+    return columnWidth == null ? Expanded(child: column) : column;
   }
 }
 
-/// 其他段的条宽比例：其他段实付 ÷ 全部行最大实付（与 cost_stats.dart
-/// 的行内 fraction 同一把尺——barMax = max(项目实付最大值, 其他段)）。
-/// 这里反推最大值而不是让纯函数多发一份字段：占比卡是它唯一的消费者。
-double barMaxFraction(CostStats stats) {
-  var maxCents = stats.otherCents;
-  for (final row in stats.topItems) {
-    if (row.actualCents > maxCents) {
-      maxCents = row.actualCents;
+/// 横向虚线网格线（1dp 高、3px 划 3px 空）。
+class _DashedLinePainter extends CustomPainter {
+  const _DashedLinePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    const dash = 3.0;
+    for (var x = 0.0; x < size.width; x += dash * 2) {
+      canvas.drawLine(
+        Offset(x, 0.5),
+        Offset(math.min(x + dash, size.width), 0.5),
+        paint,
+      );
     }
   }
-  return maxCents == 0 ? 0.0 : stats.otherCents / maxCents;
-}
 
+  @override
+  bool shouldRepaint(_DashedLinePainter oldDelegate) =>
+      oldDelegate.color != color;
+}

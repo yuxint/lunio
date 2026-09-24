@@ -32,8 +32,6 @@
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
-// FrictionSimulation/SpringSimulation 在 physics 包里，material 不带。
-import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
@@ -48,6 +46,7 @@ import '../shared/formatters.dart';
 import 'fuel_prices.dart';
 import 'fuel_records_card.dart';
 import '../shared/modal_feedback.dart';
+import '../shared/scroll_snap.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
 
@@ -776,74 +775,6 @@ class _ManualPriceFormState extends State<_ManualPriceForm>
 /// 档位行高（列表吸附与定高的基准，两处必须一致）。
 const double _kTierRowExtent = 44;
 
-/// 档位列表的整行吸附物理：滚动停稳后把偏移落在整行边界。
-///
-/// 吸附要"跟手"，甩动惯性不能扔（原实现只吸附到松手位置最近的整行，
-/// 快速一划列表最多挪半行多，手感像跟不上手指）。做法照搬官方
-/// FixedExtentScrollPhysics 的弹道投射（list_wheel_scroll_view.dart）：
-///  1. 已越界且继续朝界外走 → 交给父物理（平台默认）拉回边界；
-///  2. 用父物理的自然摩擦弹道算出"不吸附时会停在哪"，取最近整行作目标；
-///  3. 速度太小翻不过半行 → 弹簧弹回目标行；否则用
-///     FrictionSimulation.through 精确滑到目标行（惯性手感保留）。
-/// 无论走哪条路径，弹道终点都严格对齐整行边界——ScrollEnd 时偏移必已
-/// 对齐，可直接写库（不能在 ScrollEnd 通知里再 animateTo——滚动活动
-/// 收尾期间改活动会被滚动位置静默忽略）。
-class _RowSnapScrollPhysics extends ScrollPhysics {
-  const _RowSnapScrollPhysics({required this.rowExtent, super.parent});
-
-  final double rowExtent;
-
-  @override
-  _RowSnapScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      _RowSnapScrollPhysics(rowExtent: rowExtent, parent: buildParent(ancestor));
-
-  @override
-  Simulation? createBallisticSimulation(
-    ScrollMetrics position,
-    double velocity,
-  ) {
-    // 情形 1：越界还朝界外走，边界回弹交给父物理。
-    if ((velocity <= 0.0 && position.pixels <= position.minScrollExtent) ||
-        (velocity >= 0.0 && position.pixels >= position.maxScrollExtent)) {
-      return super.createBallisticSimulation(position, velocity);
-    }
-    // 情形 2：父物理自然弹道的停点 → 最近整行（越界停点夹回边界档）。
-    final naturalSimulation = super.createBallisticSimulation(
-      position,
-      velocity,
-    );
-    final naturalStop =
-        naturalSimulation?.x(double.infinity) ?? position.pixels;
-    final maxIndex = (position.maxScrollExtent / rowExtent).floor();
-    final targetIndex = (naturalStop / rowExtent).round().clamp(0, maxIndex);
-    final target = targetIndex * rowExtent;
-    final tolerance = toleranceFor(position);
-    // 情形 3：没速度且已在目标行上，不再模拟。
-    if (velocity.abs() < tolerance.velocity &&
-        (target - position.pixels).abs() < tolerance.distance) {
-      return null;
-    }
-    final currentIndex = (position.pixels / rowExtent).round();
-    // 情形 4：速度太小翻不过当前行的半程，弹簧弹回目标行。
-    if (targetIndex == currentIndex) {
-      return SpringSimulation(
-        spring,
-        position.pixels,
-        target,
-        velocity,
-        tolerance: tolerance,
-      );
-    }
-    // 情形 5：调摩擦系数让自然弹道恰好停在目标整行上（保留惯性）。
-    return FrictionSimulation.through(
-      position.pixels,
-      target,
-      velocity,
-      tolerance.velocity * velocity.sign,
-    );
-  }
-}
-
 /// 档位列表卡：全量档位（100%→0%）滚动选择，第一行 = 剩余油量。
 ///
 /// 交互规则（ADR 0002）：
@@ -959,50 +890,65 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
   }
 
   /// 滚动列表：表头（当前油量/可加油量/加满价格/调价后价格）+ 定高窗口
-  /// + 每档定行高；滚动停稳吸附整行并落库。
+  /// + 每档定行高；滚动停稳吸附整行并落库。右侧常显细滚动条（2026-09-24
+  /// 五轮复验反馈补齐，与加油记录卡/费用统计图表同款样式），表头与行内
+  /// 容同步右缩进 12dp 给拇指让位（金额列右对齐，不缩会重叠）。
   Widget _buildTierList(BuildContext context, double price) {
     final capacity = widget.capacity!;
     final predictedPrice = ref.watch(predictedFuelPriceProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _TierHeaderRow(),
+        const Padding(
+          padding: EdgeInsets.only(right: 12),
+          child: _TierHeaderRow(),
+        ),
         const SizedBox(height: 4),
         NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,
-          child: SizedBox(
-            height: _visibleRows * _rowExtent,
-            child: ListView.builder(
-              controller: _controller,
-              physics: const _RowSnapScrollPhysics(rowExtent: _kTierRowExtent),
-              itemExtent: _rowExtent,
-              // 底部留出"窗口高度 - 一行"的空白：否则滚到底时 0% 那档
-              // 只能出现在窗口底部，永远到不了第一行。
-              padding: EdgeInsets.only(bottom: (_visibleRows - 1) * _rowExtent),
-              itemCount: _tiers.length,
-              itemBuilder: (context, index) => _TierRow(
-                percent: _tiers[index],
-                litersInTank: FuelRules.litersInTank(
-                  fuelPercent: _tiers[index],
-                  tankCapacityLiters: capacity,
+          child: Scrollbar(
+            controller: _controller,
+            thumbVisibility: true,
+            thickness: 3,
+            radius: const Radius.circular(2),
+            child: SizedBox(
+              height: _visibleRows * _rowExtent,
+              child: ListView.builder(
+                controller: _controller,
+                physics:
+                    const RowSnapScrollPhysics(rowExtent: _kTierRowExtent),
+                itemExtent: _rowExtent,
+                // 底部留出"窗口高度 - 一行"的空白：否则滚到底时 0% 那档
+                // 只能出现在窗口底部，永远到不了第一行。
+                padding: EdgeInsets.only(
+                  right: 12,
+                  bottom: (_visibleRows - 1) * _rowExtent,
                 ),
-                litersToFill: FuelRules.litersToFill(
-                  fuelPercent: _tiers[index],
-                  tankCapacityLiters: capacity,
+                itemCount: _tiers.length,
+                itemBuilder: (context, index) => _TierRow(
+                  percent: _tiers[index],
+                  litersInTank: FuelRules.litersInTank(
+                    fuelPercent: _tiers[index],
+                    tankCapacityLiters: capacity,
+                  ),
+                  litersToFill: FuelRules.litersToFill(
+                    fuelPercent: _tiers[index],
+                    tankCapacityLiters: capacity,
+                  ),
+                  costCents: FuelRules.fullTankCostCents(
+                    fuelPercent: _tiers[index],
+                    tankCapacityLiters: capacity,
+                    pricePerLiter: price,
+                  ),
+                  costAfterCents: predictedPrice == null
+                      ? null
+                      : FuelRules.fullTankCostCents(
+                          fuelPercent: _tiers[index],
+                          tankCapacityLiters: capacity,
+                          pricePerLiter: predictedPrice,
+                        ),
+                  isCurrent: index == _firstIndex,
                 ),
-                costCents: FuelRules.fullTankCostCents(
-                  fuelPercent: _tiers[index],
-                  tankCapacityLiters: capacity,
-                  pricePerLiter: price,
-                ),
-                costAfterCents: predictedPrice == null
-                    ? null
-                    : FuelRules.fullTankCostCents(
-                        fuelPercent: _tiers[index],
-                        tankCapacityLiters: capacity,
-                        pricePerLiter: predictedPrice,
-                      ),
-                isCurrent: index == _firstIndex,
               ),
             ),
           ),

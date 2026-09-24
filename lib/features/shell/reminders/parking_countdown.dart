@@ -176,7 +176,9 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
                                 style: Theme.of(context).textTheme.titleLarge
                                     ?.copyWith(
                                       color: color,
-                                      fontWeight: FontWeight.w900,
+                                      // 2026-09-24 字号治理：字重阶梯定
+                                      // 400/600/700/800，取消孤例 w900。
+                                      fontWeight: FontWeight.w800,
                                     ),
                               ),
                             ),

@@ -200,20 +200,22 @@ private struct SmallOverviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(day.overview)
-                .font(.system(size: 11.5, weight: .semibold))
+                // 2026-09-24 二轮提档：小组件是远距离一瞥的表面，数字档
+                // 全面上调（9→10→11），最小不低于 11。
+                .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(day.overviewColor)
                 .lineLimit(1)
             ForEach(Array(day.items.prefix(4).enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 3) {
                     Text(item.name)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
                     Spacer(minLength: 3)
                     Text(item.percentText)
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     Text(item.badge)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(LunioStatusColor.color(for: item.status))
                 }
                 // 每行均分剩余高度，行数不足 4 时也不留成块空白。
@@ -238,29 +240,32 @@ private struct MediumOverviewView: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(day.overview)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(day.overviewColor)
                     .lineLimit(1)
             }
             .padding(.bottom, 6)
             ForEach(Array(day.items.prefix(3).enumerated()), id: \.offset) { _, item in
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 4) {
+                // 2026-09-24 对齐修正：右侧百分比/状态徽章与左侧"名称 +
+                // 详情"两行整体垂直居中（原来挂在名称行上，两行内容头
+                // 重脚轻不协调）。
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(item.name)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text(item.percentText)
-                            .font(.system(size: 10))
+                        Text(item.detail)
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        Text(item.badge)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(LunioStatusColor.color(for: item.status))
+                            .lineLimit(1)
                     }
-                    Text(item.detail)
-                        .font(.system(size: 9))
+                    Spacer(minLength: 8)
+                    Text(item.percentText)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    Text(item.badge)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LunioStatusColor.color(for: item.status))
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)

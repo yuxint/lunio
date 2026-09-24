@@ -82,22 +82,36 @@ void main() {
   });
 
   group('buildFuelCostStats', () {
-    test('总额与笔数（实付优先口径）', () {
+    test('总额/笔数/月均（实付优先口径；月均 = 总额 ÷ 首条记录月到当月）',
+        () {
       final stats = buildFuelCostStats(
         records: [
           record('2024-03-01', payableCents: 10000),
           record('2026-09-01', payableCents: 30000, actualCents: 27000),
         ],
+        today: today,
       );
       // 100（应付）+ 270（实付）= ¥370.00。
       expect(stats.totalCents, 37000);
       expect(stats.recordCount, 2);
+      // 2024-03 → 2026-09 共 31 个自然月（含无记录月），全程摊薄。
+      expect(stats.monthlyAvgCents, 1194); // 37000 ÷ 31 = 1193.5 → 1194。
+    });
+
+    test('记录全部晚于生效今天（异常数据）：按 1 个月摊，月均 = 总额', () {
+      final stats = buildFuelCostStats(
+        records: [record('2026-09-01', payableCents: 30000)],
+        today: const LocalDate(2026, 1, 1),
+      );
+      expect(stats.totalCents, 30000);
+      expect(stats.monthlyAvgCents, 30000);
     });
 
     test('空记录：全 0', () {
-      final stats = buildFuelCostStats(records: const []);
+      final stats = buildFuelCostStats(records: const [], today: today);
       expect(stats.totalCents, 0);
       expect(stats.recordCount, 0);
+      expect(stats.monthlyAvgCents, 0);
     });
   });
 }

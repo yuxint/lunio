@@ -221,9 +221,9 @@ class LunioSection extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800),
+                // 2026-09-24 字号治理：卡标题从 labelSmall(12/w800) 归位
+                // 到 titleSmall(15/w700)——标题不再比正文小。
+                style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
             ?trailing,
