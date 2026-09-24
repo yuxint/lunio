@@ -1,7 +1,8 @@
 // cost_stats 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）：
-// 统计页渲染（汇总/指标/项目占比条形列表/年度走势/默认应用车辆作用域 +
-// 副标题车辆名）、空态（无记录/无车）、守恒（其他段吸收无归属费用）、
-// 优惠展示、单年车走势隐藏、记录页汇总行入口、我的页入口、返回键。
+// 统计页渲染（汇总/指标/项目占比条形列表/年度走势柱/默认应用车辆作用
+// 域 + 副标题车辆名）、空态（无记录/无车）、守恒（其他段吸收无归属费
+// 用）、优惠展示、单条记录走势隐藏、加油卡全历史月度柱、记录页汇总行
+// 入口、我的页入口、返回键。
 // 播种必须在 pumpApp 之前：装配后直写库不会触发 provider 失效。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -184,6 +185,62 @@ Future<AppDatabase> seedCarWithDiscountRecord() async {
   return database;
 }
 
+/// 播种一辆车 + 同年（2026）两条记录：2026-05-01 优惠记录（同
+/// [seedCarWithDiscountRecord]）+ 2026-03-01 ¥100 简洁记录。单年双条，
+/// 用于锁定"走势卡按记录条数判断、不按年份"（2026-09-23 拍板）。
+Future<AppDatabase> seedCarWithTwoRecordsSameYear() async {
+  final database = AppDatabase.inMemory();
+  addTearDown(database.close);
+  final bundle = testRepository(database);
+  await bundle.ensureBootstrapData();
+  final carId = await createCarWithDefaultItems(
+    database,
+    Car(
+      brand: '本田',
+      model: '思域（燃油版）',
+      currentMileageKm: 12000,
+      roadDate: const LocalDate(2020, 1, 1),
+      sync: _sync,
+    ),
+  );
+  final oilId =
+      (await bundle.listMaintenanceItemsForCar(carId))
+          .firstWhere((item) => item.name == '机油')
+          .id!;
+  await bundle.repository.saveMaintenanceRecord(
+    MaintenanceRecord(
+      carId: carId,
+      date: const LocalDate(2026, 5, 1),
+      itemIds: [oilId],
+      itemCosts: [
+        RecordItemCost(
+          itemId: oilId,
+          materialCents: 15000,
+          laborCents: 8000,
+          costCents: 23000,
+        ),
+      ],
+      costCents: 18000,
+      mileageKm: 12000,
+      sync: _sync,
+    ),
+  );
+  await bundle.repository.saveMaintenanceRecord(
+    MaintenanceRecord(
+      carId: carId,
+      date: const LocalDate(2026, 3, 1),
+      // 简洁模式形态：挂项目但费用全空（校验要求 itemIds 非空）。
+      itemIds: [oilId],
+      itemCosts: const [],
+      costCents: 10000,
+      mileageKm: 11000,
+      sync: _sync,
+    ),
+  );
+  await bundle.setAppliedCarId(carId);
+  return database;
+}
+
 /// 经深链通道打开统计页（go 语义落页，用于渲染/切换类断言；注意它
 /// 不是 push——返回键用例必须走真实入口），并等数据与转场动画就绪。
 Future<void> openCostStatsPage(WidgetTester tester) async {
@@ -207,7 +264,8 @@ void main() {
       // 无加油记录：汇总卡不显示"今年加油"栏，页面也无加油费用卡。
       expect(find.text('今年加油'), findsNothing);
       expect(find.text('加油费用'), findsNothing);
-      expect(find.text('¥280.00'), findsOneWidget);
+      // ¥280.00 两处：汇总卡"今年保养" + 走势卡 2026 柱顶（金额全格式）。
+      expect(find.text('¥280.00'), findsNWidgets(2));
       expect(find.text('¥52.00'), findsNothing);
       // 汇总指标行：2 条记录、均价 19000、月均 = 38000 ÷ 15 个月 =
       // 2533（全程摊薄，2025-03 → 2026-05）、上次 18 天前。
@@ -226,14 +284,23 @@ void main() {
       expect(find.text('¥50.00'), findsOneWidget);
       expect(find.text('累计优惠'), findsNothing);
       expect(find.text('未知项目'), findsNothing);
-      // 年度走势卡：两个年份 → 展示；画布真的有宽度（零宽 bug 回归锚）。
+      // 年度走势柱（2026-09-23 改版）：2 条记录 → 展示；两年各一柱、
+      // 柱顶标金额；柱高同一把尺（比例 = 两年费用比，入场动画已 settle）；
+      // 一屏约 3 柱（2026-09-24 反馈：列宽 = 视口宽 ÷ 3）→ 柱距远大于
+      // 加油月度柱的 48px，柱体加粗 28。
       expect(find.text('保养费用走势'), findsOneWidget);
       expect(find.text('2025'), findsOneWidget);
       expect(find.text('2026'), findsOneWidget);
-      final trendPaint = tester.getSize(
-        find.byKey(const ValueKey('cost-trend-paint')),
+      expect(find.text('¥100.00'), findsOneWidget); // 2025 柱顶。
+      final bar2025 = tester.getRect(
+        find.byKey(const ValueKey('cost-year-bar-2025')),
       );
-      expect(trendPaint.width, greaterThan(200));
+      final bar2026 = tester.getRect(
+        find.byKey(const ValueKey('cost-year-bar-2026')),
+      );
+      expect(bar2025.width, 28.0);
+      expect(bar2026.left - bar2025.left, greaterThan(150));
+      expect(bar2026.height / bar2025.height, closeTo(28000 / 10000, 0.1));
       // 条形统一起点 + 同一比例尺（Table 三列全表定宽）：机油行与"其他"
       // 行的条形左边缘相同，宽度比 = 实付比（330 : 50）。轨道若随行内
       // 内容宽窄变化（旧行式布局），比例会失真、此处即红。
@@ -252,14 +319,28 @@ void main() {
       expect(find.text('全部'), findsNothing);
     });
 
-    testWidgets('单年车：走势卡整卡不展示', (tester) async {
+    testWidgets('单条记录：走势卡整卡不展示', (tester) async {
       final database = await seedCarWithDiscountRecord();
       await pumpApp(tester, database: database);
       await openCostStatsPage(tester);
 
-      // 只有一年数据（2026）：没有走势可看，整卡隐藏（2026-09-21 拍板）。
-      expect(find.text('费用走势'), findsNothing);
+      // 只有 1 条记录：没有对比，整卡隐藏（2026-09-23 拍板，替换原
+      // "单年车"规则——判断口径改为记录条数）。
+      expect(find.text('保养费用走势'), findsNothing);
       expect(find.text('2026'), findsNothing);
+    });
+
+    testWidgets('单年车两条记录：走势卡展示（按记录数不按年份判断）',
+        (tester) async {
+      final database = await seedCarWithTwoRecordsSameYear();
+      await pumpApp(tester, database: database);
+      await openCostStatsPage(tester);
+
+      // 两条记录都在 2026：旧"单年车隐藏"规则会藏掉，新规则（≥2 条
+      // 记录）展示单根年度柱。
+      expect(find.text('保养费用走势'), findsOneWidget);
+      expect(find.text('2026'), findsOneWidget);
+      expect(find.byKey(const ValueKey('cost-year-bar-2026')), findsOneWidget);
     });
 
     testWidgets('点项目行打开项目档案 sheet', (tester) async {
@@ -407,8 +488,9 @@ void main() {
   });
 
   group('加油费用卡（ADR 0015）', () {
-    /// 播种一辆车（无保养记录）+ 两条加油记录：2026 实付 270、2024
-    /// 应付 300（跨两年，验证年度行铺满补 0 与实付优先口径）。
+    /// 播种一辆车（无保养记录）+ 两条加油记录：2026-09 实付 270、
+    /// 2024-03 应付 300（跨两年，验证全历史月度柱铺满补 0 与实付优先
+    /// 口径；生效今天固定 2026-05-19）。
     Future<AppDatabase> seedCarWithFuelRecords() async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
@@ -449,7 +531,7 @@ void main() {
       return database;
     }
 
-    testWidgets('只有加油记录：加油费用卡渲染年度行，保养区降轻提示', (
+    testWidgets('只有加油记录：全历史月度柱初始停最右，保养区降轻提示', (
       tester,
     ) async {
       final database = await seedCarWithFuelRecords();
@@ -464,21 +546,30 @@ void main() {
 
       await tester.tap(find.text('费用统计'));
       await pumpUntilFound(tester, find.text('加油费用'));
-      // 加油卡：总加油 = 270 + 300 = ¥570.00 · 2 笔；年度行倒序铺满
-      // （2026 / 2025 补 0 / 2024）。保养区只有轻提示，无保养各卡。
+      await tester.pumpAndSettle();
+      // 加油卡（2026-09-23 改版）：总额 = 270 + 300 = ¥570.00 · 2 笔；
+      // 月度柱 = 全历史连续时间轴（2024-03 → 2026-09，轴标签「26.9」式；
+      // 加油记录晚于生效今天 2026-05-19，属播种数据，序列防御性顺延）。
       expect(find.text('总费用'), findsOneWidget);
       expect(find.text('¥570.00'), findsOneWidget);
       expect(find.text('2 笔'), findsOneWidget);
-      expect(find.text('2026年'), findsOneWidget);
-      expect(find.text('2025年'), findsOneWidget);
-      // ¥0.00 一处：2025 年行（头部"今年保养"已隐藏）。push 后来源页
-      // 是否仍可寻址随路由树时序浮动，跨页金额一律用 AtLeast 断言。
-      expect(find.text('¥0.00'), findsOneWidget);
-      expect(find.text('2024年'), findsOneWidget);
+      expect(find.text('24.3'), findsOneWidget);
+      expect(find.text('26.9'), findsOneWidget);
+      // 柱顶金额：有花费月才标（¥300.00 = 2024-03 应付；¥270.00 =
+      // 2026-09 实付，记录页同串故用 AtLeast）；补 0 月不标 → 全页无
+      // ¥0.00。
       expect(find.text('¥300.00'), findsOneWidget);
       expect(find.text('¥270.00'), findsAtLeastNWidgets(1));
-      // 保养汇总卡不存在：无"今年保养"文字（加油卡的"总费用"标签同词，
-      // 不能再用它判汇总卡缺席）；保养区只有一行轻提示。
+      expect(find.text('¥0.00'), findsNothing);
+      // 年度行已删：卡内无任何按年统计的文案。
+      expect(find.text('2026年'), findsNothing);
+      expect(find.text('2025年'), findsNothing);
+      expect(find.text('2024年'), findsNothing);
+      // 初始停最右（2026-09-23 拍板）：首月「24.3」被滚出视口左侧，
+      // 最近月「26.9」落在测试窗口（800 宽）内。
+      expect(tester.getRect(find.text('24.3')).right, lessThan(0));
+      expect(tester.getRect(find.text('26.9')).right, lessThan(800));
+      // 保养汇总卡不存在：无"今年保养"文字；保养区只有一行轻提示。
       expect(find.text('今年保养'), findsNothing);
       expect(
         find.text('暂无保养记录，记一笔保养后这里会生成保养费用统计。'),
@@ -562,25 +653,11 @@ void main() {
       expect(find.text('今年保养'), findsAtLeastNWidgets(1));
       expect(find.text('今年加油'), findsAtLeastNWidgets(1));
       expect(find.text('总费用'), findsAtLeastNWidgets(3));
-      // 保养与加油各卡并存：走势卡（单年车不显示）与加油卡。
+      // 保养与加油各卡并存：走势卡（只有 1 条保养记录不显示，2026-09-23
+      // 新规则）与加油卡。
       expect(find.text('保养费用走势'), findsNothing);
       expect(find.text('加油费用'), findsOneWidget);
       expect(find.text('¥570.00'), findsNothing); // 加油总额只有一笔 270。
-    });
-
-    testWidgets('点年度行切换月份图年份', (tester) async {
-      final database = await seedCarWithFuelRecords();
-      await pumpApp(tester, database: database);
-      await tester.tap(find.text('记录'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('费用统计'));
-      await pumpUntilFound(tester, find.text('加油费用'));
-      await tester.pumpAndSettle();
-      // 默认选中年 = 生效今天所在年（2026）。点 2024 行不抛异常即可
-      // （月份条形无文字，切换结果无文案断言点；渲染不崩即通过）。
-      await tester.tap(find.text('2024年'));
-      await tester.pumpAndSettle();
-      expect(find.text('加油费用'), findsOneWidget);
     });
   });
 }

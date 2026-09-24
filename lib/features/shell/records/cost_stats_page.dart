@@ -14,19 +14,20 @@
 //      头部主数字 = 总费用（守恒锚点：各行相加 ≡ 总费用，2026-09-21），
 //      末尾"其他"段吸收无归属的钱；点项目行下钻项目档案 sheet
 //      （cost_item_history_sheet.dart）；
-//   4. 保养费用走势：年度曲线——每年一点（= 该年总费用），峰值标注 +
-//      上次保养年份高亮；不足两个年份（单年车）整卡不展示
-//      （2026-09-21 拍板）；
-//   5. 加油费用卡（2026-09-22 新增，ADR 0015，固定页面最后）：加油
-//      年度行（每年一行，点行切换）+ 选中年的 12 个月条形；金额口径 =
-//      实付优先、没填取应付（fuel_cost_stats.dart）。
+//   4. 保养费用走势：年度柱状图（2026-09-23 改版，取代年度曲线）——
+//      每年一柱 = 该年总费用，横向滚动、柱顶标金额、今年柱主色高亮；
+//      不足 2 条记录整卡不展示（单年车多条记录也展示）；
+//   5. 加油费用卡（2026-09-22 新增，ADR 0015，固定页面最后；
+//      2026-09-23 改版删年度行）：头部总费用 + N 笔 + 全历史连续月度
+//      柱（横向滚动、初始停最右、柱顶标金额、「26.9」式轴标签）；金额
+//      口径 = 实付优先、没填取应付（fuel_cost_stats.dart）。
 // 作用域永远是当前应用车辆（2026-09-20 拍板：不提供"全部"/多车切换，
 // 想看别的车先去切换应用车辆），当前车辆名在标题副字展示。
-// 图表语言：项目占比为 Widget 条形、走势为 CustomPainter 自绘（无图表
-// 库），颜色派生自 LunioTokens；动效只做一次性入场（生长/展开），进
-// 页面播一次，不做持续循环。所有随入场动画变宽的条形必须包在监听
-// [_entrance] 的 AnimatedBuilder 里——历史上按年条漏包导致"有时不
-// 渲染、点开才出来"的 bug（动画只重建 AnimatedBuilder 子树）。
+// 图表语言：全部为 Widget 柱形（无图表库、无 CustomPainter），颜色派
+// 生自 LunioTokens；动效只做一次性入场（条形生长），进页面播一次，
+// 不做持续循环。所有随入场动画变宽/变高的条形必须包在监听 [_entrance]
+// 的 AnimatedBuilder 里——历史上按年条漏包导致"有时不渲染、点开才
+// 出来"的 bug（动画只重建 AnimatedBuilder 子树）。
 // 聚合口径统一收在 cost_stats.dart（纯函数），本文件只负责"把当前车
 // 的数据拿到"与渲染；无车辆/无记录时给空态卡。
 // Java 类比：一个只读报表页——provider ≈ 按当前车参数化的查询服务，
@@ -114,9 +115,9 @@ class CostStatsPage extends ConsumerStatefulWidget {
 
 class CostStatsPageState extends ConsumerState<CostStatsPage>
     with SingleTickerProviderStateMixin {
-  /// 一次性入场动画：进页面、数据首次渲染后播一次（0→1，条形与走势
-  /// 共用——条形按宽度生长、走势按宽度展开），完成后不再重播；不做
-  /// 持续循环动画（省电、不干扰阅读）。在 initState 创建（延迟初始化
+  /// 一次性入场动画：进页面、数据首次渲染后播一次（0→1，各卡条形
+  /// 共用——占比条按宽度生长、柱状图按高度长高），完成后不再重播；不
+  /// 做持续循环动画（省电、不干扰阅读）。在 initState 创建（延迟初始化
   /// 会在"整页从未进数据分支"的用例里于 dispose 时才首次构造，在失活
   /// 树上找 TickerMode 祖先直接抛异常）。
   late final AnimationController _entrance;
@@ -230,10 +231,16 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
             _buildMetricsCard(context, data.today, stats),
             const SizedBox(height: 12),
             _buildProjectCard(context, stats, historyByName),
-            // 走势卡只在两年及以上才展示（单年车没有走势可看）。
-            if (stats.years.length >= 2) ...[
+            // 走势卡在 2 条及以上记录才展示（2026-09-23 拍板，替换原
+            // "两个年份"规则：单年车多条记录也有年度柱可看，1 条记录
+            // 没有对比意义）。
+            if (data.records.length >= 2) ...[
               const SizedBox(height: 12),
-              _buildTrendCard(context, data.today, stats),
+              _YearTrendCard(
+                years: stats.years,
+                thisYear: data.today.year,
+                entrance: _entrance,
+              ),
             ],
           ],
           if (data.fuelRecords.isNotEmpty) ...[
@@ -543,25 +550,42 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
           ),
         ),
         cell(
+          // 固定宽槽右对齐（2026-09-23 拍板）：实付槽 + 省槽各占固定
+          // 宽度、文本右对齐（FittedBox 只缩不放），没有优惠的行省槽
+          // 留空——两列各自成一条垂直线，不再跟着实付位数左右漂。
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                formatMoneyCents(actualCents),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              if (discountCents > 0) ...[
-                const SizedBox(width: 4),
-                Text(
-                  '省 ${formatMoneyCents(discountCents)}',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: tokens.success,
-                        fontWeight: FontWeight.w700,
-                      ),
+              SizedBox(
+                width: 64,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    formatMoneyCents(actualCents),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
                 ),
-              ],
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 56,
+                child: discountCents > 0
+                    ? FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '省 ${formatMoneyCents(discountCents)}',
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: tokens.success,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                      )
+                    : null,
+              ),
               if (onTap != null) ...[
                 const SizedBox(width: 2),
                 Icon(
@@ -577,77 +601,14 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
     );
   }
 
-  /// 费用走势卡：年度平滑曲线——每年一点（= 该年记录总费用合计），
-  /// 叠加峰值年标注与上次保养年份空心高亮；不足两年由调用方整卡隐藏。
-  /// 入场时从左往右展开（[_WidthRevealClipper] 裁剪，painter 画完整
-  /// 图）；画布宽度必须显式撑满（Column 松约束会把 CustomPaint 收敛成
-  /// 0 宽画布，曲线整卡不可见，实测翻车）。
-  Widget _buildTrendCard(
-    BuildContext context,
-    LocalDate today,
-    CostStats stats,
-  ) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return LunioCard(
-      child: LunioSection(
-        title: '保养费用走势',
-        children: [
-          const SizedBox(height: 6),
-          AnimatedBuilder(
-            animation: _entrance,
-            builder: (context, _) {
-              return SizedBox(
-                height: 132,
-                width: double.infinity,
-                child: ClipRect(
-                  clipper: _WidthRevealClipper(progress: _entrance.value),
-                  child: CustomPaint(
-                    key: const ValueKey('cost-trend-paint'),
-                    painter: _TrendPainter(
-                      points: stats.years,
-                      lastRecordDate: stats.lastRecordDate,
-                      tokens: tokens,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              for (final point in stats.years)
-                Expanded(
-                  child: Text(
-                    '${point.year}',
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontSize: 9,
-                          color: point.year == today.year
-                              ? tokens.primary
-                              : tokens.muted,
-                          fontWeight: point.year == today.year
-                              ? FontWeight.w800
-                              : FontWeight.w500,
-                        ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-/// 加油费用卡（2026-09-22 新增，ADR 0015）：加油年度行（每年一行——
-/// 年份 + 条形 + 合计，点行切换下方月份图）+ 选中年的 12 个月条形。
-/// 金额口径 = 实付优先、没填取应付（fuel_cost_stats.dart 纯函数），
-/// 与保养各卡的守恒/优惠口径互不掺和。
-/// 有 state（选中年）：统计页里唯一带内嵌状态的小件；默认选中生效
-/// 今天所在年（无记录年显示全 0 条，属预期）。
-class _FuelCostCard extends StatefulWidget {
+/// 加油费用卡（2026-09-22 新增，ADR 0015；2026-09-23 改版删年度行）：
+/// 头部「总费用 + N 笔」+ 全历史连续月度柱（[_BarStrip]：横向滚动、
+/// 初始停最右、柱顶标金额、「26.9」式轴标签）。金额口径 = 实付优先、
+/// 没填取应付（fuel_cost_stats.dart 纯函数），与保养各卡的守恒/优惠
+/// 口径互不掺和。
+class _FuelCostCard extends StatelessWidget {
   const _FuelCostCard({
     required this.fuelRecords,
     required this.today,
@@ -657,28 +618,22 @@ class _FuelCostCard extends StatefulWidget {
   final List<FuelRecord> fuelRecords;
   final LocalDate today;
 
-  /// 页面级一次性入场动画（0→1）：年度条按宽度生长、月份条按高度
-  /// 长高，与项目占比/走势共用同一份进度（页面注释的历史 bug：条形
-  /// 必须包在监听动画的 AnimatedBuilder 里）。
+  /// 页面级一次性入场动画（0→1）：月份柱按高度长高，与其他卡共用同一
+  /// 份进度（页面注释的历史 bug：条形必须包在监听动画的 AnimatedBuilder
+  /// 里）。
   final Animation<double> entrance;
-
-  @override
-  State<_FuelCostCard> createState() => _FuelCostCardState();
-}
-
-class _FuelCostCardState extends State<_FuelCostCard> {
-  /// 月份图选中的年份（null = 未初始化，build 首帧取生效今天所在年）。
-  int? _selectedYear;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final stats = buildFuelCostStats(
-      records: widget.fuelRecords,
-      today: widget.today,
-    );
-    final selectedYear =
-        _selectedYear ?? widget.today.year;
+    final stats = buildFuelCostStats(records: fuelRecords);
+    final months = fuelMonthlyCents(fuelRecords, today);
+    var maxMonthCents = 0;
+    for (final point in months) {
+      if (point.costCents > maxMonthCents) {
+        maxMonthCents = point.costCents;
+      }
+    }
     return LunioCard(
       child: LunioSection(
         title: '加油费用',
@@ -717,47 +672,79 @@ class _FuelCostCardState extends State<_FuelCostCard> {
               ),
             ],
           ),
-          // 年度行：年份 | 条形（相对最大年，宽度随入场动画生长）|
-          // 合计。选中年主色加粗，未选中灰调；点行切换月份图。
-          AnimatedBuilder(
-            animation: widget.entrance,
-            builder: (context, _) {
-              final maxYearCents = stats.yearRows.fold(
-                0,
-                (max, row) => row.costCents > max ? row.costCents : max,
-              );
-              return Column(
-                children: [
-                  for (final row in stats.yearRows)
-                    _yearRow(context, row, maxYearCents, row.year == selectedYear),
-                ],
-              );
-            },
-          ),
           const SizedBox(height: 8),
-          // 选中年的 12 个月条形：月份数字为轴，条高相对当年最大月。
-          AnimatedBuilder(
-            animation: widget.entrance,
-            builder: (context, _) {
-              final months = fuelMonthlyCents(
-                widget.fuelRecords,
-                selectedYear,
-              );
-              final maxMonthCents = months.fold(
-                0,
-                (max, cents) => cents > max ? cents : max,
-              );
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  for (var i = 0; i < 12; i++)
-                    _monthBar(
-                      context,
-                      month: i + 1,
-                      cents: months[i],
-                      fraction: maxMonthCents == 0
-                          ? 0.0
-                          : months[i] / maxMonthCents,
+          _BarStrip(
+            entrance: entrance,
+            items: [
+              for (final point in months)
+                _BarStripItem(
+                  amountCents: point.costCents,
+                  barFraction: maxMonthCents == 0
+                      ? 0.0
+                      : point.costCents / maxMonthCents,
+                  barColor: tokens.primary,
+                  axisLabel: '${point.year % 100}.${point.month}',
+                  highlight: false,
+                  barKey: ValueKey(
+                    'fuel-month-bar-${point.year}-${point.month}',
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 保养费用走势卡（2026-09-23 改版：年度曲线改年度柱状图）：每年一柱
+/// = 该年记录总费用合计（复用 stats.years 的年度聚合），横向滚动、
+/// 柱顶标金额、今年柱主色高亮（往年浅色）；曲线的三装饰（峰值浮标/
+/// 上次保养空心环/渐变面积）随改版删除。不足 2 条记录由调用方整卡
+/// 隐藏（cost_stats_page 的内容组装处）。
+class _YearTrendCard extends StatelessWidget {
+  const _YearTrendCard({
+    required this.years,
+    required this.thisYear,
+    required this.entrance,
+  });
+
+  /// 年度柱数据（首条记录年 → 今年升序，含无记录年，口径同占比卡的
+  /// 记录总费用权威值）。
+  final List<CostYearPoint> years;
+
+  /// 生效今天所在年（高亮柱）。
+  final int thisYear;
+
+  final Animation<double> entrance;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return LunioCard(
+      child: LunioSection(
+        title: '保养费用走势',
+        children: [
+          const SizedBox(height: 6),
+          // 一屏约 3 柱（2026-09-24 反馈）：列宽 = 视口宽 ÷ 3，柱距随
+          // 机型自适应；柱体加粗到 28 配合拉开的柱距。
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return _BarStrip(
+                columnWidth: constraints.maxWidth / 3,
+                barWidth: 28,
+                entrance: entrance,
+                items: [
+                  for (final point in years)
+                    _BarStripItem(
+                      amountCents: point.costCents,
+                      barFraction: point.fraction,
+                      barColor: point.year == thisYear
+                          ? tokens.primary
+                          : tokens.primarySoft,
+                      axisLabel: '${point.year}',
+                      highlight: point.year == thisYear,
+                      barKey: ValueKey('cost-year-bar-${point.year}'),
                     ),
                 ],
               );
@@ -767,95 +754,173 @@ class _FuelCostCardState extends State<_FuelCostCard> {
       ),
     );
   }
+}
 
-  /// 年度行：'2026年' | 条形轨道 | 合计金额。整行可点（切换月份图）。
-  Widget _yearRow(
-    BuildContext context,
-    FuelCostYearRow row,
-    int maxYearCents,
-    bool selected,
-  ) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final fraction = maxYearCents == 0
-        ? 0.0
-        : row.costCents / maxYearCents;
-    final widthFactor = (fraction * widget.entrance.value).clamp(0.0, 1.0);
-    return InkWell(
-      onTap: () => setState(() => _selectedYear = row.year),
-      borderRadius: BorderRadius.circular(tokens.radiusSmall),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 52,
-              child: Text(
-                '${row.year}年',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: selected ? tokens.ink : tokens.muted,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                child: FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: widthFactor,
-                  child: Container(
-                    height: 8,
-                    color: selected ? tokens.primary : tokens.primarySoft,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 88,
-              child: Text(
-                formatMoneyCents(row.costCents),
-                textAlign: TextAlign.right,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: selected ? tokens.ink : tokens.muted,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+/// 柱状条的一列数据：柱顶金额 + 柱体比例 + 轴标签。走势年度柱与加油
+/// 月度柱共用（[_BarStrip]），渲染层不感知业务语义。
+class _BarStripItem {
+  const _BarStripItem({
+    required this.amountCents,
+    required this.barFraction,
+    required this.barColor,
+    required this.axisLabel,
+    required this.highlight,
+    required this.barKey,
+  });
+
+  /// 柱顶金额（分）；0 = 无花费，不标金额（只留灰色基线桩）。
+  final int amountCents;
+
+  /// 柱高比例（0~1，相对本组最大值，调用方算好）。
+  final double barFraction;
+
+  /// 柱体颜色（调用方按高亮语义给：今年主色/其余浅色）。
+  final Color barColor;
+
+  /// 柱下轴标签（年度柱「2024」/ 月度柱「26.9」）。
+  final String axisLabel;
+
+  /// 高亮列：柱顶金额与轴标签加粗主色（当前只有一个消费者=今年柱）。
+  final bool highlight;
+
+  /// 柱体 key（widget 测试按 key 断言柱存在与几何）。
+  final Key barKey;
+}
+
+/// 横向滚动的柱状条（走势年度柱与加油月度柱共用，2026-09-23）：每列
+/// 固定 48px——柱顶金额槽 + 柱体 + 轴标签；内容比视口宽时初始定位到
+/// 最右端（最近的时间在视野内，2026-09-23 拍板）。柱高随入场动画
+/// 长高——整条包在监听 [entrance] 的 AnimatedBuilder 里（页面注释的
+/// 历史 bug：漏包导致"有时不渲染、点开才出来"）。
+class _BarStrip extends StatefulWidget {
+  const _BarStrip({
+    required this.items,
+    required this.entrance,
+    this.columnWidth = 48,
+    this.barWidth = 16,
+  });
+
+  final List<_BarStripItem> items;
+  final Animation<double> entrance;
+
+  /// 列宽。加油月度柱用默认 48（一屏约 7 个月）；保养走势卡传视口宽
+  /// ÷ 3（一屏约 3 柱、柱距拉开，2026-09-24 反馈），由调用方用
+  /// LayoutBuilder 按实际视口算——任何机型都正好一屏 3 柱。
+  final double columnWidth;
+
+  /// 柱体宽。走势柱加粗到 28（列宽变大后 16 太瘦），月度柱默认 16。
+  final double barWidth;
+
+  @override
+  State<_BarStrip> createState() => _BarStripState();
+}
+
+class _BarStripState extends State<_BarStrip> {
+  final ScrollController _scroll = ScrollController();
+
+  /// 初始定位只做一次：之后的重建（数据刷新/入场动画重建）不再打断
+  /// 用户的滚动位置。
+  bool _jumpedToEnd = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// 内容比视口宽时跳到最右端。maxScrollExtent 要等首帧布局后才有值，
+  /// 挂 postFrameCallback 读。
+  void _scheduleJumpToEnd() {
+    if (_jumpedToEnd) {
+      return;
+    }
+    _jumpedToEnd = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) {
+        return;
+      }
+      if (_scroll.position.maxScrollExtent > 0) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _scheduleJumpToEnd();
+    return AnimatedBuilder(
+      animation: widget.entrance,
+      builder: (context, _) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          controller: _scroll,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final item in widget.items)
+                _barColumn(context, item, widget.entrance.value),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  /// 月份条形一列：细条（高度按当年最大月比例、随入场动画长高）+
-  /// 月份数字轴。0 元月份画 2dp 灰色基线桩（可看见"这个月没花钱"）。
-  Widget _monthBar(
-    BuildContext context, {
-    required int month,
-    required int cents,
-    required double fraction,
-  }) {
+  /// 柱状一列（宽 = [_BarStrip.columnWidth]）：金额槽（固定高，0 元
+  /// 留空保证各行柱体对齐）+ 柱体（高相对组内最大，随入场动画长高；
+  /// 0 元画 2dp 灰桩）+ 轴标签。金额居中在柱体正上方（列宽加大后
+  /// 右对齐会漂离柱体）。
+  Widget _barColumn(
+    BuildContext context,
+    _BarStripItem item,
+    double progress,
+  ) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     const maxBarHeight = 44.0;
-    final hasCost = cents > 0;
+    final hasCost = item.amountCents > 0;
     final barHeight = hasCost
-        ? (fraction * maxBarHeight * widget.entrance.value).clamp(3.0, maxBarHeight)
+        ? (item.barFraction * maxBarHeight * progress).clamp(3.0, maxBarHeight)
         : 2.0;
-    return Expanded(
+    final amountColor =
+        item.highlight ? tokens.ink : tokens.muted;
+    final axisColor = item.highlight ? tokens.primary : tokens.muted;
+    return SizedBox(
+      width: widget.columnWidth,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          SizedBox(
+            height: 12,
+            child: hasCost
+                ? FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.center,
+                    child: Text(
+                      formatMoneyCents(item.amountCents),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(
+                            fontSize: 9,
+                            color: amountColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 3),
           SizedBox(
             height: maxBarHeight,
             child: Align(
               alignment: Alignment.bottomCenter,
               child: Container(
-                width: 10,
+                key: item.barKey,
+                width: widget.barWidth,
                 height: barHeight,
                 decoration: BoxDecoration(
-                  color: hasCost ? tokens.primary : tokens.line,
+                  color: hasCost ? item.barColor : tokens.line,
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
@@ -863,11 +928,14 @@ class _FuelCostCardState extends State<_FuelCostCard> {
           ),
           const SizedBox(height: 4),
           Text(
-            '$month月',
+            item.axisLabel,
+            textAlign: TextAlign.center,
+            maxLines: 1,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: tokens.muted,
-              fontSize: 9,
-            ),
+                  fontSize: 9,
+                  color: axisColor,
+                  fontWeight: item.highlight ? FontWeight.w800 : FontWeight.w500,
+                ),
           ),
         ],
       ),
@@ -888,179 +956,3 @@ double barMaxFraction(CostStats stats) {
   return maxCents == 0 ? 0.0 : stats.otherCents / maxCents;
 }
 
-/// 走势卡的左→右展开裁剪：露出宽 = 宽度 × 入场进度。
-class _WidthRevealClipper extends CustomClipper<Rect> {
-  const _WidthRevealClipper({required this.progress});
-
-  final double progress;
-
-  @override
-  Rect getClip(Size size) {
-    return Rect.fromLTWH(
-      0,
-      0,
-      size.width * progress.clamp(0.0, 1.0),
-      size.height,
-    );
-  }
-
-  @override
-  bool shouldReclip(_WidthRevealClipper oldClipper) =>
-      oldClipper.progress != progress;
-}
-
-/// 费用走势 painter：年度平滑曲线（三次贝塞尔，控制点取水平偏移的
-/// 0.4 倍——费用走势缓变，不需要防过冲的单调插值）+ 曲线下渐变面积，
-/// 叠加：有费用的年份实心点、峰值年的「峰值 ¥x」标注（文字画进图内，
-/// 钳在画布内）、上次保养年份的空心高亮环；全部为 0 时画浅色基线。
-/// 展开动画由外层 [_WidthRevealClipper] 裁剪实现，painter 只画完整图。
-class _TrendPainter extends CustomPainter {
-  _TrendPainter({
-    required this.points,
-    required this.lastRecordDate,
-    required this.tokens,
-  });
-
-  final List<CostYearPoint> points;
-  final LocalDate? lastRecordDate;
-  final LunioTokens tokens;
-
-  static const _padLeft = 4.0;
-  static const _padRight = 4.0;
-  static const _padTop = 14.0;
-  static const _padBottom = 6.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.isEmpty) {
-      return;
-    }
-    final innerWidth = size.width - _padLeft - _padRight;
-    final innerHeight = size.height - _padTop - _padBottom;
-    final maxCents = points
-        .map((point) => point.costCents)
-        .fold(0, (max, cents) => cents > max ? cents : max);
-    double yFor(int cents) =>
-        maxCents == 0
-            ? size.height - _padBottom
-            : _padTop +
-                (1 - cents / maxCents) * innerHeight;
-    Offset pointAt(int index) {
-      final x = points.length == 1
-          ? _padLeft
-          : _padLeft + innerWidth * index / (points.length - 1);
-      return Offset(x, yFor(points[index].costCents));
-    }
-
-    final first = pointAt(0);
-    final last = pointAt(points.length - 1);
-    final line = Path()..moveTo(first.dx, first.dy);
-    for (var index = 1; index < points.length; index++) {
-      final previous = pointAt(index - 1);
-      final current = pointAt(index);
-      final dx = (current.dx - previous.dx) * 0.4;
-      line.cubicTo(
-        previous.dx + dx,
-        previous.dy,
-        current.dx - dx,
-        current.dy,
-        current.dx,
-        current.dy,
-      );
-    }
-    if (maxCents > 0) {
-      final area = Path.from(line)
-        ..lineTo(last.dx, size.height - _padBottom)
-        ..lineTo(first.dx, size.height - _padBottom)
-        ..close;
-      final areaPaint = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            tokens.primary.withValues(alpha: 0.32),
-            tokens.primary.withValues(alpha: 0.02),
-          ],
-        ).createShader(
-          Rect.fromLTWH(0, _padTop, size.width, innerHeight),
-        );
-      canvas.drawPath(area, areaPaint);
-    }
-    final linePaint = Paint()
-      ..color = maxCents > 0 ? tokens.primaryStrong : tokens.surface3
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(line, linePaint);
-
-    if (maxCents > 0) {
-      // 有费用的年份：小实心点（峰值年另有标注，跳过）。
-      var peakIndex = 0;
-      for (var index = 1; index < points.length; index++) {
-        if (points[index].costCents > points[peakIndex].costCents) {
-          peakIndex = index;
-        }
-      }
-      final dotPaint = Paint()..color = tokens.primaryStrong;
-      for (var index = 0; index < points.length; index++) {
-        if (points[index].costCents > 0 && index != peakIndex) {
-          canvas.drawCircle(pointAt(index), 2.6, dotPaint);
-        }
-      }
-      // 峰值年：光晕 + 实心点 + 金额标注（钳在画布内）。
-      final peak = pointAt(peakIndex);
-      canvas.drawCircle(
-        peak,
-        6.5,
-        Paint()..color = tokens.primary.withValues(alpha: 0.25),
-      );
-      canvas.drawCircle(peak, 3.2, Paint()..color = tokens.primaryStrong);
-      _drawLabel(
-        canvas,
-        size,
-        Offset(
-          (peak.dx - 26).clamp(_padLeft, size.width - _padRight - 66),
-          (peak.dy - 22).clamp(0, size.height - _padBottom - 12),
-        ),
-        '峰值 ${formatMoneyCents(points[peakIndex].costCents)}',
-      );
-      // 上次保养年份：空心高亮环（最后一条记录的年份落在跨度内才标）。
-      final lastDate = lastRecordDate;
-      if (lastDate != null) {
-        final index = lastDate.year - points.first.year;
-        if (index >= 0 && index < points.length) {
-          canvas.drawCircle(
-            pointAt(index),
-            6,
-            Paint()
-              ..color = tokens.primary
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.8,
-          );
-        }
-      }
-    }
-  }
-
-  /// 在图内画一小段说明文字（峰值标注），钳在画布范围内。
-  void _drawLabel(Canvas canvas, Size size, Offset at, String text) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: 9,
-          color: tokens.muted,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: size.width - _padLeft - _padRight);
-    painter.paint(canvas, at);
-  }
-
-  @override
-  bool shouldRepaint(_TrendPainter oldDelegate) =>
-      oldDelegate.points != points ||
-      oldDelegate.lastRecordDate != lastRecordDate;
-}

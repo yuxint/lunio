@@ -1,5 +1,6 @@
-// 加油费用聚合测试（fuel_cost_stats.dart，ADR 0015）：年度行铺满与
-// 倒序、月度 12 桶、实付优先口径（没填取应付）、空记录空态。
+// 加油费用聚合测试（fuel_cost_stats.dart，ADR 0015；2026-09-23 改版：
+// 月度序列改全历史连续时间轴、删年度行模型）：逐月铺满补 0、记录晚于
+// 生效今天的防御顺延、实付优先口径（没填取应付）、空记录空态。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
@@ -25,7 +26,7 @@ void main() {
     );
   }
 
-  group('fuelCostCentsForYear / fuelMonthlyCents（实付优先口径）', () {
+  group('fuelCostCentsForYear（实付优先口径）', () {
     test('实付填了取实付，没填取应付', () {
       final records = [
         record('2026-09-01', payableCents: 30000, actualCents: 27000),
@@ -34,45 +35,69 @@ void main() {
       // 270 + 300 = ¥570.00。
       expect(fuelCostCentsForYear(records, 2026), 57000);
     });
+  });
 
-    test('月度桶按月份落位，无记录月为 0', () {
+  group('fuelMonthlyCents（全历史逐月序列）', () {
+    test('首条记录月铺到当月，时间升序，无记录月补 0', () {
       final records = [
         record('2026-01-10', payableCents: 10000),
         record('2026-03-02', payableCents: 20000, actualCents: 18000),
       ];
-      final months = fuelMonthlyCents(records, 2026);
-      expect(months, hasLength(12));
-      expect(months[0], 10000);
-      expect(months[2], 18000);
-      expect(months[1], 0);
-      // 跨年记录不串桶。
-      expect(fuelMonthlyCents(records, 2025), everyElement(0));
+      final months = fuelMonthlyCents(records, today);
+      // 2026-01 → 2026-09 共 9 个月。
+      expect(months, hasLength(9));
+      expect(months.first.year, 2026);
+      expect(months.first.month, 1);
+      expect(months[0].costCents, 10000);
+      expect(months[1].costCents, 0); // 2 月补 0。
+      expect(months[2].costCents, 18000);
+      expect(months.last.month, 9);
+    });
+
+    test('跨年序列：2024-03 → 2026-09 共 31 个月，中间年月补 0', () {
+      final months = fuelMonthlyCents([record('2024-03-15')], today);
+      expect(months, hasLength(31));
+      expect(months.first.year, 2024);
+      expect(months.first.month, 3);
+      expect(months[1].costCents, 0); // 2024-04 起补 0。
+      expect(months.last.year, 2026);
+      expect(months.last.month, 9);
+    });
+
+    test('记录晚于生效今天（手动日期异常）：终点顺延不丢钱', () {
+      final months = fuelMonthlyCents(
+        [record('2026-09-01', payableCents: 30000)],
+        const LocalDate(2026, 1, 1),
+      );
+      // 生效今天在 2026-01，但 9 月有记录：序列铺到 9 月，钱不消失。
+      expect(months, hasLength(9));
+      expect(months.last.year, 2026);
+      expect(months.last.month, 9);
+      expect(months.last.costCents, 30000);
+    });
+
+    test('空记录：空序列', () {
+      expect(fuelMonthlyCents(const [], today), isEmpty);
     });
   });
 
   group('buildFuelCostStats', () {
-    test('年度行从今年倒序铺回首条记录年，中间无记录年补 0', () {
+    test('总额与笔数（实付优先口径）', () {
       final stats = buildFuelCostStats(
         records: [
           record('2024-03-01', payableCents: 10000),
-          record('2026-09-01', payableCents: 30000),
+          record('2026-09-01', payableCents: 30000, actualCents: 27000),
         ],
-        today: today,
       );
-      // 2026 / 2025（补 0）/ 2024，最近年在前。
-      expect(
-        stats.yearRows.map((row) => (row.year, row.costCents)).toList(),
-        [(2026, 30000), (2025, 0), (2024, 10000)],
-      );
-      expect(stats.totalCents, 40000);
+      // 100（应付）+ 270（实付）= ¥370.00。
+      expect(stats.totalCents, 37000);
       expect(stats.recordCount, 2);
     });
 
-    test('空记录：总额 0、年度行为空', () {
-      final stats = buildFuelCostStats(records: const [], today: today);
+    test('空记录：全 0', () {
+      final stats = buildFuelCostStats(records: const []);
       expect(stats.totalCents, 0);
       expect(stats.recordCount, 0);
-      expect(stats.yearRows, isEmpty);
     });
   });
 }

@@ -11,7 +11,7 @@ import '../../../core/date/local_date.dart';
 import '../../../domain/entities/fuel_record.dart';
 
 /// 某一年加油费用合计（实付优先、没填取应付，逐条求和）。
-/// 记录页头部"今年加油"与统计页年度行共用这一个口径。
+/// 记录页头部"今年加油"与统计页汇总卡"今年加油"栏共用这一个口径。
 int fuelCostCentsForYear(List<FuelRecord> records, int year) {
   var total = 0;
   for (final record in records) {
@@ -22,26 +22,56 @@ int fuelCostCentsForYear(List<FuelRecord> records, int year) {
   return total;
 }
 
-/// 某年 12 个月的加油费用（下标 0 = 1 月）。月份条形图的数据源，
-/// 中间无记录月为 0。纯函数。
-List<int> fuelMonthlyCents(List<FuelRecord> records, int year) {
-  final months = List<int>.filled(12, 0);
-  for (final record in records) {
-    if (record.date.year == year) {
-      months[record.date.month - 1] += record.effectiveCostCents;
-    }
-  }
-  return months;
-}
-
-/// 加油费用年度行：年份 + 该年合计（实付优先口径）。
-class FuelCostYearRow {
-  const FuelCostYearRow({required this.year, required this.costCents});
+/// 一个自然月的加油费用（实付优先口径），月份柱状图的数据点。
+/// [year]/[month] 用于柱下「26.9」式轴标签，不参与求和。
+class FuelCostMonthPoint {
+  const FuelCostMonthPoint({
+    required this.year,
+    required this.month,
+    required this.costCents,
+  });
 
   final int year;
+  final int month;
 
-  /// 该年加油费用合计（分）。
+  /// 该月加油费用合计（分；无记录月为 0）。
   final int costCents;
+}
+
+/// 全历史逐月加油费用：首条加油记录月 → 生效当月逐月铺满（含中间无
+/// 记录月，费用为 0），时间升序——2026-09-23 拍板加油费用卡删年度行，
+/// 月份图改为全历史连续时间轴、横向滚动。生效今天被手动日期拨到过去
+/// 时（异常数据：存在晚于"今天"的记录），终点顺延到最后一条记录月，
+/// 保证任何一笔钱都不从图上消失。纯函数。
+List<FuelCostMonthPoint> fuelMonthlyCents(
+  List<FuelRecord> records,
+  LocalDate today,
+) {
+  if (records.isEmpty) {
+    return const [];
+  }
+  int monthKey(LocalDate date) => date.year * 12 + date.month - 1;
+  var firstKey = monthKey(today);
+  var lastKey = firstKey;
+  final centsByMonth = <int, int>{};
+  for (final record in records) {
+    final key = monthKey(record.date);
+    centsByMonth[key] = (centsByMonth[key] ?? 0) + record.effectiveCostCents;
+    if (key < firstKey) {
+      firstKey = key;
+    }
+    if (key > lastKey) {
+      lastKey = key;
+    }
+  }
+  return [
+    for (var key = firstKey; key <= lastKey; key++)
+      FuelCostMonthPoint(
+        year: key ~/ 12,
+        month: key % 12 + 1,
+        costCents: centsByMonth[key] ?? 0,
+      ),
+  ];
 }
 
 /// 加油费用聚合结果（一次算齐的只读视图模型，渲染层直接消费）。
@@ -49,7 +79,6 @@ class FuelCostStats {
   const FuelCostStats({
     required this.totalCents,
     required this.recordCount,
-    required this.yearRows,
   });
 
   /// 加油总费用（分，实付优先口径）。
@@ -57,42 +86,16 @@ class FuelCostStats {
 
   /// 加油记录总条数。
   final int recordCount;
-
-  /// 年度行：首条记录年 → 今年逐年铺满（无记录年补 0，保证年份连续），
-  /// **最近年在前**（列表阅读习惯，与保养走势卡的横轴时间方向不同——
-  /// 这里是行列表不是时间轴）。
-  final List<FuelCostYearRow> yearRows;
 }
 
-/// 加油费用聚合唯一入口：全量加油记录 + 生效今天 → 完整视图模型。
-/// 纯函数，不感知作用域——调用方传哪份记录就算哪份（作用域永远当前
-/// 应用车辆，由上游数据接缝决定）。空记录返回全 0 与空列表。
-FuelCostStats buildFuelCostStats({
-  required List<FuelRecord> records,
-  required LocalDate today,
-}) {
+/// 加油费用聚合唯一入口：全量加油记录 → 完整视图模型（2026-09-23 起
+/// 只剩卡头两个数字；逐月明细由 [fuelMonthlyCents] 单独出）。纯函数，
+/// 不感知作用域——调用方传哪份记录就算哪份（作用域永远当前应用车辆，
+/// 由上游数据接缝决定）。空记录返回全 0。
+FuelCostStats buildFuelCostStats({required List<FuelRecord> records}) {
   final totalCents = records.fold(
     0,
     (sum, record) => sum + record.effectiveCostCents,
   );
-  // 首条记录年（无记录时为今年，年份行退化为空下面已挡）。
-  var firstYear = today.year;
-  for (final record in records) {
-    if (record.date.year < firstYear) {
-      firstYear = record.date.year;
-    }
-  }
-  final yearRows = [
-    if (records.isNotEmpty)
-      for (var year = today.year; year >= firstYear; year--)
-        FuelCostYearRow(
-          year: year,
-          costCents: fuelCostCentsForYear(records, year),
-        ),
-  ];
-  return FuelCostStats(
-    totalCents: totalCents,
-    recordCount: records.length,
-    yearRows: yearRows,
-  );
+  return FuelCostStats(totalCents: totalCents, recordCount: records.length);
 }
