@@ -252,17 +252,29 @@ class _ParkingIcon extends StatelessWidget {
 /// + 快捷时长 chip + 校验 + 开始按钮。入口仅在无倒计时且按钮可用，
 /// 无编辑分支（原 initial 死分支已删，R26）。
 class ParkingCountdownForm extends StatefulWidget {
-  const ParkingCountdownForm({required this.now, required this.onSubmit});
+  const ParkingCountdownForm({
+    required this.now,
+    required this.handle,
+    required this.onSubmit,
+  });
 
   final DateTime now;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<void> handle;
   final Future<void> Function(ParkingCountdown countdown) onSubmit;
 
   @override
   State<ParkingCountdownForm> createState() => ParkingCountdownFormState();
 }
 
-class ParkingCountdownFormState extends State<ParkingCountdownForm>
-    with LunioFormSubmit {
+class ParkingCountdownFormState extends State<ParkingCountdownForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   late DateTime entryTime;
   late final TextEditingController durationMinutesController;
 
@@ -328,7 +340,7 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm>
         const SizedBox(height: 16),
         LunioFormActions(
           confirmLabel: '开始计时',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -360,25 +372,22 @@ class ParkingCountdownFormState extends State<ParkingCountdownForm>
   }
 
   /// 提交：校验免费时长为正整数 → 构造 ParkingCountdown（分钟→秒）→
-  /// onSubmit（保存+通知）→ 成功关 sheet；失败经提交运行器在表单内
-  /// 展示中文错误。
+  /// onSubmit（保存+通知）。成功关 sheet、失败行内错误都归表单运行时
+  /// （ADR 0016；原先是表单内自管 pop，现统一收口）。
   Future<void> _submit() async {
     final durationMinutes = _durationMinutes;
     if (durationMinutes == null || durationMinutes <= 0) {
       setFormError('免费时长必须填写正整数分钟');
       return;
     }
-    await runSubmit(() async {
-      await widget.onSubmit(
+    await widget.handle.submit(
+      () => widget.onSubmit(
         ParkingCountdown(
           startedAt: entryTime,
           durationSeconds: durationMinutes * 60,
         ),
-      );
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-    });
+      ),
+    );
   }
 }
 
@@ -605,16 +614,17 @@ class ParkingDurationChip extends StatelessWidget {
 /// 停车计时 sheet 入口（提醒页"停车倒计时"按钮）。
 /// 点按钮的此刻实时取系统时间（不用页面构建时缓存的时间，页面开久了
 /// 会过期），秒/毫秒截成 0：入场时间默认整分，需要秒再手动调滚轮。
-/// bottomInset 跟随键盘高度，键盘弹起时把内容顶上去。
+/// 键盘 inset 与 pop/toast 时序归表单运行时（ADR 0016）；本入口按产品
+/// 约定无成功 toast（保存即进入倒计时，卡片状态本身就是反馈）。
 Future<void> showParkingCountdownSheet(
   BuildContext context,
   WidgetRef ref,
 ) {
-  return showLunioModalSheet<void>(
+  return showLunioFormSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+    title: '停车计时',
+    subtitle: '设置入场时间和免费停车时长。',
+    builder: (sheetContext, handle) {
       final tappedNow = ref.read(appDateContextProvider).readSystemNow();
       final entryTime = DateTime(
         tappedNow.year,
@@ -623,14 +633,12 @@ Future<void> showParkingCountdownSheet(
         tappedNow.hour,
         tappedNow.minute,
       );
-      return PrototypeSheetFrame(
-        title: '停车计时',
-        subtitle: '设置入场时间和免费停车时长。',
-        bottomInset: bottomInset,
-        child: ParkingCountdownForm(
-          now: entryTime,
-          onSubmit: (countdown) => saveParkingCountdown(ref, countdown),
-        ),
+      return ParkingCountdownForm(
+        now: entryTime,
+        handle: handle,
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 归表单运行时
+        // （ADR 0016），无成功 toast。
+        onSubmit: (countdown) => saveParkingCountdown(ref, countdown),
       );
     },
   );

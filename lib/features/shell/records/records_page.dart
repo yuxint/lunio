@@ -492,6 +492,7 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
     required this.items,
     required this.initialDate,
     required this.today,
+    required this.handle,
     required this.onExitToEdit,
     this.record,
     required this.reloadItems,
@@ -503,6 +504,10 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
   final LocalDate initialDate;
   final LocalDate today;
   final MaintenanceRecord? record;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它，
+  /// pop 与 toast 不再由表单或入口闭包手写。
+  final FormSheetHandle<void> handle;
 
   /// 新增模式同日查重弹窗选「去编辑」时回调（传同日已有记录）：
   /// 关当前新增 sheet、打开该记录的编辑 sheet 都要拿到外层 context，
@@ -521,8 +526,13 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
       MaintenanceRecordFormState();
 }
 
-class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
-    with LunioFormSubmit {
+class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上，本 State 只留字段与校验规则。以下三个转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   // ---- 第一步的字段 ----
   late LocalDate recordDate;
   late final TextEditingController mileageController;
@@ -746,7 +756,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
         const SizedBox(height: 16),
         LunioFormActions(
           confirmLabel: '下一步',
-          onCancel: () => Navigator.of(context).pop(),
+          // 取消 = 关 sheet，pop 归表单运行时（ADR 0016）。
+          onCancel: () => widget.handle.close(),
           onConfirm: _goToIntervalStep,
           saving: saving,
         ),
@@ -886,8 +897,8 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
   }
 
   /// 第二步提交：间隔输入 → buildItemUpdates（校验 + 生成 update 清单，
-  /// 实现在 record_interval_updates.dart）→ onSubmit（入库）→ 成功由
-  /// 外层关 sheet；失败展示中文错误。
+  /// 实现在 record_interval_updates.dart）→ onSubmit（入库）。成功关
+  /// sheet 与失败行内错误都归表单运行时 handle（ADR 0016）。
   Future<void> _submit() async {
     final draft = recordDraft;
     if (draft == null) {
@@ -902,7 +913,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       setFormError(result.errorText!);
       return;
     }
-    await runSubmit(() => widget.onSubmit(draft, result.updates));
+    await widget.handle.submit(() => widget.onSubmit(draft, result.updates));
   }
 
   /// 行内"新增"项目：打开项目表单 sheet → 保存成功后重拉项目列表 →
@@ -1060,79 +1071,73 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
 }
 
 /// ★ 记录表单入口（提醒页按钮 / 记录卡"编辑"）：
-/// 先 await 三个 provider（车/项目/生效今天）→ 无车或无可用项目时
-/// toast 拦截 → 弹两步表单 sheet。
+/// 装载/守卫/键盘 inset/pop/toast 的时序归 showLunioFormSheet（ADR 0016），
+/// 这里只声明装载内容、"无车/无项目"守卫文案、头部副标题与提交动作。
 /// 新增模式表单内自带同日查重（打开时/选完日期后，见表单 state），
-/// 查重弹窗选「去编辑」时经 onExitToEdit 在这里关新增 sheet、递归
-/// 打开该记录的编辑 sheet。
-/// onSubmit：新增走 saveMaintenanceRecordWithItemUpdates、编辑走
-/// updateMaintenanceRecordWithItemUpdates（Repository 事务）→
-/// invalidateVehicleProviders → 关 sheet。
+/// 查重弹窗选「去编辑」时经 onExitToEdit 用 handle.close() 关新增
+/// sheet、再用外层 context 递归打开该记录的编辑 sheet。
 Future<void> showMaintenanceRecordFormSheet(
   BuildContext context,
   WidgetRef ref, {
   MaintenanceRecord? record,
-}) async {
-  final car = await ref.read(appliedCarProvider.future);
-  final items = await ref.read(appliedCarMaintenanceItemsProvider.future);
-  final today = await ref.read(effectiveTodayProvider.future);
-  if (!context.mounted) {
-    return;
-  }
-  if (car?.id == null) {
-    showStatusOverlay(context, '请先新增车辆', StatusOverlayTone.info);
-    return;
-  }
-  if (items
-      .where(
-        (item) => item.enabled || record?.itemIds.contains(item.id) == true,
-      )
-      .isEmpty) {
-    showStatusOverlay(context, '请先配置可用保养项目', StatusOverlayTone.info);
-    return;
-  }
-  showLunioModalSheet<void>(
+}) {
+  // 装载结果写入闭包捕获变量，在 load/guard/builder 之间共享（ADR 0016）。
+  Car? car;
+  List<MaintenanceItem> items = const [];
+  LocalDate today = LocalDate.fromDateTime(DateTime.now());
+  return showLunioFormSheet<void>(
     context: context,
-    // 编辑表单：点遮罩/下滑/返回键不可关，只能走取消/保存按钮。
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: record == null ? '新增保养记录' : '编辑保养记录',
-        subtitle: '${car!.brand} ${car.model}',
-        // 必须用 sheet 自己的 context 取键盘高度：外层 context 在 sheet
-        // 构建时就定格为 0，键盘弹起后不会更新（曾致底部输入被遮挡）。
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: MaintenanceRecordForm(
-          car: car,
-          items: items,
-          initialDate: today,
-          today: today,
-          record: record,
-          // 新增模式同日查重弹窗选「去编辑」：先确认外层 context 仍
-          // mounted 再关当前新增 sheet，然后用外层 context 打开编辑
-          // sheet（关了 sheet 表单的 context 就不可用了，必须用外层）。
-          onExitToEdit: (existing) {
-            if (!context.mounted) {
-              return;
-            }
-            Navigator.of(sheetContext).pop();
-            showMaintenanceRecordFormSheet(context, ref, record: existing);
-          },
-          reloadItems: () =>
-              ref.read(maintenanceItemsForCarProvider(car.id!).future),
-          onSubmit: (value, itemUpdates) async {
-            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-            await saveMaintenanceRecord(ref, value, itemUpdates);
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
-            }
-            if (context.mounted) {
-              showStatusOverlay(context, '保养记录已保存', StatusOverlayTone.success);
-            }
-          },
-        ),
+    title: record == null ? '新增保养记录' : '编辑保养记录',
+    load: (handle) async {
+      car = await ref.read(appliedCarProvider.future);
+      items = await ref.read(appliedCarMaintenanceItemsProvider.future);
+      today = await ref.read(effectiveTodayProvider.future);
+      // 闭包捕获变量不做类型提升（装载数据跨闭包共享的标准写法），
+      // 先落本地再判空。
+      final loadedCar = car;
+      if (loadedCar != null) {
+        handle.setSubtitle('${loadedCar.brand} ${loadedCar.model}');
+      }
+    },
+    guard: () {
+      if (car?.id == null) {
+        return '请先新增车辆';
+      }
+      final usable = items.where(
+        (item) => item.enabled || record?.itemIds.contains(item.id) == true,
+      );
+      if (usable.isEmpty) {
+        return '请先配置可用保养项目';
+      }
+      return null;
+    },
+    builder: (sheetContext, handle) {
+      return MaintenanceRecordForm(
+        car: car!,
+        items: items,
+        initialDate: today,
+        today: today,
+        record: record,
+        handle: handle,
+        // 新增模式同日查重弹窗选「去编辑」：先关当前新增 sheet（pop 归
+        // handle），再用外层 context 打开编辑 sheet（关了 sheet 表单的
+        // context 就不可用了，必须用外层）。
+        onExitToEdit: (existing) {
+          if (!context.mounted) {
+            return;
+          }
+          handle.close();
+          showMaintenanceRecordFormSheet(context, ref, record: existing);
+        },
+        reloadItems: () =>
+            ref.read(maintenanceItemsForCarProvider(car!.id!).future),
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归表单
+        // 运行时（ADR 0016）。
+        onSubmit: (value, itemUpdates) =>
+            saveMaintenanceRecord(ref, value, itemUpdates),
       );
     },
+    successMessage: '保养记录已保存',
   );
 }
 

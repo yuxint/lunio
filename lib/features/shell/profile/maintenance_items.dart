@@ -612,20 +612,29 @@ class MaintenanceItemCard extends StatelessWidget {
 class MaintenanceItemForm extends StatefulWidget {
   const MaintenanceItemForm({
     required this.carId,
+    required this.handle,
     this.item,
     required this.onSubmit,
   });
 
   final int carId;
   final MaintenanceItem? item;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<bool> handle;
   final Future<void> Function(MaintenanceItem item) onSubmit;
 
   @override
   State<MaintenanceItemForm> createState() => MaintenanceItemFormState();
 }
 
-class MaintenanceItemFormState extends State<MaintenanceItemForm>
-    with LunioFormSubmit {
+class MaintenanceItemFormState extends State<MaintenanceItemForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   late final TextEditingController nameController;
   late final TextEditingController mileageController;
   late final TextEditingController monthsController;
@@ -697,7 +706,7 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm>
         const SizedBox(height: 16),
         LunioFormActions(
           confirmLabel: '保存项目',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -732,8 +741,8 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm>
       return;
     }
     final item = widget.item;
-    await runSubmit(() async {
-      await widget.onSubmit(
+    await widget.handle.submit(
+      () => widget.onSubmit(
         MaintenanceItem(
           id: item?.id,
           carsId: widget.carId,
@@ -753,77 +762,60 @@ class MaintenanceItemFormState extends State<MaintenanceItemForm>
             updatedAt: DateTime.now(),
           ),
         ),
-      );
-    });
+      ),
+    );
   }
 }
 
 /// ★ 落库版项目表单 sheet（项目 sheet / 记录表单行内新增用）：
 /// 新增走 saveMaintenanceItem、编辑走 updateMaintenanceItem →
-/// invalidate → pop(true)（true=已保存，调用方据此刷新）。
+/// invalidate；提交成功 pop(true)（true=已保存，调用方据此刷新）由
+/// resultOnSubmit 透传。装载/守卫/pop/toast 时序归 showLunioFormSheet
+/// （ADR 0016）。
 Future<bool?> showMaintenanceItemFormSheet(
   BuildContext context,
   WidgetRef ref, {
   required int carId,
   MaintenanceItem? item,
 }) {
-  return showLunioModalSheet<bool>(
+  return showLunioFormSheet<bool>(
     context: context,
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: item == null ? '新增保养项目' : '编辑保养项目',
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: MaintenanceItemForm(
-          carId: carId,
-          item: item,
-          onSubmit: (value) async {
-            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-            await saveMaintenanceItem(ref, value);
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop(true);
-            }
-            // 落库版才提示保存成功；向导里的草稿版不落库，不提示。
-            if (context.mounted) {
-              showStatusOverlay(
-                context,
-                '保养项目已保存',
-                StatusOverlayTone.success,
-              );
-            }
-          },
-        ),
+    title: item == null ? '新增保养项目' : '编辑保养项目',
+    builder: (sheetContext, handle) {
+      return MaintenanceItemForm(
+        carId: carId,
+        item: item,
+        handle: handle,
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归
+        // 表单运行时（ADR 0016）。
+        onSubmit: (value) => saveMaintenanceItem(ref, value),
       );
     },
+    resultOnSubmit: true,
+    successMessage: '保养项目已保存',
   );
 }
 
 /// 草稿版项目表单 sheet（添加车辆向导内用）：不落库，确认后回调
-/// onSubmit 把结果交还向导的内存草稿列表。
+/// onSubmit 把结果交还向导的内存草稿列表。不落库不提示（无
+/// successMessage）；pop(true) 由 resultOnSubmit 透传。
 Future<bool?> showDraftMaintenanceItemFormSheet(
   BuildContext context, {
   required MaintenanceItem item,
   required ValueChanged<MaintenanceItem> onSubmit,
 }) {
-  return showLunioModalSheet<bool>(
+  return showLunioFormSheet<bool>(
     context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      return PrototypeSheetFrame(
-        title: item.name.isEmpty ? '新增保养项目' : '编辑保养项目',
-        bottomInset: MediaQuery.of(context).viewInsets.bottom,
-        child: MaintenanceItemForm(
-          carId: 0,
-          item: item,
-          onSubmit: (value) async {
-            onSubmit(value);
-            if (context.mounted) {
-              Navigator.of(context).pop(true);
-            }
-          },
-        ),
+    title: item.name.isEmpty ? '新增保养项目' : '编辑保养项目',
+    builder: (sheetContext, handle) {
+      return MaintenanceItemForm(
+        carId: 0,
+        item: item,
+        handle: handle,
+        onSubmit: (value) async => onSubmit(value),
       );
     },
+    resultOnSubmit: true,
   );
 }
 

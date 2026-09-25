@@ -159,51 +159,37 @@ class ReminderActionRow extends StatelessWidget {
 
 /// 快捷更新里程 sheet：输入框默认留空 + autofocus 自动弹数字键盘，
 /// 保存走动作层 updateCar（写库 → 失效车辆家族，与编辑车辆表单同通道，
-/// 同步元数据也按 pendingUpdate 处理）。
+/// 同步元数据也按 pendingUpdate 处理）。装载/守卫/pop/toast 时序归
+/// showLunioFormSheet（ADR 0016）。
 /// 新里程不高于当前里程（含相等）时先弹确认框警示——里程表只增不减，
 /// 输小了九成是手误；确认后仍可保存，与编辑车辆表单"允许改小"的现行
 /// 规则不冲突（宽松规则是否收敛见审查台账 R36，本次只给快捷入口加摩擦）。
 void showQuickMileageUpdateSheet(BuildContext context, WidgetRef ref, Car car) {
   final controller = TextEditingController();
-  showLunioModalSheet<void>(
+  showLunioFormSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: '更新里程',
-        subtitle: '当前 ${formatMileageKm(car.currentMileageKm)}，输入新的当前里程',
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: _QuickMileageForm(
-          controller: controller,
-          car: car,
-          onSubmit: (mileage) async {
-            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳；
-            // 双 context 写法与 fuel_page 的手填价一致（pop 用 sheet 的
-            // context，toast 用打开 sheet 前的外层 context）。
-            await updateCar(
-              ref,
-              car.copyWith(
-                currentMileageKm: mileage,
-                sync: SyncMetadata(
-                  status: SyncStatus.pendingUpdate,
-                  updatedAt: DateTime.now(),
-                ),
-              ),
-            );
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
-            }
-            if (context.mounted) {
-              showStatusOverlay(
-                context,
-                '里程已更新',
-                StatusOverlayTone.success,
-              );
-            }
-          },
+    title: '更新里程',
+    subtitle: '当前 ${formatMileageKm(car.currentMileageKm)}，输入新的当前里程',
+    builder: (sheetContext, handle) {
+      return _QuickMileageForm(
+        controller: controller,
+        car: car,
+        handle: handle,
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归
+        // 表单运行时（ADR 0016）。
+        onSubmit: (mileage) => updateCar(
+          ref,
+          car.copyWith(
+            currentMileageKm: mileage,
+            sync: SyncMetadata(
+              status: SyncStatus.pendingUpdate,
+              updatedAt: DateTime.now(),
+            ),
+          ),
         ),
       );
     },
+    successMessage: '里程已更新',
   );
 }
 
@@ -213,19 +199,28 @@ class _QuickMileageForm extends StatefulWidget {
   const _QuickMileageForm({
     required this.controller,
     required this.car,
+    required this.handle,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final Car car;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<void> handle;
   final Future<void> Function(int mileage) onSubmit;
 
   @override
   State<_QuickMileageForm> createState() => _QuickMileageFormState();
 }
 
-class _QuickMileageFormState extends State<_QuickMileageForm>
-    with LunioFormSubmit {
+class _QuickMileageFormState extends State<_QuickMileageForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -248,7 +243,7 @@ class _QuickMileageFormState extends State<_QuickMileageForm>
         const SizedBox(height: 18),
         LunioFormActions(
           confirmLabel: '保存里程',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -265,6 +260,7 @@ class _QuickMileageFormState extends State<_QuickMileageForm>
       return;
     }
     if (mileage <= widget.car.currentMileageKm) {
+      // 确认框在提交生命周期之前：取消 = 留场继续改，不产生错误提示。
       final confirmed = await showConfirmDialog(
         context: context,
         title: '里程未调高',
@@ -279,6 +275,6 @@ class _QuickMileageFormState extends State<_QuickMileageForm>
         return;
       }
     }
-    await runSubmit(() => widget.onSubmit(mileage));
+    await widget.handle.submit(() => widget.onSubmit(mileage));
   }
 }

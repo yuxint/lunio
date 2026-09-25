@@ -238,186 +238,91 @@ class EmptyVehicleCard extends StatelessWidget {
   }
 }
 
-/// 添加/编辑车辆 sheet 共用的数据前置检查（R32 提取，替代两份重复的
-/// "车型/日期加载失败"检查块）：任一数据在加载中显示加载圈、任一出错
-/// 给对应行内提示。返回 null 表示数据就绪，调用方继续渲染表单。
-/// 车辆表单装载结果（密封类 ≈ Java 的 sealed interface）：未就绪给占位，
-/// 就绪直接携带数据——调用方不再自己再 when 一遍。
-sealed class CarFormLoad {
-  const CarFormLoad();
-}
-
-/// 车型目录或生效日期仍在加载。
-class CarFormLoading extends CarFormLoad {
-  const CarFormLoading();
-}
-
-/// 加载失败（message 为用户可读中文）。
-class CarFormLoadError extends CarFormLoad {
-  const CarFormLoadError(this.message);
-
-  final String message;
-}
-
-/// 就绪：车型目录 + 生效今天。
-class CarFormData extends CarFormLoad {
-  const CarFormData({required this.vehicleModels, required this.today});
-
-  final List<VehicleModel> vehicleModels;
-  final LocalDate today;
-}
-
-/// 汇总车辆表单的两个前置依赖（车型目录、生效今天）的装载状态。
-CarFormLoad carFormLoadGuard(
-  AsyncValue<List<VehicleModel>> vehicleModels,
-  AsyncValue<LocalDate> today,
-) {
-  if (vehicleModels.isLoading || today.isLoading) {
-    return const CarFormLoading();
-  }
-  if (vehicleModels.hasError) {
-    return const CarFormLoadError('车型加载失败，请稍后重试');
-  }
-  if (today.hasError) {
-    return const CarFormLoadError('日期加载失败，请稍后重试');
-  }
-  final models = vehicleModels.value;
-  final todayValue = today.value;
-  if (models == null || todayValue == null) {
-    return const CarFormLoading();
-  }
-  return CarFormData(vehicleModels: models, today: todayValue);
-}
-
 /// ★ 添加车辆 sheet 入口（我的页"添加"/空卡片"新增车辆"/提醒页空卡片）。
-/// StatefulBuilder 持有"当前是否第二步"以切换 sheet 标题；
-/// watch 车型目录与生效今天，加载失败给出行内提示；
-/// 向导提交 → createCarWithMaintenanceItems（事务：车+项目+首车设应用车辆）
-/// → invalidateVehicleProviders → 关 sheet。
+/// 装载/守卫/头部/键盘 inset/pop/toast 时序归 showLunioFormSheet
+/// （ADR 0016；原"sheet 先开、目录在 frame 内 watch"的装载改为统一
+/// 预装载——目录是缓存 provider，等待很短）：装载车型目录与生效今天 →
+/// 目录为空 toast 拦截 → 弹两步向导。
+/// 两步换 sheet 标题经 handle.setFrame（onMaintenanceStepChanged 接线）；
+/// 向导提交 → createCarWithMaintenanceItems（事务：车+项目+首车设应用
+/// 车辆）→ invalidateVehicleProviders（动作层）。
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
-  showLunioModalSheet<void>(
+  List<VehicleModel> vehicleModels = const [];
+  LocalDate today = LocalDate.fromDateTime(DateTime.now());
+  showLunioFormSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      var isMaintenanceStep = false;
-      return StatefulBuilder(
-        builder: (sheetContext, setSheetState) {
-          return PrototypeSheetFrame(
-            title: isMaintenanceStep ? '保养项目' : '添加车辆',
-            subtitle: isMaintenanceStep ? '以下保养项目只做参考，具体以官方保养手册为准' : null,
-            bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-            child: Consumer(
-              builder: (sheetContext, ref, child) {
-                final vehicleModels = ref.watch(vehicleModelsProvider);
-                final today = ref.watch(effectiveTodayProvider);
-                final load = carFormLoadGuard(vehicleModels, today);
-                if (load is CarFormLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (load is CarFormLoadError) {
-                  return LunioInlineMessage(message: load.message);
-                }
-                final data = load as CarFormData;
-                if (data.vehicleModels.isEmpty) {
-                  return const LunioInlineMessage(message: '暂无可选车型');
-                }
-                return AddCarWizard(
-                  vehicleModels: data.vehicleModels,
-                  today: data.today,
-                  onMaintenanceStepChanged: (nextValue) {
-                    if (isMaintenanceStep == nextValue) {
-                      return;
-                    }
-                    setSheetState(() {
-                      isMaintenanceStep = nextValue;
-                    });
-                  },
-                  onSubmit: (car, items) async {
-                    // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-                    await createCar(ref, car, items);
-                    if (sheetContext.mounted) {
-                      Navigator.of(sheetContext).pop();
-                    }
-                    if (context.mounted) {
-                      showStatusOverlay(
-                        context,
-                        '车辆已保存',
-                        StatusOverlayTone.success,
-                      );
-                    }
-                  },
-                );
-              },
-            ),
+    title: '添加车辆',
+    load: (handle) async {
+      vehicleModels = await ref.read(vehicleModelsProvider.future);
+      today = await ref.read(effectiveTodayProvider.future);
+    },
+    guard: () => vehicleModels.isEmpty ? '暂无可选车型' : null,
+    builder: (sheetContext, handle) {
+      return AddCarWizard(
+        vehicleModels: vehicleModels,
+        today: today,
+        handle: handle,
+        // 两步换 sheet 标题：离开第一步显示"保养项目"（ADR 0016 的
+        // setFrame，替代原先 StatefulBuilder 手搓的标题切换）。
+        onMaintenanceStepChanged: (onMaintenanceStep) {
+          handle.setFrame(
+            title: onMaintenanceStep ? '保养项目' : '添加车辆',
+            subtitle: onMaintenanceStep
+                ? '以下保养项目只做参考，具体以官方保养手册为准'
+                : null,
           );
         },
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归
+        // 表单运行时（ADR 0016）。
+        onSubmit: (car, items) => createCar(ref, car, items),
       );
     },
+    successMessage: '车辆已保存',
   );
 }
 
 /// ★ 编辑车辆 sheet：AddCarForm 编辑模式（品牌车型只读）→
-/// updateCar（写里程/日期/容积）→ invalidate → 关 sheet。
+/// updateCar（写里程/日期/容积）→ invalidate（动作层）。
 /// 车型目录为空时兜底用当前车拼一个假选项（只是为了让表单不炸）。
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
-  showLunioModalSheet<void>(
+  List<VehicleModel> vehicleModels = const [];
+  LocalDate today = LocalDate.fromDateTime(DateTime.now());
+  showLunioFormSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: '编辑车辆',
-        subtitle: '品牌车型保持稳定，可更新当前里程、上路日期和油箱容积',
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: Consumer(
-          builder: (sheetContext, ref, child) {
-            final vehicleModels = ref.watch(vehicleModelsProvider);
-            final today = ref.watch(effectiveTodayProvider);
-            final load = carFormLoadGuard(vehicleModels, today);
-            if (load is CarFormLoading) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (load is CarFormLoadError) {
-              return LunioInlineMessage(message: load.message);
-            }
-            final data = load as CarFormData;
-            return AddCarForm(
-              vehicleModels: data.vehicleModels.isEmpty
-                  ? [
-                      // 目录为空时兜底用当前车拼一个假选项（表单不炸）；
-                      // 推荐动力类型用当前车自己的。
-                      VehicleModel(
-                        brand: car.brand,
-                        model: car.model,
-                        template: car.powertrainType,
-                        sortOrder: 0,
-                        sync: SyncMetadata(
-                          status: SyncStatus.synced,
-                          updatedAt: DateTime.now(),
-                        ),
-                      ),
-                    ]
-                  : data.vehicleModels,
-              today: data.today,
-              initialCar: car,
-              onSubmit: (updatedCar) async {
-                // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-                await updateCar(ref, updatedCar);
-                if (sheetContext.mounted) {
-                  Navigator.of(sheetContext).pop();
-                }
-                if (context.mounted) {
-                  showStatusOverlay(
-                    context,
-                    '车辆已保存',
-                    StatusOverlayTone.success,
-                  );
-                }
-              },
-            );
-          },
-        ),
+    title: '编辑车辆',
+    subtitle: '品牌车型保持稳定，可更新当前里程、上路日期和油箱容积',
+    load: (handle) async {
+      vehicleModels = await ref.read(vehicleModelsProvider.future);
+      today = await ref.read(effectiveTodayProvider.future);
+    },
+    builder: (sheetContext, handle) {
+      return AddCarForm(
+        vehicleModels: vehicleModels.isEmpty
+            ? [
+                // 目录为空时兜底用当前车拼一个假选项（表单不炸）；
+                // 推荐动力类型用当前车自己的。
+                VehicleModel(
+                  brand: car.brand,
+                  model: car.model,
+                  template: car.powertrainType,
+                  sortOrder: 0,
+                  sync: SyncMetadata(
+                    status: SyncStatus.synced,
+                    updatedAt: DateTime.now(),
+                  ),
+                ),
+              ]
+            : vehicleModels,
+        today: today,
+        initialCar: car,
+        handle: handle,
+        closeOnSubmit: true,
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归
+        // 表单运行时（ADR 0016）。
+        onSubmit: (updatedCar) => updateCar(ref, updatedCar),
       );
     },
+    successMessage: '车辆已保存',
   );
 }
 
