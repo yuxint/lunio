@@ -636,15 +636,15 @@ class LunioRepository {
       await database
           .into(database.maintenanceRecordItems)
           .insert(
+            // 费用传域对象，"材料/工时有值但项目费用为空"由 companion
+            // 内置 normalize 兜底（数据不变量单点保证，2026-09-25 收编）。
             maintenanceRecordItemCompanion(
               id: SnowflakeIdGenerator.instance.next(),
               recordId: recordId,
               carId: record.carId,
               itemId: itemId,
               date: record.date,
-              materialCostCents: cost?.materialCents,
-              laborCostCents: cost?.laborCents,
-              costCents: cost?.costCents,
+              cost: cost,
             ),
           );
     }

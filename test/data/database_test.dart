@@ -9,6 +9,8 @@ import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
+import 'package:lunio/data/repositories/entity_row_codec.dart'
+    show maintenanceRecordCompanion;
 import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/errors/lunio_error.dart';
@@ -1440,19 +1442,42 @@ void main() {
       'backup restore normalizes item costs missing cost field (invariant)',
       () async {
     final (carId, oilId) = await seedCarAndItem();
-    // 违规形态存量行：材料/工时有值、项目费用为空（不变量落地前写入，
-    // 保存路径原样落库是合法现状——修复点在恢复，不把违规数据带进新库）。
-    await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+    // 违规形态存量行：材料/工时有值、项目费用为空（不变量落地前写入的
+    // 历史数据）。直插播种模拟——写 seam（关联行 companion）2026-09-25
+    // 起单点补齐，经仓库保存已造不出违规行；而备份文件可能来自旧版本
+    // 导出，修复点在恢复，不把违规数据带进新库。
+    const legacyRecordId = 990001;
+    await database.into(database.maintenanceRecords).insert(
+      maintenanceRecordCompanion(
+        MaintenanceRecord(
+          carId: carId,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: [oilId],
+          itemCosts: [
+            RecordItemCost(
+              itemId: oilId,
+              materialCents: 15000,
+              laborCents: 8000,
+            ),
+          ],
+          costCents: 23000,
+          mileageKm: 12000,
+          sync: sync,
+        ),
+        legacyRecordId,
+      ),
+    );
+    await database.into(database.maintenanceRecordItems).insert(
+      // 裸 companion 绕过写 seam：还原"项目费用为空"的违规形态
+      // （costCents 留空 = NULL）。
+      MaintenanceRecordItemsCompanion.insert(
+        id: const Value(990002),
+        maintenanceRecordId: legacyRecordId,
         carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: [oilId],
-        itemCosts: [
-          RecordItemCost(itemId: oilId, materialCents: 15000, laborCents: 8000),
-        ],
-        costCents: 23000,
-        mileageKm: 12000,
-        sync: sync,
+        itemId: oilId,
+        date: const LocalDate(2026, 5, 19).toString(),
+        materialCostCents: const Value(15000),
+        laborCostCents: const Value(8000),
       ),
     );
 
@@ -1477,6 +1502,34 @@ void main() {
     expect(restoredRecords, hasLength(1));
     final cost = restoredRecords.single.itemCosts.single;
     // 恢复时按"材料+工时"补齐项目费用（2026-09-20 数据不变量）。
+    expect(cost.materialCents, 15000);
+    expect(cost.laborCents, 8000);
+    expect(cost.costCents, 23000);
+  });
+
+  test('save enforces item cost invariant at the write seam', () async {
+    final (carId, oilId) = await seedCarAndItem();
+    // 调用方不做任何预处理的极端形态：材料/工时有值、项目费用为空。
+    // "材料/工时任一有值 ⇒ 项目费用必有值"由关联行 companion 单点
+    // 兜住（2026-09-25 收编，取代表单/恢复两写点的上游调用）——
+    // 还原 companion 内置 normalize 必须让本用例失败（变异验证）。
+    await repository.saveMaintenanceRecord(
+      MaintenanceRecord(
+        carId: carId,
+        date: const LocalDate(2026, 5, 19),
+        itemIds: [oilId],
+        itemCosts: [
+          RecordItemCost(itemId: oilId, materialCents: 15000, laborCents: 8000),
+        ],
+        costCents: 23000,
+        mileageKm: 12000,
+        sync: sync,
+      ),
+    );
+
+    final stored =
+        (await repository.listMaintenanceRecordsForCar(carId)).single;
+    final cost = stored.itemCosts.single;
     expect(cost.materialCents, 15000);
     expect(cost.laborCents, 8000);
     expect(cost.costCents, 23000);

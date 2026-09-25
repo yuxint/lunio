@@ -294,15 +294,18 @@ void main() {
     expect(costs.single.costCents, 15000);
   });
 
-  test('buildItemCosts normalizes missing cost at submit (belt)', () {
+  test('buildItemCosts passes raw values through (normalize at write seam)', () {
     // 绕过输入事件直接改草稿文本（程序态/异常路径）：材料有值、项目
-    // 费用空，提交清单也要按材料+工时补齐（数据不变量兜底）。
+    // 费用空——清单原样交出，不在此归一。"材料/工时有值 ⇒ 项目费用
+    // 必有值"由写 seam（关联行 companion 内置 normalize）单点兜住
+    // （2026-09-25 收编），数据层击杀用例见 database_test 的
+    // "save enforces item cost invariant at the write seam"。
     final controller = buildController(selected: {1});
     controller.drafts[1]!.materialController.text = '100';
 
     final costs = controller.buildItemCosts();
     expect(costs, hasLength(1));
     expect(costs.single.materialCents, 10000);
-    expect(costs.single.costCents, 10000);
+    expect(costs.single.costCents, isNull);
   });
 }

@@ -20,6 +20,7 @@ import '../../domain/entities/powertrain_type.dart' as domain;
 import '../../domain/entities/sync_metadata.dart';
 import '../../domain/entities/vehicle_default_maintenance_item.dart' as domain;
 import '../../domain/entities/vehicle_model.dart' as domain;
+import '../../domain/rules/record_rules.dart';
 import '../database/app_database.dart';
 
 // ---------------- cars ----------------
@@ -165,26 +166,29 @@ domain.RecordItemCost? recordItemCostFromRow(MaintenanceRecordItemRow row) {
 }
 
 /// 记录关联行 → 插入用 Companion（手工录入、编辑重建关联、恢复备份
-/// 三条路径共用）。费用三列可空（null = 未填，ADR 0010）。
+/// 三条路径共用）。[cost] 传域对象即可："材料/工时有值但项目费用为空"
+/// 在此单点经 [RecordRules.normalizeItemCost] 按材料+工时补齐（数据
+/// 不变量，2026-09-20 落地；2026-09-25 由表单/恢复两写点的上游调用
+/// 收编为本函数唯一保证点，新写点天然继承、不要再在上游重复 normalize）。
+/// 费用三列可空（null = 未填，ADR 0010）。
 MaintenanceRecordItemsCompanion maintenanceRecordItemCompanion({
   required int id,
   required int recordId,
   required int carId,
   required int itemId,
   required LocalDate date,
-  int? materialCostCents,
-  int? laborCostCents,
-  int? costCents,
+  domain.RecordItemCost? cost,
 }) {
+  final normalized = cost == null ? null : RecordRules.normalizeItemCost(cost);
   return MaintenanceRecordItemsCompanion.insert(
     id: Value(id),
     maintenanceRecordId: recordId,
     carId: carId,
     itemId: itemId,
     date: date.toString(),
-    materialCostCents: Value(materialCostCents),
-    laborCostCents: Value(laborCostCents),
-    costCents: Value(costCents),
+    materialCostCents: Value(normalized?.materialCents),
+    laborCostCents: Value(normalized?.laborCents),
+    costCents: Value(normalized?.costCents),
   );
 }
 

@@ -186,12 +186,13 @@ class RecordCostFormController {
 
   /// 提交用的项目费用列表（ADR 0010）：草稿只存在于勾选集中（勾选
   /// 同步的不变量），三个金额全空的草稿跳过；金额元→分四舍五入，
-  /// 空/非法 = 未填；"材料/工时有值但项目费用为空"经
-  /// [RecordRules.normalizeItemCost] 按材料+工时补齐（数据不变量，
-  /// 2026-09-20——正常交互下算链已回填，这里兜住绕过输入事件的路径，
-  /// 如编辑存量违规行后未碰费用区直接保存）。不一致（项目费用 ≠
-  /// 材料+工时、总费用 ≠ 合计）在这里不做校验——按产品规则不一致
-  /// 是合法数据（如优惠），由界面红字黄三角提示。
+  /// 空/非法 = 未填。原始三值原样交出，不在此归一——"材料/工时有值
+  /// 但项目费用为空"由写 seam（关联行 companion 内置
+  /// [RecordRules.normalizeItemCost]）单点补齐（数据不变量，2026-09-20
+  /// 落地、2026-09-25 收编）；正常交互下算链/打开回填已把项目费用填好，
+  /// 绕过输入事件的路径（如程序态改文本）也由 seam 兜住。不一致（项目
+  /// 费用 ≠ 材料+工时、总费用 ≠ 合计）在这里不做校验——按产品规则
+  /// 不一致是合法数据（如优惠），由界面红字黄三角提示。
   List<RecordItemCost> buildItemCosts() {
     final costs = <RecordItemCost>[];
     for (final draft in _drafts.values) {
@@ -199,18 +200,16 @@ class RecordCostFormController {
       if (itemId == null) {
         continue;
       }
-      final normalized = RecordRules.normalizeItemCost(
-        RecordItemCost(
-          itemId: itemId,
-          materialCents: parseMoneyCents(draft.materialController.text),
-          laborCents: parseMoneyCents(draft.laborController.text),
-          costCents: parseMoneyCents(draft.costController.text),
-        ),
+      final cost = RecordItemCost(
+        itemId: itemId,
+        materialCents: parseMoneyCents(draft.materialController.text),
+        laborCents: parseMoneyCents(draft.laborController.text),
+        costCents: parseMoneyCents(draft.costController.text),
       );
-      if (normalized.isEmpty) {
+      if (cost.isEmpty) {
         continue;
       }
-      costs.add(normalized);
+      costs.add(cost);
     }
     return costs;
   }
@@ -303,10 +302,10 @@ class RecordCostFormController {
 
   /// 打开编辑时的存量补齐显示：项目费用为空但材料/工时有值的存量行
   /// （不变量落地前写入的历史数据）立即按"材料+工时"回填，所见即
-  /// 所得——保存经 [buildItemCosts] 归一后与显示一致，避免"打开时
-  /// 空、保存后凭空多出值"。只补显示，不跑完整算链、不动总费用
-  /// （存量总费用按预填权威处理）；程序写入不记手改，后续输入仍
-  /// 自动跟随。
+  /// 所得——回填后的草稿文本随 buildItemCosts 进提交清单，显示与
+  /// 保存一致，避免"打开时空、保存后凭空多出值"。只补显示，不跑完整
+  /// 算链、不动总费用（存量总费用按预填权威处理）；程序写入不记手改，
+  /// 后续输入仍自动跟随。
   void _backfillMissingCosts() {
     for (final draft in _drafts.values) {
       if (draft.costTouched || draft.costController.text.isNotEmpty) {
