@@ -3,7 +3,10 @@
 // 结构：我的车辆（车辆列表 + 添加入口）/ 数据与工具（通知提醒、备份、
 // 恢复、清空数据、手动日期[开发者模式专属]、加油预测开关[开发者模式
 // 专属]、主题切换）/ 版本 footer。
-// 各行的实际逻辑都在 vehicles.dart / maintenance_items.dart / settings_data.dart。
+// 各行的逻辑分流：静态行在 settings_data.dart，通知/手动日期 sheet 在
+// settings_notifications.dart / settings_manual_date.dart；备份导出/恢复/
+// 清空的编排走动作层"备份与数据重置"分节（ADR 0007，2026-09-25 收编），
+// 本页只留成功/失败反馈薄壳（确认框也在动作层，取消静默）。
 //
 // 开发者模式彩蛋：版本号连点 5 次开关（关闭时连带清掉手动日期与
 // 加油预测偏好）。
@@ -21,6 +24,8 @@ import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
 import 'maintenance_items.dart';
 import 'settings_data.dart';
+import 'settings_manual_date.dart';
+import 'settings_notifications.dart';
 import 'vehicles.dart';
 
 /// 我的页主组件。
@@ -113,19 +118,19 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
               title: '备份数据',
               subtitle: '导出全部车辆、项目配置和保养记录',
               trailingLabel: '导出',
-              onTap: () => exportBackup(context, ref),
+              onTap: () => _exportBackup(context),
             ),
             ProfileSettingRow(
               title: '恢复数据',
               subtitle: '选择备份文件并恢复本地数据',
               trailingLabel: '恢复',
-              onTap: () => restoreBackupFromFile(context, ref),
+              onTap: () => _restoreBackup(context),
             ),
             ProfileSettingRow(
               title: '清空数据',
               subtitle: '删除本地车辆、项目和记录',
               trailingLabel: '清空',
-              onTap: () => clearAllData(context, ref),
+              onTap: () => _clearAllData(context),
             ),
             if (developerMode.maybeWhen(
               data: (value) => value,
@@ -208,6 +213,62 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
         value ? '已开启，底部新增加油入口' : '已关闭加油预测',
         StatusOverlayTone.success,
       );
+    }
+  }
+
+  /// 备份导出反馈薄壳：动作层读库编码 + 原生保存框（取消保存框静默
+  /// 返回 false），成功/失败 overlay 留在页面（ADR 0007）。
+  Future<void> _exportBackup(BuildContext context) async {
+    try {
+      final saved = await exportBackup(ref);
+      if (saved && context.mounted) {
+        showStatusOverlay(context, '备份完成', StatusOverlayTone.success);
+      }
+    } catch (error) {
+      if (context.mounted) {
+        showStatusOverlay(context, '备份失败：$error', StatusOverlayTone.error);
+      }
+    }
+  }
+
+  /// 恢复备份反馈薄壳：确认框/选文件在动作层，取消静默返回 false。
+  /// 唯一约束冲突（恢复文件数据重复或冲突，事务已回滚）弹"未写入任何
+  /// 数据"对话框，其他失败 toast——错误分类属 UI 反馈决策留页面；文本
+  /// 识别是 ADR 0009 明文的驱动层兜底口径（不可在 throw 点包装）。
+  Future<void> _restoreBackup(BuildContext context) async {
+    try {
+      final restored = await restoreBackupFromFile(context, ref);
+      if (restored && context.mounted) {
+        showStatusOverlay(context, '恢复完成', StatusOverlayTone.success);
+      }
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      if (isUniqueConstraintError(error)) {
+        await showMessageDialog(
+          context: context,
+          title: '恢复失败',
+          message: '恢复文件中的部分数据重复或冲突，本次恢复未写入任何数据。',
+          tone: StatusOverlayTone.error,
+        );
+      } else {
+        showStatusOverlay(context, '恢复失败：$error', StatusOverlayTone.error);
+      }
+    }
+  }
+
+  /// 清空数据反馈薄壳：确认框在动作层，取消静默返回 false。
+  Future<void> _clearAllData(BuildContext context) async {
+    try {
+      final cleared = await clearAllData(context, ref);
+      if (cleared && context.mounted) {
+        showStatusOverlay(context, '已清空数据', StatusOverlayTone.success);
+      }
+    } catch (error) {
+      if (context.mounted) {
+        showStatusOverlay(context, '清空失败：$error', StatusOverlayTone.error);
+      }
     }
   }
 }

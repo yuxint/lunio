@@ -3,7 +3,7 @@
 // 通知域收尾"。providers.dart 顶部警告的"手动失效模式"由此收口：UI
 // 不再手排失效序列，新保存路径进这里，不会漏调 invalidate。
 //
-// 与调用方的分工（ADR 0007）：
+// 与调用方的分工（ADR 0007，破坏性操作的例外见下段）：
 //  - 本层只收 WidgetRef（纯 Dart 编排，不碰 BuildContext、不弹 UI）；
 //  - 确认框、关 sheet、成功 toast 留在调用方（pop 用 sheet 的 context，
 //    toast 用打开 sheet 前的外层 context，见 fuel_page 的双 context 写法）；
@@ -11,15 +11,18 @@
 //
 // 与通知协调器（LunioNotificationCoordinator）的分工：协调器拥有通知域
 // 协议（权限对账、通知清扫、抑制读写），本层在业务动作内部组合协调器，
-// 是它的上层入口。deleteCar 例外地保留了确认框：删除是破坏性操作，
-// 确认文案属于 UI 决策。
+// 是它的上层入口。deleteCar / restoreBackupFromFile / clearAllData 例外地
+// 保留了确认框：三者都是破坏性操作，确认文案属于 UI 决策（2026-09-25
+// 备份与数据重置收编时扩到后两者）。
 //
-// 分域分节：车辆 / 保养记录 / 保养项目 / 偏好 / 加油 / 通知设置。
+// 分域分节：车辆 / 保养记录 / 保养项目 / 偏好 / 加油 / 通知设置 /
+// 备份与数据重置。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
+import '../../../core/platform/native_files.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/entities/fuel_record.dart';
@@ -305,4 +308,103 @@ Future<void> saveNotificationSettings(
       systemNotificationsEnabled: systemNotificationsEnabled,
     ),
   );
+}
+
+// ---- 备份与数据重置 ----
+//
+// 编排从 settings_data.dart 收编（2026-09-25）：确认框 → 原生文件桥 →
+// 协调器 run* 模板 → invalidateAllAppDataProviders 的整链只有这一份。
+// codec 的编码/解码下沉 BackupRepository（exportBackupJson /
+// decodeBackupJson），BackupCodec 不再出 data 层。
+//
+// 返回值语义（对文件头"全部 Future<void>"的一处偏离，ADR 0007 修订节
+// 有记）：Future<bool>——true=完成、false=用户取消（确认框/选文件/
+// 保存框取消都静默）、异常=失败穿透。确认框收进动作函数后，调用方
+// 必须能区分"取消"与"完成"才能决定是否弹成功 overlay。
+
+/// 备份文件名：lunio-backup-20260825-143025.json（保存框默认名）。
+String _backupFilename(DateTime dateTime) {
+  String twoDigits(int value) => value.toString().padLeft(2, '0');
+  return 'lunio-backup-'
+      '${dateTime.year}'
+      '${twoDigits(dateTime.month)}'
+      '${twoDigits(dateTime.day)}-'
+      '${twoDigits(dateTime.hour)}'
+      '${twoDigits(dateTime.minute)}'
+      '${twoDigits(dateTime.second)}.json';
+}
+
+/// 导出备份：仓库读表编码成 JSON（编码在仓库内）→ 原生文件桥弹系统
+/// 保存框。非破坏性操作，无确认框。
+Future<bool> exportBackup(WidgetRef ref) async {
+  final json = await ref.read(backupRepositoryProvider).exportBackupJson();
+  return NativeFiles.exportJsonFile(
+    filename: _backupFilename(DateTime.now()),
+    content: json,
+  );
+}
+
+/// 恢复备份（破坏性操作，确认框在动作层内弹——deleteCar 同款例外）：
+/// 确认框（明示"先清空业务数据、偏好保留"，不可撤销）→ 原生文件桥
+/// 选文件（取消静默返回 false）→ 仓库解码（版本不符抛 UnsupportedError）
+/// → 协调器 runBackupRestore：升同步代数 + 置写库中间态旗 → restore
+/// 事务恢复（偏好保留，抑制键清除）→ _settleDataReset 收尾（再升一次
+/// 代数 + 关旗）→ 取消 8000/8900 系旧数据残留通知（空备份时同步引擎
+/// 不会重排，显式取消；停车 9001~9004 不动——倒计时偏好保留且仍有效）
+/// → invalidateAllAppDataProviders 全量刷新。
+/// 唯一约束冲突的"未写入任何数据"对话框属 UI 反馈决策，由调用方分类。
+Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
+  final confirmed = await showConfirmDialog(
+    context: context,
+    title: '恢复数据',
+    message:
+        '恢复会先清空本地车辆、保养项目、保养记录，再写入备份文件中的数据。'
+        '主题、通知等偏好设置会保留。该操作不可撤销。',
+    confirmLabel: '恢复',
+  );
+  if (confirmed != true) {
+    return false;
+  }
+  final json = await NativeFiles.pickJsonFile();
+  if (json == null) {
+    return false;
+  }
+  final payload = ref.read(backupRepositoryProvider).decodeBackupJson(json);
+  await ref
+      .read(notificationCoordinatorProvider)
+      .runBackupRestore(
+        () => ref
+            .read(backupRepositoryProvider)
+            .restoreBackupPayload(payload),
+      );
+  invalidateAllAppDataProviders(ref);
+  return true;
+}
+
+/// 清空数据（破坏性操作，确认框在动作层内弹——deleteCar 同款例外）：
+/// 确认框（明示目录表保留，不可撤销）→ 协调器 runAllDataClear：升同步
+/// 代数（作废在途通知任务，R8）→ clearAllData 事务删 7 张表（业务
+/// 4 张 + 加油预测设置 + 加油记录 + 偏好）→ 撤实时活动 + 取消停车
+/// 9001~9004 与保养/里程 8000/8900 系系统通知（偏好已删，残留通知必须
+/// 显式取消）→ invalidateAllAppDataProviders 全量刷新（bootstrap
+/// provider 失效后车型目录自动重灌）。
+Future<bool> clearAllData(BuildContext context, WidgetRef ref) async {
+  final confirmed = await showConfirmDialog(
+    context: context,
+    title: '清空数据',
+    message:
+        '确定清空本地车辆、保养项目、保养记录和偏好设置？'
+        '默认车辆模型与默认保养项目目录会保留。该操作不可撤销。',
+    confirmLabel: '清空',
+  );
+  if (confirmed != true) {
+    return false;
+  }
+  await ref
+      .read(notificationCoordinatorProvider)
+      .runAllDataClear(
+        () => ref.read(backupRepositoryProvider).clearAllData(),
+      );
+  invalidateAllAppDataProviders(ref);
+  return true;
 }

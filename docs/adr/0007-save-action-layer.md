@@ -65,3 +65,29 @@ wiring bug 在历次审查中反复出现（R1/R8/R13 都涉及编排顺序）�
   单一出口。）
 - 测试面不变：widget 测试（`test/widget/`）已锁 toast 文案、落库结果
   与跨页刷新，行为等价改造应全绿；不为纯编排搬家新增独立测试层。
+
+## 更新（2026-09-25：备份与数据重置分节收编）
+
+- **新增"备份与数据重置"分节**：`exportBackup` / `restoreBackupFromFile` /
+  `clearAllData` 三函数自 `settings_data.dart` 迁入动作层，编排（确认框 →
+  原生文件桥 → 协调器 run* 模板 → `invalidateAllAppDataProviders`）全库
+  只此一份。settings_data 头部自flag 的"⚠ 跨层依赖：UI 直接 import
+  BackupCodec"随编码/解码下沉 `BackupRepository`（新增
+  `exportBackupJson` / `decodeBackupJson`）一并消灭——codec 是备份契约的
+  一部分，收在 data 层不再出界。
+- **确认框例外从 deleteCar 扩到 restoreBackupFromFile / clearAllData**：
+  两者同为破坏性操作（恢复不可撤销 / 清空不可撤销），确认文案跟着操作走。
+  成功 overlay / 失败反馈仍留调用方（profile_page 三个私有反馈薄壳）。
+- **返回值语义偏离第 3 条"全部返回 `Future<void>`"**：这三个函数返回
+  `Future<bool>`——true=完成、false=用户取消（确认框/选文件/保存框取消
+  都静默）、异常=失败穿透。确认框收进动作函数后，调用方必须能区分
+  "取消"与"完成"才能决定是否弹成功 overlay；deleteCar 维持 void（删除
+  无成功 toast，列表刷新即反馈）。
+- **错误分类不动**：恢复失败中唯一约束冲突的"未写入任何数据"专用对话框
+  留调用方，靠 `formatters.isUniqueConstraintError` 文本识别——这是
+  ADR 0009 明文的驱动层兜底口径（恢复事务虽握在仓库手里、技术上可
+  catch 后包装，但类型化属扩大 ADR 0009 范围，本轮不做；将来要做单独
+  小轮修订）。
+- 文件拆分：settings_data.dart 只剩静态行组件；通知设置与手动日期两个
+  sheet 拆到 `settings_notifications.dart` / `settings_manual_date.dart`
+  （vehicles.dart 拆分先例）。

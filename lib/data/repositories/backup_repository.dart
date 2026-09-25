@@ -96,6 +96,23 @@ class BackupRepository {
     );
   }
 
+  /// 导出备份的 JSON 字符串：[exportBackupPayload] 组装 payload 后经
+  /// BackupCodec 编码。编码收在 data 层（备份契约的一部分），动作层与
+  /// UI 只拿字符串，不再直接摸 codec。口径同 payload：不含偏好/停车
+  /// 倒计时/油价缓存与手填价/目录。
+  Future<String> exportBackupJson() async {
+    final payload = await exportBackupPayload();
+    return const BackupCodec().encode(payload);
+  }
+
+  /// 解码备份 JSON 字符串为 [BackupPayload]：版本 ∉ {1,2,3} 抛
+  /// UnsupportedError；v1/v2 兼容读（纯增量缺失按空，ADR 0010/0014），
+  /// 含旧结构加油条目的 v3 条目解码即拒（ADR 0015）。恢复编排从这取
+  /// payload，再交 [restoreBackupPayload] 落库。
+  BackupPayload decodeBackupJson(String json) {
+    return const BackupCodec().decode(json);
+  }
+
   /// 恢复备份（导入）。流程见文件头。任何一行违反约束抛错则整体回滚
   /// （UI 提示"未写入任何数据"）。
   /// 版本检查与 codec 一致：接受 v1/v2/v3（ADR 0010/0014 的纯增量兼容）。
