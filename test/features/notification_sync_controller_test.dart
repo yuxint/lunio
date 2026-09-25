@@ -462,7 +462,6 @@ class _ControllerHostState extends ConsumerState<_ControllerHost> {
     controller = NotificationSyncController(
       ref: ref,
       shellContext: () => _dialogContext ?? context,
-      isAlive: () => mounted,
     )..start();
   }
 

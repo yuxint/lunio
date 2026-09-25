@@ -75,7 +75,6 @@ class _AppShellState extends ConsumerState<AppShell>
     _notificationSync = NotificationSyncController(
       ref: ref,
       shellContext: () => mounted ? context : null,
-      isAlive: () => mounted,
     );
     _notificationSync.start();
     _widgetSnapshot = WidgetSnapshotController(ref: ref, isAlive: () => mounted);

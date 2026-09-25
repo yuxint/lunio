@@ -30,7 +30,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单提交运行器（`form_submit.dart`，`LunioFormSubmit` mixin：saving/errorText 生命周期 + friendlyError 翻译，新表单直接混入）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`）。
   - `reminders/parking_countdown.dart`：停车倒计时卡片、表单和时间选择器（保存/清除走动作层 `shell_actions.dart`）。
   - `reminders/reminder_list.dart`：保养提醒列表、提醒行、记录详情 sheet 和进度环。
-  - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。
+  - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。`reminders/notification_sync_guard.dart`：通知同步守卫（NotificationSyncGuard/SyncRun）——同步代数与写库中间态旗的唯一拥有者（代数 provider 已从 providers.dart 迁入），协调器是唯一写者、同步控制器与协调器经 `acquire()` 领票在检查点问 `run.isValid`，新检查点不要再手抄旗/代数协议。
   - `reminders/reminder_rows.dart`：提醒行视图模型与组装（`buildReminderRows`）、空态分类单一出口（`classifyReminderRows`）、`reminderRowsProvider`（提醒页数据接缝，watch 车辆/项目/记录/今天，英雄卡与列表共消费）；通知侧复用同一组装函数。
   - `reminders/widget_snapshot.dart`：桌面小组件快照组装纯函数（`buildWidgetSnapshotJson`，契约 `schemaVersion: 1` + 14 天预生成窗口，ADR 0013）；`reminders/widget_snapshot_controller.dart`：快照同步控制器（AppShell 挂载、listenManual 数据上游，内容相同不重写、失败不记账）。
   - `reminders/reminder_notifications.dart`：系统通知内容组装（`buildScheduledNotifications`）、应用内到期清单（`maintenanceNotices`）、全量数据签名。`reminders/reminder_dialogs.dart`：应用内提醒弹窗（抑制读写经通知协调器）。
