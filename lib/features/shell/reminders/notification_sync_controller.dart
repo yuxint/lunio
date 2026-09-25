@@ -11,13 +11,17 @@
 //  - 应用内签名 = 应用内开关 + 到期开关 + 全量数据签名；
 //  - 签名变化才做真正的调度/弹窗，避免重复 I/O。
 //
-// 防竞态三层：
+// 防竞态四层：
 //  1. 代数（notificationSyncGenerationProvider）：恢复/清空时 bump，
 //     在途任务比对快照代数，不一致即放弃（R8）；
-//  2. 执行中标志 + pending 重跑：系统通知重排执行中又来了新签名时
-//     不再丢弃，而是置 pending，本轮 finally 里用最新数据强制重排
-//     一轮（R3 丢更新修复）；
-//  3. _disposed 检查：所有 await 之后确认控制器还活着才继续（R13）。
+//  2. 中间态守卫（2026-09-24）：破坏性写库（恢复/清空/删车）事务进行中，
+//     Drift 流查询在同一连接上能看到未提交的半成品数据（逐行插入逐条
+//     触流），此时 syncFromProviders 直接丢弃、弹窗展示前再查一次——
+//     旗与双 bump 都在协调器的 run* 模板上（见 isDataResetInFlight）；
+//  3. 执行中标志 + pending 重跑：系统通知重排/应用内弹窗检查执行中又来
+//     新签名时不再丢弃，而是置 pending，本轮 finally 里用最新数据强制
+//     重跑一轮（R3 丢更新修复）；
+//  4. _disposed 检查：所有 await 之后确认控制器还活着才继续（R13）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -74,6 +78,11 @@ class NotificationSyncController {
 
   /// 应用内提醒检查是否在执行中。
   bool _checkingInAppNotifications = false;
+
+  /// 应用内提醒检查执行中又有新检查请求时置 true：本轮 finally 里清空
+  /// 签名并强制重跑一轮（R3 同款，弹窗路径此前没有，2026-09-24 补齐——
+  /// 否则"弹窗开着时数据变化"的那一拍检查被永久丢掉）。
+  bool _pendingInAppCheck = false;
 
   /// 首启权限检查是否在执行中（防重入）。
   bool _checkingInitialSystemPermission = false;
@@ -175,6 +184,14 @@ class NotificationSyncController {
   /// 或恢复备份后，等 provider 全部就绪那一拍才触发首次通知同步。
   void syncFromProviders() {
     if (_disposed) {
+      return;
+    }
+    // 中间态守卫：破坏性写库（恢复/清空/删车）事务进行中，流查询读到
+    // 的是未提交的半成品数据（记录已插入、关联表还没插到之类的瞬态），
+    // 此时算出的到期清单是假的。直接丢弃且签名不动——最终数据与中间态
+    // 签名必然不同，事务提交后调用方失效 provider 家族，自然补上正确的
+    // 一轮（2026-09-24 恢复备份弹假到期弹窗事故）。
+    if (ref.read(notificationCoordinatorProvider).isDataResetInFlight) {
       return;
     }
     final settings = ref
@@ -370,6 +387,11 @@ class NotificationSyncController {
   ///  - "知道了" → 协调器写当日 ack 偏好（今天不再弹）；
   ///  - "15 天内不再提醒" → 协调器写 snooze 偏好（系统通知也一并静默）。
   /// 弹窗有动作 → 清空两个签名并立即重跑同步（snooze 影响通知内容）。
+  ///
+  /// 中间态守卫（2026-09-24）：入口拍代数快照，两处展示弹窗前（与展示
+  /// 调用之间无 await，无竞态窗口）复查"破坏性写库旗 + 代数快照"——旗真
+  /// 说明写库仍在进行、手里的清单是半成品；代数变了说明写库在本次运行
+  /// 期间已开始并结束、数据过期。两种情况都放弃，等最终一轮补判。
   Future<void> _showDueInAppNotifications({
     required LunioNotificationSettings settings,
     required Car car,
@@ -377,14 +399,28 @@ class NotificationSyncController {
     required List<MaintenanceRecord> records,
     required LocalDate today,
   }) async {
-    if (_checkingInAppNotifications ||
-        !settings.inAppNotificationsEnabled ||
-        _disposed) {
+    if (_disposed) {
+      return;
+    }
+    if (_checkingInAppNotifications) {
+      // R3 同款：执行中来了新检查请求不丢弃，置 pending 在 finally 里
+      // 强制重跑一轮（此前直接丢弃，弹窗开着时数据变化的那一拍就丢了）。
+      _pendingInAppCheck = true;
+      return;
+    }
+    if (!settings.inAppNotificationsEnabled) {
       return;
     }
     _checkingInAppNotifications = true;
     try {
+      final syncGeneration = ref.read(notificationSyncGenerationProvider);
       final coordinator = ref.read(notificationCoordinatorProvider);
+      // 中间态守卫：写库进行中读到的 items/records 是未提交的半成品，
+      // 算都不要算（syncFromProviders 入口早退只挡"检查开始时写库已在
+      // 跑"的那一半，这里挡"检查开始后写库才开始"的另一半）。
+      if (coordinator.isDataResetInFlight) {
+        return;
+      }
       final dueNotices = <bridge.ReminderViewData>[];
       for (final notice in bridge.maintenanceNotices(
         car: car,
@@ -417,6 +453,13 @@ class NotificationSyncController {
         return;
       }
       if (dueNotices.isEmpty && !showMileageReminder) {
+        return;
+      }
+      // 展示前复查第一道（保养弹窗，与下方展示调用之间无 await，无竞态
+      // 窗口）：旗真 = 写库仍在进行，清单是半成品；代数变了 = 写库在本次
+      // 检查期间已开始并结束，数据过期。都放弃，等最终一轮补判。
+      if (ref.read(notificationCoordinatorProvider).isDataResetInFlight ||
+          ref.read(notificationSyncGenerationProvider) != syncGeneration) {
         return;
       }
       var changedSystemSchedule = false;
@@ -455,6 +498,14 @@ class NotificationSyncController {
         if (context == null || !context.mounted) {
           return;
         }
+        // 展示前复查第二道（里程弹窗，与下方展示调用之间无 await）：保养
+        // 弹窗挂起与 ack 写偏好都是 await，破坏性写库可能在期间开始并
+        // 结束，showMileageReminder 是旧快照算出来的，弹前必须再看一次旗
+        // 与代数（2026-09-25 补齐，审查：此前只有保养弹窗前一道）。
+        if (ref.read(notificationCoordinatorProvider).isDataResetInFlight ||
+            ref.read(notificationSyncGenerationProvider) != syncGeneration) {
+          return;
+        }
         final action = await bridge.showMileageUpdateReminderDialog(
           context: context,
           coordinator: coordinator,
@@ -483,6 +534,14 @@ class NotificationSyncController {
       }
     } finally {
       _checkingInAppNotifications = false;
+      // R3 同款：执行期间来过新检查请求（被置 pending），这里清空签名
+      // 强制重跑一轮，用最新数据补判（含入口中间态守卫的时序，由它
+      // 自行把关）。
+      if (_pendingInAppCheck && !_disposed) {
+        _pendingInAppCheck = false;
+        _inAppNotificationSignature = null;
+        syncFromProviders();
+      }
     }
   }
 }

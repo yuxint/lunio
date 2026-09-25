@@ -190,8 +190,9 @@ Future<void> exportBackup(BuildContext context, WidgetRef ref) async {
 
 /// ★ 恢复备份：确认框（明示"先清空业务数据、偏好保留"）→
 /// 原生文件桥选文件 → 解码（版本不符抛 UnsupportedError）→
-/// 协调器 runBackupRestore：升代数作废在途同步任务（R8）→ restore
-/// 事务恢复（偏好保留，抑制键清除）→ 取消 8000/8900 系旧数据残留通知
+/// 协调器 runBackupRestore：升代数 + 置写库中间态旗 → restore
+/// 事务恢复（偏好保留，抑制键清除）→ _settleDataReset 收尾（再升一次
+/// 代数 + 关旗）→ 取消 8000/8900 系旧数据残留通知
 /// （空备份时同步引擎不会重排，显式取消；停车 9001~9004 不动——倒计时
 /// 偏好保留且仍有效）→ invalidateAllAppDataProviders 全量刷新。
 /// 失败分支：唯一约束冲突 → 弹"未写入任何数据"对话框（事务已回滚）；
