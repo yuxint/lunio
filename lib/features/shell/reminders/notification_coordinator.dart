@@ -11,8 +11,8 @@
 // 单一事实来源，恢复备份按同组前缀清除）。
 //
 // 与 NotificationSyncController 的分工：controller 保留被动监听外壳
-// （订阅 provider、签名比对、三层防竞态），权限协议的执行体全部委托
-// 本模块（见 AGENTS.md 提醒目录说明）。
+// （订阅 provider、签名比对、四层防竞态，清单见其文件头），权限协议的
+// 执行体全部委托本模块（见 AGENTS.md 提醒目录说明）。
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -178,45 +178,88 @@ class LunioNotificationCoordinator {
 
   // ---- 通知清扫协议（数据被整体替换时） ----
 
+  /// 破坏性写库进行中旗：恢复备份/清空数据/删除车辆的写库事务执行期间
+  /// 为真。事务里的逐行插入会逐条触发 Drift 流查询，而流查询与写库共用
+  /// 同一个数据库连接——**能看到本事务未提交的中间态**（比如"记录已插入、
+  /// 关联表还没插到"）。通知同步控制器拿这种半成品数据算出的到期清单是
+  /// 假的，所以入口与弹窗展示前都要查这面旗，为真宁可丢弃本次同步、等
+  /// 事务提交后由 provider 失效触发的最终一轮补上（中间态守卫，
+  /// 2026-09-24 恢复备份弹假到期弹窗事故）。
+  bool _dataResetInFlight = false;
+
+  /// [runBackupRestore] / [runAllDataClear] / [runCarDeletion] 执行期间为
+  /// 真，其余时刻为假。只读；置位/复位由这三个模板内部负责。
+  bool get isDataResetInFlight => _dataResetInFlight;
+
   /// 升通知同步代数：作废同步控制器在途任务与"用旧数据排通知"的竞态
-  /// （R8）。由下面三个 run* 模板方法在破坏性写库前调用，UI 不再自己
-  /// 碰 notificationSyncGenerationProvider。
+  /// （R8）。由下面三个 run* 模板方法在破坏性写库前后各调用一次
+  /// （前 = 作废写库前已在途的任务；后 = 作废写库进行中才启动的任务——
+  /// 它们开工时读到的已是前一次 bump 后的代数，只有完成后这次 bump 才能
+  /// 被它们的交付前比对查出来），UI 不再自己碰
+  /// notificationSyncGenerationProvider。
   void _bumpNotificationSyncGeneration() {
     ref.read(notificationSyncGenerationProvider.notifier).bump();
   }
 
-  /// 删除车辆的收尾模板：升代数作废在途同步 → 执行删库 → 取消保养/里程
-  /// 系通知（8000/8900）。R1：删最后一辆车后同步控制器在无车时短路不重排，
-  /// 旧调度必须在此显式取消；非最后一辆车的场景取消后会随失效触发的重排
-  /// 恢复，代价可忽略。
+  /// 删除车辆的收尾模板：升代数作废在途同步 → 置写库中间态旗 → 执行
+  /// 删库 → `_settleDataReset` 收尾（再升一次代数 + 关旗）→ 取消保养/
+  /// 里程系通知（8000/8900）。R1：删最后一辆车后同步控制器在无车时短路
+  /// 不重排，旧调度必须在此显式取消；非最后一辆车的场景取消后会随失效
+  /// 触发的重排恢复，代价可忽略。
   ///
   /// [deleteCar] 传入 Repository 的删库动作本身；删库失败（异常）时旧通知
   /// 原样保留（数据未变）并上抛异常。失效车辆类 provider 由调用方负责。
   Future<void> runCarDeletion(Future<void> Function() deleteCar) async {
     _bumpNotificationSyncGeneration();
-    await deleteCar();
+    _dataResetInFlight = true;
+    try {
+      await deleteCar();
+    } finally {
+      _settleDataReset();
+    }
     await service.cancelLunioNotifications();
   }
 
-  /// 恢复备份的收尾模板：升代数 → 执行恢复 → 取消保养/里程系通知
-  /// （8000/8900）。停车 9001~9004 不取消——倒计时偏好保留且仍有效。
+  /// 恢复备份的收尾模板：升代数 → 置写库中间态旗 → 执行恢复 →
+  /// `_settleDataReset` 收尾（再升一次代数 + 关旗）→ 取消保养/里程系
+  /// 通知（8000/8900）。停车 9001~9004 不取消——倒计时偏好保留且仍有效。
   /// 恢复失败（异常，事务已回滚）时旧通知原样保留并上抛异常。
   Future<void> runBackupRestore(Future<void> Function() restoreBackup) async {
     _bumpNotificationSyncGeneration();
-    await restoreBackup();
+    _dataResetInFlight = true;
+    try {
+      await restoreBackup();
+    } finally {
+      _settleDataReset();
+    }
     await service.cancelLunioNotifications();
   }
 
-  /// 清空数据的收尾模板：升代数 → 执行清库（偏好表一并删除，倒计时偏好
-  /// 和通知开关都不复存在）→ 撤停车实时活动 → 取消停车 9001~9004 与
-  /// 保养/里程 8000/8900 系残留通知。清库失败（异常）时上抛异常、不撤
-  /// 不取消（数据未变）。
+  /// 清空数据的收尾模板：升代数 → 置写库中间态旗 → 执行清库（偏好表
+  /// 一并删除，倒计时偏好和通知开关都不复存在）→ `_settleDataReset`
+  /// 收尾（再升一次代数 + 关旗）→ 撤停车实时活动 → 取消停车 9001~9004
+  /// 与保养/里程 8000/8900 系残留通知。清库失败（异常）时上抛异常、
+  /// 不撤不取消（数据未变）。
   Future<void> runAllDataClear(Future<void> Function() clearAllData) async {
     _bumpNotificationSyncGeneration();
-    await clearAllData();
+    _dataResetInFlight = true;
+    try {
+      await clearAllData();
+    } finally {
+      _settleDataReset();
+    }
     await liveActivities.stop();
     await service.cancelParkingCountdownNotification();
     await service.cancelLunioNotifications();
+  }
+
+  /// 破坏性写库收尾（finally 内调用）：先升代数再关旗。顺序保证"旗已关、
+  /// 代数仍旧"的观察窗口不存在——同步任务只要看到旗已关，代数比对必然
+  /// 能查出写库期间的那两次 bump。失败回滚时 bump 同样执行：作废写库
+  /// 期间启动的同步任务对回滚后的数据重算一轮，无害。
+  void _settleDataReset() {
+    _bumpNotificationSyncGeneration();
+    _dataResetInFlight = false;
   }
 
   // ---- 停车倒计时通知 ----

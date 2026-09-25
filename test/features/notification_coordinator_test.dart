@@ -5,7 +5,8 @@
 // 真实装配，通知插件用 mock 方法通道（与 test/widget 共享夹具同一手法），锁死：
 //  - reconcileSystemEnabled：真值回写只在不一致时发生，查询失败回退偏好值；
 //  - requestPermission：记"已请求过"，被拒回写"系统通知关闭"；
-//  - run* 清扫模板：先升代数再删库再清扫，删库失败不清扫（异常上抛）；
+//  - run* 清扫模板：写库前后各升一次代数、写库期间置中间态旗（旗在
+//    finally 里先升代数再关闭），删库失败不清扫（异常上抛）且旗仍复位；
 //  - onParkingCountdownSaved：开关关直接返回，授权且代数未变才调度。
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -373,9 +374,11 @@ void main() {
       });
 
       expect(deleted, isTrue);
+      // 写库前 +1、写库完成后再 +1：后一次把"写库进行中才启动的同步任务"
+      // 也作废（中间态守卫，2026-09-24）。
       expect(
         container.read(notificationSyncGenerationProvider),
-        generationBefore + 1,
+        generationBefore + 2,
       );
       expect(
         notificationCalls.map((call) => call.method),
@@ -383,14 +386,78 @@ void main() {
       );
     });
 
+    test('run* 模板写库期间置中间态旗，结束关旗（三个模板统一）', () async {
+      mockAndroidNotifications();
+      final templates =
+          <String, Future<void> Function(Future<void> Function())>{
+        'runCarDeletion': coordinator.runCarDeletion,
+        'runBackupRestore': coordinator.runBackupRestore,
+        'runAllDataClear': coordinator.runAllDataClear,
+      };
+      for (final entry in templates.entries) {
+        final generationBefore =
+            container.read(notificationSyncGenerationProvider);
+        expect(coordinator.isDataResetInFlight, isFalse, reason: entry.key);
+
+        var flagDuringWrite = false;
+        await entry.value(() async {
+          flagDuringWrite = coordinator.isDataResetInFlight;
+        });
+
+        expect(flagDuringWrite, isTrue,
+            reason: '${entry.key} 写库期间旗必须为真');
+        expect(coordinator.isDataResetInFlight, isFalse,
+            reason: '${entry.key} 结束后旗必须复位');
+        expect(
+          container.read(notificationSyncGenerationProvider),
+          generationBefore + 2,
+          reason: '$entry.key 写库前后各升一次代数',
+        );
+      }
+    });
+
+    test('run* 模板写库失败：异常上抛、旗仍复位、代数仍升两次', () async {
+      mockAndroidNotifications();
+      final generationBefore = container.read(notificationSyncGenerationProvider);
+
+      await expectLater(
+        coordinator.runBackupRestore(() async {
+          expect(coordinator.isDataResetInFlight, isTrue);
+          throw StateError('恢复失败');
+        }),
+        throwsStateError,
+      );
+      expect(coordinator.isDataResetInFlight, isFalse);
+      // 失败回滚 = 数据未变，通知不取消；但写库期间启动的同步任务照样要
+      // 作废（对回滚后的数据重算一轮，无害），所以两次 bump 都执行。
+      expect(
+        container.read(notificationSyncGenerationProvider),
+        generationBefore + 2,
+      );
+      expect(
+        notificationCalls.map((call) => call.method),
+        isNot(contains('cancel')),
+      );
+    });
+
     test('runCarDeletion skips the sweep when the deletion fails', () async {
       mockAndroidNotifications();
+      final generationBefore =
+          container.read(notificationSyncGenerationProvider);
 
       await expectLater(
         coordinator.runCarDeletion(() async {
+          expect(coordinator.isDataResetInFlight, isTrue);
           throw StateError('删库失败');
         }),
         throwsStateError,
+      );
+      expect(coordinator.isDataResetInFlight, isFalse);
+      // 失败回滚同样双 bump（对回滚后数据重算一轮，无害）——与
+      // runBackupRestore 失败用例同一契约，三个模板对称。
+      expect(
+        container.read(notificationSyncGenerationProvider),
+        generationBefore + 2,
       );
       expect(
         notificationCalls.map((call) => call.method),
@@ -601,12 +668,21 @@ void main() {
     test('clearAllData keeps the live activity when the clear fails',
         () async {
       mockAndroidNotifications();
+      final generationBefore =
+          container.read(notificationSyncGenerationProvider);
 
       await expectLater(
         coordinator.runAllDataClear(() async {
+          expect(coordinator.isDataResetInFlight, isTrue);
           throw StateError('清库失败');
         }),
         throwsStateError,
+      );
+      expect(coordinator.isDataResetInFlight, isFalse);
+      // 失败回滚同样双 bump（三个模板对称，同 runBackupRestore 失败用例）。
+      expect(
+        container.read(notificationSyncGenerationProvider),
+        generationBefore + 2,
       );
 
       // 清库失败 = 数据未变：活动不撤、通知不取消（与 runCarDeletion
