@@ -1,12 +1,12 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-22 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 收拢见 5.10，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分）
+> 版本：2026-09-25 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 收拢见 5.10，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分；备份/清空收编动作层见 docs/adr/0007 修订节）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
 > **锚点约定**：引用格式为 `文件路径 : 行号 → 函数/类名`。代码改动后行号会漂移，**以"文件 + 函数名"为主锚点**，行号仅辅助；只改函数内部实现时通常无需更新本手册，改了流程/入口/数据写点才必须同步维护。
 >
-> **读法提示**（Java 背景）：`Repository` ≈ Service+DAO；`Provider` ≈ Spring Bean；`ref.invalidate` ≈ 缓存逐出。多数写操作的固定模式是：**UI 事件 → 动作层（shell_actions）写库 + invalidate → FutureProvider 重新查库 → UI 自动刷新**。少数旁路不走动作层：停车倒计时保存是 `parking_countdown.dart` 本地函数（1.4）、备份导出/恢复/清空走通知协调器 + 备份仓库（5.4/5.5）。（油价手填价重置原是旁路，2026-09-09 起已收编走 `saveFuelManualPrice`。）
+> **读法提示**（Java 背景）：`Repository` ≈ Service+DAO；`Provider` ≈ Spring Bean；`ref.invalidate` ≈ 缓存逐出。多数写操作的固定模式是：**UI 事件 → 动作层（shell_actions）写库 + invalidate → FutureProvider 重新查库 → UI 自动刷新**。少数旁路不走动作层：停车倒计时保存是 `parking_countdown.dart` 本地函数（1.4）。（备份导出/恢复/清空原是旁路，2026-09-25 起收编走动作层"备份与数据重置"分节，见 5.3/5.4/5.5；油价手填价重置原是旁路，2026-09-09 起已收编走 `saveFuelManualPrice`。）
 
 数据层按域拆成仓库家族（ADR 0008）：**主仓库** `LunioRepository`（车辆/项目/记录核心域）、`BuiltInCatalogRepository`（车型目录+bootstrap）、`FuelRepository`（加油域）、`BackupRepository`（备份/恢复/清空）、`LunioPreferences`（偏好门面，全部偏好 key 与编解码的唯一出口）。各域在 providers.dart 装配（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `lib/features/shell/fuel/fuel_prices.dart`，2026-09-13 收拢，与 providers.dart 互相 import 供失效名单逐出）；表插入路径共享 `entity_row_codec.dart` 的 Companion 构造。
 
@@ -345,32 +345,31 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 5.3 备份导出
 
-我的页"备份数据" → `settings_data.dart:170 → exportBackup`：
+我的页"备份数据" → `profile_page.dart → _exportBackup`（反馈薄壳）→ `shell_actions.dart → exportBackup`（动作层"备份与数据重置"分节，2026-09-25 自 settings_data.dart 收编）：
 
-1. `backupRepository.exportBackupPayload`——4 张业务表 + 加油设置 + 加油记录全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 3（v2 条目含记录的项目费用 `itemCosts`，ADR 0010；v3 增加油记录数组 `fuelRecords`——条目为 ADR 0015 应付/实付结构 {carId, date, grade, unitPriceCents, payableCents, actualCents, volumeLiters, sync}，容积恢复时由实体按应付÷单价重算）；
-2. `BackupCodec().encode`（lib/data/backup/backup_codec.dart）——手写 JSON 序列化；
-3. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`；
-4. 成功/失败 toast。
+1. `backupRepository.exportBackupJson`——仓库内先 `exportBackupPayload`（4 张业务表 + 加油设置 + 加油记录全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 3（v2 条目含记录的项目费用 `itemCosts`，ADR 0010；v3 增加油记录数组 `fuelRecords`——条目为 ADR 0015 应付/实付结构 {carId, date, grade, unitPriceCents, payableCents, actualCents, volumeLiters, sync}，容积恢复时由实体按应付÷单价重算）再 `BackupCodec().encode` 手写 JSON 序列化（编码收在 data 层，codec 不再出 data 层）；
+2. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`（生成在动作层私有 `_backupFilename`）；
+3. 返回值语义（动作层三函数统一）：`Future<bool>`——true=已保存 / false=用户取消保存框（静默，无 overlay）/ 失败异常穿透；成功"备份完成"与失败 toast 在页面薄壳。
 
 ### 5.4 恢复备份
 
-我的页"恢复数据" → `settings_data.dart → restoreBackupFromFile`：
+我的页"恢复数据" → `profile_page.dart → _restoreBackup`（反馈薄壳）→ `shell_actions.dart → restoreBackupFromFile`（动作层，2026-09-25 收编；**确认框在动作层内弹**——deleteCar 同款破坏性例外）：
 
-1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
-2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015 v3 就地重定义，前提=屏蔽期无真实加油数据）；
+1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；取消确认框/取消选文件静默返回 false、无 overlay；
+2. `NativeFiles.pickJsonFile` 选文件 → `backupRepository.decodeBackupJson`（解码收在 data 层；版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015 v3 就地重定义，前提=屏蔽期无真实加油数据）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**guard.beginDataReset()**——先 bump() 通知同步代数（守卫模块 `notification_sync_guard.dart` 的 `notificationSyncGenerationProvider`，作废同步控制器在途任务）并**置写库中间态旗**（`isDataResetInFlight`，同步入口在此期间丢弃一切触发，见第 3 节）再执行恢复；
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 6 张业务表（4 张主业务表 + 加油预测设置 + 加油记录）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的存量行经 `RecordRules.normalizeItemCost` 按材料+工时补齐——2026-09-20 数据不变量，恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
 5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；两种结局都经 **guard.settleDataReset()** 收尾（**再 bump 一次代数**作废写库期间启动的同步 + 关中间态旗）；成功结局随后第 6 步失效触发的最终一轮用提交后数据补判弹窗与通知，失败结局数据已回滚、签名与数据仍一致，不会出假弹窗也无需补判——写库期间被入口早退/作废吞掉的触发由下一次自然触发（回前台、数据变化等）补上；
 6. `invalidateAllAppDataProviders` → 全量刷新（车型目录由 bootstrap 自动重灌）；
-7. 失败分支：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框；其他 → toast。
+7. 失败分支（错误分类留页面薄壳）：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框（`formatters.isUniqueConstraintError` 文本识别是 ADR 0009 明文的驱动层兜底口径）；其他 → toast。
 
 ### 5.5 清空数据
 
-我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**guard.beginDataReset()**——先 bump() 通知同步代数 + 置写库中间态旗（见第 3 节）→ `backupRepository.clearAllData`（事务删 7 张表：4 张业务表 + 加油预测设置表 + 加油记录表 + 偏好表，ADR 0014）→ **guard.settleDataReset()** 收尾（再 bump + 关旗）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
+我的页"清空数据" → `profile_page.dart → _clearAllData`（反馈薄壳）→ `shell_actions.dart → clearAllData`（动作层，2026-09-25 自 settings_data.dart 收编；**确认框在动作层内弹**，取消静默返回 false）→ 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**guard.beginDataReset()**——先 bump() 通知同步代数 + 置写库中间态旗（见第 3 节）→ `backupRepository.clearAllData`（事务删 7 张表：4 张业务表 + 加油预测设置表 + 加油记录表 + 偏好表，ADR 0014）→ **guard.settleDataReset()** 收尾（再 bump + 关旗）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，反馈薄壳在 profile_page）。
 
 ### 5.6 通知设置
 
-我的页"通知提醒" → `settings_data.dart → showNotificationSettingsSheet`：
+我的页"通知提醒" → `settings_notifications.dart → showNotificationSettingsSheet`（2026-09-25 自 settings_data.dart 拆出）：
 
 1. `showLunioFormSheet` 的 `load` 预装载 `notificationSettingsProvider.future`（装载失败 friendlyError toast 且不开壳，杜绝 loading 期默认值覆盖真实设置；ADR 0016）；
 2. 装载中协调器 `reconcileSystemEnabled`（`notification_coordinator.dart`）向系统查真实开关并回写偏好（不一致才写；查询失败回退偏好值，R14）；
@@ -382,11 +381,11 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 ### 5.7 手动日期（开发者模式专属）
 
 1. 开发者模式：版本 footer **连点 5 次** → `profile_page.dart:156 → _handleVersionTap` → `shell_actions.dart → setDeveloperModeEnabled`（动作层：写 `developerModeEnabled`，关闭时**连带清 `manualDateEnabled`/`manualDate`/`fuelPredictionEnabled`**——加油预测开关入口只在开发者模式可见）；
-2. "手动日期"行 → `settings_data.dart:568 → showManualDateSheet`：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + 失效偏好家族）→ 提交成功关 sheet + toast"手动日期已保存"（表单运行时统一收口，ADR 0016）→ **`effectiveTodayProvider`（providers.dart:172）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
+2. "手动日期"行 → `settings_manual_date.dart → showManualDateSheet`（2026-09-25 自 settings_data.dart 拆出）：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + 失效偏好家族）→ 提交成功关 sheet + toast"手动日期已保存"（表单运行时统一收口，ADR 0016）→ **`effectiveTodayProvider`（providers.dart:172）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
 
 ### 5.8 主题切换
 
-我的页"主题模式"三段 → `settings_data.dart:135 附近 ThemeModeSettingRow` → `shell_actions.dart → setThemeModePreference`（动作层）写偏好 `themeMode` → `themeModePreferenceProvider` 刷新 → `lunio_app.dart` MaterialApp.themeMode 生效（appRouter 单例保证不跳页）。
+我的页"主题模式"三段 → `settings_data.dart → ThemeModeSettingRow` → `shell_actions.dart → setThemeModePreference`（动作层）写偏好 `themeMode` → `themeModePreferenceProvider` 刷新 → `lunio_app.dart` MaterialApp.themeMode 生效（appRouter 单例保证不跳页）。
 
 ### 5.9 加油预测开关（开发者模式专属）
 
