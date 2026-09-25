@@ -339,25 +339,6 @@ final nativeWidgetsProvider = Provider<NativeWidgets>((ref) {
   return NativeWidgets();
 });
 
-/// 通知同步代数（≈ 乐观锁的版本号）：恢复备份/清空数据时 bump()，
-/// 通知同步控制器（notification_sync_controller.dart）在途任务执行前
-/// 比对快照代数，不一致即放弃——用于作废"用旧数据排通知"的竞态。
-/// parking_countdown 的保存链路同样用它防错排。用 provider 而非全局
-/// 变量，保证所有读取方走同一容器（R8）。
-final notificationSyncGenerationProvider =
-    NotifierProvider<NotificationSyncGeneration, int>(
-      NotificationSyncGeneration.new,
-    );
-
-/// 代数 Notifier：state 从 0 起，bump() 自增。
-class NotificationSyncGeneration extends Notifier<int> {
-  @override
-  int build() => 0;
-
-  /// 代数 +1（作废全部在途通知同步任务）。
-  void bump() => state = state + 1;
-}
-
 /// 车辆/项目/记录相关缓存整体失效（写库后由 UI 调用）。
 /// 逐出的顺序无关紧要，Riverpod 会在下一帧统一重算被 watch 的 provider。
 void invalidateVehicleProviders(WidgetRef ref) {

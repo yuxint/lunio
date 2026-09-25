@@ -161,7 +161,7 @@ appDatabaseProvider(:181)
 |---|---|---|---|
 | 1 | `reminder_page.dart:103`（倒计时为 null 时按钮可用，进行中禁用）→ `parking_countdown.dart:586 → showParkingCountdownSheet` | 弹表单 sheet | — |
 | 2 | `parking_countdown.dart → ParkingCountdownForm`（约 230 行起） | 入场时间（**点按钮此刻实时取系统时间，秒/毫秒截 0 默认整分**；时间轮可改时分秒，双向循环滚动）+ 免费时长（数字键盘输入框或 0.5/1/2 小时快捷 chip） | — |
-| 3 | 提交 → `shell_actions.dart → saveParkingCountdown(ref, countdown)`（动作层，ADR 0007） | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：**先取保存时刻**（预警门槛用它评估，弹窗停留不挤占剩余时长）→ **启动/重建 iOS 实时活动**（与系统通知开关无关；到点时刻已过则跳过，与通知调度同一静默口径）→ 若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度通知。编排只收 `WidgetRef`，不依赖任何页面存活（表单 sheet 的关闭由表单自理） | ① `parkingCountdown` = JSON ② iOS 实时活动（见下方专节）③ 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）+ **9003/9004**（剩 15/5 分钟预警，保存时剩余 ≥ 30 分钟才启用）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
+| 3 | 提交 → `shell_actions.dart → saveParkingCountdown(ref, countdown)`（动作层，ADR 0007） | ① 写偏好（经偏好门面 `LunioPreferences.saveParkingCountdown`） ② 失效 ③ 通知尾巴委托协调器 `onParkingCountdownSaved`（`notification_coordinator.dart`）：**先取保存时刻**（预警门槛用它评估，弹窗停留不挤占剩余时长）→ **启动/重建 iOS 实时活动**（与系统通知开关无关；到点时刻已过则跳过，与通知调度同一静默口径）→ 若系统通知开 → 请求权限（被拒回写开关关）→ 调度前比对**通知同步代数**（保存期间发生恢复/清空则放弃）→ Android 精确闹钟 → 调度前再问一次同步票（精确闹钟弹窗停留期间发生恢复/清空同样放弃，2026-09-25 补齐）→ 调度通知。编排只收 `WidgetRef`，不依赖任何页面存活（表单 sheet 的关闭由表单自理） | ① `parkingCountdown` = JSON ② iOS 实时活动（见下方专节）③ 系统通知 id **9002**（Android 常驻 chronometer）+ **9001**（到点闹钟）+ **9003/9004**（剩 15/5 分钟预警，保存时剩余 ≥ 30 分钟才启用）；`systemNotificationPermissionRequested=true`；被拒时 `systemNotificationsEnabled=false` |
 | 4 | `lunio_notification_service.dart → scheduleParkingCountdownNotification` | 先成组取消旧 9001~9004，再排新通知；**到点时刻已过则静默 return**；剩余 ≥ 30 分钟（按整分钟向上取整）才加排两条预警 | — |
 
 **展示**：`parking_countdown.dart → ParkingCountdownCard`（ConsumerStatefulWidget）——进度规则在 `lib/domain/rules/parking_countdown_rules.dart`（剩余≤20% 黄、到期红转正计时）；颜色映射 `_parkingStatusColor`。**卡片内部 1s Timer 自刷新**（时钟走 `appDateContextProvider.readSystemNow()`，测试可注入），重建范围只有这张卡。
@@ -206,7 +206,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 **触发时机**：通知同步控制器检测"应用内通知开 + 到期项变化/回到前台"（`reminders/notification_sync_controller.dart → _showDueInAppNotifications`）。
 
-**中间态守卫（2026-09-24 新增）**：破坏性写库（恢复备份/清空数据/删除车辆，经协调器三个 run* 模板）的写库事务进行中，`syncFromProviders` 入口查协调器 `isDataResetInFlight` 旗直接丢弃（写库逐行插入会经 Drift 同连接流查询暴露未提交的半成品数据，拿它算提醒会得出"全部到期"的假结论——曾经的事故：恢复备份后弹出"已超 3 年 11 个月"的假到期弹窗）；弹窗展示前（保养/里程两处，与各自展示调用之间无 await）各复查一次旗 + 入口拍的同步代数快照，封掉"检查开始后写库才开始/恰好结束"的窄窗。检查执行中来新请求置 `_pendingInAppCheck`，本轮 finally 强制重跑（R3 同款），消除"弹窗开着时数据变化的那一拍被丢"整类问题。
+**中间态守卫（2026-09-24 新增；2026-09-25 收编进守卫模块）**：破坏性写库（恢复备份/清空数据/删除车辆，经协调器三个 run* 模板驱动守卫）的写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃（写库逐行插入会经 Drift 同连接流查询暴露未提交的半成品数据，拿它算提醒会得出"全部到期"的假结论——曾经的事故：恢复备份后弹出"已超 3 年 11 个月"的假到期弹窗）；弹窗展示前（保养/里程两处，与各自展示调用之间无 await）各问一次同步票 `run.isValid`（= 未销毁 && 无中间态旗 && 代数未变，见 6.3），封掉"检查开始后写库才开始/恰好结束"的窄窗。检查执行中来新请求由重入 harness 记 pending，本轮 finally 强制重跑（R3 同款），消除"弹窗开着时数据变化的那一拍被丢"整类问题。
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
@@ -313,7 +313,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 #### 5.1.3 删除车辆
 
-车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**先 bump() 通知同步代数**作废在途任务并**置写库中间态旗**（`isDataResetInFlight`，见第 3 节），再执行 `repository.deleteCar`（lunio_repository.dart 主仓库，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车，经偏好门面）→加油预测行与加油记录（借道 `FuelRepository.deleteForCar`，ADR 0014）→车辆；删完按 AppliedCarRules 把应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**。R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001~9004 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ invalidate。收尾统一走 `_settleDataReset`（finally：**再 bump 一次代数**——作废写库进行中才启动的同步任务——再关中间态旗；失败回滚时同样执行，对回滚后数据重算一轮无害）。
+车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**guard.beginDataReset()**——先 bump() 通知同步代数作废在途任务，再置写库中间态旗（`isDataResetInFlight`，状态在守卫模块 `notification_sync_guard.dart`，见第 3 节），再执行 `repository.deleteCar`（lunio_repository.dart 主仓库，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车，经偏好门面）→加油预测行与加油记录（借道 `FuelRepository.deleteForCar`，ADR 0014）→车辆；删完按 AppliedCarRules 把应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**。R1：同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001~9004 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ invalidate。收尾统一走 **guard.settleDataReset()**（finally：**再 bump 一次代数**——作废写库进行中才启动的同步任务——再关中间态旗；失败回滚时同样执行，对回滚后数据重算一轮无害）。
 
 #### 5.1.4 切换当前应用车辆
 
@@ -356,15 +356,15 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；
 2. `NativeFiles.pickJsonFile` 选文件 → `BackupCodec().decode`（版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015 v3 就地重定义，前提=屏蔽期无真实加油数据）；
-3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**先 bump() 通知同步代数**（providers.dart `notificationSyncGenerationProvider`，作废同步控制器在途任务）并**置写库中间态旗**（`isDataResetInFlight`，同步入口在此期间丢弃一切触发，见第 3 节）再执行恢复；
+3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**guard.beginDataReset()**——先 bump() 通知同步代数（守卫模块 `notification_sync_guard.dart` 的 `notificationSyncGenerationProvider`，作废同步控制器在途任务）并**置写库中间态旗**（`isDataResetInFlight`，同步入口在此期间丢弃一切触发，见第 3 节）再执行恢复；
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内，篡改备份直接拒绝且不碰库）→ 单一大事务：`_clearRestorableDataInTransaction` **只清 6 张业务表（4 张主业务表 + 加油预测设置 + 加油记录）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的存量行经 `RecordRules.normalizeItemCost` 按材料+工时补齐——2026-09-20 数据不变量，恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
-5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；两种结局都经 `_settleDataReset` 收尾（**再 bump 一次代数**作废写库期间启动的同步 + 关中间态旗）；成功结局随后第 6 步失效触发的最终一轮用提交后数据补判弹窗与通知，失败结局数据已回滚、签名与数据仍一致，不会出假弹窗也无需补判——写库期间被入口早退/作废吞掉的触发由下一次自然触发（回前台、数据变化等）补上；
+5. 恢复成功后模板收尾：取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；两种结局都经 **guard.settleDataReset()** 收尾（**再 bump 一次代数**作废写库期间启动的同步 + 关中间态旗）；成功结局随后第 6 步失效触发的最终一轮用提交后数据补判弹窗与通知，失败结局数据已回滚、签名与数据仍一致，不会出假弹窗也无需补判——写库期间被入口早退/作废吞掉的触发由下一次自然触发（回前台、数据变化等）补上；
 6. `invalidateAllAppDataProviders` → 全量刷新（车型目录由 bootstrap 自动重灌）；
 7. 失败分支：唯一约束冲突 → 弹"本次恢复未写入任何数据"对话框；其他 → toast。
 
 ### 5.5 清空数据
 
-我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**先 bump() 通知同步代数** + **置写库中间态旗**（见第 3 节）→ `backupRepository.clearAllData`（事务删 7 张表：4 张业务表 + 加油预测设置表 + 加油记录表 + 偏好表，ADR 0014）→ `_settleDataReset` 收尾（再 bump + 关旗）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
+我的页"清空数据" → `settings_data.dart → clearAllData` → 确认框（明示"默认车辆模型与默认保养项目目录会保留"）→ 协调器 `runAllDataClear`（`notification_coordinator.dart`：**guard.beginDataReset()**——先 bump() 通知同步代数 + 置写库中间态旗（见第 3 节）→ `backupRepository.clearAllData`（事务删 7 张表：4 张业务表 + 加油预测设置表 + 加油记录表 + 偏好表，ADR 0014）→ **guard.settleDataReset()** 收尾（再 bump + 关旗）→ **撤 iOS 实时活动** → 取消停车 9001~9004 与保养/里程 8000/8900 系系统通知——偏好已删，倒计时与通知开关都不复存在，残留通知与活动必须撤清；清库失败异常上抛、不撤不取消）→ invalidate 全量（bootstrap 重灌车型目录）→ 成功 overlay"已清空数据"（失败 toast，try/catch 包裹）。
 
 ### 5.6 通知设置
 
@@ -430,7 +430,8 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ```
 provider 变化 / 首拍 / 回前台（onAppResumed）
-  → syncFromProviders：写库中间态旗为真直接丢弃（见第 3 节）；否则读
+  → syncFromProviders：写库中间态旗为真直接丢弃（守卫模块
+    isDataResetInFlight，见第 3 节）；否则读
     6 个 provider 当前值（loading 中当 null，数据齐才继续）
   → 拼"系统通知签名" = 重复频率 + 停车倒计时摘要 + 全量数据签名
       （reminder_notifications.dart → reminderNotificationDataSignature：
@@ -445,7 +446,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
              ├─ buildScheduledNotifications（reminder_notifications.dart）
              │    ├─ 到期项目（"稍后提醒"过滤，经协调器静默读）≥1 → 汇总通知 id 8000
              │    └─ 里程更新到期且未"稍后提醒" → id 8900（9:05 错峰）
-             └─ Android 申请精确闹钟 → reschedule 前再比对一次同步代数
+             └─ Android 申请精确闹钟 → reschedule 前再问一次同步票 isValid
                   → rescheduleNotifications（lunio_notification_service.dart：
                      先精确取消 16 个在用 id（8000-8007/8900-8907，R10 收紧），
                      再每条通知排 8 次重复，
@@ -454,7 +455,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
       否 → 什么都不做
 ```
 
-**防竞态四层**：① 同步代数（`notificationSyncGenerationProvider`，删车/恢复/清空由协调器 run* 模板在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查协调器 `isDataResetInFlight` 旗直接丢弃、弹窗展示前再复查旗+代数快照，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。
+**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，2026-09-25 收编；协调器是唯一写者，同步控制器与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，已随守卫收编迁出 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃、弹窗展示前再复查，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有，控制器私有 `_GuardedOp`）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（CONTEXT.md 词汇：**同步守卫**）。
 
 > 通知域协议（权限真值对账、删车/恢复/清空的通知清扫、"稍后提醒/知道了"静默读写）的执行体集中在 `reminders/notification_coordinator.dart → LunioNotificationCoordinator`（CONTEXT.md 词汇：**通知协调器**）；控制器保留被动监听外壳，停车倒计时的通知尾巴由协调器 `onParkingCountdownSaved/Cleared` 承接。
 

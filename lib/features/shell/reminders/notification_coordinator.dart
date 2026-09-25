@@ -23,6 +23,7 @@ import '../../../core/platform/native_live_activities.dart';
 import '../../../data/preferences/app_preferences.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
+import 'notification_sync_guard.dart';
 
 /// 静默目标：一条提醒挂在谁身上——保养项目（按项目 id）或里程更新
 /// （按车辆 id）。抑制类偏好 key 由 [ReminderTarget] 加前缀常量在模块
@@ -55,6 +56,7 @@ final notificationCoordinatorProvider = Provider<LunioNotificationCoordinator>(
       preferences: ref.watch(lunioPreferencesProvider),
       service: ref.watch(lunioNotificationServiceProvider),
       liveActivities: ref.watch(nativeLiveActivitiesProvider),
+      guard: ref.watch(notificationSyncGuardProvider),
     );
   },
 );
@@ -67,11 +69,17 @@ class LunioNotificationCoordinator {
     required this.preferences,
     required this.service,
     required this.liveActivities,
+    required this.guard,
   });
 
   final Ref ref;
   final LunioPreferences preferences;
   final LunioNotificationService service;
+
+  /// 通知同步守卫（代数与写库中间态旗的唯一拥有者，语义见守卫模块文件
+  /// 头）：本类是它的唯一写者——下面三个 run* 收尾模板经 begin/settle
+  /// 驱动；读侧一律领票（SyncRun）比对。
+  final NotificationSyncGuard guard;
 
   /// 停车实时活动桥（iOS Live Activity / 灵动岛，ADR 0012）。非 iOS
   /// 平台方法自禁用，本类所有实时活动编排在其他平台均为无操作。
@@ -179,30 +187,13 @@ class LunioNotificationCoordinator {
   // ---- 通知清扫协议（数据被整体替换时） ----
 
   /// 破坏性写库进行中旗：恢复备份/清空数据/删除车辆的写库事务执行期间
-  /// 为真。事务里的逐行插入会逐条触发 Drift 流查询，而流查询与写库共用
-  /// 同一个数据库连接——**能看到本事务未提交的中间态**（比如"记录已插入、
-  /// 关联表还没插到"）。通知同步控制器拿这种半成品数据算出的到期清单是
-  /// 假的，所以入口与弹窗展示前都要查这面旗，为真宁可丢弃本次同步、等
-  /// 事务提交后由 provider 失效触发的最终一轮补上（中间态守卫，
-  /// 2026-09-24 恢复备份弹假到期弹窗事故）。
-  bool _dataResetInFlight = false;
-
-  /// [runBackupRestore] / [runAllDataClear] / [runCarDeletion] 执行期间为
-  /// 真，其余时刻为假。只读；置位/复位由这三个模板内部负责。
-  bool get isDataResetInFlight => _dataResetInFlight;
-
-  /// 升通知同步代数：作废同步控制器在途任务与"用旧数据排通知"的竞态
-  /// （R8）。由下面三个 run* 模板方法在破坏性写库前后各调用一次
-  /// （前 = 作废写库前已在途的任务；后 = 作废写库进行中才启动的任务——
-  /// 它们开工时读到的已是前一次 bump 后的代数，只有完成后这次 bump 才能
-  /// 被它们的交付前比对查出来），UI 不再自己碰
-  /// notificationSyncGenerationProvider。
-  void _bumpNotificationSyncGeneration() {
-    ref.read(notificationSyncGenerationProvider.notifier).bump();
-  }
+  /// 为真。状态与语义在守卫模块（notification_sync_guard.dart，四层协议
+  /// 的单一事实来源），本 getter 只是把测试断言与同步入口早退的读数委托
+  /// 过去；置位/复位由下面三个模板经 guard.begin/settle 负责。
+  bool get isDataResetInFlight => guard.isDataResetInFlight;
 
   /// 删除车辆的收尾模板：升代数作废在途同步 → 置写库中间态旗 → 执行
-  /// 删库 → `_settleDataReset` 收尾（再升一次代数 + 关旗）→ 取消保养/
+  /// 删库 → settle 收尾（再升一次代数 + 关旗，见守卫模块）→ 取消保养/
   /// 里程系通知（8000/8900）。R1：删最后一辆车后同步控制器在无车时短路
   /// 不重排，旧调度必须在此显式取消；非最后一辆车的场景取消后会随失效
   /// 触发的重排恢复，代价可忽略。
@@ -210,56 +201,44 @@ class LunioNotificationCoordinator {
   /// [deleteCar] 传入 Repository 的删库动作本身；删库失败（异常）时旧通知
   /// 原样保留（数据未变）并上抛异常。失效车辆类 provider 由调用方负责。
   Future<void> runCarDeletion(Future<void> Function() deleteCar) async {
-    _bumpNotificationSyncGeneration();
-    _dataResetInFlight = true;
+    guard.beginDataReset();
     try {
       await deleteCar();
     } finally {
-      _settleDataReset();
+      guard.settleDataReset();
     }
     await service.cancelLunioNotifications();
   }
 
   /// 恢复备份的收尾模板：升代数 → 置写库中间态旗 → 执行恢复 →
-  /// `_settleDataReset` 收尾（再升一次代数 + 关旗）→ 取消保养/里程系
-  /// 通知（8000/8900）。停车 9001~9004 不取消——倒计时偏好保留且仍有效。
+  /// settle 收尾（再升一次代数 + 关旗）→ 取消保养/里程系通知
+  /// （8000/8900）。停车 9001~9004 不取消——倒计时偏好保留且仍有效。
   /// 恢复失败（异常，事务已回滚）时旧通知原样保留并上抛异常。
   Future<void> runBackupRestore(Future<void> Function() restoreBackup) async {
-    _bumpNotificationSyncGeneration();
-    _dataResetInFlight = true;
+    guard.beginDataReset();
     try {
       await restoreBackup();
     } finally {
-      _settleDataReset();
+      guard.settleDataReset();
     }
     await service.cancelLunioNotifications();
   }
 
   /// 清空数据的收尾模板：升代数 → 置写库中间态旗 → 执行清库（偏好表
-  /// 一并删除，倒计时偏好和通知开关都不复存在）→ `_settleDataReset`
-  /// 收尾（再升一次代数 + 关旗）→ 撤停车实时活动 → 取消停车 9001~9004
-  /// 与保养/里程 8000/8900 系残留通知。清库失败（异常）时上抛异常、
-  /// 不撤不取消（数据未变）。
+  /// 一并删除，倒计时偏好和通知开关都不复存在）→ settle 收尾（再升一次
+  /// 代数 + 关旗）→ 撤停车实时活动 → 取消停车 9001~9004 与保养/里程
+  /// 8000/8900 系残留通知。清库失败（异常）时上抛异常、不撤不取消
+  /// （数据未变）。
   Future<void> runAllDataClear(Future<void> Function() clearAllData) async {
-    _bumpNotificationSyncGeneration();
-    _dataResetInFlight = true;
+    guard.beginDataReset();
     try {
       await clearAllData();
     } finally {
-      _settleDataReset();
+      guard.settleDataReset();
     }
     await liveActivities.stop();
     await service.cancelParkingCountdownNotification();
     await service.cancelLunioNotifications();
-  }
-
-  /// 破坏性写库收尾（finally 内调用）：先升代数再关旗。顺序保证"旗已关、
-  /// 代数仍旧"的观察窗口不存在——同步任务只要看到旗已关，代数比对必然
-  /// 能查出写库期间的那两次 bump。失败回滚时 bump 同样执行：作废写库
-  /// 期间启动的同步任务对回滚后的数据重算一轮，无害。
-  void _settleDataReset() {
-    _bumpNotificationSyncGeneration();
-    _dataResetInFlight = false;
   }
 
   // ---- 停车倒计时通知 ----
@@ -268,17 +247,18 @@ class LunioNotificationCoordinator {
   /// 并失效 parkingCountdownProvider 再调用）：
   ///  - 系统通知开关关着 → 到此为止（只保留应用内倒计时）；
   ///  - 开着 → 请求通知权限（顺手记"已请求过"，被拒时
-  ///    [requestPermission] 内部回写"系统通知关闭"）→ 授权了再比对同步
-  ///    代数 → 申请 Android 精确闹钟 → 调度 9001 到点闹钟 + 9002 常驻
-  ///    通知 + 9003/9004 剩余时长预警（预警门槛按保存时刻的剩余时长判断，
-  ///    规则见服务层 scheduleParkingCountdownNotification）。
+  ///    [requestPermission] 内部回写"系统通知关闭"）→ 授权了再问一次票
+  ///    （run.isValid）→ 申请 Android 精确闹钟 → 再问一次票（弹窗停留
+  ///    期间可能发生恢复/清空，2026-09-25 补齐）→ 调度 9001 到点闹钟 +
+  ///    9002 常驻通知 + 9003/9004 剩余时长预警（预警门槛按保存时刻的
+  ///    剩余时长判断，规则见服务层 scheduleParkingCountdownNotification）。
   /// 代数比对（R8）：保存链期间发生恢复备份/清空数据（数据已被整体替换）
   /// 就不再调度，避免排入一条指向已删除状态的通知。
   Future<void> onParkingCountdownSaved(ParkingCountdown countdown) async {
     // 预警门槛的"保存时刻"在走权限弹窗等异步链之前先取好：弹窗停留多久
     // 都不影响临界倒计时的剩余时长判断。
     final evaluatedAt = DateTime.now();
-    final syncGeneration = ref.read(notificationSyncGenerationProvider);
+    final run = guard.acquire();
     // 实时活动与系统通知开关无关（系统设置里是两个独立能力，ADR 0012
     // 决定 6），保存即启动/重建；到点时刻已过则跳过——与通知调度的
     // "到点已过静默 return" 同一口径（R17）。
@@ -296,10 +276,16 @@ class LunioNotificationCoordinator {
     if (!granted) {
       return;
     }
-    if (ref.read(notificationSyncGenerationProvider) != syncGeneration) {
+    if (!run.isValid) {
       return;
     }
     final exactAlarmGranted = await service.requestExactAlarmPermission();
+    // 精确闹钟弹窗是 Android 系统弹窗、可停留任意久，期间发生恢复/清空
+    // 就不能再排指向已删除状态的通知——调度前再问一次票（2026-09-25
+    // 补齐，与同步控制器里程弹窗展示前复查同类；此前权限请求后只有一道）。
+    if (!run.isValid) {
+      return;
+    }
     await service.scheduleParkingCountdownNotification(
       countdown,
       exactAlarm: exactAlarmGranted,
@@ -338,11 +324,11 @@ class LunioNotificationCoordinator {
   /// 插入保存/清除（毫秒级窗口）：两条链自己会启停，这里再执行一次也
   /// 收敛——start 是"先撤场再重建"、stop 无活动时无操作。
   Future<void> reconcileParkingLiveActivity() async {
-    final generation = ref.read(notificationSyncGenerationProvider);
+    final run = guard.acquire();
     final snapshot = await liveActivities.status();
     // status 往返期间发生恢复备份/清空数据（代数已变）→ 放弃本轮，
     // 下一个对账点再对。
-    if (ref.read(notificationSyncGenerationProvider) != generation) {
+    if (!run.isValid) {
       return;
     }
     // 非 iOS / 通道未装配：能力整体缺席，视为无活动且永不补启。

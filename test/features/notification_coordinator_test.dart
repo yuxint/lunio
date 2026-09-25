@@ -21,6 +21,7 @@ import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/features/shell/reminders/notification_coordinator.dart';
+import 'package:lunio/features/shell/reminders/notification_sync_guard.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +43,7 @@ void main() {
   void mockAndroidNotifications({
     bool notificationsEnabled = true,
     bool permissionGranted = true,
+    bool canScheduleExact = true,
     void Function(MethodCall call)? onCall,
   }) {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -61,7 +63,7 @@ void main() {
             'initialize' => true,
             'requestNotificationsPermission' => permissionGranted,
             'areNotificationsEnabled' => notificationsEnabled,
-            'canScheduleExactNotifications' => true,
+            'canScheduleExactNotifications' => canScheduleExact,
             'requestExactAlarmsPermission' => true,
             _ => null,
           };
@@ -574,6 +576,39 @@ void main() {
 
       await coordinator.onParkingCountdownSaved(countdown());
 
+      expect(
+        notificationCalls.map((call) => call.method),
+        isNot(contains('zonedSchedule')),
+      );
+    });
+
+    test('skips scheduling when the sync generation changed during the '
+        'exact-alarm request', () async {
+      mockAndroidNotifications(
+        canScheduleExact: false,
+        onCall: (call) {
+          // 模拟精确闹钟弹窗（Android 系统弹窗，可停留任意久）停留期间
+          // 发生恢复备份/清空数据（代数 bump，R8）——调度前必须再拦一道
+          //（2026-09-25 补齐，此前权限请求后只有一道复查）。
+          if (call.method == 'requestExactAlarmsPermission') {
+            container
+                .read(notificationSyncGenerationProvider.notifier)
+                .bump();
+          }
+        },
+      );
+
+      await coordinator.onParkingCountdownSaved(countdown());
+
+      // 先钉住精确闹钟请求真的走到了（canScheduleExact=false 才会发起），
+      // 防止本用例因调度根本没到那一步而假绿。
+      expect(
+        notificationCalls.map((call) => call.method),
+        containsAllInOrder([
+          'requestNotificationsPermission',
+          'requestExactAlarmsPermission',
+        ]),
+      );
       expect(
         notificationCalls.map((call) => call.method),
         isNot(contains('zonedSchedule')),
