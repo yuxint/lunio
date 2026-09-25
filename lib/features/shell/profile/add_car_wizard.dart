@@ -5,7 +5,7 @@
 // 职责分界：
 //   - AddCarForm：第一步表单（品牌车型/动力类型/里程/上路日期/油箱容积），
 //     编辑车辆复用（品牌车型与动力类型只读），校验与提交生命周期走
-//     LunioFormSubmit；
+//     表单运行时把手 FormSheetHandle（ADR 0016）；
 //   - AddCarWizard + AddCarWizardController：两步之间的草稿状态机收在
 //     plain-Dart 控制器（同键复用/换键重转/失败回退/竞态防御，模板加载
 //     经注入，单测见 test/features/add_car_wizard_controller_test.dart），
@@ -38,10 +38,15 @@ import 'vehicle_model_picker.dart';
 /// 车辆基础信息表单（向导第一步 + 编辑车辆复用）：
 /// 新增模式可选品牌车型、填里程/上路日期/油箱容积（选填）；
 /// 编辑模式品牌车型只读回显。initialCar != null 且有 id → 编辑模式。
+/// [closeOnSubmit]：提交成功是否关 sheet——编辑车辆 sheet 传 true
+/// （关场+toast 归表单运行时，ADR 0016）；向导第一步传 false（成功 =
+/// 推进第二步，经 handle.run 只走 saving/错误生命周期）。
 class AddCarForm extends StatefulWidget {
   const AddCarForm({
     required this.vehicleModels,
     required this.today,
+    required this.handle,
+    required this.closeOnSubmit,
     this.initialCar,
     required this.onSubmit,
     this.submitLabel,
@@ -50,6 +55,12 @@ class AddCarForm extends StatefulWidget {
   final List<VehicleModel> vehicleModels;
   final LocalDate today;
   final Car? initialCar;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<void> handle;
+
+  /// 提交成功是否关 sheet（见类注释）。
+  final bool closeOnSubmit;
   final Future<void> Function(Car car) onSubmit;
   final String? submitLabel;
 
@@ -57,7 +68,13 @@ class AddCarForm extends StatefulWidget {
   State<AddCarForm> createState() => AddCarFormState();
 }
 
-class AddCarFormState extends State<AddCarForm> with LunioFormSubmit {
+class AddCarFormState extends State<AddCarForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   late String selectedBrand;
   late String selectedModel;
 
@@ -198,7 +215,7 @@ class AddCarFormState extends State<AddCarForm> with LunioFormSubmit {
         const SizedBox(height: 16),
         LunioFormActions(
           confirmLabel: widget.submitLabel ?? '保存车辆',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -259,28 +276,30 @@ class AddCarFormState extends State<AddCarForm> with LunioFormSubmit {
       tankCapacity = parsed;
     }
     final initialCar = widget.initialCar;
-    await runSubmit(() async {
-      await widget.onSubmit(
-        Car(
-          id: initialCar?.id,
-          brand: isEditing ? initialCar!.brand : selectedBrand,
-          model: isEditing ? initialCar!.model : selectedModel,
-          powertrainType: isEditing
-              ? initialCar!.powertrainType
-              : selectedPowertrain,
-          currentMileageKm: mileage,
-          roadDate: roadDate,
-          tankCapacityLiters: tankCapacity,
-          sync: SyncMetadata(
-            status: isEditing
-                ? SyncStatus.pendingUpdate
-                : SyncStatus.pendingCreate,
-            updatedAt: DateTime.now(),
-          ),
+    // 提交生命周期归表单运行时（ADR 0016）：编辑 sheet 走 submit
+    // （成功关场+toast），向导第一步走 run（成功推进阶段，不关场）。
+    Future<void> submitAction() => widget.onSubmit(
+      Car(
+        id: initialCar?.id,
+        brand: isEditing ? initialCar!.brand : selectedBrand,
+        model: isEditing ? initialCar!.model : selectedModel,
+        powertrainType: isEditing
+            ? initialCar!.powertrainType
+            : selectedPowertrain,
+        currentMileageKm: mileage,
+        roadDate: roadDate,
+        tankCapacityLiters: tankCapacity,
+        sync: SyncMetadata(
+          status: isEditing
+              ? SyncStatus.pendingUpdate
+              : SyncStatus.pendingCreate,
+          updatedAt: DateTime.now(),
         ),
-      );
-      // 成功不关 sheet（由外层向导控制），saving 由运行器复位。
-    });
+      ),
+    );
+    await (widget.closeOnSubmit
+        ? widget.handle.submit(submitAction)
+        : widget.handle.run(submitAction));
   }
 }
 
@@ -387,17 +406,23 @@ typedef DefaultTemplateLoader
     );
 
 /// 添加车辆两步向导（第一步车辆信息 → 第二步保养项目草稿）。
-/// onMaintenanceStepChanged 通知外层 sheet 切标题。
+/// onMaintenanceStepChanged 通知外层 sheet 切标题（入口函数经
+/// handle.setFrame 接线，ADR 0016）。
 class AddCarWizard extends ConsumerStatefulWidget {
   const AddCarWizard({
     required this.vehicleModels,
     required this.today,
+    required this.handle,
     required this.onMaintenanceStepChanged,
     required this.onSubmit,
   });
 
   final List<VehicleModel> vehicleModels;
   final LocalDate today;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它，
+  /// 与第一步表单共用同一把手（错误位/提交态全 sheet 一份）。
+  final FormSheetHandle<void> handle;
   final ValueChanged<bool> onMaintenanceStepChanged;
   final Future<void> Function(Car car, List<MaintenanceItem> items) onSubmit;
 
@@ -405,8 +430,13 @@ class AddCarWizard extends ConsumerStatefulWidget {
   ConsumerState<AddCarWizard> createState() => AddCarWizardState();
 }
 
-class AddCarWizardState extends ConsumerState<AddCarWizard>
-    with LunioFormSubmit {
+class AddCarWizardState extends ConsumerState<AddCarWizard> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   /// 草稿状态机（模板加载经 provider 注入，纯 Dart 可单测）。
   late final AddCarWizardController _controller = AddCarWizardController(
     loadTemplate: (key) => ref.read(defaultItemsTemplateProvider(key).future),
@@ -433,6 +463,8 @@ class AddCarWizardState extends ConsumerState<AddCarWizard>
               vehicleModels: widget.vehicleModels,
               today: widget.today,
               initialCar: _controller.carDraft,
+              handle: widget.handle,
+              closeOnSubmit: false,
               submitLabel: '下一步',
               onSubmit: _handleCarDraft,
             ),
@@ -495,8 +527,8 @@ class AddCarWizardState extends ConsumerState<AddCarWizard>
     _refresh();
   }
 
-  /// 最终提交：校验在控制器（错误走 mixin 行内错误位，与动作层失败同一
-  /// 显示位）；onSubmit 外层走动作层事务，成功关 sheet 由调用方处理。
+  /// 最终提交：校验在控制器（错误走行内错误位，与动作层失败同一显示
+  /// 位）；提交生命周期归表单运行时（成功关场+toast 归 handle，ADR 0016）。
   Future<void> _submit() async {
     final car = _controller.carDraft;
     final items = _controller.itemDrafts;
@@ -508,7 +540,7 @@ class AddCarWizardState extends ConsumerState<AddCarWizard>
       setFormError(validationError);
       return;
     }
-    await runSubmit(() => widget.onSubmit(car, items));
+    await widget.handle.submit(() => widget.onSubmit(car, items));
   }
 
   /// 草稿列表"新增"：弹草稿项目表单（showDraftMaintenanceItemFormSheet，

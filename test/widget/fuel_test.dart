@@ -2,10 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lunio/app/providers.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/core/theme/lunio_tokens.dart';
+import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/features/shell/fuel/fuel_prices.dart';
 import 'package:lunio/features/shell/fuel/fuel_records_card.dart';
 import 'package:lunio/features/shell/shared/shared_widgets.dart';
@@ -858,6 +860,42 @@ void main() {
     );
   });
 
+  testWidgets('fuel record delete failure keeps sheet open with inline error', (
+    tester,
+  ) async {
+    // 删除必失败：只覆写 deleteFuelRecord，其余读路径走真实现（同库）。
+    final fixture = await pumpRecordsCard(
+      tester,
+      (carId) => [fuelSeed(carId, date: '2026-05-10')],
+      extraOverrides: [
+        fuelRepositoryProvider.overrideWith(
+          (ref) => _FailingFuelRepository(
+            ref.watch(appDatabaseProvider),
+            ref.watch(lunioPreferencesProvider),
+          ),
+        ),
+      ],
+    );
+
+    await tester.tap(find.textContaining('2026-05-10 · 92#'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    // 编辑 sheet 的删除按钮与确认框确认按钮同名，取最后一个（弹窗内）。
+    await tester.tap(find.text('删除').last);
+    await tester.pumpAndSettle();
+
+    // 失败留场（ADR 0016：失败走行内错误位）：编辑 sheet 不关、行内
+    // 错误出现、无"已删除"成功 toast，库里记录原样保留。
+    expect(find.text('编辑加油记录'), findsOneWidget);
+    expect(find.text('操作失败，请稍后重试'), findsOneWidget);
+    expect(find.text('加油记录已删除'), findsNothing);
+    expect(
+      await fixture.repository.listFuelRecordsForCar(fixture.carId),
+      isNotEmpty,
+    );
+  });
+
   testWidgets('fuel records beyond five scroll inside the card', (
     tester,
   ) async {
@@ -938,4 +976,15 @@ void main() {
     // 摘要行 = 实付优先逐笔求和：270 + 300 = ¥570.00 · 2 笔。
     expect(find.text('累计加油 ¥570.00 · 2 笔'), findsOneWidget);
   });
+}
+
+/// 删除必失败的加油仓库假体：只覆写 deleteFuelRecord 抛错，其余方法
+/// 全部走真实现（同一份数据库连接），读路径不受影响。
+class _FailingFuelRepository extends FuelRepository {
+  _FailingFuelRepository(super.database, super.preferences);
+
+  @override
+  Future<void> deleteFuelRecord(int recordId) async {
+    throw Exception('模拟删除失败');
+  }
 }

@@ -17,10 +17,10 @@
 // 表单（记一笔/编辑共用一个 sheet）：日期（上路日期起、**上限今天**，
 // 不能未来）+ 油品（一行胶囊，默认 92#）+ 单价（与油价卡油品一致时
 // 预填生效价，可改）+ 应付金额（必填）→ 箭头 → 实付金额（选填，点
-// 箭头一键回填应付）。保存走表单提交运行器 mixin + 动作层
-// saveFuelRecord；删除只在编辑态出现，确认框在调用方（本文件的 sheet
-// 入口函数）弹、动作经动作层 removeFuelRecord（ADR 0007）。加油记录
-// 没有"同日查重"（同车同日多箱合法，ADR 0014）。
+// 箭头一键回填应付）。装载/守卫/pop/toast 时序归表单运行时
+// showLunioFormSheet（ADR 0016）；保存/删除走动作层 saveFuelRecord /
+// removeFuelRecord（ADR 0007）；删除只在编辑态出现，确认框在 sheet
+// 入口函数弹。加油记录没有"同日查重"（同车同日多箱合法，ADR 0014）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -257,92 +257,76 @@ class _FuelRecordRow extends StatelessWidget {
 /// ★ 加油记录表单入口（记一笔按钮 / 记录行点按）：装载车辆与生效今天
 /// → 弹表单 sheet。[record] 非 null 即编辑态（多一个删除入口）。
 /// 新增时读生效价做单价预填（油价卡油品 = 默认 92# 才预填，见
-/// [FuelRecordForm.prefillUnitPrice] 注释）；onSubmit/onDelete 已在
-/// 闭包里接动作层；确认框/toast/pop 留调用方（ADR 0007 的"调用方"指
-/// 动作层的调用方，即本函数）。
+/// [FuelRecordForm.prefillUnitPrice] 注释）；装载/守卫/pop/toast 时序归
+/// showLunioFormSheet（ADR 0016），删除确认框留在入口（破坏性操作的
+/// 文案属 UI 决策）、写库经动作层 removeFuelRecord（ADR 0007）。
 Future<void> showFuelRecordFormSheet(
   BuildContext context,
   WidgetRef ref, {
   FuelRecord? record,
-}) async {
-  final car = await ref.read(appliedCarProvider.future);
-  final today = await ref.read(effectiveTodayProvider.future);
-  // 新增态的单价预填：油价卡当前油品恰是表单默认的 92# 时，把生效价
-  // （手填价 > 数据源价）填进输入框；油品不一致不预填（价格张冠李戴
-  // 比空着更糟）。编辑态用记录自己的单价，不读生效价。
+}) {
+  // 装载结果写入闭包捕获变量，在 load/guard/builder 之间共享（ADR 0016）。
+  Car? car;
+  LocalDate today = LocalDate.fromDateTime(DateTime.now());
   double? prefillUnitPrice;
-  if (record == null) {
-    final globalGrade = ref.read(fuelGradeProvider).value;
-    if (globalGrade == FuelGrade.gasoline92) {
-      prefillUnitPrice = ref.read(effectiveFuelPriceProvider);
-    }
-  }
-  if (!context.mounted) {
-    return;
-  }
-  if (car?.id == null) {
-    showStatusOverlay(context, '请先新增车辆', StatusOverlayTone.info);
-    return;
-  }
-  await showLunioModalSheet<void>(
+  return showLunioFormSheet<void>(
     context: context,
-    // 表单有未保存输入：点遮罩/下滑不关（与其他编辑表单同一口径）。
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: record == null ? '记一笔加油' : '编辑加油记录',
-        subtitle: '${car!.brand} ${car.model}',
-        // 必须用 sheet 自己的 context 取键盘高度（外层 context 在 sheet
-        // 构建时定格为 0，见 records_page 同款注释）。
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: FuelRecordForm(
-          car: car,
-          today: today,
-          record: record,
-          prefillUnitPrice: prefillUnitPrice,
-          onSubmit: (value) async {
-            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-            await saveFuelRecord(ref, value);
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
-            }
-            if (context.mounted) {
-              showStatusOverlay(
-                context,
-                '加油记录已保存',
-                StatusOverlayTone.success,
-              );
-            }
-          },
-          onDelete: record == null
-              ? null
-              : () async {
-                  // 删除确认框在调用方弹（破坏性操作，文案属 UI 决策），
-                  // 写库经动作层 removeFuelRecord。
-                  final confirmed = await showConfirmDialog(
-                    context: context,
-                    title: '删除加油记录',
-                    message: '确定删除 ${record.date} 的加油记录？',
-                    confirmLabel: '删除',
-                  );
-                  if (confirmed != true) {
-                    return;
-                  }
-                  await removeFuelRecord(ref, record.id!);
-                  if (sheetContext.mounted) {
-                    Navigator.of(sheetContext).pop();
-                  }
-                  if (context.mounted) {
-                    showStatusOverlay(
-                      context,
-                      '加油记录已删除',
-                      StatusOverlayTone.success,
-                    );
-                  }
-                },
-        ),
+    title: record == null ? '记一笔加油' : '编辑加油记录',
+    load: (handle) async {
+      car = await ref.read(appliedCarProvider.future);
+      today = await ref.read(effectiveTodayProvider.future);
+      // 新增态的单价预填：油价卡当前油品恰是表单默认的 92# 时，把生效价
+      // （手填价 > 数据源价）填进输入框；油品不一致不预填（价格张冠李戴
+      // 比空着更糟）。编辑态用记录自己的单价，不读生效价。
+      if (record == null) {
+        final globalGrade = ref.read(fuelGradeProvider).value;
+        if (globalGrade == FuelGrade.gasoline92) {
+          prefillUnitPrice = ref.read(effectiveFuelPriceProvider);
+        }
+      }
+      // 闭包捕获变量不做类型提升（装载数据跨闭包共享的标准写法），
+      // 先落本地再判空。
+      final loadedCar = car;
+      if (loadedCar != null) {
+        handle.setSubtitle('${loadedCar.brand} ${loadedCar.model}');
+      }
+    },
+    guard: () => car?.id == null ? '请先新增车辆' : null,
+    builder: (sheetContext, handle) {
+      return FuelRecordForm(
+        car: car!,
+        today: today,
+        record: record,
+        prefillUnitPrice: prefillUnitPrice,
+        handle: handle,
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归表单
+        // 运行时（ADR 0016）。
+        onSubmit: (value) => saveFuelRecord(ref, value),
+        onDelete: record == null
+            ? null
+            : () async {
+                // 删除确认框在入口弹（破坏性操作，文案属 UI 决策），
+                // 写库经动作层 removeFuelRecord（ADR 0007）：失败行走
+                // handle.run 的行内错误位，成功 pop + toast 归运行时。
+                final confirmed = await showConfirmDialog(
+                  context: context,
+                  title: '删除加油记录',
+                  message: '确定删除 ${record.date} 的加油记录？',
+                  confirmLabel: '删除',
+                );
+                if (confirmed != true || !context.mounted) {
+                  return;
+                }
+                await handle.run(() => removeFuelRecord(ref, record.id!));
+                // run 失败时错误已写行内错误位（sheet 留场）；只有删除
+                // 成功（errorText 仍为空）才关场 + 成功 toast。
+                if (context.mounted && handle.errorText == null) {
+                  handle.close(toast: '加油记录已删除');
+                }
+              },
       );
     },
+    successMessage: '加油记录已保存',
   );
 }
 
@@ -354,6 +338,7 @@ class FuelRecordForm extends StatefulWidget {
   const FuelRecordForm({
     required this.car,
     required this.today,
+    required this.handle,
     required this.onSubmit,
     this.record,
     this.prefillUnitPrice,
@@ -371,6 +356,9 @@ class FuelRecordForm extends StatefulWidget {
   /// 油品胶囊不重算预填，避免覆盖用户已输入的价格。
   final double? prefillUnitPrice;
 
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<void> handle;
+
   /// 保存回调（构造实体后调用，实现在入口函数里接动作层）。
   final Future<void> Function(FuelRecord record) onSubmit;
 
@@ -381,7 +369,13 @@ class FuelRecordForm extends StatefulWidget {
   State<FuelRecordForm> createState() => _FuelRecordFormState();
 }
 
-class _FuelRecordFormState extends State<FuelRecordForm> with LunioFormSubmit {
+class _FuelRecordFormState extends State<FuelRecordForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   late LocalDate recordDate;
   late FuelGrade grade;
   late final TextEditingController unitPriceController;
@@ -529,7 +523,7 @@ class _FuelRecordFormState extends State<FuelRecordForm> with LunioFormSubmit {
         const SizedBox(height: 16),
         LunioFormActions(
           confirmLabel: isEditing ? '保存修改' : '保存',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -581,7 +575,7 @@ class _FuelRecordFormState extends State<FuelRecordForm> with LunioFormSubmit {
         updatedAt: DateTime.now(),
       ),
     );
-    await runSubmit(() => widget.onSubmit(record));
+    await widget.handle.submit(() => widget.onSubmit(record));
   }
 }
 

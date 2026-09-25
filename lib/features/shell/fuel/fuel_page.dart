@@ -41,7 +41,7 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
-import '../shared/form_submit.dart';
+import '../shared/form_sheet.dart';
 import '../shared/formatters.dart';
 import 'fuel_prices.dart';
 import 'fuel_records_card.dart';
@@ -420,42 +420,30 @@ class _PriceCard extends ConsumerWidget {
   /// 编辑手填价 sheet（点价格行进入）：输入框每次留空（不预填，避免
   /// 顺手一存把数据源价存成手填价），只针对当前"省+油品"组合填一个价；
   /// 留空提交按校验错误处理，恢复数据源价走价格旁的"重置"按钮。
+  /// 装载/守卫/pop/toast 时序归 showLunioFormSheet（ADR 0016）。
   Future<void> _editManualPrice(BuildContext context, WidgetRef ref) async {
     final province = ref.read(fuelProvinceProvider).value ?? '';
     final grade = ref.read(fuelGradeProvider).value;
     final controller = TextEditingController();
-    await showLunioModalSheet<void>(
+    await showLunioFormSheet<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (sheetContext) {
-        return PrototypeSheetFrame(
-          title: '编辑油价',
-          subtitle: '$province · ${grade?.label ?? ''}，单位元/升。',
-          bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-          child: _ManualPriceForm(
-            controller: controller,
-            onSubmit: (price) async {
-              // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-              await saveFuelManualPrice(
-                ref,
-                province: province,
-                grade: grade!,
-                pricePerLiter: price,
-              );
-              if (sheetContext.mounted) {
-                Navigator.of(sheetContext).pop();
-              }
-              if (context.mounted) {
-                showStatusOverlay(
-                  context,
-                  '手填油价已保存',
-                  StatusOverlayTone.success,
-                );
-              }
-            },
+      title: '编辑油价',
+      subtitle: '$province · ${grade?.label ?? ''}，单位元/升。',
+      builder: (sheetContext, handle) {
+        return _ManualPriceForm(
+          controller: controller,
+          handle: handle,
+          // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归
+          // 表单运行时（ADR 0016）。
+          onSubmit: (price) => saveFuelManualPrice(
+            ref,
+            province: province,
+            grade: grade!,
+            pricePerLiter: price,
           ),
         );
       },
+      successMessage: '手填油价已保存',
     );
   }
 
@@ -714,17 +702,30 @@ class _SheetOptionRow extends StatelessWidget {
 /// 留空提交按校验错误处理（不再有"留空=清除"语义，恢复数据源价走
 /// 价格旁的"重置"按钮）。
 class _ManualPriceForm extends StatefulWidget {
-  const _ManualPriceForm({required this.controller, required this.onSubmit});
+  const _ManualPriceForm({
+    required this.controller,
+    required this.handle,
+    required this.onSubmit,
+  });
 
   final TextEditingController controller;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<void> handle;
+
   final Future<void> Function(double price) onSubmit;
 
   @override
   State<_ManualPriceForm> createState() => _ManualPriceFormState();
 }
 
-class _ManualPriceFormState extends State<_ManualPriceForm>
-    with LunioFormSubmit {
+class _ManualPriceFormState extends State<_ManualPriceForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+  void setFormError(String? text) => widget.handle.setFormError(text);
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -747,7 +748,7 @@ class _ManualPriceFormState extends State<_ManualPriceForm>
         const SizedBox(height: 18),
         LunioFormActions(
           confirmLabel: '保存手填价',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -766,7 +767,7 @@ class _ManualPriceFormState extends State<_ManualPriceForm>
       setFormError('请输入 0.01–99.99 之间的价格');
       return;
     }
-    await runSubmit(() => widget.onSubmit(price));
+    await widget.handle.submit(() => widget.onSubmit(price));
   }
 }
 

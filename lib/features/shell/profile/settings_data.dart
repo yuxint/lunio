@@ -292,84 +292,70 @@ Future<void> clearAllData(BuildContext context, WidgetRef ref) async {
 
 /// ★ 通知设置 sheet 入口：先 await 偏好 provider 拿到真实设置
 /// （加载失败 toast 返回，杜绝 loading 期默认值覆盖真实设置，R6）→
-/// 协调器向系统查询真实开关回写偏好 →
-/// 弹表单（系统状态行 + 应用内通知开关 + 重复频率三段）。
+/// 协调器向系统查询真实开关回写偏好 → 弹表单（系统状态行 + 应用内
+/// 通知开关 + 重复频率三段）。装载/守卫/pop/toast 时序归
+/// showLunioFormSheet（ADR 0016；本 sheet 原先可点遮罩关闭是漂移，
+/// 2026-09-25 归一为与其他编辑表单一致的不可关）。
 Future<void> showNotificationSettingsSheet(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  final LunioNotificationSettings loadedSettings;
-  try {
-    loadedSettings = await ref.read(notificationSettingsProvider.future);
-  } catch (error) {
-    if (context.mounted) {
-      showStatusOverlay(context, '设置加载失败', StatusOverlayTone.error);
-    }
-    return;
-  }
-  var initialSettings = loadedSettings;
-  final systemNotificationsEnabled = await ref
-      .read(notificationCoordinatorProvider)
-      .reconcileSystemEnabled();
-  if (!context.mounted) {
-    return;
-  }
-  initialSettings = initialSettings.copyWith(
-    systemNotificationsEnabled: systemNotificationsEnabled,
+  LunioNotificationSettings initialSettings = const LunioNotificationSettings(
+    systemNotificationsEnabled: false,
+    inAppNotificationsEnabled: false,
+    dueRepeatFrequency: ReminderRepeatFrequency.weekly,
   );
-  showLunioModalSheet<void>(
+  return showLunioFormSheet<void>(
     context: context,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: '通知提醒',
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: NotificationSettingsForm(
-          initialSettings: initialSettings,
-          onOpenSystemSettings: () async {
-            final opened =
-                await NativeNotificationSettings.openNotificationSettings();
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
-            }
-            if (!opened && context.mounted) {
-              showStatusOverlay(
-                context,
-                '无法打开系统设置，请在系统设置中搜索 Lunio',
-                StatusOverlayTone.info,
-              );
-            }
-          },
-          onSubmit: (settings) async {
-            // 对账系统开关 + 批量写偏好收进动作层（ADR 0007），失效在
-            // 协调器内部完成，这里只留反馈薄壳。
-            await saveNotificationSettings(ref, settings);
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
-            }
-            if (context.mounted) {
-              showStatusOverlay(
-                context,
-                '设置已保存',
-                StatusOverlayTone.success,
-              );
-            }
-          },
-        ),
+    title: '通知提醒',
+    load: (handle) async {
+      final loadedSettings = await ref.read(notificationSettingsProvider.future);
+      final systemNotificationsEnabled = await ref
+          .read(notificationCoordinatorProvider)
+          .reconcileSystemEnabled();
+      initialSettings = loadedSettings.copyWith(
+        systemNotificationsEnabled: systemNotificationsEnabled,
       );
     },
+    builder: (sheetContext, handle) {
+      return NotificationSettingsForm(
+        initialSettings: initialSettings,
+        handle: handle,
+        onOpenSystemSettings: () async {
+          final opened =
+              await NativeNotificationSettings.openNotificationSettings();
+          // pop 归表单运行时；打开失败带一条 info toast（ADR 0016）。
+          handle.close(
+            toast: opened
+                ? null
+                : '无法打开系统设置，请在系统设置中搜索 Lunio',
+            tone: StatusOverlayTone.info,
+          );
+        },
+        // 对账系统开关 + 批量写偏好收进动作层（ADR 0007），失效在
+        // 协调器内部完成；关 sheet 与成功 toast 归表单运行时（ADR 0016）。
+        onSubmit: (settings) => saveNotificationSettings(ref, settings),
+      );
+    },
+    successMessage: '设置已保存',
   );
 }
 
 /// 通知表单：状态行 + 应用内通知开关 + 到期重复频率三段（每周/每 2 周/
-/// 每月）。提交构造 LunioNotificationSettings。
+/// 每月）。提交构造 LunioNotificationSettings。提交生命周期（saving/
+/// 行内错误）归表单运行时把手（ADR 0016，替代原先手搓的 saving 布尔）。
 class NotificationSettingsForm extends StatefulWidget {
   const NotificationSettingsForm({
     required this.initialSettings,
+    required this.handle,
     required this.onOpenSystemSettings,
     required this.onSubmit,
   });
 
   final LunioNotificationSettings initialSettings;
+
+  /// 表单运行时把手（ADR 0016）。
+  final FormSheetHandle<void> handle;
   final Future<void> Function() onOpenSystemSettings;
   final Future<void> Function(LunioNotificationSettings settings) onSubmit;
 
@@ -387,7 +373,8 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
 
   late bool inAppNotificationsEnabled;
   late ReminderRepeatFrequency dueRepeatFrequency;
-  bool saving = false;
+
+  bool get saving => widget.handle.saving;
 
   @override
   void initState() {
@@ -435,7 +422,7 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
         const SizedBox(height: 18),
         LunioFormActions(
           confirmLabel: '保存设置',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -443,23 +430,19 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
     );
   }
 
-  /// 提交：saving 态防重复点击 → onSubmit（外层保存偏好+关 sheet）。
-  Future<void> _submit() async {
-    setState(() => saving = true);
-    try {
-      await widget.onSubmit(
+  /// 提交：构造设置后交表单运行时（saving/失败行内错误/成功关场+toast
+  /// 都在 handle，ADR 0016）。
+  Future<void> _submit() {
+    return widget.handle.submit(
+      () => widget.onSubmit(
         LunioNotificationSettings(
           systemNotificationsEnabled:
               widget.initialSettings.systemNotificationsEnabled,
           inAppNotificationsEnabled: inAppNotificationsEnabled,
           dueRepeatFrequency: dueRepeatFrequency,
         ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => saving = false);
-      }
-    }
+      ),
+    );
   }
 }
 
@@ -520,7 +503,8 @@ class SystemNotificationStatusRow extends StatelessWidget {
 /// ★ 手动日期 sheet（开发者模式专属）：开关 + 日期选择。
 /// 关闭/清空 → 写 manualDateEnabled=false + manualDate=null；
 /// 开启 → 写两个偏好；invalidate 后 effectiveTodayProvider 重算，
-/// 提醒进度全部按新"今天"计算。
+/// 提醒进度全部按新"今天"计算。装载/守卫/pop/toast 时序归
+/// showLunioFormSheet（ADR 0016）。
 void showManualDateSheet(BuildContext context, WidgetRef ref) {
   final initialDate = ref
       .read(manualDatePreferenceProvider)
@@ -531,34 +515,21 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
         data: (value) => value,
         orElse: () => LocalDate.fromDateTime(DateTime.now()),
       );
-  showLunioModalSheet<void>(
+  showLunioFormSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (sheetContext) {
-      return PrototypeSheetFrame(
-        title: '手动日期',
-        subtitle: '开启后，保养提醒里的“今天”会使用该日期。',
-        bottomInset: MediaQuery.of(sheetContext).viewInsets.bottom,
-        child: ManualDateForm(
-          initialDate: initialDate,
-          fallbackDate: fallbackDate,
-          onSubmit: (date) async {
-            // 写库+失效收进动作层（ADR 0007），这里只留反馈薄壳。
-            await saveManualDate(ref, date);
-            if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
-            }
-            if (context.mounted) {
-              showStatusOverlay(
-                context,
-                '手动日期已保存',
-                StatusOverlayTone.success,
-              );
-            }
-          },
-        ),
+    title: '手动日期',
+    subtitle: '开启后，保养提醒里的“今天”会使用该日期。',
+    builder: (sheetContext, handle) {
+      return ManualDateForm(
+        initialDate: initialDate,
+        fallbackDate: fallbackDate,
+        handle: handle,
+        // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归
+        // 表单运行时（ADR 0016）。
+        onSubmit: (date) => saveManualDate(ref, date),
       );
     },
+    successMessage: '手动日期已保存',
   );
 }
 
@@ -567,19 +538,27 @@ class ManualDateForm extends StatefulWidget {
   const ManualDateForm({
     required this.initialDate,
     required this.fallbackDate,
+    required this.handle,
     required this.onSubmit,
   });
 
   final LocalDate? initialDate;
   final LocalDate fallbackDate;
+
+  /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  final FormSheetHandle<void> handle;
   final Future<void> Function(LocalDate? date) onSubmit;
 
   @override
   State<ManualDateForm> createState() => ManualDateFormState();
 }
 
-class ManualDateFormState extends State<ManualDateForm>
-    with LunioFormSubmit {
+class ManualDateFormState extends State<ManualDateForm> {
+  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
+  // 上。以下转发让既有调用点零改动。
+  bool get saving => widget.handle.saving;
+  String? get errorText => widget.handle.errorText;
+
   late LocalDate selectedDate;
   late bool enabled;
 
@@ -589,9 +568,6 @@ class ManualDateFormState extends State<ManualDateForm>
     enabled = widget.initialDate != null;
     selectedDate = widget.initialDate ?? widget.fallbackDate;
   }
-
-  @override
-  void dispose() => super.dispose();
 
   @override
   Widget build(BuildContext context) {
@@ -621,7 +597,7 @@ class ManualDateFormState extends State<ManualDateForm>
         const SizedBox(height: 18),
         LunioFormActions(
           confirmLabel: '保存日期',
-          onCancel: () => Navigator.of(context).pop(),
+          onCancel: () => widget.handle.close(),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -629,10 +605,10 @@ class ManualDateFormState extends State<ManualDateForm>
     );
   }
 
-  /// 提交：开关关 = null（清除），开 = 所选日期。
+  /// 提交：开关关 = null（清除），开 = 所选日期；生命周期归表单运行时。
   Future<void> _submit() {
     final date = enabled ? selectedDate : null;
-    return runSubmit(() => widget.onSubmit(date));
+    return widget.handle.submit(() => widget.onSubmit(date));
   }
 
   Future<void> _pickDate() async {
