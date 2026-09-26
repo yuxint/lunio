@@ -135,11 +135,11 @@ Future<AppDatabase> seedRecordsForConflictPrompt(
   return database;
 }
 
-/// 里程单调性软提示三态测试的公共开场：预播种"晚于生效今天（05-19）
+/// 里程单调性软提示弹窗 smoke 测试的公共开场：预播种"晚于生效今天（05-19）
 /// 且里程更低"的一条记录（05-25@10000）→ 装配 → 经提醒页打开新增表单
 /// （默认草稿 = 今天 + 车辆当前里程 12000，与 05-25@10000 必冲突，且
 /// 当天无记录不触发同日查重）→ 选中机油 → 点「下一步」。结束时软提示
-/// 弹窗已在屏上，三个用例各自从这一态出发断言。
+/// 弹窗已在屏上，断言文案含参照记录的日期与里程（分支流转在控制器单测）。
 Future<void> openConflictPromptDialog(WidgetTester tester) async {
   final database = await seedRecordsForConflictPrompt([
     (const LocalDate(2026, 5, 25), 10000),
@@ -683,22 +683,9 @@ void main() {
     },
   );
 
-  testWidgets('edit sheet does not trigger same-day duplicate dialog', (
-    tester,
-  ) async {
-    await pumpApp(tester);
-    await createDefaultCar(tester);
-    await createDefaultRecord(tester);
-
-    // 编辑模式不查重（记录日期撞自己/撞他日都走保存时校验）。
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, '编辑').first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('编辑保养记录'), findsOneWidget);
-    expect(find.text('该日期已有保养记录'), findsNothing);
-  });
+  // 「编辑模式不触发同日查重」的分支断言已收进控制器单测
+  // （record_form_controller_test.dart「编辑模式：打开与选日期都不查重」），
+  // widget 侧保留查重弹窗的文案/接线 smoke 与返回换日循环接线。
 
   testWidgets('mileage conflict soft prompt shows reference record', (
     tester,
@@ -713,55 +700,6 @@ void main() {
     expect(find.textContaining('10,000 km'), findsWidgets);
   });
 
-  testWidgets('mileage conflict proceed enters interval step', (tester) async {
-    await openConflictPromptDialog(tester);
-
-    // 「仍要继续」：软提示不拦截，放行进第二步。
-    await tester.tap(find.text('仍要继续'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('与已有记录不一致'), findsNothing);
-    expect(find.text('确认下次提醒间隔'), findsOneWidget);
-    expect(find.text('保存记录'), findsOneWidget);
-  });
-
-  testWidgets('mileage conflict back stays on first step', (tester) async {
-    await openConflictPromptDialog(tester);
-
-    // 「返回修改」：留在第一步，不进入第二步。
-    await tester.tap(find.text('返回修改'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('与已有记录不一致'), findsNothing);
-    expect(find.text('下一步'), findsOneWidget);
-    expect(find.text('确认下次提醒间隔'), findsNothing);
-  });
-
-  testWidgets('edit form also prompts mileage conflict on next step', (
-    tester,
-  ) async {
-    final database = await seedRecordsForConflictPrompt([
-      (const LocalDate(2026, 5, 10), 10000),
-      (const LocalDate(2026, 5, 25), 10000),
-    ]);
-    await pumpApp(tester, database: database);
-
-    // 列表按日期倒序：第一条卡片是 05-25 那条，编辑它。
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, '编辑').first);
-    await tester.pumpAndSettle();
-    expect(find.text('2026年5月25日'), findsOneWidget);
-
-    // 里程 10000 → 9000：与 05-10@10000 构成"已有记录早于草稿但里程
-    // 更高"（编辑排除自身，05-25 那条自己不参与比较）。
-    await tester.enterText(find.byType(TextField).at(0), '9000');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('下一步'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('与已有记录不一致'), findsOneWidget);
-    expect(find.textContaining('2026年5月10日'), findsWidgets);
-    expect(find.textContaining('10,000 km'), findsWidgets);
-  });
+  // 「仍要继续/返回修改」分支流转与「编辑也弹软提示」已收进控制器单测
+  // （record_form_controller_test.dart 里程单调软提示组）。
 }
