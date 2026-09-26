@@ -339,13 +339,41 @@ void main() {
 
       release.complete();
       await restore;
-      // 生产里恢复完成后动作层失效 provider 家族（invalidateVehicleProviders，
-      // ADR 0007）触发最终一轮；测试里等价手动失效+强制重算。补判必须
-      // 弹出到期项。
+      // 本用例锁定模板不带 refreshProviders 的老路径（2026-09-26 起生产
+      // 恢复恒传闭包、走屏障重算+模板强制补判，见下个用例）：settle 后
+      // 没有旗、票有效，失效触发的自然补判轮必须弹出到期项。测试里的
+      // 手动失效+强制重算等价老生产编排的事后失效。
       await refreshItems(tester);
       await pumpUntilDialog(tester);
       expect(find.text('保养提醒'), findsOneWidget);
       expect(find.text('刹车油'), findsOneWidget);
+    });
+
+    testWidgets('恢复模板带屏障重算：窗口内触发被吞，settle 后模板强制补判',
+        timeout: const Timeout(Duration(seconds: 30)), (tester) async {
+      mockAndroidNotifications();
+      await seedBaseline();
+      await pumpHost(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('保养提醒'), findsNothing);
+
+      // 生产（2026-09-26 起）：恢复模板在旗内屏障重算（动作层失效 provider
+      // 家族并等落定），窗口内所有同步触发被入口早退丢弃；settle 后没有任何
+      // 自然的监听触发了，模板必须自己强制补一轮。这里 refresh 闭包内补插
+      // 到期项并失效重算（= 动作层屏障语义），runBackupRestore 返回后
+      // 不做任何手动失效——补判弹窗只能来自模板的强制补判轮，删掉它本
+      // 用例红。
+      final coordinator = container.read(notificationCoordinatorProvider);
+      await coordinator.runBackupRestore(
+        () async {},
+        refreshProviders: () async {
+          await addOverdueItem('变速箱油');
+          await refreshItems(tester);
+        },
+      );
+      await pumpUntilDialog(tester);
+      expect(find.text('保养提醒'), findsOneWidget);
+      expect(find.text('变速箱油'), findsOneWidget);
     });
 
     testWidgets('弹窗开着时数据变化置 pending，关闭后强制重跑补上新到期项',

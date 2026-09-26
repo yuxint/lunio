@@ -9,7 +9,11 @@ import 'package:lunio/data/backup/backup_codec.dart';
 
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
+import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/maintenance_item.dart';
+import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import '../helpers/widget_app.dart';
@@ -227,6 +231,137 @@ void main() {
     expect(find.text('取消'), findsNothing);
   });
 
+  // 2026-09-26 用户复现：恢复"与当前数据相同"的备份后，弹出全部项目
+  // 按无历史基线（上路日/里程0）计算的假到期"保养提醒"弹窗。本用例复刻
+  // 该场景：播种 0 到期基线 → 导出当前数据为备份 → 走真实 UI 恢复同一份
+  // 备份 → 断言不弹任何保养提醒弹窗。
+  testWidgets('restore identical backup does not pop fake due dialog', (
+    tester,
+  ) async {
+    final notificationCalls = <MethodCall>[];
+    final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+    try {
+      final database = await pumpApp(
+        tester,
+        systemNotificationsEnabled: true,
+        inAppNotificationsEnabled: true,
+      );
+      final repos = testRepository(database);
+      final sync = SyncMetadata(
+        status: SyncStatus.synced,
+        updatedAt: DateTime.now(),
+      );
+      final carId = await repos.createCarWithMaintenanceItems(
+        Car(
+          brand: '本田',
+          model: '思域',
+          currentMileageKm: 60778,
+          roadDate: const LocalDate(2021, 10, 31),
+          sync: sync,
+        ),
+        [
+          MaintenanceItem(
+            carsId: 0,
+            name: '机油',
+            enabled: true,
+            remindByMileage: false,
+            remindByTime: true,
+            timeIntervalMonths: 12,
+            sortOrder: 0,
+            sync: sync,
+          ),
+          MaintenanceItem(
+            carsId: 0,
+            name: '刹车油',
+            enabled: true,
+            remindByMileage: false,
+            remindByTime: true,
+            timeIntervalMonths: 36,
+            sortOrder: 1,
+            sync: sync,
+          ),
+          MaintenanceItem(
+            carsId: 0,
+            name: '空调滤芯',
+            enabled: true,
+            remindByMileage: false,
+            remindByTime: true,
+            timeIntervalMonths: 12,
+            sortOrder: 2,
+            sync: sync,
+          ),
+        ],
+      );
+      final items = await repos.listMaintenanceItemsForCar(carId);
+      // 每个项目一条近期的记录（夹具固定"今天"=2026-05-19；同车同日有
+      // 唯一约束，错开日期）→ 恢复前 0 到期。
+      final recordDates = [
+        const LocalDate(2026, 5, 19),
+        const LocalDate(2026, 5, 12),
+        const LocalDate(2026, 5, 5),
+      ];
+      for (var i = 0; i < items.length; i++) {
+        await repos.saveMaintenanceRecord(
+          MaintenanceRecord(
+            carId: carId,
+            date: recordDates[i % recordDates.length],
+            itemIds: [items[i].id!],
+            costCents: 0,
+            mileageKm: 60778,
+            sync: sync,
+          ),
+        );
+      }
+
+      // 导出当前数据为备份 JSON（="一样的备份数据"）。
+      final backupJson = await BackupRepository(
+        database,
+        LunioPreferences(database),
+      ).exportBackupJson();
+
+      mockNativeFiles((call) async {
+        if (call.method == 'pickJsonFile') {
+          return backupJson;
+        }
+        return null;
+      });
+
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '恢复').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('恢复').last);
+      await tester.pumpAndSettle();
+      // 恢复确实发生（车辆换了新雪花 id）。
+      final restoredCar = (await database.select(database.cars).get()).single;
+      expect(restoredCar.id, isNot(carId));
+      expect(
+        await repos.listMaintenanceRecordsForCar(restoredCar.id),
+        hasLength(items.length),
+      );
+      // 恢复后的链接完整性：关联行必须全部指向新项目/新记录（孤儿行会把
+      // 项目打回无历史基线，弹出全部到期的假提醒）。
+      final orphans = await database
+          .customSelect(
+            'SELECT COUNT(*) AS c FROM maintenance_record_items '
+            'WHERE item_id NOT IN (SELECT id FROM maintenance_items) '
+            'OR maintenance_record_id NOT IN (SELECT id FROM maintenance_records) '
+            'OR car_id NOT IN (SELECT id FROM cars)',
+          )
+          .getSingle();
+      expect(orphans.data['c'], 0);
+      expect(find.text('恢复完成'), findsOneWidget);
+
+      // 弹窗链是跨事件轮代异步链，pumpAndSettle 会提前停；多泵若干轮
+      // 再断言假弹窗永不出现。
+      for (var frame = 0; frame < 20; frame++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('保养提醒'), findsNothing);
+    } finally {
+      cleanupNotifications();
+    }
+  });
 
   testWidgets('profile can enable manual date preference', (tester) async {
     final database = await pumpApp(tester);
