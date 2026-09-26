@@ -60,3 +60,26 @@
   滚动停后第一行即基准档（被否）。
 - 点击档位行换基准档：用户明确"我不会点击某一行，自动把第一行设置为
   基准档"（被否）。
+
+## 更新（2026-09-25：停稳落库收编动作层，50% 物化语义）
+
+- **落库写点收进动作层**：档位滚轮停稳的写库从 `fuel_page.dart` widget
+  直写（widget 自记 `_lastSavedPercent` 游标去重、失败回滚游标、自己
+  失效 provider——ADR 0007 唯一残留的 features 层直写）改为
+  `shell_actions.dart → saveFuelBaseline`（写库 → 按返回值精准失效
+  `appliedCarFuelPredictionProvider`，异常穿透、toast 留调用方）。
+  去重游标随之消灭：`FuelRepository.saveFuelPrediction` 改返回
+  `Future<bool>`，同值跳过（不碰 `syncStatus`/`updatedAt`）成为写 seam
+  自身的性质，未来任何写路径自动继承。
+- **50% 物化语义**：旧实现游标初值 50，"从没存过的车打开后拨动滚轮停回
+  50%"不落库；去游标后无存档时停稳（含 50%）会物化一行 50%。初始定位
+  （没滚动过）仍不写库。该行唯一读者是加满预估卡，展示与统计无差别；
+  备份文件可能因此多一条 50% 条目（用户拍板接受，测试锁定于
+  `test/data/fuel_prediction_test.dart`）。
+- **换车 stale 修复**：`_TierListCard` 构造点补 key（`ValueKey('车id:已存档位')`）——
+  此前换应用车辆时 State 复用（initState 不重跑），滚动位置/高亮/首次
+  定位残留上一辆车。key 必须带档位而不止 carId：`skipLoadingOnReload`
+  让换车后的首次重载先用旧车档位建 State（此时 key 已是新车 id），真
+  数据到达时 key 不再变化、残留保留；档位进 key 后任何输入变化都重建
+  并按最新真值定位，自身保存后的 reload 传入的正是刚停稳的档位，
+  重建前后滚动位置重合、无跳动。

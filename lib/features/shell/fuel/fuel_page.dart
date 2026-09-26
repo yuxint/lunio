@@ -38,7 +38,6 @@ import '../../../app/providers.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
-import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/rules/fuel_rules.dart';
 import '../shared/form_sheet.dart';
@@ -92,12 +91,19 @@ class _FuelContent extends ConsumerWidget {
         predictionAsync.when(
           skipLoadingOnReload: true,
           loading: () => const LunioEmptyCard('读取中'),
+          // key 挂"车 id + 已存档位"：任一输入变化都强制重建 State 并按
+          // 最新真值重新定位。只挂 carId 不够——skipLoadingOnReload 会让
+          // 换车后的首次重载先用旧车的档位建 State（key 已是新车），真
+          // 数据到达时 key 不再变化、残留就此留下。自身保存后的 reload
+          // 传入的正是用户刚停稳的档位，重建前后滚动位置重合、无跳动。
           error: (error, stackTrace) => _TierListCard(
+            key: ValueKey('${car.id!}:null'),
             carId: car.id!,
             capacity: car.tankCapacityLiters,
             savedPercent: null,
           ),
           data: (prediction) => _TierListCard(
+            key: ValueKey('${car.id!}:${prediction?.fuelPercent}'),
             carId: car.id!,
             capacity: car.tankCapacityLiters,
             savedPercent: prediction?.fuelPercent,
@@ -781,11 +787,15 @@ const double _kTierRowExtent = 44;
 /// 交互规则（ADR 0002）：
 ///  - 窗口内可见 [_TierListCardState.visibleRows] 档，整表上下滚动
 ///    （第一行也跟着滚）；
-///  - 滚动停稳自动吸附到整行，第一行所在的档位写库（fuel_predictions）；
+///  - 滚动停稳自动吸附到整行，第一行所在的档位经动作层 saveFuelBaseline
+///    写库（fuel_predictions；仓库同值 no-op，重复停稳零开销）；
 ///  - 右上角返回图标滚回默认 50%（停在 50% 时置灰）；
-///  - 进入页面定位到已存档位在第一行；从没存过按 50% 定位、不写库。
+///  - 进入页面定位到已存档位在第一行，从没存过按 50% 定位——初始定位
+///    不写库，但无存档时滚动停稳（含停回 50%）会物化一行（2026-09-25
+///    去掉 widget 游标后的语义，ADR 0002 修订节）。
 class _TierListCard extends ConsumerStatefulWidget {
   const _TierListCard({
+    super.key,
     required this.carId,
     required this.capacity,
     required this.savedPercent,
@@ -816,7 +826,6 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
 
   late final ScrollController _controller;
   late int _firstIndex;
-  late int _lastSavedPercent;
 
   /// 全量档位表（下标 0 = 100%，往后每档 -2%）。
   static final List<int> _tiers = FuelRules.allTierPercents;
@@ -833,7 +842,6 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
   void initState() {
     super.initState();
     _firstIndex = _indexForPercent(widget.savedPercent);
-    _lastSavedPercent = _tiers[_firstIndex];
     _controller = ScrollController(
       initialScrollOffset: _firstIndex * _rowExtent,
     );
@@ -968,7 +976,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
         setState(() => _firstIndex = index);
       }
       if (notification is ScrollEndNotification) {
-        _persistBaselineIfChanged();
+        _persistBaseline();
       }
     }
     return false;
@@ -979,24 +987,18 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     return (_controller.offset / _rowExtent).round().clamp(0, _tiers.length - 1);
   }
 
-  /// 第一行档位变了就写库（滚动停稳后调用，偏移已被吸附物理对齐）。
-  /// 写库失败回退记忆值，允许下次滚动重试。
-  Future<void> _persistBaselineIfChanged() async {
-    final percent = _currentPercent;
-    if (percent == _lastSavedPercent) {
-      return;
-    }
-    final previous = _lastSavedPercent;
-    _lastSavedPercent = percent;
+  /// 滚动停稳后落库（偏移已被吸附物理对齐）。写库与失效收在动作层
+  /// saveFuelBaseline（ADR 0007）：仓库同值 no-op，重复停稳零开销，
+  /// widget 不再自记游标、不再自己失效 provider。失败 toast 留本
+  /// widget（异常穿透惯例，反馈归调用方）。
+  Future<void> _persistBaseline() async {
     try {
-      await ref
-          .read(fuelRepositoryProvider)
-          .saveFuelPrediction(
-            FuelPrediction(carId: widget.carId, fuelPercent: percent),
-          );
-      ref.invalidate(appliedCarFuelPredictionProvider);
+      await saveFuelBaseline(
+        ref,
+        carId: widget.carId,
+        percent: _currentPercent,
+      );
     } catch (error) {
-      _lastSavedPercent = previous;
       if (mounted) {
         showStatusOverlay(context, '油量保存失败，请重试', StatusOverlayTone.error);
       }
