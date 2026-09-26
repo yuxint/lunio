@@ -132,6 +132,80 @@ void main() {
     expect(find.text('—'), findsNWidgets(5));
   });
 
+  testWidgets('换应用车辆后档位卡按新车重新定位（ValueKey 防跨车残留）', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    await repository.setPreferenceValue('fuelProvince', '湖北');
+
+    // 两辆车各存一个档位（42% / 58%），窗口互不重叠，便于断言第一行归属。
+    // 容积必须给：没容积时档位列表整卡换引导文案。
+    Future<int> seedCar(String brand, String model, int percent) async {
+      final id = await repository.createCarWithMaintenanceItems(
+        Car(
+          brand: brand,
+          model: model,
+          currentMileageKm: 10000,
+          roadDate: const LocalDate(2023, 8, 12),
+          tankCapacityLiters: 55,
+          sync: sync,
+        ),
+        [
+          MaintenanceItem(
+            carsId: 0,
+            name: '机油',
+            enabled: true,
+            remindByMileage: true,
+            remindByTime: false,
+            mileageIntervalKm: 5000,
+            timeIntervalMonths: null,
+            notOverdueUpperLimit: 100,
+            overdueUpperLimit: 125,
+            sortOrder: 0,
+            sync: sync,
+          ),
+        ],
+      );
+      await repository.saveFuelPrediction(
+        FuelPrediction(carId: id, fuelPercent: percent),
+      );
+      return id;
+    }
+
+    await seedCar('本田', '思域', 42);
+    final carB = await seedCar('丰田', '卡罗拉', 58);
+    await repository.setAppliedCarId(carB);
+    await pumpApp(tester, database: database);
+
+    // 初始应用车 B：58% 在第一行。
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+    expect(find.text('58%'), findsOneWidget);
+    expect(find.text('42%'), findsNothing);
+
+    // 经"我的 → 应用"切到车 A（真实动作层路径）。
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    // 回加油页：按车 A 的 42% 重新定位——修复前 State 复用，滚动位置/
+    // 高亮仍是车 B 的残留。
+    await tester.tap(find.text('加油'));
+    await tester.pumpAndSettle();
+    expect(find.text('42%'), findsOneWidget);
+    expect(find.text('58%'), findsNothing);
+  });
+
 
   testWidgets('fuel page shows predicted price from adjustment forecast', (
     tester,

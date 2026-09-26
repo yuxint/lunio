@@ -93,6 +93,43 @@ void main() {
       );
     });
 
+    test('同值保存 no-op：返回 false，updatedAt/syncStatus 不被碰', () async {
+      final carId = await seedCar();
+      await fuelRepository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
+      );
+      final before =
+          await database.select(database.fuelPredictions).getSingle();
+
+      // 隔开一点时间：若 no-op 守卫被删、真的走了写入，updatedAt 会变。
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final changed = await fuelRepository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50, sync: sync),
+      );
+      expect(changed, isFalse);
+      final after =
+          await database.select(database.fuelPredictions).getSingle();
+      expect(after.updatedAt, before.updatedAt);
+      expect(after.syncStatus, before.syncStatus);
+      expect(
+        await database.select(database.fuelPredictions).get(),
+        hasLength(1),
+      );
+    });
+
+    test('没存过的车停稳 50% 也物化一行（2026-09-25 语义，ADR 0002）',
+        () async {
+      final carId = await seedCar();
+      final changed = await fuelRepository.saveFuelPrediction(
+        FuelPrediction(carId: carId, fuelPercent: 50),
+      );
+      expect(changed, isTrue);
+      expect(
+        (await fuelRepository.getFuelPredictionForCar(carId))?.fuelPercent,
+        50,
+      );
+    });
+
     test('没保存过返回 null（页面按默认 50% 展示）', () async {
       final carId = await seedCar();
       expect(await fuelRepository.getFuelPredictionForCar(carId), isNull);

@@ -25,6 +25,7 @@ import '../../../core/date/local_date.dart';
 import '../../../core/platform/native_files.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_price.dart';
+import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_record.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
@@ -258,6 +259,25 @@ Future<void> saveFuelRecord(WidgetRef ref, FuelRecord record) async {
 Future<void> removeFuelRecord(WidgetRef ref, int recordId) async {
   await ref.read(fuelRepositoryProvider).deleteFuelRecord(recordId);
   invalidateVehicleProviders(ref);
+}
+
+/// 保存档位基准（加油页滚轮停稳后第一行档位落库，ADR 0002）：写库 →
+/// 按仓库返回值精准失效预测设置缓存。仓库同值 no-op（返回 false 不
+/// 失效），停稳调用高频、同档重复停稳零开销；失效粒度同
+/// [saveFuelManualPrice] 的单点思路——该表行只有
+/// appliedCarFuelPredictionProvider 一个读者，无需牵动油价家族。
+/// toast 留调用方（滚动停稳无表单，失败反馈在档位卡内）。
+Future<void> saveFuelBaseline(
+  WidgetRef ref, {
+  required int carId,
+  required int percent,
+}) async {
+  final changed = await ref
+      .read(fuelRepositoryProvider)
+      .saveFuelPrediction(FuelPrediction(carId: carId, fuelPercent: percent));
+  if (changed) {
+    ref.invalidate(appliedCarFuelPredictionProvider);
+  }
 }
 
 /// 保存省份选择：写全局偏好 + 整族失效加油相关 provider。缓存是单省

@@ -53,13 +53,22 @@ class FuelRepository {
     return fuelPredictionFromRow(row);
   }
 
-  /// 保存加油预测设置（按 carId upsert：有则更新、无则插入）。
-  /// 副作用：syncStatus 记 pendingUpdate、updatedAt 刷新（沿用全库约定）。
-  Future<void> saveFuelPrediction(domain.FuelPrediction prediction) async {
+  /// 保存加油预测设置（按 carId upsert：有则更新、无则插入），返回是否
+  /// 真正写库。同值跳过是本写 seam 自身的性质：已有行且档位相同 →
+  /// 不写（不碰 syncStatus/updatedAt）返回 false——档位滚轮停稳会高频
+  /// 调用，重复停稳零开销，也避免同步脏标记被 no-op 写污染；无行时
+  /// 任何档位（含 50%）都物化一行（2026-09-25 语义修订，ADR 0002）。
+  /// 真正写入时的副作用：syncStatus 记 pendingUpdate、updatedAt 刷新
+  /// （沿用全库约定）。
+  Future<bool> saveFuelPrediction(domain.FuelPrediction prediction) async {
     prediction.validate();
     final existingRow = await (database.select(
       database.fuelPredictions,
     )..where((row) => row.carId.equals(prediction.carId))).getSingleOrNull();
+    if (existingRow != null &&
+        existingRow.fuelPercent == prediction.fuelPercent) {
+      return false;
+    }
     final now = DateTime.now().toIso8601String();
     if (existingRow == null) {
       await database
@@ -73,7 +82,7 @@ class FuelRepository {
               updatedAt: now,
             ),
           );
-      return;
+      return true;
     }
     await (database.update(
       database.fuelPredictions,
@@ -84,6 +93,7 @@ class FuelRepository {
         updatedAt: Value(now),
       ),
     );
+    return true;
   }
 
   /// 删除某辆车的全部加油域数据（预测行 + 加油记录，ADR 0014；删除车辆
