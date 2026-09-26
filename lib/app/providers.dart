@@ -13,11 +13,13 @@
 // ## 本 App 的状态管理约定（重要）
 // Repository 的写方法（增删改）**不会**主动刷新任何缓存。写库后的缓存
 // 逐出由"写库 → 失效 → 通知收尾"的编排统一收在保存动作层
-// shell_actions.dart（每个业务变更一个具名函数，见 docs/adr/0007）；
-// invalidateVehicleProviders / invalidatePreferenceProviders 降级为动作层
-// 与少数既有调用方（备份恢复、清空数据、通知协调器）的内部实现。
-// 这是"手动失效"模式：漏调 invalidate 会导致跨页面数据陈旧——因此
-// 新增保存路径时进动作层加函数，不要在 UI 里手排失效序列。
+// shell_actions.dart（每个业务变更一个具名函数，见 docs/adr/0007）。
+// 缓存逐出有两种模型：
+// - 车辆/记录类 provider（carsProvider 家族）：手动失效——动作层与少数
+//   既有调用方（备份恢复、清空数据、通知协调器）调 invalidateVehicleProviders；
+//   新增保存路径进动作层加函数，不要在 UI 里手排失效序列；
+// - 偏好表派生 provider：偏好纪元（preferencesEpochProvider，ADR 0017）——
+//   写点 bump 一次，所有 watch 纪元的 provider 自动重算，无名单可漏。
 //
 // ## 依赖关系图
 // ```text
@@ -70,7 +72,28 @@ import '../domain/entities/parking_countdown.dart';
 import '../domain/entities/powertrain_type.dart';
 import '../domain/entities/vehicle_default_maintenance_item.dart';
 import '../domain/entities/vehicle_model.dart';
-import '../features/shell/fuel/fuel_prices.dart';
+
+/// 偏好纪元：偏好表数据的版本号，与通知同步代数（notification_sync_guard）
+/// 同构（≈ Java 缓存失效用的版本戳）。任何偏好写入点写完库后 bump 一次；
+/// 读偏好表的 provider 在 build 里 watch 本 provider，纪元一变自动重算。
+/// 2026-09-26 起取代手工失效名单（原 _invalidatePreferences 家族已删除，
+/// ADR 0017）：新增偏好派生 provider 时在 build 首行加
+/// ref.watch(preferencesEpochProvider)，漏加只会让该 provider 自己陈旧，
+/// 不再殃及名单其他成员。parkingCountdownProvider 不走纪元——它的写点
+/// 直接逐出自己（"写点失效自己"模型，见动作层停车分节）。
+final preferencesEpochProvider = NotifierProvider<PreferencesEpoch, int>(
+  PreferencesEpoch.new,
+);
+
+/// 偏好纪元 Notifier：state 从 0 起，bump() 自增（写点在动作层偏好/加油
+/// 分节与通知协调器）。
+class PreferencesEpoch extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// 纪元 +1（作废全部偏好派生 provider 的缓存值）。
+  void bump() => state = state + 1;
+}
 
 /// 应用日期上下文：目前只用它读"系统真实当前时间"（停车倒计时用）。
 /// 手动日期（开发者模式）不会写进这里，而是走 [manualDatePreferenceProvider]，
@@ -82,6 +105,7 @@ final appDateContextProvider = Provider<AppDateContext>(
 /// 开发者模式开关。入口在"我的"页版本号连点 5 次（profile_page.dart），
 /// 控制手动日期行是否显示。
 final developerModeProvider = FutureProvider<bool>((ref) async {
+  ref.watch(preferencesEpochProvider);
   return ref.watch(lunioPreferencesProvider).getDeveloperModeEnabled();
 });
 
@@ -89,6 +113,7 @@ final developerModeProvider = FutureProvider<bool>((ref) async {
 /// 开发者模式开 → 手动日期开关开 → manualDate 偏好存在且可解析。
 /// 任何一层不满足返回 null（即使用系统真实日期）。
 final manualDatePreferenceProvider = FutureProvider<LocalDate?>((ref) async {
+  ref.watch(preferencesEpochProvider);
   final developerModeEnabled = await ref.watch(developerModeProvider.future);
   if (!developerModeEnabled) {
     return null;
@@ -101,8 +126,9 @@ final manualDatePreferenceProvider = FutureProvider<LocalDate?>((ref) async {
 });
 
 /// 主题模式偏好：'light' / 'dark' / 其他（含 null）都按 system 处理。
-/// 被 LunioApp.watch，写入后经 invalidatePreferenceProviders 刷新。
+/// 被 LunioApp.watch，偏好写入点 bump 纪元后自动重算。
 final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) {
+  ref.watch(preferencesEpochProvider);
   return ref.watch(lunioPreferencesProvider).getThemeMode();
 });
 
@@ -112,6 +138,7 @@ final themeModePreferenceProvider = FutureProvider<ThemeMode>((ref) {
 final notificationSettingsProvider = FutureProvider<LunioNotificationSettings>((
   ref,
 ) {
+  ref.watch(preferencesEpochProvider);
   return ref.watch(lunioPreferencesProvider).readNotificationSettings();
 });
 
@@ -128,14 +155,18 @@ final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
 /// 这里不用叠加判断。被 AppShell watch：开关变化 → 底部"加油"tab
 /// 实时出现/消失。
 final fuelPredictionEnabledProvider = FutureProvider<bool>((ref) {
+  ref.watch(preferencesEpochProvider);
   return ref.watch(lunioPreferencesProvider).getFuelPredictionEnabled();
 });
 
 /// 当前应用车辆的加油预测设置（剩余油量 = 加满预估基准档，按车一条；
 /// 油箱容积在 Car 上）。无应用车辆返回 null；
 /// 从没保存过也是 null（页面按默认 50% 展示）。
+/// 失效随偏好纪元走（2026-09-26 收编时保持旧名单集合、边界不动，
+/// ADR 0017）；它的真实写点（档位落库）另做精准单点失效（saveFuelBaseline）。
 final appliedCarFuelPredictionProvider =
     FutureProvider<FuelPrediction?>((ref) async {
+      ref.watch(preferencesEpochProvider);
       final car = await ref.watch(appliedCarProvider.future);
       if (car?.id == null) {
         return null;
@@ -170,6 +201,7 @@ final appliedCarFuelRecordsProvider =
 /// 所有业务日期口径（提醒进度、记录表单默认日期、snooze/ack 判断）都用它，
 /// 只有停车倒计时和系统通知调度时刻用真实时间（tz.TZDateTime.now）。
 final effectiveTodayProvider = FutureProvider<LocalDate>((ref) async {
+  ref.watch(preferencesEpochProvider);
   final baseDateContext = ref.watch(appDateContextProvider);
   final manualDate = await ref.watch(manualDatePreferenceProvider.future);
   return manualDate ?? baseDateContext.today();
@@ -360,50 +392,11 @@ void invalidateVehicleProviders(WidgetRef ref) {
   ref.invalidate(fuelRecordsForCarProvider);
 }
 
-/// 偏好类缓存整体失效的共用实现。WidgetRef 和容器 Ref 是两个没有共同
-/// 父类的类型（riverpod 3.2 也未导出二者共同的参数类型 ProviderOrFamily），
-/// 故用 dynamic 承接二者同签名的 invalidate；对外只暴露下面两个静态
-/// 类型入口，调用侧不失去类型检查。
-void _invalidatePreferences(dynamic ref) {
-  ref.invalidate(developerModeProvider);
-  ref.invalidate(manualDatePreferenceProvider);
-  ref.invalidate(effectiveTodayProvider);
-  ref.invalidate(themeModePreferenceProvider);
-  ref.invalidate(notificationSettingsProvider);
-  ref.invalidate(fuelPredictionEnabledProvider);
-  ref.invalidate(fuelProvinceProvider);
-  ref.invalidate(fuelGradeProvider);
-  ref.invalidate(appliedCarFuelPredictionProvider);
-  ref.invalidate(fuelManualPriceProvider);
-  ref.invalidate(fuelPriceControllerProvider);
-}
-
-/// 偏好类缓存整体失效：开发者模式、手动日期、生效日期、主题、通知设置、
-/// 加油预测（写库后由 UI 调用）。
-void invalidatePreferenceProviders(WidgetRef ref) =>
-    _invalidatePreferences(ref);
-
-/// 偏好类缓存整体失效（provider 容器 Ref 版本）：通知协调器在写偏好后
-/// 调用。
-void invalidatePreferenceProvidersWithRef(Ref ref) =>
-    _invalidatePreferences(ref);
-
-/// 加油预测相关缓存失效：功能开关、省份、油品、当前车设置、
-/// 手填价、油价控制器（换省/清缓存后整体重算）。
-void invalidateFuelPreferenceProviders(WidgetRef ref) {
-  ref.invalidate(fuelPredictionEnabledProvider);
-  ref.invalidate(fuelProvinceProvider);
-  ref.invalidate(fuelGradeProvider);
-  ref.invalidate(appliedCarFuelPredictionProvider);
-  ref.invalidate(fuelManualPriceProvider);
-  ref.invalidate(fuelPriceControllerProvider);
-}
-
 /// 全量失效：恢复备份 / 清空数据后调用，让所有 FutureProvider 重新查库。
-/// parkingCountdown 单独逐出（它不在上面两个方法里）。
+/// parkingCountdown 单独逐出（它不走偏好纪元，写点直失效模型）。
 void invalidateAllAppDataProviders(WidgetRef ref) {
   ref.invalidate(defaultMaintenanceBootstrapProvider);
   ref.invalidate(parkingCountdownProvider);
   invalidateVehicleProviders(ref);
-  invalidatePreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }

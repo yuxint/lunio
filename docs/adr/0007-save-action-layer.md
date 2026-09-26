@@ -91,3 +91,15 @@ wiring bug 在历次审查中反复出现（R1/R8/R13 都涉及编排顺序）�
 - 文件拆分：settings_data.dart 只剩静态行组件；通知设置与手动日期两个
   sheet 拆到 `settings_notifications.dart` / `settings_manual_date.dart`
   （vehicles.dart 拆分先例）。
+
+## 更新（2026-09-26：偏好类失效改偏好纪元，ADR 0017）
+
+- 决定 4 中的偏好类失效家族（`invalidatePreferenceProviders` /
+  `invalidatePreferenceProvidersWithRef` / `invalidateFuelPreferenceProviders`
+  及其共用实现）被**偏好纪元**取代（ADR 0017）：动作层偏好类函数
+  （主题/手动日期/开发者模式/加油开关/省份/油品/手填价）与通知协调器
+  三个偏好写点改为写完库 bump 一次，偏好派生 provider watch 纪元自动
+  重算。"加油手填价保持单点失效"一并并入纪元（粗化影响：多出的重算
+  都是本地单行读，无行为回归面）。
+- 车辆类家族（`invalidateVehicleProviders`）维持手动失效模型不变；
+  `invalidateAllAppDataProviders` 内含纪元 bump。
