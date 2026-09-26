@@ -335,7 +335,10 @@ Future<void> saveNotificationSettings(
 // ---- 备份与数据重置 ----
 //
 // 编排从 settings_data.dart 收编（2026-09-25）：确认框 → 原生文件桥 →
-// 协调器 run* 模板 → invalidateAllAppDataProviders 的整链只有这一份。
+// 协调器 run* 模板 → invalidateAllAppDataProviders 的整链只有这一份；
+// 2026-09-26 起恢复路径例外——失效+等落定（屏障重算）经 refreshProviders
+// 闭包传入模板、在写库中间态旗内执行，settle 后由模板强制补判（ADR 0007
+// 修订节），清空/删车仍走模板后失效的旧链形。
 // codec 的编码/解码下沉 BackupRepository（exportBackupJson /
 // decodeBackupJson），BackupCodec 不再出 data 层。
 //
@@ -370,10 +373,13 @@ Future<bool> exportBackup(WidgetRef ref) async {
 /// 确认框（明示"先清空业务数据、偏好保留"，不可撤销）→ 原生文件桥
 /// 选文件（取消静默返回 false）→ 仓库解码（版本不符抛 UnsupportedError）
 /// → 协调器 runBackupRestore：升同步代数 + 置写库中间态旗 → restore
-/// 事务恢复（偏好保留，抑制键清除）→ _settleDataReset 收尾（再升一次
-/// 代数 + 关旗）→ 取消 8000/8900 系旧数据残留通知（空备份时同步引擎
-/// 不会重排，显式取消；停车 9001~9004 不动——倒计时偏好保留且仍有效）
-/// → invalidateAllAppDataProviders 全量刷新。
+/// 事务恢复（偏好保留，抑制键清除）→ refreshProviders 屏障重算（旗内
+/// 失效全量 provider 并等 6 个被监听 provider 全部落定，期间触发的同步
+/// 轮被入口早退丢弃；混合快照在结构上读不到，2026-09-26 真机复现残余
+/// 漏洞的修复）→ _settleDataReset 收尾（再升一次代数 + 关旗）→ 取消
+/// 8000/8900 系旧数据残留通知（空备份时同步引擎不会重排，显式取消；
+/// 停车 9001~9004 不动——倒计时偏好保留且仍有效）→ 模板强制补判一轮
+/// （重排系统通知 + 应用内弹窗检查用最终数据）。
 /// 唯一约束冲突的"未写入任何数据"对话框属 UI 反馈决策，由调用方分类。
 Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
@@ -398,8 +404,26 @@ Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
         () => ref
             .read(backupRepositoryProvider)
             .restoreBackupPayload(payload),
+        refreshProviders: () async {
+          invalidateAllAppDataProviders(ref);
+          // 屏障：等通知同步控制器监听的 6 个 provider 全部重算落定（此刻
+          // 写库中间态旗还举着）。逐个 await、单读失败不拦收尾——provider
+          // 出错时同步控制器本来就走 null 早退，与旧行为一致。
+          final reloads = [
+            ref.read(notificationSettingsProvider.future),
+            ref.read(appliedCarProvider.future),
+            ref.read(appliedCarMaintenanceItemsProvider.future),
+            ref.read(appliedCarRecordsProvider.future),
+            ref.read(effectiveTodayProvider.future),
+            ref.read(parkingCountdownProvider.future),
+          ];
+          for (final reload in reloads) {
+            try {
+              await reload;
+            } catch (_) {}
+          }
+        },
       );
-  invalidateAllAppDataProviders(ref);
   return true;
 }
 

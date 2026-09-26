@@ -211,17 +211,48 @@ class LunioNotificationCoordinator {
   }
 
   /// 恢复备份的收尾模板：升代数 → 置写库中间态旗 → 执行恢复 →
-  /// settle 收尾（再升一次代数 + 关旗）→ 取消保养/里程系通知
-  /// （8000/8900）。停车 9001~9004 不取消——倒计时偏好保留且仍有效。
-  /// 恢复失败（异常，事务已回滚）时旧通知原样保留并上抛异常。
-  Future<void> runBackupRestore(Future<void> Function() restoreBackup) async {
+  /// （传入 [refreshProviders] 时）旗内屏障重算：失效 provider 家族并等
+  /// 重算落定（等哪些 provider 由闭包决定，生产实现等通知同步监听的
+  /// 6 个），期间触发的同步轮被入口早退丢弃 → settle 收尾（再升
+  /// 一次代数 + 关旗）→ 取消保养/里程系通知（8000/8900）→ 模板强制
+  /// 补判一轮（窗口内的重算触发被吞掉了，这里补回来）。
+  ///
+  /// 屏障的意义（2026-09-26 用户真机复现残余漏洞）：settle 之后 provider
+  /// 重算如果还没落定，同步控制器会读到"部分 provider 已是新数据、部分
+  /// 还挂着旧值"的混合快照（此刻旗已放下、票有效），拿它算出的到期清单
+  /// 是假的——项目还在、记录没插到的中间态会把全部短间隔项目按无历史
+  /// 基线判到期。把失效+重算整体挪进旗内窗口，settle 时数据必然已收敛，
+  /// 混合快照在结构上不可能再被读到。
+  ///
+  /// 停车 9001~9004 不取消——倒计时偏好保留且仍有效。恢复失败（异常，
+  /// 事务已回滚）时旧通知原样保留并上抛异常；[refreshProviders] 内的
+  /// 异常同样上抛，settle 在 finally 仍执行（关旗 + 再升代数），但其后
+  /// 的取消通知与强制补判轮被跳过——生产闭包的 await 段逐个吞异常，
+  /// 能走到这里的实际只剩 WidgetRef 卸载这类契约外错误。
+  Future<void> runBackupRestore(
+    Future<void> Function() restoreBackup, {
+    Future<void> Function()? refreshProviders,
+  }) async {
     guard.beginDataReset();
     try {
       await restoreBackup();
+      await refreshProviders?.call();
     } finally {
       guard.settleDataReset();
     }
     await service.cancelLunioNotifications();
+    if (refreshProviders != null) {
+      _forceSyncRoundAfterDataReset();
+    }
+  }
+
+  /// 数据重置屏障重算后的强制补判：窗口内 provider 重算触发的同步轮都被
+  /// 入口早退丢弃（签名不动），settle 后没有任何自然的监听触发了，这里
+  /// 失效一个通知同步控制器监听的 provider（通知设置：一条偏好查询，重算
+  /// 无副作用）让它重发一拍，用已收敛的最终数据补跑完整同步（重排系统
+  /// 通知 + 应用内弹窗检查）。
+  void _forceSyncRoundAfterDataReset() {
+    ref.invalidate(notificationSettingsProvider);
   }
 
   /// 清空数据的收尾模板：升代数 → 置写库中间态旗 → 执行清库（偏好表
