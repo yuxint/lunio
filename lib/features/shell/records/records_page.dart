@@ -25,10 +25,14 @@
 // 材料费/工时费/项目费用输入行，自动算链 = 材料+工时→项目费用→合计→
 // 总费用；自动值可手改，不一致时红字 + 黄色警告角标，纯提示不拦保存。
 // 算链与手改标记的实现收在 record_cost_form_controller.dart（ADR 0010
-// 的唯一实现点），本文件只做接线与渲染。
+// 的唯一实现点）。
+// 两步表单的状态机（字段、步进、校验、同日查重循环、两个软提示决策）
+// 收在 record_form_controller.dart：plain-Dart 控制器，弹窗/日期选择器
+// 的实现与文案经 RecordFormUi 注入、已有记录经快照 getter 注入，决策可
+// 无 widget 单测；本文件只做装配、渲染与事件转发。
 // 第二步的间隔草稿与提交清单生成收在 record_interval_updates.dart
-// （正整数校验在 MaintenanceRules，与保养项目表单共用），本文件只做
-// 接线与渲染。
+// （正整数校验在 MaintenanceRules，与保养项目表单共用），控制器调用，
+// 本文件只做接线与渲染。
 // 列表筛选/行展开口径与空态分类收在 record_rows.dart（与提醒域
 // reminder_rows 同构的纯函数组装层；只有页面一个消费者，不设
 // provider），本文件持有筛选选中 state 并渲染。
@@ -46,15 +50,13 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_record.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
-import '../../../domain/entities/sync_metadata.dart';
-import '../../../domain/rules/record_rules.dart';
 import '../profile/maintenance_items.dart';
 import '../shared/shell_shared.dart';
 import 'cost_stats.dart';
 import 'fuel_cost_stats.dart';
 import 'record_cost_form_controller.dart';
 import 'record_detail_sheet.dart';
-import 'record_interval_updates.dart';
+import 'record_form_controller.dart';
 import 'record_rows.dart';
 
 /// 记录页主组件。
@@ -485,7 +487,9 @@ class RecordItemRowCard extends StatelessWidget {
 /// 新增/编辑记录的两步表单。
 /// record == null 为新增（默认日期=生效今天、里程=车辆当前里程、费用 0）；
 /// 非 null 为编辑（回填原值；已禁用但曾被选中的项目仍展示可选）。
-/// reloadItems：行内新增项目保存后从库重拉项目列表并自动勾选新项。
+/// 状态机（字段、步进、校验、软提示决策、查重循环）在
+/// RecordFormController，本 widget 渲染两步视图、注入弹窗/日期选择器
+/// 实现并转发事件；reloadItems：行内新增项目保存后从库重拉项目列表。
 class MaintenanceRecordForm extends ConsumerStatefulWidget {
   const MaintenanceRecordForm({
     required this.car,
@@ -528,114 +532,110 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
 
 class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
   // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上，本 State 只留字段与校验规则。以下三个转发让既有调用点零改动。
+  // 上，本 State 只做渲染与事件转发。错误文案的显示经把手（宿主监听
+  // 重建），控制器的报错经注入闭包落到把手。
   bool get saving => widget.handle.saving;
   String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
 
-  // ---- 第一步的字段 ----
-  late LocalDate recordDate;
-  late final TextEditingController mileageController;
-  late final TextEditingController noteController;
-
-  /// 已勾选的项目 id。
-  late final Set<int> selectedItemIds;
-
-  /// 表单当前可见的项目列表（行内新增后会刷新）。
-  late List<MaintenanceItem> formItems;
-
-  /// 费用区控制器（ADR 0010 自动算链与手改标记的唯一实现，见
-  /// record_cost_form_controller.dart）：总费用输入框、详细模式开关、
-  /// 各项目费用草稿、手改标记与不一致状态都在里面。
-  late final RecordCostFormController costForm;
-
-  /// 第二步的记录草稿（非 null 表示已进入第二步）。
-  MaintenanceRecord? recordDraft;
-
-  /// 第二步每个项目的间隔输入草稿（含各自的 controller）。
-  final intervalDrafts = <RecordIntervalDraft>[];
-
-  bool get isEditing => widget.record != null;
+  /// 两步表单状态机（record_form_controller.dart）：字段、步进、校验、
+  /// 两个软提示决策与查重循环都在里面，本 State 持有生命周期并转发事件。
+  late final RecordFormController form;
 
   @override
   void initState() {
     super.initState();
-    final record = widget.record;
-    recordDate = record?.date ?? widget.initialDate;
-    mileageController = TextEditingController(
-      text: (record?.mileageKm ?? widget.car.currentMileageKm).toString(),
-    );
-    noteController = TextEditingController(text: record?.note ?? '');
-    selectedItemIds = {...?record?.itemIds};
-    formItems = widget.items;
-    costForm = RecordCostFormController(
-      record: record,
-      formItems: formItems,
-      selectedItemIds: selectedItemIds,
-      // 编辑带项目费用的记录自动进入详细模式（ADR 0010）。
-      detailMode: record?.itemCosts.isNotEmpty ?? false,
-    );
-    // 新增模式打开即查重（默认日期=生效今天）：首帧渲染后再弹窗，
-    // 等 sheet 完成布局，避免浮层叠在开窗动画上；编辑模式不查。
-    if (record == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    form = RecordFormController(
+      car: widget.car,
+      items: widget.items,
+      initialDate: widget.initialDate,
+      record: widget.record,
+      ui: RecordFormUi(
+        pickDate: _showDatePicker,
+        askDuplicate: _showDuplicateDialog,
+        askMileageProceed: _showMileageConflictDialog,
+        exitToEdit: (existing) {
+          if (mounted) {
+            widget.onExitToEdit(existing);
+          }
+        },
+      ),
+      // 生命周期守卫收在每个注入闭包里（widget 的 mounted 是唯一可信的
+      // 生命周期真值）：弹窗/选择器 await 期间表单可能已被卸载（查重
+      // 循环在飞），各闭包先查 mounted 再碰 context/ref——日期选择器
+      // 未挂载按取消返回 null，两个确认框未挂载按「返回」折叠成 false，
+      // 读记录快照未挂载按"未就绪"返回 null（查重/软提示跳过，保存时
+      // Repository 唯一校验兜底），错误写入直接丢弃。
+      readRecords: () =>
+          mounted ? ref.read(appliedCarRecordsProvider).value : null,
+      reportError: (text) {
         if (mounted) {
-          _checkDuplicateAndOfferEdit();
+          widget.handle.setFormError(text);
         }
-      });
-    }
+      },
+      // 选完日期立即重建：查重循环中途（弹窗悬着）tile 也显示新值，
+      // 与收编前"选完日期即 setState"一致；循环结束的整体重建在
+      // _pickRecordDate 兜底。
+      onDateChanged: () {
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+    // 新增模式打开即查重（默认日期=生效今天）：首帧渲染后再弹窗，等
+    // sheet 完成布局，避免浮层叠在开窗动画上；编辑模式不查（决策在
+    // formOpened 里）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      await form.formOpened();
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   @override
   void dispose() {
-    _disposeIntervalDrafts();
-    costForm.dispose();
-    mileageController.dispose();
-    noteController.dispose();
+    form.dispose();
     super.dispose();
   }
 
   /// 项目费用输入：控制器维护手改标记 + 跑算链，这里只负责重建
   /// （红字/角标实时变化）。
   void _onItemCostInputChanged(int itemId) {
-    costForm.onItemCostChanged(itemId);
+    form.onItemCostChanged(itemId);
     setState(() {});
   }
 
   /// 材料费/工时费输入：控制器跑算链，这里只负责重建。
   void _onCostInputChanged() {
-    costForm.onSplitCostChanged();
+    form.onSplitCostChanged();
     setState(() {});
   }
 
   /// 总费用输入：控制器维护"手改"标记 + 跑算链，这里只负责重建。
   void _onTotalInputChanged() {
-    costForm.onTotalChanged();
+    form.onTotalChanged();
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    if (recordDraft != null) {
+    if (form.recordDraft != null) {
       return _buildIntervalStep(context);
     }
-    final availableItems = widget.record == null
-        ? formItems.where((item) => item.enabled).toList()
-        : formItems
-              .where(
-                (item) => item.enabled || selectedItemIds.contains(item.id),
-              )
-              .toList();
+    final availableItems = form.availableItems;
     // 总费用不一致只在详细模式提示：简洁模式看不到项目费用，
     // 单独把总费用标红只会让人困惑（ADR 0010）。判定在控制器里。
-    final totalMismatch = costForm.totalMismatch;
+    final totalMismatch = form.totalMismatch;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         LunioPickerTile(
           label: '保养日期',
-          value: formatDateForUser(recordDate),
+          value: formatDateForUser(form.recordDate),
           enabled: !saving,
           onTap: _pickRecordDate,
         ),
@@ -644,25 +644,26 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           children: [
             Expanded(
               child: LunioNumberField(
-                controller: mileageController,
+                controller: form.mileageController,
                 enabled: !saving,
                 labelText: '保养里程',
-                onTap: isEditing
+                onTap: form.isEditing
                     ? null
-                    : () => LunioNumberField.clearLeadingZero(mileageController),
+                    : () =>
+                          LunioNumberField.clearLeadingZero(form.mileageController),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: LunioNumberField(
-                controller: costForm.totalController,
+                controller: form.totalController,
                 enabled: !saving,
                 // 费用小数不限位（历史行为保留）。
                 decimals: null,
                 labelText: '费用',
                 warning: totalMismatch,
                 onTap: () => LunioNumberField.clearLeadingZero(
-                  costForm.totalController,
+                  form.totalController,
                 ),
                 onChanged: (_) => _onTotalInputChanged(),
               ),
@@ -671,7 +672,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
         ),
         const SizedBox(height: 10),
         TextField(
-          controller: noteController,
+          controller: form.noteController,
           enabled: !saving,
           minLines: 2,
           maxLines: 3,
@@ -687,10 +688,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
               ),
             ),
             Switch(
-              value: costForm.detailMode,
+              value: form.detailMode,
               onChanged: saving
                   ? null
-                  : (value) => setState(() => costForm.detailMode = value),
+                  : (value) => setState(() => form.setDetailMode(value)),
             ),
           ],
         ),
@@ -718,31 +719,23 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
             for (final item in availableItems)
               _ChoiceChipButton(
                 label: item.enabled ? item.name : '${item.name}（已禁用）',
-                selected: item.id != null && selectedItemIds.contains(item.id),
+                selected: item.id != null &&
+                    form.selectedItemIds.contains(item.id),
                 enabled: !saving && item.id != null,
-                onTap: () {
-                  setState(() {
-                    if (selectedItemIds.contains(item.id)) {
-                      selectedItemIds.remove(item.id);
-                    } else {
-                      selectedItemIds.add(item.id!);
-                    }
-                  });
-                  costForm.syncSelection(selectedItemIds, formItems);
-                },
+                onTap: () => setState(() => form.toggleItem(item.id!)),
               ),
           ],
         ),
-        if (costForm.detailMode) ...[
+        if (form.detailMode) ...[
           const SizedBox(height: 12),
           // 间隔只加在真实渲染的行后面：未勾选的项目不渲染行也不插空隙，
           // 否则勾选不相邻的项目时行距会在 10/20 之间交替、间隔不一致。
           for (final item in availableItems)
-            if (item.id != null && costForm.drafts.containsKey(item.id)) ...[
+            if (item.id != null && form.costDrafts.containsKey(item.id)) ...[
               _ItemCostRow(
-                draft: costForm.drafts[item.id]!,
+                draft: form.costDrafts[item.id]!,
                 enabled: !saving,
-                mismatch: costForm.itemMismatch(item.id!),
+                mismatch: form.costItemMismatch(item.id!),
                 onAnyChanged: _onCostInputChanged,
                 onCostChanged: () => _onItemCostInputChanged(item.id!),
               ),
@@ -765,79 +758,13 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     );
   }
 
-  /// 第一步校验 + 构造记录草稿：里程非负整数、费用非负数字、
-  /// 至少选一个项目。费用元→分四舍五入。失败返回 null 并设置错误文案。
-  /// 项目费用清单由控制器生成（全空草稿跳过；不一致是合法数据不校验，
-  /// ADR 0010）。
-  MaintenanceRecord? _buildRecordDraft() {
-    final mileage = int.tryParse(mileageController.text);
-    final cost = double.tryParse(costForm.totalController.text);
-    if (mileage == null || mileage < 0) {
-      setFormError('保养里程必须是非负整数');
-      return null;
-    }
-    if (cost == null || cost < 0) {
-      setFormError('费用必须是非负数字');
-      return null;
-    }
-    if (selectedItemIds.isEmpty) {
-      setFormError('至少选择一个保养项目');
-      return null;
-    }
-
-    return MaintenanceRecord(
-      id: widget.record?.id,
-      carId: widget.car.id!,
-      date: recordDate,
-      itemIds: selectedItemIds.toList(),
-      itemCosts: costForm.buildItemCosts(),
-      costCents: (cost * 100).round(),
-      mileageKm: mileage,
-      note: noteController.text.trim().isEmpty
-          ? null
-          : noteController.text.trim(),
-      sync: SyncMetadata(
-        status: isEditing ? SyncStatus.pendingUpdate : SyncStatus.pendingCreate,
-        updatedAt: DateTime.now(),
-      ),
-    );
-  }
-
-  /// "下一步"：校验通过后先做里程单调性软提示检查（新增与编辑都查，
-  /// 区别于同日查重只查新增；记录数据未就绪跳过，保存时既有校验兜底），
-  /// 有冲突弹确认框——「仍要继续」放行进第二步，「返回修改」/点遮罩
-  /// 留在第一步；无冲突直接进第二步。软提示两分支都不写库。
+  /// 第一步「下一步」：校验、里程单调软提示与进第二步都在控制器里
+  /// （决策有 plain-Dart 单测覆盖），这里只转发并重建。
   Future<void> _goToIntervalStep() async {
-    final draft = _buildRecordDraft();
-    if (draft == null) {
-      return;
+    await form.goToIntervalStep();
+    if (mounted) {
+      setState(() {});
     }
-    final conflict = _findMileageConflict(draft);
-    if (conflict != null) {
-      final proceed = await _showMileageConflictDialog(conflict);
-      if (!mounted || proceed != true) {
-        return;
-      }
-    }
-    _enterIntervalStep(draft);
-  }
-
-  /// 构造第二步的间隔输入草稿并切换视图（软提示「仍要继续」与无冲突
-  /// 的共用出口）。
-  void _enterIntervalStep(MaintenanceRecord draft) {
-    final selectedItems = formItems
-        .where((item) => item.id != null && selectedItemIds.contains(item.id))
-        .toList();
-    if (selectedItems.isEmpty) {
-      setFormError('至少选择一个保养项目');
-      return;
-    }
-    _disposeIntervalDrafts();
-    intervalDrafts.addAll(
-      selectedItems.map((item) => RecordIntervalDraft(item: item)),
-    );
-    setState(() => recordDraft = draft);
-    setFormError(null);
   }
 
   /// 第二步 UI：逐项目展示"按里程/按时间"间隔输入行（预填当前间隔，
@@ -854,7 +781,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
-        for (final draft in intervalDrafts) ...[
+        for (final draft in form.intervalDrafts) ...[
           Text(draft.item.name, style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 8),
           if (draft.item.remindByMileage) ...[
@@ -884,11 +811,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
         LunioFormActions(
           cancelLabel: '上一步',
           confirmLabel: '保存记录',
-          onCancel: () {
-            _disposeIntervalDrafts();
-            setState(() => recordDraft = null);
-            setFormError(null);
-          },
+          onCancel: () => setState(form.backToFirstStep),
           onConfirm: _submit,
           saving: saving,
         ),
@@ -896,30 +819,23 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     );
   }
 
-  /// 第二步提交：间隔输入 → buildItemUpdates（校验 + 生成 update 清单，
-  /// 实现在 record_interval_updates.dart）→ onSubmit（入库）。成功关
-  /// sheet 与失败行内错误都归表单运行时 handle（ADR 0016）。
+  /// 第二步提交：间隔输入 → 提交载荷（校验与 buildItemUpdates 在控制器
+  /// 里，失败报行内错误返回 null）→ handle.submit（入库）。成功关 sheet
+  /// 与失败行内错误都归表单运行时 handle（ADR 0016）；写库动作仍由入口
+  /// 接线到保存动作层（ADR 0007）。
   Future<void> _submit() async {
-    final draft = recordDraft;
-    if (draft == null) {
-      await _goToIntervalStep();
+    final payload = await form.submitPayload();
+    if (payload == null || !mounted) {
       return;
     }
-    final result = buildItemUpdates(
-      drafts: intervalDrafts,
-      now: DateTime.now(),
+    await widget.handle.submit(
+      () => widget.onSubmit(payload.draft, payload.updates),
     );
-    if (result.errorText != null) {
-      setFormError(result.errorText!);
-      return;
-    }
-    await widget.handle.submit(() => widget.onSubmit(draft, result.updates));
   }
 
-  /// 行内"新增"项目：打开项目表单 sheet → 保存成功后重拉项目列表 →
-  /// diff 出新项目 id 自动勾选（用户不用再找）。
+  /// 行内"新增"项目：打开项目表单 sheet → 保存成功后重拉项目列表；
+  /// diff 出新项目自动勾选的决策在控制器 itemPoolRefreshed 里。
   Future<void> _addMaintenanceItem() async {
-    final beforeIds = formItems.map((item) => item.id).whereType<int>().toSet();
     final saved = await showMaintenanceItemFormSheet(
       context,
       ref,
@@ -932,115 +848,46 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
     if (!mounted) {
       return;
     }
-    MaintenanceItem? newItem;
-    for (final item in refreshedItems) {
-      if (item.id != null && !beforeIds.contains(item.id)) {
-        newItem = item;
-        break;
-      }
-    }
-    setState(() {
-      formItems = refreshedItems;
-      if (newItem?.id != null) {
-        selectedItemIds.add(newItem!.id!);
-      }
-      costForm.syncSelection(selectedItemIds, formItems);
-    });
+    setState(() => form.itemPoolRefreshed(refreshedItems));
   }
 
-  /// 释放第二步所有间隔草稿的 controller。
-  void _disposeIntervalDrafts() {
-    for (final draft in intervalDrafts) {
-      draft.dispose();
-    }
-    intervalDrafts.clear();
-  }
-
-  /// 选记录日期：范围 = 车辆上路日期 ~ 生效今天+365（允许未来日期，R36）。
-  /// 新增模式选完立即查重（编辑模式跳过——改日期撞已有记录时由
-  /// Repository 同日唯一校验在保存时报错）。
+  /// 点"保养日期"：弹窗实现与范围留在 widget 侧（UI 决策），日期落状态、
+  /// 新增模式选后查重与循环驱动都在控制器；日期落定时控制器经
+  /// onDateChanged 已通知本 State 立即重建（循环中途弹窗悬着也显示新值），
+  /// 这里在循环结束后再兜底重建一次。
   Future<void> _pickRecordDate() async {
-    final picked = await _showDatePicker();
-    if (picked == null || !mounted) {
-      return;
-    }
-    setState(() => recordDate = picked);
-    if (!isEditing) {
-      await _checkDuplicateAndOfferEdit();
+    await form.pickRecordDate();
+    if (mounted) {
+      setState(() {});
     }
   }
 
-  /// 弹自绘日期选择器（初始值 = 当前选中日期）。范围：上路日期起、
+  /// 弹自绘日期选择器（初始值 = 控制器当前选中日期）。范围：上路日期起、
   /// **上限今天**——不能未来（2026-09-22 拍板，与加油记录同规则）。
-  Future<LocalDate?> _showDatePicker() {
+  /// 作为 RecordFormUi.pickDate 注入控制器；await 期间表单可能已被卸载
+  /// （查重循环在飞），此时按"取消"折叠成 null，不再碰 context。
+  Future<LocalDate?> _showDatePicker(LocalDate initialDate) async {
+    if (!mounted) {
+      return null;
+    }
     return showSimpleDatePicker(
       context,
-      initialDate: recordDate,
+      initialDate: initialDate,
       firstDate: widget.car.roadDate,
       lastDate: widget.today,
       today: widget.today,
     );
   }
 
-  /// 新增模式的同日查重与处置：检查当前选中日期是否已有记录——
-  /// 无重复直接结束；有重复弹「返回/去编辑」确认框：「去编辑」回调
-  /// onExitToEdit 关新增 sheet 转编辑该记录（由入口函数接线）；
-  /// 「返回」/点遮罩重开日期选择器换日期（初始值 = 重复日期），选完
-  /// 再查一轮，循环到选出无重复日期或去编辑退出。拦截始终在第一步。
-  Future<void> _checkDuplicateAndOfferEdit() async {
-    final existing = _findRecordOn(recordDate);
-    if (existing == null) {
-      return;
-    }
-    final gotoEdit = await _showDuplicateDialog(existing);
-    if (!mounted) {
-      return;
-    }
-    if (gotoEdit) {
-      widget.onExitToEdit(existing);
-      return;
-    }
-    await _pickRecordDate();
-  }
-
-  /// 查当前车辆在 [date] 是否已有保养记录（{carId, date} 唯一约束保证
-  /// 最多一条）。记录 provider 未就绪时返回 null 跳过检查——保存时
-  /// Repository 的同日唯一校验仍会兜底报错。
-  MaintenanceRecord? _findRecordOn(LocalDate date) {
-    final records = ref.read(appliedCarRecordsProvider).value;
-    if (records == null) {
-      return null;
-    }
-    for (final record in records) {
-      if (record.date == date) {
-        return record;
-      }
-    }
-    return null;
-  }
-
-  /// 里程单调性软提示检查（第一步「下一步」时调用，新增与编辑都查）：
-  /// 草稿与该车已有记录构成"里程不随日期单调非降"时返回冲突参照记录。
-  /// 记录 provider 未就绪时返回 null 跳过——保存时 Repository 的既有
-  /// 校验仍会兜底；编辑模式经草稿自身 id 排除自己。
-  MaintenanceRecord? _findMileageConflict(MaintenanceRecord draft) {
-    final records = ref.read(appliedCarRecordsProvider).value;
-    if (records == null) {
-      return null;
-    }
-    return RecordRules.conflictingMileageRecord(
-      records: records,
-      draftDate: draft.date,
-      draftMileageKm: draft.mileageKm,
-      selfRecordId: draft.id,
-    );
-  }
-
   /// 「与已有记录不一致」软提示确认框（仿同日查重模式）：文案含参照
   /// 记录的日期与里程。返回 true = 用户选「仍要继续」（放行进第二步）；
   /// false（「返回修改」，点遮罩的 null 也折叠成 false）= 留在第一步
-  /// 改日期或里程。
-  Future<bool> _showMileageConflictDialog(MaintenanceRecord conflict) {
+  /// 改日期或里程。作为 RecordFormUi.askMileageProceed 注入；表单已卸载
+  /// 时按「返回修改」折叠，不再碰 context。
+  Future<bool> _showMileageConflictDialog(MaintenanceRecord conflict) async {
+    if (!mounted) {
+      return false;
+    }
     return showConfirmDialog(
       context: context,
       title: '与已有记录不一致',
@@ -1055,8 +902,13 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
   }
 
   /// 「该日期已有保养记录」确认框。返回 true = 用户选「去编辑」；
-  /// false/null（「返回」/点遮罩）= 留在新增表单换日期。
-  Future<bool> _showDuplicateDialog(MaintenanceRecord existing) {
+  /// false/null（「返回」/点遮罩）= 留在新增表单换日期。作为
+  /// RecordFormUi.askDuplicate 注入；表单已卸载时按「返回」折叠，
+  /// 不再碰 context。
+  Future<bool> _showDuplicateDialog(MaintenanceRecord existing) async {
+    if (!mounted) {
+      return false;
+    }
     return showConfirmDialog(
       context: context,
       title: '该日期已有保养记录',
@@ -1073,9 +925,10 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
 /// ★ 记录表单入口（提醒页按钮 / 记录卡"编辑"）：
 /// 装载/守卫/键盘 inset/pop/toast 的时序归 showLunioFormSheet（ADR 0016），
 /// 这里只声明装载内容、"无车/无项目"守卫文案、头部副标题与提交动作。
-/// 新增模式表单内自带同日查重（打开时/选完日期后，见表单 state），
-/// 查重弹窗选「去编辑」时经 onExitToEdit 用 handle.close() 关新增
-/// sheet、再用外层 context 递归打开该记录的编辑 sheet。
+/// 新增模式表单内自带同日查重（打开时/选完日期后，决策在
+/// RecordFormController），查重弹窗选「去编辑」时经 onExitToEdit 用
+/// handle.close() 关新增 sheet、再用外层 context 递归打开该记录的编辑
+/// sheet。
 Future<void> showMaintenanceRecordFormSheet(
   BuildContext context,
   WidgetRef ref, {
