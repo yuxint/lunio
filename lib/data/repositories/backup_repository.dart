@@ -14,7 +14,9 @@
 import 'package:drift/drift.dart';
 
 import '../../core/id/snowflake_id_generator.dart';
+import '../../core/date/local_date.dart';
 import '../../domain/entities/maintenance_record.dart' show RecordItemCost;
+import '../../domain/errors/lunio_error.dart';
 import '../../domain/rules/applied_car_rules.dart';
 import '../../domain/rules/fuel_rules.dart';
 import '../../domain/rules/record_rules.dart';
@@ -374,14 +376,16 @@ class BackupRepository {
   /// 项目过实体 validate、记录过 RecordRules.validateRecord、加油预测
   /// 设置与加油记录过实体 validate——与手工录入走同一套规则，篡改过的
   /// 备份（负金额/负里程/空项目/非法间隔）在开事务前就被拒绝，保证
-  /// "失败时未写入任何数据"。
-  /// 校验失败统一包装成中文 ArgumentError（UI 直接展示给用户）。
+  /// "失败时未写入任何数据"；末段做保养记录的同车同日查重（跨行）。
+  /// 校验失败统一抛 LunioErrorException(backupInvalidData)（ADR 0009
+  /// 修订节），message 即用户可读中文，恢复 UI 弹对话框展示。
   void _validateBackupBusinessRules(BackupPayload payload) {
     for (final car in payload.cars) {
       try {
         FuelRules.validateTankCapacity(car.tankCapacityLiters);
       } on ArgumentError catch (error) {
-        throw ArgumentError(
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
           '备份文件中存在无效数据（车辆「${car.brand} ${car.model}」油箱容积）：'
           '${error.message}',
         );
@@ -391,15 +395,19 @@ class BackupRepository {
       try {
         item.validate();
       } on ArgumentError catch (error) {
-        throw ArgumentError('备份文件中存在无效数据（保养项目「${item.name}」）：'
-            '${error.message}');
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
+          '备份文件中存在无效数据（保养项目「${item.name}」）：'
+          '${error.message}',
+        );
       }
     }
     for (final record in payload.records) {
       try {
         RecordRules.validateRecord(record);
       } on ArgumentError catch (error) {
-        throw ArgumentError(
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
           '备份文件中存在无效数据（保养记录 ${record.date}）：${error.message}',
         );
       }
@@ -408,7 +416,8 @@ class BackupRepository {
       try {
         prediction.validate();
       } on ArgumentError catch (error) {
-        throw ArgumentError(
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
           '备份文件中存在无效数据（加油预测设置）：${error.message}',
         );
       }
@@ -417,8 +426,42 @@ class BackupRepository {
       try {
         fuelRecord.validate();
       } on ArgumentError catch (error) {
-        throw ArgumentError(
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
           '备份文件中存在无效数据（加油记录 ${fuelRecord.date}）：${error.message}',
+        );
+      }
+    }
+    // 同车同日查重（跨行检查，上面几段都是逐行）：表级唯一约束
+    // {carId,date} 的业务前置检查，与手工录入路径主仓库的
+    // _ensureRecordIsUnique 同一条规则（那边抛 typed
+    // duplicateMaintenanceRecord）。真实导出的备份不可能含重复（源库
+    // 表级唯一约束挡着），出现即文件被手工编辑过或来自外来工具——
+    // 整文件拒绝（全有全无，"失败时未写入任何数据"），不跳过重复行。
+    // 范围只有保养记录：fuel_records 故意没有 {carId,date} 唯一约束
+    // （ADR 0014，同车同日多箱合法）。重映射不会制造重复（旧 id → 新
+    // 雪花 id 是单射），在重映射前的原始 carId 上查即充分；此时引用
+    // 完整性校验已过，record.carId 必能在 payload.cars 里反查到。
+    final countByCarDate = <(int, LocalDate), int>{};
+    for (final record in payload.records) {
+      final key = (record.carId, record.date);
+      countByCarDate[key] = (countByCarDate[key] ?? 0) + 1;
+    }
+    // 反查车名用于文案（引用完整性校验已过，正常必能查到；兜底显示
+    // "未知"，不影响拒绝本身）。
+    final carsById = {
+      for (final car in payload.cars)
+        if (car.id != null) car.id!: car,
+    };
+    for (final record in payload.records) {
+      final count = countByCarDate[(record.carId, record.date)]!;
+      if (count > 1) {
+        final car = carsById[record.carId];
+        final carLabel = car == null ? '未知' : '${car.brand} ${car.model}';
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
+          '备份文件中有重复的保养记录：车辆「$carLabel」在 ${record.date} '
+          '有 $count 条。同车同日只能有一条。',
         );
       }
     }

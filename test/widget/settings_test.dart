@@ -231,6 +231,85 @@ void main() {
     expect(find.text('取消'), findsNothing);
   });
 
+  testWidgets('profile restore typed rejection shows reason dialog', (
+    tester,
+  ) async {
+    // 预校验拒绝（typed backupInvalidData，ADR 0009 修订节）：对话框给
+    // throw 点的具体原因（哪辆车哪天几条），并统一带"未写入任何数据"
+    // 安抚句；驱动层文本识别只做最后防线，不再承担已知拒绝。
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+    final existingCar = (await database.select(database.cars).get()).single;
+    mockNativeFiles((call) async {
+      if (call.method == 'pickJsonFile') {
+        return const BackupCodec().encode(
+          BackupPayload(
+            schemaVersion: 1,
+            cars: [
+              Car(
+                id: 99,
+                brand: '本田',
+                model: '思域（燃油版）',
+                currentMileageKm: 12000,
+                roadDate: LocalDate.parse(existingCar.roadDate),
+                sync: sync,
+              ),
+            ],
+            maintenanceItems: [
+              MaintenanceItem(
+                id: 199,
+                carsId: 99,
+                name: '机油',
+                enabled: true,
+                remindByMileage: true,
+                remindByTime: false,
+                mileageIntervalKm: 5000,
+                sortOrder: 1,
+                sync: sync,
+              ),
+            ],
+            records: [
+              MaintenanceRecord(
+                id: 299,
+                carId: 99,
+                date: const LocalDate(2026, 5, 20),
+                itemIds: const [199],
+                costCents: 12000,
+                mileageKm: 12000,
+                sync: sync,
+              ),
+              MaintenanceRecord(
+                id: 300,
+                carId: 99,
+                date: const LocalDate(2026, 5, 20),
+                itemIds: const [199],
+                costCents: 15000,
+                mileageKm: 13000,
+                sync: sync,
+              ),
+            ],
+          ),
+        );
+      }
+      return null;
+    });
+
+    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('恢复').last);
+    await tester.pumpAndSettle();
+
+    expect(await database.select(database.cars).get(), hasLength(1));
+    expect(find.text('恢复失败'), findsOneWidget);
+    expect(find.textContaining('有 2 条'), findsOneWidget);
+    expect(find.textContaining('本次恢复未写入任何数据'), findsOneWidget);
+    expect(find.text('确认'), findsOneWidget);
+  });
+
   // 2026-09-26 用户复现：恢复"与当前数据相同"的备份后，弹出全部项目
   // 按无历史基线（上路日/里程0）计算的假到期"保养提醒"弹窗。本用例复刻
   // 该场景：播种 0 到期基线 → 导出当前数据为备份 → 走真实 UI 恢复同一份

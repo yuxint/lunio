@@ -28,6 +28,11 @@ enum LunioErrorKind {
 
   /// 记录引用了其他车辆的保养项目。
   itemFromAnotherCar,
+
+  /// 备份文件不可恢复（恢复预校验在开事务前拦下：实体校验失败或
+  /// 保养记录同车同日重复）。单一 kind 承载全部恢复拒绝，区分度在
+  /// throw 点的中文文案里（ADR 0009 修订节）。
+  backupInvalidData,
 }
 
 /// 业务规则失败异常：message 即用户可读中文，UI 直接展示。

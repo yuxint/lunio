@@ -21,6 +21,7 @@ import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
+import '../../../domain/errors/lunio_error.dart';
 import '../shared/shell_shared.dart';
 import 'maintenance_items.dart';
 import 'settings_data.dart';
@@ -232,9 +233,11 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   }
 
   /// 恢复备份反馈薄壳：确认框/选文件在动作层，取消静默返回 false。
-  /// 唯一约束冲突（恢复文件数据重复或冲突，事务已回滚）弹"未写入任何
-  /// 数据"对话框，其他失败 toast——错误分类属 UI 反馈决策留页面；文本
-  /// 识别是 ADR 0009 明文的驱动层兜底口径（不可在 throw 点包装）。
+  /// 失败反馈三级（ADR 0009 修订节）：恢复预校验拒绝（typed
+  /// backupInvalidData——实体校验失败/同车同日重复）弹对话框给 throw 点
+  /// 的具体原因；驱动层唯一约束冲突（预校验拦不住的最后防线，文本识别
+  /// 兜底，事务已回滚）弹通用对话框；其余失败 toast。错误分类属 UI
+  /// 反馈决策留页面。
   Future<void> _restoreBackup(BuildContext context) async {
     try {
       final restored = await restoreBackupFromFile(context, ref);
@@ -245,7 +248,14 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
       if (!context.mounted) {
         return;
       }
-      if (isUniqueConstraintError(error)) {
+      if (error is LunioErrorException) {
+        await showMessageDialog(
+          context: context,
+          title: '恢复失败',
+          message: '${error.message}\n本次恢复未写入任何数据。',
+          tone: StatusOverlayTone.error,
+        );
+      } else if (isUniqueConstraintError(error)) {
         await showMessageDialog(
           context: context,
           title: '恢复失败',

@@ -2158,21 +2158,30 @@ void main() {
       records: const [],
     );
 
+    // R35 校验失败自 ADR 0009 修订节起 typed 化（backupInvalidData），
+    // 不再是裸 ArgumentError。
+    final rejectedAsInvalidData = throwsA(
+      isA<LunioErrorException>().having(
+        (error) => error.kind,
+        'kind',
+        LunioErrorKind.backupInvalidData,
+      ),
+    );
     expect(
       () => backupRepository.restoreBackupPayload(negativeCost),
-      throwsArgumentError,
+      rejectedAsInvalidData,
     );
     expect(
       () => backupRepository.restoreBackupPayload(negativeMileage),
-      throwsArgumentError,
+      rejectedAsInvalidData,
     );
     expect(
       () => backupRepository.restoreBackupPayload(emptyItemIds),
-      throwsArgumentError,
+      rejectedAsInvalidData,
     );
     expect(
       () => backupRepository.restoreBackupPayload(invalidItemInterval),
-      throwsArgumentError,
+      rejectedAsInvalidData,
     );
     // 预校验在事务外执行：库未被任何一次失败恢复改动。
     expect(await database.select(database.cars).get(), hasLength(1));
@@ -2184,6 +2193,200 @@ void main() {
       await database.select(database.maintenanceRecords).get(),
       isEmpty,
     );
+  });
+
+  test('backup restore rejects same-car same-date duplicate records', () async {
+    final (carId, itemId) = await seedCarAndItem();
+    final backup = await backupRepository.exportBackupPayload();
+    final duplicated = BackupPayload(
+      schemaVersion: 1,
+      cars: backup.cars,
+      maintenanceItems: backup.maintenanceItems,
+      records: [
+        MaintenanceRecord(
+          id: 1,
+          carId: carId,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: [itemId],
+          costCents: 10000,
+          mileageKm: 12000,
+          sync: sync,
+        ),
+        MaintenanceRecord(
+          id: 2,
+          carId: carId,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: [itemId],
+          costCents: 20000,
+          mileageKm: 13000,
+          sync: sync,
+        ),
+      ],
+    );
+
+    // 同车同日查重是表级唯一约束 {carId,date} 的业务前置检查：预校验
+    // 拒绝（typed），不靠事务中途炸驱动层异常。注意 restoreBackupPayload
+    // 的预校验在返回 Future 前同步抛出，须用闭包交给 throwsA。
+    expect(
+      () => backupRepository.restoreBackupPayload(duplicated),
+      throwsA(
+        isA<LunioErrorException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              LunioErrorKind.backupInvalidData,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              allOf(contains('2026-05-19'), contains('有 2 条')),
+            ),
+      ),
+    );
+    // 预校验在事务外执行：库未被改动（整文件拒绝，零残留）。
+    expect(await database.select(database.cars).get(), hasLength(1));
+    expect(await database.select(database.maintenanceRecords).get(), isEmpty);
+  });
+
+  test('backup restore allows same date across different cars', () async {
+    // 唯一约束是 {carId,date} 联合键：不同车同日各一条是合法数据，
+    // 查重不得误伤。
+    final payload = BackupPayload(
+      schemaVersion: 1,
+      cars: [
+        Car(
+          id: 99,
+          brand: '本田',
+          model: '思域（燃油版）',
+          currentMileageKm: 12000,
+          roadDate: const LocalDate(2024, 1, 1),
+          sync: sync,
+        ),
+        Car(
+          id: 100,
+          brand: '东风日产',
+          model: '轩逸（燃油版）',
+          currentMileageKm: 20000,
+          roadDate: const LocalDate(2024, 1, 1),
+          sync: sync,
+        ),
+      ],
+      maintenanceItems: [
+        MaintenanceItem(
+          id: 199,
+          carsId: 99,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          sortOrder: 1,
+          sync: sync,
+        ),
+        MaintenanceItem(
+          id: 198,
+          carsId: 100,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          sortOrder: 1,
+          sync: sync,
+        ),
+      ],
+      records: [
+        MaintenanceRecord(
+          id: 299,
+          carId: 99,
+          date: const LocalDate(2026, 5, 20),
+          itemIds: const [199],
+          costCents: 12000,
+          mileageKm: 12000,
+          sync: sync,
+        ),
+        MaintenanceRecord(
+          id: 298,
+          carId: 100,
+          date: const LocalDate(2026, 5, 20),
+          itemIds: const [198],
+          costCents: 20000,
+          mileageKm: 20000,
+          sync: sync,
+        ),
+      ],
+    );
+
+    await backupRepository.restoreBackupPayload(payload);
+
+    expect(
+      await database.select(database.maintenanceRecords).get(),
+      hasLength(2),
+    );
+  });
+
+  test('backup restore allows same-car same-day duplicate fuel records', () async {
+    // fuel_records 故意没有 {carId,date} 唯一约束（ADR 0014，同车同日
+    // 多箱合法）：同日查重只属于保养记录，不得波及加油记录。
+    final payload = BackupPayload(
+      schemaVersion: BackupCodec.currentSchemaVersion,
+      cars: [
+        Car(
+          id: 99,
+          brand: '本田',
+          model: '思域（燃油版）',
+          currentMileageKm: 12000,
+          roadDate: const LocalDate(2024, 1, 1),
+          sync: sync,
+        ),
+      ],
+      maintenanceItems: [
+        MaintenanceItem(
+          id: 199,
+          carsId: 99,
+          name: '机油',
+          enabled: true,
+          remindByMileage: true,
+          remindByTime: false,
+          mileageIntervalKm: 5000,
+          sortOrder: 1,
+          sync: sync,
+        ),
+      ],
+      records: [
+        MaintenanceRecord(
+          id: 299,
+          carId: 99,
+          date: const LocalDate(2026, 5, 20),
+          itemIds: const [199],
+          costCents: 12000,
+          mileageKm: 12000,
+          sync: sync,
+        ),
+      ],
+      fuelRecords: [
+        FuelRecord(
+          carId: 99,
+          date: const LocalDate(2026, 5, 20),
+          grade: FuelGrade.gasoline92,
+          unitPriceCents: 750,
+          payableCents: 30000,
+          sync: sync,
+        ),
+        FuelRecord(
+          carId: 99,
+          date: const LocalDate(2026, 5, 20),
+          grade: FuelGrade.gasoline92,
+          unitPriceCents: 752,
+          payableCents: 37600,
+          sync: sync,
+        ),
+      ],
+    );
+
+    await backupRepository.restoreBackupPayload(payload);
+
+    expect(await database.select(database.fuelRecords).get(), hasLength(2));
   });
 
   test('parking countdown is temporary preference outside backup', () async {
