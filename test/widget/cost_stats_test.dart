@@ -675,10 +675,14 @@ void main() {
       expect(find.text('2024年'), findsNothing);
       // 初始停最右（2026-09-23 拍板）：首月「24.3」被滚出视口左侧，
       // 最近月「26.9」落在测试窗口（800 宽）内；31 个月 × 64 列宽超一
-      // 屏 → 底部出现常显滚动条（第五轮）。
+      // 屏 → 底部出现滚动条（第五轮；2026-09-26 起滑动时才显示拇指）。
       expect(tester.getRect(find.text('24.3')).right, lessThan(0));
       expect(tester.getRect(find.text('26.9')).right, lessThan(800));
       expect(find.byType(Scrollbar), findsOneWidget);
+      expect(
+        tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+        isNot(true),
+      );
       // 保养汇总卡不存在：无"今年保养"文字；保养区只有一行轻提示。
       expect(find.text('今年保养'), findsNothing);
       expect(

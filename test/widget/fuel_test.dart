@@ -982,10 +982,15 @@ void main() {
     );
 
     // 2026-09-24 第五轮拍板：删除"展开全部/收起"按钮；6 条 > 5 → 收进
-    // 固定 5 行高的卡内滚动窗口，右侧常显滚动条。首屏 = 最近 5 条。
+    // 固定 5 行高的卡内滚动窗口，右侧滚动条（2026-09-26 起滑动时才显示
+    // 拇指）。首屏 = 最近 5 条。
     expect(find.text('展开全部'), findsNothing);
     expect(find.text('收起'), findsNothing);
     expect(find.byType(Scrollbar), findsOneWidget);
+    expect(
+      tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+      isNot(true),
+    );
     // 全部行都在树里（ earliest 05-01 只是滚出窗口下方）。
     expect(find.textContaining('2026-05-01'), findsOneWidget);
     final viewport = tester.getRect(find.byType(Scrollbar));
