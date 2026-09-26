@@ -320,23 +320,8 @@ class LunioRepository {
   /// 新增保养记录（基础版，不带项目间隔更新）。UI 走 WithItemUpdates 版。
   ///
   /// 事务内三步：校验项目归属 → 校验同日唯一 → 插记录+关联+同步车辆里程。
-  Future<int> saveMaintenanceRecord(domain.MaintenanceRecord record) {
-    RecordRules.validateRecord(record);
-    final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
-
-    return database.transaction(() async {
-      await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
-      await _ensureRecordIsUnique(
-        carId: record.carId,
-        date: record.date,
-      );
-
-      return _insertMaintenanceRecordInTransaction(
-        record: record,
-        uniqueItemIds: uniqueItemIds,
-      );
-    });
-  }
+  Future<int> saveMaintenanceRecord(domain.MaintenanceRecord record) =>
+      _writeRecord(record: record, isInsert: true);
 
   /// 新增保养记录 + 顺带更新所选项目的提醒间隔（记录表单两步提交的落库入口）。
   /// itemUpdates 只允许包含"本次记录选中的、属于本车的"项目
@@ -344,61 +329,46 @@ class LunioRepository {
   Future<int> saveMaintenanceRecordWithItemUpdates({
     required domain.MaintenanceRecord record,
     required List<domain.MaintenanceItem> itemUpdates,
-  }) {
-    RecordRules.validateRecord(record);
-    final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
-
-    return database.transaction(() async {
-      await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
-      await _ensureRecordIsUnique(
-        carId: record.carId,
-        date: record.date,
-      );
-
-      final recordId = await _insertMaintenanceRecordInTransaction(
+  }) =>
+      _writeRecord(
         record: record,
-        uniqueItemIds: uniqueItemIds,
-      );
-      await _updateMaintenanceItemIntervalsInTransaction(
-        carId: record.carId,
-        selectedItemIds: uniqueItemIds,
+        isInsert: true,
         itemUpdates: itemUpdates,
       );
-      return recordId;
-    });
-  }
 
-  /// 编辑保养记录（基础版）。excludingRecordId 让唯一校验跳过自己。
-  Future<void> updateMaintenanceRecord(domain.MaintenanceRecord record) {
-    final recordId = record.id;
-    if (recordId == null) {
-      throw ArgumentError('Maintenance record id is required');
-    }
-    RecordRules.validateRecord(record);
-    final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
-
-    return database.transaction(() async {
-      await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
-      await _ensureRecordIsUnique(
-        carId: record.carId,
-        date: record.date,
-        excludingRecordId: recordId,
-      );
-
-      await _updateMaintenanceRecordInTransaction(
-        record: record,
-        uniqueItemIds: uniqueItemIds,
-      );
-    });
+  /// 编辑保养记录（基础版）。同日唯一校验跳过记录自己。
+  Future<void> updateMaintenanceRecord(domain.MaintenanceRecord record) async {
+    await _writeRecord(record: record, isInsert: false);
   }
 
   /// 编辑保养记录 + 顺带更新项目间隔（UI 实际使用的编辑入口）。
   Future<void> updateMaintenanceRecordWithItemUpdates({
     required domain.MaintenanceRecord record,
     required List<domain.MaintenanceItem> itemUpdates,
-  }) {
+  }) async {
+    await _writeRecord(
+      record: record,
+      isInsert: false,
+      itemUpdates: itemUpdates,
+    );
+  }
+
+  /// 保养记录写管线唯一实现（2026-09-26 四入口收敛）：四个公开保存/更新
+  /// 入口的公共链路——事务前校验记录字段与 itemIds 去重；事务内依次
+  /// 项目归属校验 → 同日唯一校验 → 插入或更新主表+关联行 →（可选）项目
+  /// 间隔联动。新增写库不变量只改这一处。
+  ///
+  /// [isInsert] 为真：新增，id 由雪花发生器生成落库（忽略 record.id）；
+  /// 为假：编辑，[MaintenanceRecord.id] 必须有值（缺省抛 ArgumentError），
+  /// 同日唯一校验按它排除记录自身。返回记录 id（新增为新 id，编辑为已有 id）。
+  /// [itemUpdates] 非空时在记录写完后更新项目提醒间隔，为空即基础版语义。
+  Future<int> _writeRecord({
+    required domain.MaintenanceRecord record,
+    required bool isInsert,
+    List<domain.MaintenanceItem>? itemUpdates,
+  }) async {
     final recordId = record.id;
-    if (recordId == null) {
+    if (!isInsert && recordId == null) {
       throw ArgumentError('Maintenance record id is required');
     }
     RecordRules.validateRecord(record);
@@ -409,18 +379,31 @@ class LunioRepository {
       await _ensureRecordIsUnique(
         carId: record.carId,
         date: record.date,
-        excludingRecordId: recordId,
+        excludingRecordId: isInsert ? null : recordId,
       );
 
-      await _updateMaintenanceRecordInTransaction(
-        record: record,
-        uniqueItemIds: uniqueItemIds,
-      );
-      await _updateMaintenanceItemIntervalsInTransaction(
-        carId: record.carId,
-        selectedItemIds: uniqueItemIds,
-        itemUpdates: itemUpdates,
-      );
+      final int persistedId;
+      if (isInsert) {
+        persistedId = await _insertMaintenanceRecordInTransaction(
+          record: record,
+          uniqueItemIds: uniqueItemIds,
+        );
+      } else {
+        await _updateMaintenanceRecordInTransaction(
+          recordId: recordId!,
+          record: record,
+          uniqueItemIds: uniqueItemIds,
+        );
+        persistedId = recordId;
+      }
+      if (itemUpdates != null) {
+        await _updateMaintenanceItemIntervalsInTransaction(
+          carId: record.carId,
+          selectedItemIds: uniqueItemIds,
+          itemUpdates: itemUpdates,
+        );
+      }
+      return persistedId;
     });
   }
 
@@ -562,15 +545,13 @@ class LunioRepository {
   }
 
   /// 事务内更新记录：主表 write → 删掉全部关联行 → 按新 itemIds 重插
-  /// （全量重建关联，不做 diff）→ 里程只增同步。
+  /// （全量重建关联，不做 diff）→ 里程只增同步。id 非空由写管线
+  /// _writeRecord 统一校验后传入。
   Future<void> _updateMaintenanceRecordInTransaction({
+    required int recordId,
     required domain.MaintenanceRecord record,
     required List<int> uniqueItemIds,
   }) async {
-    final recordId = record.id;
-    if (recordId == null) {
-      throw ArgumentError('Maintenance record id is required');
-    }
     await (database.update(
       database.maintenanceRecords,
     )..where((row) => row.id.equals(recordId))).write(
