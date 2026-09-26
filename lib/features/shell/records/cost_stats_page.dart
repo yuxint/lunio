@@ -767,8 +767,9 @@ class _ColumnItem {
 /// 定（0 / 半峰 / 峰三条刻度金额，步进自适应取整、峰刻度 ≥ 最大柱值）
 /// + 横向虚线网格线 + 柱列；柱顶标金额、轴标签在柱下，柱体统一主色。
 /// 行为单一（第五轮拍板，保养年度柱与加油月度柱同一套）：列放得下视
-/// 口时等分铺满、无滚动条；放不下时定宽横向滚动，底部常显 3dp 细滚动
-/// 条、初始停最右——纵轴不随滚动消失，金额参照始终可见。柱高随入场
+/// 口时等分铺满、无滚动条；放不下时定宽横向滚动，底部 3dp 细滚动条
+/// （2026-09-26 起滑动时淡入、停稳淡出）、初始停最右——纵轴不随滚动
+/// 消失，金额参照始终可见。柱高随入场
 /// 动画长高——整图包在监听 [entrance] 的 AnimatedBuilder 里（页面文件
 /// 头注释的历史 bug：漏包导致条形停在进度 0）。
 class _AxesColumnChart extends StatefulWidget {
@@ -915,8 +916,9 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   // 统一行为（第五轮）：内容宽（列数 × 列宽）放得下视口
-                  // 就等分铺满、无滚动条；放不下才定宽横向滚动 + 底部常
-                  // 显细滚动条。保养年度柱与加油月度柱走同一套逻辑。
+                  // 就等分铺满、无滚动条；放不下才定宽横向滚动 + 底部细
+                  // 滚动条（2026-09-26 起滑动时才显示拇指）。保养年度柱
+                  // 与加油月度柱走同一套逻辑。
                   final needsScroll =
                       widget.items.length * _columnWidth >
                           constraints.maxWidth;
@@ -934,7 +936,6 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
                   _scheduleJumpToEnd();
                   return Scrollbar(
                     controller: _scroll,
-                    thumbVisibility: true,
                     thickness: 3,
                     radius: const Radius.circular(2),
                     // 底边留 6dp 给滚动条：拇指画在留白条上，与轴标签

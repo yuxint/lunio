@@ -899,9 +899,10 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
   }
 
   /// 滚动列表：表头（当前油量/可加油量/加满价格/调价后价格）+ 定高窗口
-  /// + 每档定行高；滚动停稳吸附整行并落库。右侧常显细滚动条（2026-09-24
-  /// 五轮复验反馈补齐，与加油记录卡/费用统计图表同款样式），表头与行内
-  /// 容同步右缩进 12dp 给拇指让位（金额列右对齐，不缩会重叠）。
+  /// + 每档定行高；滚动停稳吸附整行并落库。右侧细滚动条，滑动时淡入、
+  /// 停稳淡出（2026-09-24 五轮复验反馈补齐同款样式，2026-09-26 起拇指
+  /// 不再常显，与加油记录卡/费用统计图表一致），表头与行内容同步右缩
+  /// 进 12dp 给拇指让位（金额列右对齐，不缩滚动时会与拇指重叠）。
   Widget _buildTierList(BuildContext context, double price) {
     final capacity = widget.capacity!;
     final predictedPrice = ref.watch(predictedFuelPriceProvider);
@@ -917,7 +918,6 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
           onNotification: _onScrollNotification,
           child: Scrollbar(
             controller: _controller,
-            thumbVisibility: true,
             thickness: 3,
             radius: const Radius.circular(2),
             child: SizedBox(

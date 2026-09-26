@@ -7,8 +7,8 @@
 //   - 摘要行：累计加油金额（实付优先口径）+ 笔数；
 //   - 记录行：日期 · 油品 + 实付（没填实付显示应付），下行单价 +
 //     优惠小字；行点按进编辑；超过 5 条收进固定高度的卡内滚动窗口
-//     （右侧常显滚动条，2026-09-24 第五轮：删除"展开全部/收起"按钮，
-//     免掉展开后要滚到底才能收起的来回横跳）；
+//     （右侧滚动条、滑动时才显示拇指，2026-09-24 第五轮：删除
+//     "展开全部/收起"按钮，免掉展开后要滚到底才能收起的来回横跳）；
 //   - 空态：一行文案占位（不隐藏入口）。
 //
 // 数据流：watch appliedCarFuelRecordsProvider（按当前用车派生，写库后
@@ -107,9 +107,10 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
   }
 
   /// 卡主体：摘要行 + 记录行（倒序 = 最近优先）。超过 [_visibleCount]
-  /// 条时收进固定高度的卡内滚动窗口（右侧常显滚动条；2026-09-24 第五
-  /// 轮拍板删除"展开全部/收起"按钮——展开后要滚到底才能收起的来回横
-  /// 跳没了，滚轮直接看全部）；不超过则按实际行数自然排布（无滚动条）。
+  /// 条时收进固定高度的卡内滚动窗口（右侧滚动条，2026-09-26 起滑动时
+  /// 才显示拇指；2026-09-24 第五轮拍板删除"展开全部/收起"按钮——展开
+  /// 后要滚到底才能收起的来回横跳没了，滚轮直接看全部）；不超过则按
+  /// 实际行数自然排布（无滚动条）。
   /// 记录为空时一行空态文案（不隐藏"记一笔"入口）。
   Widget _buildBody(BuildContext context, List<FuelRecord> records) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
@@ -144,14 +145,14 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
         ),
         const SizedBox(height: 2),
         if (records.length > _visibleCount)
-          // 超量：固定 [_visibleCount] 行高的卡内滚动窗口，右侧常显 3dp
-          // 细滚动条（每行套固定槽高，窗口高度才恒等于整数行）。滚动停
-          // 稳吸附整行（2026-09-24 复验反馈，与加满预估同一套
+          // 超量：固定 [_visibleCount] 行高的卡内滚动窗口，右侧 3dp 细
+          // 滚动条，滑动时淡入、停稳淡出（2026-09-26 起拇指不再常显；
+          // 每行套固定槽高，窗口高度才恒等于整数行）。滚动停稳吸附整行
+          // （2026-09-24 复验反馈，与加满预估同一套
           // [RowSnapScrollPhysics]——只对齐不记录，无写库）；内容右缩进
           // 12dp 给拇指让位——否则右对齐的金额与滚动条拇指重叠。
           Scrollbar(
             controller: _listScroll,
-            thumbVisibility: true,
             thickness: 3,
             radius: const Radius.circular(2),
             child: SizedBox(
