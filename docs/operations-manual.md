@@ -8,7 +8,7 @@
 >
 > **读法提示**（Java 背景）：`Repository` ≈ Service+DAO；`Provider` ≈ Spring Bean；`ref.invalidate` ≈ 缓存逐出。多数写操作的固定模式是：**UI 事件 → 动作层（shell_actions）写库 + invalidate → FutureProvider 重新查库 → UI 自动刷新**。少数旁路不走动作层：停车倒计时保存是 `parking_countdown.dart` 本地函数（1.4）。（备份导出/恢复/清空原是旁路，2026-09-25 起收编走动作层"备份与数据重置"分节，见 5.3/5.4/5.5；油价手填价重置原是旁路，2026-09-09 起已收编走 `saveFuelManualPrice`。）
 
-数据层按域拆成仓库家族（ADR 0008）：**主仓库** `LunioRepository`（车辆/项目/记录核心域）、`BuiltInCatalogRepository`（车型目录+bootstrap）、`FuelRepository`（加油域）、`BackupRepository`（备份/恢复/清空）、`LunioPreferences`（偏好门面，全部偏好 key 与编解码的唯一出口）。各域在 providers.dart 装配（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `lib/features/shell/fuel/fuel_prices.dart`，2026-09-13 收拢，与 providers.dart 互相 import 供失效名单逐出）；表插入路径共享 `entity_row_codec.dart` 的 Companion 构造。
+数据层按域拆成仓库家族（ADR 0008）：**主仓库** `LunioRepository`（车辆/项目/记录核心域）、`BuiltInCatalogRepository`（车型目录+bootstrap）、`FuelRepository`（加油域）、`BackupRepository`（备份/恢复/清空）、`LunioPreferences`（偏好门面，全部偏好 key 与编解码的唯一出口）。各域在 providers.dart 装配（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `lib/features/shell/fuel/fuel_prices.dart`，2026-09-13 收拢，依赖单向：providers.dart 不再 import 它）；偏好写入后的缓存逐出走偏好纪元（ADR 0017，见下文"缓存失效入口"）；表插入路径共享 `entity_row_codec.dart` 的 Companion 构造。
 
 ---
 
@@ -54,40 +54,43 @@
 
 **sheet 键盘抬升**：键盘高度（`bottomInset`）垫在 sheet 容器**外侧**（`PrototypeSheetFrame` 返回 `Padding(bottom: bottomInset)`）：键盘弹出时 sheet 底边整体抬到键盘顶边、表面悬在键盘上方，滚动视口完整可见，点击底部输入框由 Flutter 焦点滚动滚入可见区；无键盘时外侧垫 0，sheet 照旧贴住屏幕底边不悬空。底部安全区（Home 横条）补在内容内侧、只补键盘没盖住的差额，总预留恒为 max(安全区, 键盘高度) 不叠加（2026-09-12 修复：此前键盘预留垫在滚动内容内部，长表单触顶高度上限后视口下半截仍被键盘盖住，编辑记录底部费用框点了看不见；抬升初版把安全区也垫外侧，无键盘时底部悬空一条缝，均已修）。配套约束：`bottomInset` 必须取 sheet 自己的 builder context（`MediaQuery.of(sheetContext)`，随键盘实时更新）；误用外层页面 context 会在 sheet 构建时定格为 0（records_page 曾踩，2026-09-12 修复）。**2026-09-25 起编辑表单 sheet 的 bottomInset 由表单运行时 `showLunioFormSheet` 统一读取（ADR 0016），调用方不再裸写 MediaQuery。**
 
-**三大缓存失效入口**（`lib/app/providers.dart:363-428`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不再手排：
+**缓存失效入口**（`lib/app/providers.dart`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不再手排。2026-09-26 起偏好类缓存失效改**偏好纪元**模型（ADR 0017）——`preferencesEpochProvider` 是偏好表数据的版本号（与通知同步代数同构），写完库 bump 一次，所有 watch 纪元的 provider 自动重查，无名单可漏：
 
-| 函数 | 失效内容 | 谁在调 |
+| 入口 | 失效内容 | 谁在调 |
 |---|---|---|
-| `invalidateVehicleProviders` (:363) | 车辆/车型/项目/记录（含按车记录 family）/加油记录 9 个 provider | 动作层车辆/项目/记录类函数 |
-| `invalidatePreferenceProviders` (:402) | 开发者模式/手动日期/生效日期/主题/通知设置 | 动作层偏好类函数、通知协调器（WithRef 版） |
-| `invalidateAllAppDataProviders` (:423) | 上述全部 + bootstrap + 停车倒计时 | 恢复备份 / 清空数据 |
+| 偏好纪元 bump（ADR 0017） | 全部偏好表派生 provider（开发者模式/手动日期/生效日期/主题/通知设置/加油开关/当前车加油预测设置/省份/油品/手填价/油价控制器，共 11 个，分布在 providers.dart 与 fuel_prices.dart，各自 build 里 watch 纪元） | 动作层偏好类函数与加油省份/油品/手填价函数、通知协调器（权限回写与通知设置） |
+| `invalidateVehicleProviders` | 车辆/车型/项目/记录（含按车记录 family）/加油记录 9 个 provider（车辆类家族维持手动失效） | 动作层车辆/项目/记录类函数 |
+| `parkingCountdownProvider` 直失效 | 停车倒计时缓存（不走纪元——写点直失效自己模型，偏好写入不牵动停车卡） | 动作层 saveParkingCountdown / clearParkingCountdown |
+| `invalidateAllAppDataProviders` | bootstrap + 停车倒计时直失效 + 车辆家族 + 偏好纪元 bump | 恢复备份 / 清空数据 |
 
 **Provider 依赖图**（`lib/app/providers.dart`，文件头有注释版；仓库按域拆分后：目录/加油/备份/主仓库各自独立挂数据库，偏好类 provider 统一挂偏好门面；**油价域 provider 定义在 `lib/features/shell/fuel/fuel_prices.dart`**，这里只画在本文件的锚点）：
 
 ```text
-appDatabaseProvider(:181)
-  ├─→ lunioPreferencesProvider(:189) ─ 偏好门面（下述偏好类 provider 的数据源）
-  │     ├─ developerModeProvider(:84) ─→ manualDatePreferenceProvider(:91) ─┐
-  │     ├─ themeModePreferenceProvider(:105)                                │
-  │     ├─ notificationSettingsProvider(:112)                               ├─→ effectiveTodayProvider(:172)
-  │     ├─ parkingCountdownProvider(:120)                                   │   （另一输入 appDateContextProvider(:78)）
-  │     └─ 加油开关(:130)/当前车加油设置(:137)                               │
-  │        （省份/油品/手填价在 fuel_prices.dart，watch 偏好门面）           │
-  ├─→ builtInCatalogRepositoryProvider(:194)
-  │     └─→ defaultMaintenanceBootstrapProvider(:228)
-  │           ├─→ vehicleModelsProvider(:236)（另挂目录仓库）
-  │           └─→ carsProvider(:262)（另挂主仓库）
-  │                 └─→ appliedCarProvider(:271)（另挂主仓库）
-  │                       ├─→ appliedCarMaintenanceItemsProvider(:289)（另挂主仓库）
-  │                       ├─→ appliedCarRecordsProvider(:310)（另挂主仓库）
-  │                       └─→ appliedCarFuelRecordsProvider(:160)
-  │                             （另挂加油仓库 family :152，ADR 0014）
-  ├─→ fuelRepositoryProvider(:201)（另挂偏好门面）
+appDatabaseProvider(:213)
+  ├─→ lunioPreferencesProvider(:221) ─ 偏好门面（下述偏好类 provider 的数据源）
+  │     ├─ developerModeProvider(:107) ─→ manualDatePreferenceProvider(:115) ─┐
+  │     ├─ themeModePreferenceProvider(:130)                                 │
+  │     ├─ notificationSettingsProvider(:138)                               ├─→ effectiveTodayProvider(:203)
+  │     ├─ parkingCountdownProvider(:147)                                   │   （另一输入 appDateContextProvider(:101)）
+  │     └─ 加油开关(:157)/当前车加油设置(:167)                              │
+  │        （省份/油品/手填价在 fuel_prices.dart，watch 偏好门面 + 偏好纪元）│
+  │     上述偏好类 provider（停车除外）均 watch preferencesEpochProvider(:84)
+  │     ——写完库 bump 一次全体自动重查（ADR 0017，替代旧失效名单）
+  ├─→ builtInCatalogRepositoryProvider(:226)
+  │     └─→ defaultMaintenanceBootstrapProvider(:260)
+  │           ├─→ vehicleModelsProvider(:268)（另挂目录仓库）
+  │           └─→ carsProvider(:294)（另挂主仓库）
+  │                 └─→ appliedCarProvider(:303)（另挂主仓库）
+  │                       ├─→ appliedCarMaintenanceItemsProvider(:321)（另挂主仓库）
+  │                       ├─→ appliedCarRecordsProvider(:342)（另挂主仓库）
+  │                       └─→ appliedCarFuelRecordsProvider(:191)
+  │                             （另挂加油仓库 family :183，ADR 0014）
+  ├─→ fuelRepositoryProvider(:233)（另挂偏好门面）
   │     └─ fuel_prices.dart：手填价、油价控制器 FuelPriceController、
   │        生效链（effectiveFuelPrice/effectiveFuelForecast/predictedFuelPrice）
-  ├─→ backupRepositoryProvider(:209)（另挂偏好门面）
-  └─→ lunioRepositoryProvider(:218)（另挂偏好门面 + 加油仓库）
-        └─→ recordsForCarProvider(:302)（按车记录 family——费用统计页
+  ├─→ backupRepositoryProvider(:241)（另挂偏好门面）
+  └─→ lunioRepositoryProvider(:250)（另挂偏好门面 + 加油仓库）
+        └─→ recordsForCarProvider(:334)（按车记录 family——费用统计页
             当前应用车辆作用域，2026-09-20 起不再有"全部"合并）
 ```
 
@@ -105,13 +108,13 @@ appDatabaseProvider(:181)
 | 4 | `lib/app/app_router.dart:26 → appRouter` | 平级入口路由 `/reminders` `/records` `/me` 各渲染 `AppShell(selectedIndex: n)`（`/fuel` 路由常驻，开关关闭时由 AppShell 重定向回 `/me`）；另有第一个不挂壳的 pushed 子页 `/cost-stats`（§4.5，不渲染 AppShell）；初始 `/reminders` |
 | 5 | `lib/features/shell/app_shell.dart:34 → AppShell` | 主壳首帧 build：watch 全部 provider（此时数据库才真正打开） |
 
-**注意**：数据库是**惰性**打开的——`appDatabaseProvider`（providers.dart:181）首次被 watch 时 `new AppDatabase()`，而 SQLite 文件连接由 Drift LazyDatabase 推迟到第一条 SQL（`lib/data/database/app_database.dart → _openConnection`，后台 isolate 打开 `lunio.sqlite`）。
+**注意**：数据库是**惰性**打开的——`appDatabaseProvider`（providers.dart:213）首次被 watch 时 `new AppDatabase()`，而 SQLite 文件连接由 Drift LazyDatabase 推迟到第一条 SQL（`lib/data/database/app_database.dart → _openConnection`，后台 isolate 打开 `lunio.sqlite`）。
 
 ### 1.2 首次进入（无任何数据）发生了什么
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `lib/app/providers.dart:228 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
+| 1 | `lib/app/providers.dart:260 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
 | 2 | `lib/data/repositories/built_in_catalog_repository.dart → BuiltInCatalogRepository.ensureBootstrapData()` → `_ensureVehicleModels` + `_ensureDefaultMaintenanceItems` | 从 asset `assets/data/catalog/`（templates.json + vehicles_a–z.json 字母分片）加载目录（**2026-09-01 动力类型改版后为 1675 条：懂车帝在售 1645 + 停售 30，车系名用懂车帝原名，每条带推荐动力类型；默认保养模板按动力类型分五组；同日起精简为每品牌最多 10 款热门车型，现共 1223 条**，见 ADR 0003），**按 catalogId 幂等对账**写入两张内置表 | `vehicle_models`、`vehicle_default_maintenance_items` 两表灌入/更新 |
 | 3 | `lib/features/shell/reminders/reminder_page.dart:102 → EmptyVehicleCard` | appliedCarProvider 返回 null → 显示"还没有车辆"卡片 | 无 |
 | 4 | `lib/features/shell/app_shell.dart:69-74 → NotificationSyncController` + `start()`（`reminders/notification_sync_controller.dart`，对 6 个数据 provider `listenManual` 且首拍即触发） | 系统通知开关为默认开 → 同步链对账系统真值并触发首启权限请求 | 见 1.3 |
@@ -139,7 +142,7 @@ appDatabaseProvider(:181)
 
 | 用户看到 | 代码位置 | 数据来源 |
 |---|---|---|
-| 品牌/车型/上路日期/当前里程 | `reminder_page.dart:76-97 → LunioHeroCard` | `appliedCarProvider`（providers.dart:271）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
+| 品牌/车型/上路日期/当前里程 | `reminder_page.dart:76-97 → LunioHeroCard` | `appliedCarProvider`（providers.dart:303）→ `repository.getAppliedCar()`（lunio_repository.dart:314，含偏好失效回退逻辑） |
 | "到期概览"文案（超期 x / 到期 x / 全部正常） | `reminder_page.dart → reminderRows.when` + `reminder_rows.dart → dueOverviewText` | watch `reminderRowsProvider`（reminder_rows.dart：watch 车辆/项目/记录/今天四上游，英雄卡与列表共消费，数据变化只组装一遍）；loading"计算中"/error"加载失败"由页面 when 收口，文案函数只收就绪数据，空态经 `classifyReminderRows` 单一出口 |
 | 右上角"更新里程"按钮 | `reminder_page.dart:80 → showQuickMileageUpdateSheet` | 快捷改里程 sheet，见 2.1.1 |
 | 右上角"切换车辆"按钮（多车才显示） | `reminder_page.dart:69 → showVehicleSwitcher` | `vehicles.dart:430`，见 5.1.4 |
@@ -381,7 +384,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 ### 5.7 手动日期（开发者模式专属）
 
 1. 开发者模式：版本 footer **连点 5 次** → `profile_page.dart:156 → _handleVersionTap` → `shell_actions.dart → setDeveloperModeEnabled`（动作层：写 `developerModeEnabled`，关闭时**连带清 `manualDateEnabled`/`manualDate`/`fuelPredictionEnabled`**——加油预测开关入口只在开发者模式可见）；
-2. "手动日期"行 → `settings_manual_date.dart → showManualDateSheet`（2026-09-25 自 settings_data.dart 拆出）：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + 失效偏好家族）→ 提交成功关 sheet + toast"手动日期已保存"（表单运行时统一收口，ADR 0016）→ **`effectiveTodayProvider`（providers.dart:172）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
+2. "手动日期"行 → `settings_manual_date.dart → showManualDateSheet`（2026-09-25 自 settings_data.dart 拆出）：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + bump 偏好纪元（ADR 0017））→ 提交成功关 sheet + toast"手动日期已保存"（表单运行时统一收口，ADR 0016）→ **`effectiveTodayProvider`（providers.dart:203）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
 
 ### 5.8 主题切换
 
@@ -389,15 +392,15 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 5.9 加油预测开关（开发者模式专属）
 
-"手动日期"行下方的"加油预测"开关行 → `profile_page.dart → _FuelPredictionSettingRow`，切换写偏好 `fuelPredictionEnabled`（`profile_page.dart → _setFuelPredictionEnabled`）→ invalidate → **`fuelPredictionEnabledProvider`（providers.dart）刷新** → `app_shell.dart` 底部导航实时插入/移除"加油"tab（无需重启 App）。关闭开发者模式时该偏好连带清掉（`_handleVersionTap`），加油 tab 随之消失；已填的加油数据保留。
+"手动日期"行下方的"加油预测"开关行 → `profile_page.dart → _FuelPredictionSettingRow`，切换写偏好 `fuelPredictionEnabled`（`profile_page.dart → _setFuelPredictionEnabled`）→ bump 偏好纪元 → **`fuelPredictionEnabledProvider`（providers.dart）重算**（ADR 0017） → `app_shell.dart` 底部导航实时插入/移除"加油"tab（无需重启 App）。关闭开发者模式时该偏好连带清掉（`_handleVersionTap`），加油 tab 随之消失；已填的加油数据保留。
 
 ### 5.10 加油页（/fuel，开发者开关打开时可见）
 
 页面：`fuel/fuel_page.dart → FuelPreviewPage`，**标题与底部导航同名"加油"**（2026-09-17 从"加油预测"改名，新增加油记录流水后原名不准确，ADR 0014；开发者开关本身仍叫"加油预测"）。当前可见**三张卡**：油价卡 → 加满预估卡 → 加油记录卡（**记录卡于 2026-09-22 按 ADR 0015 重定义后重新挂载**，取代 2026-09-20 的入口注释隐藏）。数据规则（词汇表 CONTEXT.md / ADR 0001 / ADR 0002 / ADR 0006 / ADR 0015）：
 
-1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格行右侧动作按钮按状态切换（同一位置同一个按钮；价格文字与"— 元/升"占位价纯展示不可点）**：无手填价显示"手填"（主动作样式，唯一编辑入口）→ 点了 `showLunioFormSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理；装载/pop/toast 时序归表单运行时，ADR 0016），保存走 `shell_actions.dart → saveFuelManualPrice`（动作层：写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ 单点失效 `fuelManualPriceProvider`）+ toast"手填油价已保存"；有手填价显示"重置"（弱化样式；**改手填价须先重置再重新手填**）→ 重置同样走动作层 `shell_actions.dart → saveFuelManualPrice`（pricePerLiter 传 null 删该组合键恢复数据源价 + 单点失效 `fuelManualPriceProvider`；原旁路已于 2026-09-09 收编，ADR 0007 的例外消除）+ toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示"— 元/升"占位价 + "暂无数据"胶囊，编辑同样走"手填"按钮**（油价获取中的加载态无按钮，不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，**按当前省份抓详情页** `/hubei.shtml` 等，一次一省 + 调价预告，见 ADR 0006/0011；`fuelPriceSourceProvider` 在 `fuel/fuel_prices.dart`，注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`（`fuel/fuel_prices.dart`，缓存优先/新鲜期/换省守卫/自动拉取的编排都在它的 build），缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是**单省价表**：换省后缓存省份不匹配 → 油价卡按"暂无数据"展示、**不自动拉取，点"刷新"再拉新省**，用户决策 2026-09-12；价格里的省份守卫保证旧省缓存不透出），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
+1. **油价卡**：手填价优先于数据源价；"刷新" → `FuelPriceController.manualRefresh`（失败保留旧数据并 toast）；**价格行右侧动作按钮按状态切换（同一位置同一个按钮；价格文字与"— 元/升"占位价纯展示不可点）**：无手填价显示"手填"（主动作样式，唯一编辑入口）→ 点了 `showLunioFormSheet → _ManualPriceForm` 编辑油价（**输入框每次留空，不预填**；留空提交按校验错误"请输入价格"处理；装载/pop/toast 时序归表单运行时，ADR 0016），保存走 `shell_actions.dart → saveFuelManualPrice`（动作层：写 `fuelManualPrices` 偏好（按"省+油品"组合，`setFuelManualPrice`）+ bump 偏好纪元，ADR 0017）+ toast"手填油价已保存"；有手填价显示"重置"（弱化样式；**改手填价须先重置再重新手填**）→ 重置同样走动作层 `shell_actions.dart → saveFuelManualPrice`（pricePerLiter 传 null 删该组合键恢复数据源价 + bump 偏好纪元，ADR 0017；原旁路已于 2026-09-09 收编，ADR 0007 的例外消除）+ toast"已恢复数据源价"；**没拉到数据（无缓存/拉取失败/该省该油品无报价）时显示"— 元/升"占位价 + "暂无数据"胶囊，编辑同样走"手填"按钮**（油价获取中的加载态无按钮，不可点）。数据源是 `QiyouJiaFuelPriceSource`（qiyoujiage 网页宽松解析，**按当前省份抓详情页** `/hubei.shtml` 等，一次一省 + 调价预告，见 ADR 0006/0011；`fuelPriceSourceProvider` 在 `fuel/fuel_prices.dart`，注入可换源）。自动更新：AppShell/加油页 watch `fuelPriceControllerProvider`（`fuel/fuel_prices.dart`，缓存优先/新鲜期/换省守卫/自动拉取的编排都在它的 build），缓存距上次拉取 ≥10 个自然日或无缓存时静默拉取（缓存是**单省价表**：换省后缓存省份不匹配 → 油价卡按"暂无数据"展示、**不自动拉取，点"刷新"再拉新省**，用户决策 2026-09-12；价格里的省份守卫保证旧省缓存不透出），失败退回旧缓存。站点改版解析不到油价主体时抛 `FuelSourceException` → 控制器退回旧缓存；网络层已对字节流显式按 UTF-8 解码（该站响应头不带 charset），明文 http 在 iOS 走 ATS 例外域、Android 9+ 走 network security config 只对该域放行（见 ADR 0006）。
 2. **预估下次油价块**（油价卡内，价格行下方）：标题"预估下次油价"（与"当前油价"同字号）；数值 = 生效价（手填优先）+ 调价预告变动中值（`FuelRules.predictedPricePerLiter`，先取整到分），价格旁带**涨跌箭头**（`Icons.trending_up`/`trending_down`，方向取预告 `trend`，与预估价的正负号同源；**红涨绿跌**复用语义 token：涨 `tokens.danger`、跌 `tokens.success`，见 DESIGN.md），右侧日期胶囊"X月X日调价"；展示样式与价格行一致（`_TagPill` 复用）。无预告/无基准价时显示"暂无调价预测"占位（无箭头），不算错误。**过期预告按无预告同占位**（调价日早于当前应用日期 `effectiveTodayProvider` 即过期，调价日当天仍有效；无年份预告按"离今天最近的同月日"定年，判定在 `FuelRules.isForecastExpired`，过滤统一走 `fuel/fuel_prices.dart → effectiveFuelForecastProvider`，ADR 0011 二轮修订）。
-3. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，领域清单 `fuelProvinces` 31 项限高 320 可滚动、打开时定位到当前项；清单归属见 ADR 0001 附注）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北，偏好门面兜底），油品写 `fuelGrade`（默认 92#），均走 `invalidateFuelPreferenceProviders`。
+3. **省份/油品编辑**（并入油价卡，无独立设置区）：副标题"湖北 · 92#"两段各自可点（`_SettingHotspot`）→ 弹对应选择 sheet，单选即写偏好并关 sheet。省份用列表（`_SheetOptionList`，领域清单 `fuelProvinces` 31 项限高 320 可滚动、打开时定位到当前项；清单归属见 ADR 0001 附注）；油品固定 4 项，用一行胶囊单选（`_GradeChip`，sheet 贴内容收缩、无滚动无留白）。省份写 `fuelProvince`（默认湖北，偏好门面兜底），油品写 `fuelGrade`（默认 92#），写完 bump 偏好纪元（ADR 0017，偏好派生 provider 自动重算）。
 4. **加满预估卡（滚动定档）**：表头四列"当前油量 / 可加油量 / 加满价格 / 调价后价格"（`_TierHeaderRow`，列宽比例与 `_TierRow` 一致）。全量档位列表（`FuelRules.allTierPercents`，100%→0% 每 2% 一档共 51 档），窗口可见 5 档、整表上下滚动，**右侧常显 3dp 滚动条**（2026-09-24 五轮复验补齐，与加油记录卡/费用统计图表同款；表头与行内容右缩进 12dp 给拇指让位、列对齐不受影响）；`RowSnapScrollPhysics`（2026-09-24 由本页私有类提升为 `shared/scroll_snap.dart` 共享，记录卡与统计图表同用）吸附整行边界（**按父物理自然弹道投射停点再取最近整行**，照搬官方 `FixedExtentScrollPhysics` 模式——快速甩动可连滚多档、慢速就近弹回，停点严格对齐整行），`ScrollEnd` 后第一行档位 = 剩余油量，经动作层 `shell_actions.dart → saveFuelBaseline`（ADR 0007，2026-09-25 收编，原 widget 直写+本地游标去重已删）写 `fuel_predictions`——仓库 `saveFuelPrediction` 同值 no-op（返回 false 即不失效 `appliedCarFuelPredictionProvider`），失败 toast「油量保存失败，请重试」留在本卡（默认 50%，初始定位不落库；无存档时停稳含 50% 也物化一行，见 ADR 0002 更新节）；进入页面定位到已存档位在第一行，换应用车辆/已存档位变化经 `ValueKey('车id:档位')` 强制重建 State 重定位（2026-09-25 修复换车残留旧车滚动位置；key 须带档位——`skipLoadingOnReload` 会让换车后首次重载先用旧车档位建 State）。右上角返回图标（置灰条件：已停在 50%）→ `animateTo` 滚回 50% 在第一行，停稳后写库。当前油量 = 档位/100 × 容积（`FuelRules.litersInTank`）；可加油量 =（100−档位）/100 × 容积（`FuelRules.litersToFill`）；加满价格 = 可加油量 × 生效价（`FuelRules.fullTankCostCents`，分存储）；调价后价格 = 可加油量 × 预估价（`fuel_prices.dart → predictedFuelPriceProvider`，无预告时显示"—"）；第一行档位高亮、无"（当前）"文字。
 5. **油箱容积入口在车辆管理**：添加/编辑车辆表单填写（选填，见 5.1.1/5.1.2）；未填容积时加满预估卡显示引导"先在'我的 → 车辆管理'里填写油箱容积，才能估算加满金额"，不显示金额列表。
 6. **加油记录卡**（`fuel/fuel_records_card.dart → FuelRecordsCard`，ADR 0015，2026-09-22 重定义）：

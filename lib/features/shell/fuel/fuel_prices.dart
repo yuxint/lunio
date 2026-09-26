@@ -10,12 +10,14 @@
 // 在 App 中的位置：fuel_page 消费本文件的全部 provider（价格卡、
 // 档位列表、预估块）；app_shell 在加油开关打开时 watch 油价控制器
 // 做启动静默预取。保存动作（换省/油品/手填价写库后的失效）仍在
-// shell_actions.dart；备份恢复/清空数据经 providers.dart 的偏好失效
-// 名单逐出本文件，因此本文件与 providers.dart 互相 import（Dart 循环
-// import 合法；两边各自只取所需，保持这个环最小）。
+// shell_actions.dart，写完 bump 偏好纪元（providers.dart 的
+// preferencesEpochProvider，ADR 0017），本文件各偏好派生 provider
+// watch 纪元自动重算——不再经 providers.dart 的失效名单逐出，依赖
+// 单向（本文件 import providers.dart 取 Bean，反向不再被 import）。
 //
 // （Java 类比：一个域的 @Configuration + 派生 Bean 集中在域自己的
-// 装配文件里，全局配置类只保留失效名单对它们的引用。）
+// 装配文件里；偏好写入后靠 watch 偏好纪元自动重算，全局配置类不再
+// 持有本域的失效名单。）
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,11 +28,13 @@ import '../../../domain/rules/fuel_rules.dart';
 
 /// 加油预测的省份（全局一份；未设置由偏好门面兜底产品默认湖北）。
 final fuelProvinceProvider = FutureProvider<String>((ref) async {
+  ref.watch(preferencesEpochProvider);
   return await ref.watch(lunioPreferencesProvider).getFuelProvince();
 });
 
 /// 加油预测的油品编号（全局一份，单选，默认 92#；解析与默认值在门面）。
 final fuelGradeProvider = FutureProvider<FuelGrade>((ref) {
+  ref.watch(preferencesEpochProvider);
   return ref.watch(lunioPreferencesProvider).getFuelGrade();
 });
 
@@ -43,6 +47,7 @@ final fuelPriceSourceProvider = Provider<FuelPriceSource>(
 /// 当前"省+油品"的手填价（用户手填的每升价，优先于数据源价格）。
 /// 无手填返回 null。写入口在动作层 saveFuelManualPrice（手填/重置）。
 final fuelManualPriceProvider = FutureProvider<double?>((ref) async {
+  ref.watch(preferencesEpochProvider);
   final province = await ref.watch(fuelProvinceProvider.future);
   final grade = await ref.watch(fuelGradeProvider.future);
   return ref
@@ -65,6 +70,7 @@ final fuelPriceControllerProvider =
 class FuelPriceController extends AsyncNotifier<FuelPriceData?> {
   @override
   Future<FuelPriceData?> build() async {
+    ref.watch(preferencesEpochProvider);
     final fuelRepository = ref.watch(fuelRepositoryProvider);
     final province = await ref.watch(fuelProvinceProvider.future);
     final cache = await fuelRepository.getFuelPriceCache();

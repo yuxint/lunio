@@ -88,7 +88,7 @@ class LunioNotificationCoordinator {
   // ---- 权限真值协议（偏好 key 常量与编解码在 LunioPreferences 登记）----
 
   /// 查询系统真实通知开关并回写偏好（用户可能在系统设置里改过）。
-  /// 不一致才写库 + 失效偏好缓存；查询失败打日志并回退为偏好当前值
+  /// 不一致才写库 + bump 偏好纪元；查询失败打日志并回退为偏好当前值
   /// （R14：不静默吞异常）。从不主动弹权限框。
   ///
   /// 返回系统真实开关状态（查询失败时为按偏好推断的值）。
@@ -98,7 +98,7 @@ class LunioNotificationCoordinator {
       final enabled = await service.notificationsEnabled();
       if (currentValue != enabled) {
         await preferences.setSystemNotificationsEnabled(enabled);
-        invalidatePreferenceProvidersWithRef(ref);
+        ref.read(preferencesEpochProvider.notifier).bump();
       }
       return enabled;
     } catch (error) {
@@ -124,11 +124,11 @@ class LunioNotificationCoordinator {
     return granted;
   }
 
-  /// 把系统通知开关偏好写为关并失效缓存（权限被拒 / 系统里被关后的
-  /// 统一回写点）。
+  /// 把系统通知开关偏好写为关并 bump 偏好纪元（权限被拒 / 系统里被关后
+  /// 的统一回写点）。
   Future<void> markSystemNotificationsDisabled() async {
     await preferences.setSystemNotificationsEnabled(false);
-    invalidatePreferenceProvidersWithRef(ref);
+    ref.read(preferencesEpochProvider.notifier).bump();
   }
 
   /// 首启权限链的执行体（原同步控制器 _ensureInitialSystemNotificationPermission
@@ -160,7 +160,7 @@ class LunioNotificationCoordinator {
         if (enabled) {
           return true;
         }
-        // 被拒：requestPermission 内部已回写偏好并失效，这里补取消旧通知。
+        // 被拒：requestPermission 内部已回写偏好并 bump 纪元，这里补取消旧通知。
         await service.cancelLunioNotifications();
         return false;
       }
@@ -174,14 +174,14 @@ class LunioNotificationCoordinator {
 
   // ---- 通知设置写入 ----
 
-  /// 保存通知设置：一个事务内批量写 3 个偏好 key（R27）+ 失效偏好缓存。
+  /// 保存通知设置：一个事务内批量写 3 个偏好 key（R27）+ bump 偏好纪元。
   /// 保养到期提醒是产品核心能力，设计上不提供关闭入口（R5，原
   /// maintenanceDueEnabled 偏好已移除）。
   Future<void> saveNotificationSettings(
     LunioNotificationSettings settings,
   ) async {
     await preferences.saveNotificationSettings(settings);
-    invalidatePreferenceProvidersWithRef(ref);
+    ref.read(preferencesEpochProvider.notifier).bump();
   }
 
   // ---- 通知清扫协议（数据被整体替换时） ----

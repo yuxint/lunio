@@ -1,7 +1,8 @@
 // shell 层保存动作层（≈ Spring 里一组薄 Service 方法）：每个业务变更
-// 一个具名函数，内部固定编排"写库 → 失效对应 provider 家族 →（需要时）
-// 通知域收尾"。providers.dart 顶部警告的"手动失效模式"由此收口：UI
-// 不再手排失效序列，新保存路径进这里，不会漏调 invalidate。
+// 一个具名函数，内部固定编排"写库 → 缓存逐出 →（需要时）通知域收尾"。
+// providers.dart 顶部的缓存逐出约定由此收口：车辆类家族手动失效
+// （invalidateVehicleProviders）、偏好类走偏好纪元 bump（ADR 0017），
+// UI 不再手排失效序列，新保存路径进这里，不会漏调。
 //
 // 与调用方的分工（ADR 0007，破坏性操作的例外见下段）：
 //  - 本层只收 WidgetRef（纯 Dart 编排，不碰 BuildContext、不弹 UI）；
@@ -32,7 +33,6 @@ import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/sync_metadata.dart';
-import '../fuel/fuel_prices.dart';
 import '../reminders/notification_coordinator.dart';
 import 'modal_feedback.dart';
 
@@ -168,19 +168,20 @@ Future<void> removeMaintenanceItem(WidgetRef ref, int itemId) async {
 
 // ---- 偏好 ----
 
-/// 写主题偏好 + 失效偏好类 provider。themeModePreferenceProvider 重算
-/// → LunioApp 重建（router 单例不变，当前页面保持）。
+/// 写主题偏好 + bump 偏好纪元（偏好派生 provider 自动重算，ADR 0017）。
+/// themeModePreferenceProvider 重算 → LunioApp 重建（router 单例不变，
+/// 当前页面保持）。
 Future<void> setThemeModePreference(WidgetRef ref, ThemeMode mode) async {
   await ref.read(lunioPreferencesProvider).setThemeMode(mode);
-  invalidatePreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
 /// 保存手动日期（null = 关闭）：manualDateEnabled 与 manualDate 两个
-/// key 的成对写收在偏好门面 saveManualDateOverride 里 → 失效偏好家族
+/// key 的成对写收在偏好门面 saveManualDateOverride 里 → bump 偏好纪元
 /// （生效日期上下文随 provider 重算）。
 Future<void> saveManualDate(WidgetRef ref, LocalDate? date) async {
   await ref.read(lunioPreferencesProvider).saveManualDateOverride(date);
-  invalidatePreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
 /// 开关开发者模式。关闭时连带关闭手动日期与加油预测——加油预测的
@@ -195,14 +196,14 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
     await preferences.saveManualDateOverride(null);
     await preferences.setFuelPredictionEnabled(false);
   }
-  invalidatePreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
 /// 开关加油预测（底部"加油"tab 的显隐开关，AppShell watch 该 provider
 /// 实时增删 tab）。
 Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {
   await ref.read(lunioPreferencesProvider).setFuelPredictionEnabled(value);
-  invalidatePreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
 /// 保存停车倒计时（开始计时的完整动作链）：写临时偏好 parkingCountdown
@@ -263,8 +264,8 @@ Future<void> removeFuelRecord(WidgetRef ref, int recordId) async {
 
 /// 保存档位基准（加油页滚轮停稳后第一行档位落库，ADR 0002）：写库 →
 /// 按仓库返回值精准失效预测设置缓存。仓库同值 no-op（返回 false 不
-/// 失效），停稳调用高频、同档重复停稳零开销；失效粒度同
-/// [saveFuelManualPrice] 的单点思路——该表行只有
+/// 失效），停稳调用高频、同档重复停稳零开销；这张表不是偏好表，偏好
+/// 纪元管不到（ADR 0017），写点直接单点失效——该行只有
 /// appliedCarFuelPredictionProvider 一个读者，无需牵动油价家族。
 /// toast 留调用方（滚动停稳无表单，失败反馈在档位卡内）。
 Future<void> saveFuelBaseline(
@@ -280,23 +281,24 @@ Future<void> saveFuelBaseline(
   }
 }
 
-/// 保存省份选择：写全局偏好 + 整族失效加油相关 provider。缓存是单省
-/// 价表（ADR 0011），换省后缓存省份不匹配 → 油价卡按"暂无数据"展示，
-/// 由用户点"刷新"显式拉新省价格（用户决策 2026-09-12，不自动发请求）。
+/// 保存省份选择：写全局偏好 + bump 偏好纪元（加油域偏好派生 provider
+/// watch 纪元自动重算，ADR 0017）。缓存是单省价表（ADR 0011），换省后
+/// 缓存省份不匹配 → 油价卡按"暂无数据"展示，由用户点"刷新"显式拉
+/// 新省价格（用户决策 2026-09-12，不自动发请求）。
 Future<void> saveFuelProvince(WidgetRef ref, String province) async {
   await ref.read(lunioPreferencesProvider).setFuelProvince(province);
-  invalidateFuelPreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
-/// 保存油品选择：写全局偏好 + 整族失效（同上）。
+/// 保存油品选择：写全局偏好 + bump 偏好纪元（同上）。
 Future<void> saveFuelGrade(WidgetRef ref, FuelGrade grade) async {
   await ref.read(lunioPreferencesProvider).setFuelGrade(grade);
-  invalidateFuelPreferenceProviders(ref);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
 /// 保存手填油价（pricePerLiter 传 null 表示重置回数据源价格）：写临时
-/// 偏好 + 单点失效手填价缓存。加油域的失效粒度与偏好家族不同，只需
-/// 逐出 fuelManualPriceProvider（省份/油品选择未变，无需整族失效）。
+/// 偏好 + bump 偏好纪元（2026-09-26 起手填价缓存由纪元统一逐出，原
+/// 单点失效并入纪元，ADR 0017；多出的重算都是本地单行读，无风险面）。
 Future<void> saveFuelManualPrice(
   WidgetRef ref, {
   required String province,
@@ -308,14 +310,14 @@ Future<void> saveFuelManualPrice(
         grade: grade,
         pricePerLiter: pricePerLiter,
       );
-  ref.invalidate(fuelManualPriceProvider);
+  ref.read(preferencesEpochProvider.notifier).bump();
 }
 
 // ---- 通知设置 ----
 
 /// 保存通知设置：先对账系统真实开关（用户可能刚从系统设置页返回，
 /// 以系统为准），再经协调器一个事务批量写 3 个偏好 key（协调器内部
-/// 失效偏好缓存，本函数不再单独失效）。
+/// bump 偏好纪元，本函数不再单独失效）。
 Future<void> saveNotificationSettings(
   WidgetRef ref,
   LunioNotificationSettings settings,
