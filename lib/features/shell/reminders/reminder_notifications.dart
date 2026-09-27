@@ -26,10 +26,12 @@ import 'notification_coordinator.dart';
 import 'reminder_rows.dart';
 
 /// 组装系统通知清单（通知同步控制器重排时调用）：
-///  - 到期项目 ≥1（"稍后提醒"过滤后）→ 一条汇总通知 id 8000"保养提醒"
-///    （正文=最紧急项 + 到期数量）；
-///  - 里程更新到期（且没"稍后提醒"）→ id 8900"更新车辆里程"（9:05 错峰）。
-/// 无到期项返回空列表（重排等于全部取消）。
+///  - 到期项目 ≥1（"稍后提醒"过滤后）→ 一条汇总通知（maintenanceSummary
+///    槽位，id 8000，正文=最紧急项 + 到期数量）；
+///  - 里程更新到期（且没"稍后提醒"）→ 里程更新提醒（mileageUpdate 槽位，
+///    id 8900，9:05 错峰）。
+/// 无到期项返回空列表（重排等于全部取消）。身份（id/渠道/重复次数/payload）
+/// 全部来自 LunioNotificationSlot 槽位台账，这里只给标题/正文/重复频率。
 Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   required LunioNotificationCoordinator coordinator,
   required LunioNotificationSettings settings,
@@ -60,7 +62,7 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   if (activeMaintenanceNotices.isNotEmpty) {
     notifications.add(
       LunioScheduledNotification(
-        id: 8000,
+        slot: LunioNotificationSlot.maintenanceSummary,
         title: '保养提醒',
         body: maintenanceNoticeSummaryForRows(car, activeMaintenanceNotices),
         // 重复频率直接取用户设置（原经 maintenanceRepeatFrequency 转发，
@@ -77,15 +79,12 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
       )) {
     notifications.add(
       LunioScheduledNotification(
-        id: 8900,
+        slot: LunioNotificationSlot.mileageUpdate,
         title: '更新车辆里程',
         body: '建议更新 ${car.brand} ${car.model} 的当前里程。',
         repeatFrequency: MaintenanceRules.mileageUpdateFrequencyForRecords(
           records,
         ),
-        scheduledMinuteOffset: 5,
-        androidChannelId: 'lunio_mileage_update_heads_up',
-        androidChannelName: 'Lunio 里程更新提醒',
       ),
     );
   }

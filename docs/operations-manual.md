@@ -103,7 +103,7 @@ appDatabaseProvider(:213)
 | 步骤 | 代码位置 | 做了什么 |
 |---|---|---|
 | 1 | `lib/main.dart:20-37 → main()` | 初始化引擎绑定 → **await 通知服务初始化**（时区+插件，`:33`）→ `runApp(ProviderScope(LunioApp))` |
-| 2 | `lib/core/notifications/lunio_notification_service.dart:78 → initialize()` | 时区数据库 + 本地时区（失败回退 Asia/Shanghai 并打日志，R34/R14）+ 插件初始化（iOS 不在此弹权限） |
+| 2 | `lib/core/notifications/lunio_notification_service.dart:194 → initialize()` | 时区数据库 + 本地时区（失败回退 Asia/Shanghai 并打日志，R34/R14）+ 插件初始化（iOS 不在此弹权限） |
 | 3 | `lib/app/lunio_app.dart:31 → LunioApp.build` | watch 主题偏好 → `MaterialApp.router`，路由挂全局单例 `appRouter` |
 | 4 | `lib/app/app_router.dart:26 → appRouter` | 平级入口路由 `/reminders` `/records` `/me` 各渲染 `AppShell(selectedIndex: n)`（`/fuel` 路由常驻，开关关闭时由 AppShell 重定向回 `/me`）；另有第一个不挂壳的 pushed 子页 `/cost-stats`（§4.5，不渲染 AppShell）；初始 `/reminders` |
 | 5 | `lib/features/shell/app_shell.dart:34 → AppShell` | 主壳首帧 build：watch 全部 provider（此时数据库才真正打开） |
@@ -453,6 +453,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
              │    └─ 里程更新到期且未"稍后提醒" → id 8900（9:05 错峰）
              └─ Android 申请精确闹钟 → reschedule 前再问一次同步票 isValid
                   → rescheduleNotifications（lunio_notification_service.dart：
+                     id/渠道/次数/payload 登记在槽位台账（LunioNotificationSlot），
                      先精确取消 16 个在用 id（8000-8007/8900-8907，R10 收紧），
                      再每条通知排 8 次重复，
                      避开停车到点时刻 ±5 分钟步进错峰；月/日步进按日历字段

@@ -149,7 +149,7 @@ class LunioNotificationCoordinator {
 
   /// 系统通知调度前的权限协议（原同步控制器 _applySystemNotificationSchedule
   /// 内嵌段收编）：查系统真实开关 → 关着且没请求过权限就补请求 →
-  /// 仍不可用则把开关偏好回写为关并取消已排的保养/里程通知（8000/8900 系）。
+  /// 仍不可用则把开关偏好回写为关并取消已排的保养/里程提醒族通知。
   ///
   /// 返回 true = 可以继续组装与调度通知。
   Future<bool> ensureSystemNotificationsSchedulable() async {
@@ -194,7 +194,7 @@ class LunioNotificationCoordinator {
 
   /// 删除车辆的收尾模板：升代数作废在途同步 → 置写库中间态旗 → 执行
   /// 删库 → settle 收尾（再升一次代数 + 关旗，见守卫模块）→ 取消保养/
-  /// 里程系通知（8000/8900）。R1：删最后一辆车后同步控制器在无车时短路
+  /// 里程提醒族通知。R1：删最后一辆车后同步控制器在无车时短路
   /// 不重排，旧调度必须在此显式取消；非最后一辆车的场景取消后会随失效
   /// 触发的重排恢复，代价可忽略。
   ///
@@ -214,7 +214,7 @@ class LunioNotificationCoordinator {
   /// （传入 [refreshProviders] 时）旗内屏障重算：失效 provider 家族并等
   /// 重算落定（等哪些 provider 由闭包决定，生产实现等通知同步监听的
   /// 6 个），期间触发的同步轮被入口早退丢弃 → settle 收尾（再升
-  /// 一次代数 + 关旗）→ 取消保养/里程系通知（8000/8900）→ 模板强制
+  /// 一次代数 + 关旗）→ 取消保养/里程提醒族通知 → 模板强制
   /// 补判一轮（窗口内的重算触发被吞掉了，这里补回来）。
   ///
   /// 屏障的意义（2026-09-26 用户真机复现残余漏洞）：settle 之后 provider
@@ -224,7 +224,7 @@ class LunioNotificationCoordinator {
   /// 基线判到期。把失效+重算整体挪进旗内窗口，settle 时数据必然已收敛，
   /// 混合快照在结构上不可能再被读到。
   ///
-  /// 停车 9001~9004 不取消——倒计时偏好保留且仍有效。恢复失败（异常，
+  /// 停车族通知不取消——倒计时偏好保留且仍有效。恢复失败（异常，
   /// 事务已回滚）时旧通知原样保留并上抛异常；[refreshProviders] 内的
   /// 异常同样上抛，settle 在 finally 仍执行（关旗 + 再升代数），但其后
   /// 的取消通知与强制补判轮被跳过——生产闭包的 await 段逐个吞异常，
@@ -257,8 +257,8 @@ class LunioNotificationCoordinator {
 
   /// 清空数据的收尾模板：升代数 → 置写库中间态旗 → 执行清库（偏好表
   /// 一并删除，倒计时偏好和通知开关都不复存在）→ settle 收尾（再升一次
-  /// 代数 + 关旗）→ 撤停车实时活动 → 取消停车 9001~9004 与保养/里程
-  /// 8000/8900 系残留通知。清库失败（异常）时上抛异常、不撤不取消
+  /// 代数 + 关旗）→ 撤停车实时活动 → 取消停车族与保养/里程提醒族
+  /// 残留通知。清库失败（异常）时上抛异常、不撤不取消
   /// （数据未变）。
   Future<void> runAllDataClear(Future<void> Function() clearAllData) async {
     guard.beginDataReset();
@@ -280,8 +280,8 @@ class LunioNotificationCoordinator {
   ///  - 开着 → 请求通知权限（顺手记"已请求过"，被拒时
   ///    [requestPermission] 内部回写"系统通知关闭"）→ 授权了再问一次票
   ///    （run.isValid）→ 申请 Android 精确闹钟 → 再问一次票（弹窗停留
-  ///    期间可能发生恢复/清空，2026-09-25 补齐）→ 调度 9001 到点闹钟 +
-  ///    9002 常驻通知 + 9003/9004 剩余时长预警（预警门槛按保存时刻的
+  ///    期间可能发生恢复/清空，2026-09-25 补齐）→ 调度停车族通知（到点
+  ///    闹钟 + Android 常驻 + 两条剩余时长预警；预警门槛按保存时刻的
   ///    剩余时长判断，规则见服务层 scheduleParkingCountdownNotification）。
   /// 代数比对（R8）：保存链期间发生恢复备份/清空数据（数据已被整体替换）
   /// 就不再调度，避免排入一条指向已删除状态的通知。
@@ -326,7 +326,7 @@ class LunioNotificationCoordinator {
 
   /// 停车倒计时已清除的通知收尾（调用方先删偏好并失效
   /// parkingCountdownProvider 再调用）：撤停车实时活动（不受通知开关
-  /// 影响）；系统通知开着才取消 9001~9004（关着时本来就没人调度过）。
+  /// 影响）；系统通知开着才取消停车族通知（关着时本来就没人调度过）。
   Future<void> onParkingCountdownCleared() async {
     await liveActivities.stop();
     final settings = await ref.read(notificationSettingsProvider.future);

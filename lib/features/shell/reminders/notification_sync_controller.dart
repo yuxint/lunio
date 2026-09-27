@@ -303,8 +303,8 @@ class NotificationSyncController {
   ///
   /// 执行链：开关关 → 全部取消；权限协议委托协调器（查系统开关、必要时
   /// 补请求；权限没了回写偏好并取消）→ buildScheduledNotifications 组装
-  /// 通知（8000/8900）→ Android 申请精确闹钟 → rescheduleNotifications
-  /// （内部先 cancel 1000 个 id 再逐条 zonedSchedule，避开停车到点时刻）。
+  /// 通知（身份来自槽位台账）→ Android 申请精确闹钟 → rescheduleNotifications
+  /// （内部先精确取消旧计划再逐条 zonedSchedule，避开停车到点时刻）。
   Future<void> _applySystemNotificationSchedule({
     required LunioNotificationSettings settings,
     required Car car,

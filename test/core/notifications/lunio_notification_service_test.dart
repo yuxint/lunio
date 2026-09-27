@@ -122,28 +122,24 @@ void main() {
   test('reminder notifications use alert channel at precise 9:00', () async {
     await service.rescheduleNotifications([
       const LunioScheduledNotification(
-        id: 8000,
+        slot: LunioNotificationSlot.maintenanceSummary,
         title: '保养提醒',
         body: '测试车辆有保养项目到期。',
         repeatFrequency: ReminderRepeatFrequency.weekly,
-        occurrenceCount: 1,
       ),
       const LunioScheduledNotification(
-        id: 8900,
+        slot: LunioNotificationSlot.mileageUpdate,
         title: '更新车辆里程',
         body: '建议更新测试车辆的当前里程。',
         repeatFrequency: ReminderRepeatFrequency.monthly,
-        scheduledMinuteOffset: 5,
-        androidChannelId: 'lunio_mileage_update_heads_up',
-        androidChannelName: 'Lunio 里程更新提醒',
-        occurrenceCount: 1,
       ),
     ]);
 
+    // 重复次数由槽位台账拥有：两个提醒槽位各排 8 次。
     final scheduledCalls = notificationCalls
         .where((call) => call.method == 'zonedSchedule')
         .toList();
-    expect(scheduledCalls, hasLength(2));
+    expect(scheduledCalls, hasLength(16));
     final scheduledByTitle = <String, DateTime>{};
     final channelByTitle = <String, String>{};
     for (final scheduledCall in scheduledCalls) {
@@ -174,21 +170,16 @@ void main() {
     await service.rescheduleNotifications(
       [
         const LunioScheduledNotification(
-          id: 8000,
+          slot: LunioNotificationSlot.maintenanceSummary,
           title: '保养提醒',
           body: '测试车辆有保养项目到期。',
           repeatFrequency: ReminderRepeatFrequency.weekly,
-          occurrenceCount: 1,
         ),
         const LunioScheduledNotification(
-          id: 8900,
+          slot: LunioNotificationSlot.mileageUpdate,
           title: '更新车辆里程',
           body: '建议更新测试车辆的当前里程。',
           repeatFrequency: ReminderRepeatFrequency.monthly,
-          scheduledMinuteOffset: 5,
-          androidChannelId: 'lunio_mileage_update_heads_up',
-          androidChannelName: 'Lunio 里程更新提醒',
-          occurrenceCount: 1,
         ),
       ],
       reservedDateTimes: [_nextReminderDate()],
@@ -199,9 +190,11 @@ void main() {
       (call) => call.method == 'zonedSchedule',
     )) {
       final arguments = scheduledCall.arguments as Map<Object?, Object?>;
-      scheduledByTitle[arguments['title'] as String] = DateTime.parse(
-        arguments['scheduledDateTime'] as String,
-      );
+      // 只看每条通知的首次排期：错峰让位发生在首次撞上被占槽位时，
+      // 后续重复从原始基准步进到别的日子，不参与让位断言。
+      scheduledByTitle.putIfAbsent(arguments['title'] as String, () {
+        return DateTime.parse(arguments['scheduledDateTime'] as String);
+      });
     }
     expect(scheduledByTitle['保养提醒']!.hour, 9);
     expect(scheduledByTitle['保养提醒']!.minute, 5);
@@ -365,6 +358,89 @@ void main() {
     },
   );
 
+  test('cancelLunioNotifications cancels exactly the ledger reminder ids', () async {
+    await service.cancelLunioNotifications();
+
+    // 取消覆盖从槽位台账推导：提醒族两槽位 × 8 次重复 = 恰好 16 个 id。
+    // 新增提醒槽位时这里会失败——迫使同步更新冻结 id 清单，
+    // 堵死"排得上、取消不掉"的孤儿通知（R1/R10 同类 bug）。
+    final cancelIds = notificationCalls
+        .where((call) => call.method == 'cancel')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['id'] as int)
+        .toSet();
+    expect(cancelIds, hasLength(16));
+    expect(
+      cancelIds,
+      equals({
+        ...List.generate(8, (index) => 8000 + index),
+        ...List.generate(8, (index) => 8900 + index),
+      }),
+    );
+  });
+
+  test('notification slot ledger is complete and ids are frozen', () {
+    // 台账完备性：家族归属按名字点名锁定（改归族即此用例失败）、id 段
+    // 互不重叠、payload 全部可识别、id 数值冻结（改号会留下取消不掉的
+    // 孤儿通知）。点名清单独立于枚举 values 书写：新增槽位必须先在
+    // 这里登记身份，再同步下方冻结 id 清单。
+    final namedSlots = <LunioNotificationSlot>{
+      LunioNotificationSlot.maintenanceSummary,
+      LunioNotificationSlot.mileageUpdate,
+      LunioNotificationSlot.parkingAlarm,
+      LunioNotificationSlot.parkingOngoing,
+      LunioNotificationSlot.parkingWarning15,
+      LunioNotificationSlot.parkingWarning5,
+    };
+    expect(
+      namedSlots,
+      LunioNotificationSlot.values.toSet(),
+      reason: '点名清单必须与台账全集一致：新增槽位先在这里登记身份',
+    );
+    expect(
+      namedSlots.where((slot) => slot.isReminderFamily).toSet(),
+      {
+        LunioNotificationSlot.maintenanceSummary,
+        LunioNotificationSlot.mileageUpdate,
+      },
+      reason: '提醒族恰好是保养汇总与里程更新，其余四槽位属停车族',
+    );
+
+    final allIds = <int>{};
+    for (final slot in LunioNotificationSlot.values) {
+      final ids = List.generate(slot.occurrenceCount, (index) {
+        return slot.baseId + index;
+      }).toSet();
+      expect(
+        allIds.intersection(ids),
+        isEmpty,
+        reason: '槽位 ${slot.name} 的 id 段与既有槽位重叠',
+      );
+      allIds.addAll(ids);
+    }
+    // 提醒族 16 个（2 槽位 × 8 次重复）+ 停车族 4 个 = 20 个在用 id。
+    expect(allIds, hasLength(20));
+    expect(
+      allIds,
+      equals({
+        ...List.generate(8, (index) => 8000 + index),
+        ...List.generate(8, (index) => 8900 + index),
+        9001,
+        9002,
+        9003,
+        9004,
+      }),
+    );
+
+    for (final slot in LunioNotificationSlot.values) {
+      expect(slot.payload, startsWith('lunio:'));
+      if (slot.isReminderFamily) {
+        expect(slot.payload, 'lunio:${slot.baseId}');
+      } else {
+        expect(slot.payload, 'lunio:parkingCountdown');
+      }
+    }
+  });
+
   test('exact alarm denial degrades reminders to inexact scheduling', () async {
     // 精确闹钟权限被拒：canScheduleExactNotifications false 且用户
     // 拒绝授权 → 请求返回 false，重排降级为 inexactAllowWhileIdle
@@ -385,15 +461,14 @@ void main() {
 
     await service.rescheduleNotifications([
       const LunioScheduledNotification(
-        id: 8000,
+        slot: LunioNotificationSlot.maintenanceSummary,
         title: '保养提醒',
         body: '测试车辆有保养项目到期。',
         repeatFrequency: ReminderRepeatFrequency.weekly,
-        occurrenceCount: 1,
       ),
     ], exactAlarm: granted);
 
-    final scheduledCall = notificationCalls.singleWhere(
+    final scheduledCall = notificationCalls.firstWhere(
       (call) => call.method == 'zonedSchedule',
     );
     final specifics =
@@ -487,7 +562,7 @@ void main() {
 
     await service.rescheduleNotifications([
       const LunioScheduledNotification(
-        id: 8000,
+        slot: LunioNotificationSlot.maintenanceSummary,
         title: '保养提醒',
         body: '测试',
         repeatFrequency: ReminderRepeatFrequency.monthly,

@@ -64,7 +64,7 @@ Future<void> updateCar(WidgetRef ref, Car car) async {
 }
 
 /// 删除车辆：先弹确认对话框，确认后走协调器的删车清扫模板
-/// （内部先升同步代数作废在途任务（R8），删库后取消 8000/8900 系
+/// （内部先升同步代数作废在途任务（R8），删库后取消保养/里程提醒族
 /// 系统通知（R1：删最后一辆车后同步控制器无车短路不重排，必须显式
 /// 取消）），再失效车辆类 provider（appliedCar 回退逻辑在 Repository
 /// 内处理）。
@@ -209,8 +209,8 @@ Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {
 /// 保存停车倒计时（开始计时的完整动作链）：写临时偏好 parkingCountdown
 /// → 失效 provider（卡片立即出现）→ 通知尾巴委托协调器
 /// onParkingCountdownSaved：请求权限（被拒回写"系统通知关闭"）、比对
-/// 同步代数（R8）、申请精确闹钟、调度 9001 到点闹钟 + 9002 Android
-/// 常驻通知 + 9003/9004 剩余时长预警（保存时还剩 ≥ 30 分钟才启用，
+/// 同步代数（R8）、申请精确闹钟、调度停车族通知（到点闹钟 + Android
+/// 常驻 + 两条剩余时长预警；保存时还剩 ≥ 30 分钟才启用，
 /// 见通知服务层）。倒计时走系统真实时间，编排不依赖任何页面存活。
 Future<void> saveParkingCountdown(
   WidgetRef ref,
@@ -224,7 +224,7 @@ Future<void> saveParkingCountdown(
 }
 
 /// 结束停车倒计时：删临时偏好 → 失效 provider → 通知收尾委托协调器
-/// （系统通知开着时取消 9001~9004 系统通知，关着时本来就没调度过）。
+/// （系统通知开着时取消停车族系统通知，关着时本来就没调度过）。
 Future<void> clearParkingCountdown(WidgetRef ref) async {
   await ref.read(lunioPreferencesProvider).clearParkingCountdown();
   ref.invalidate(parkingCountdownProvider);
@@ -377,8 +377,8 @@ Future<bool> exportBackup(WidgetRef ref) async {
 /// 失效全量 provider 并等 6 个被监听 provider 全部落定，期间触发的同步
 /// 轮被入口早退丢弃；混合快照在结构上读不到，2026-09-26 真机复现残余
 /// 漏洞的修复）→ _settleDataReset 收尾（再升一次代数 + 关旗）→ 取消
-/// 8000/8900 系旧数据残留通知（空备份时同步引擎不会重排，显式取消；
-/// 停车 9001~9004 不动——倒计时偏好保留且仍有效）→ 模板强制补判一轮
+/// 保养/里程提醒族旧数据残留通知（空备份时同步引擎不会重排，显式
+/// 取消；停车族不动——倒计时偏好保留且仍有效）→ 模板强制补判一轮
 /// （重排系统通知 + 应用内弹窗检查用最终数据）。
 /// 唯一约束冲突的"未写入任何数据"对话框属 UI 反馈决策，由调用方分类。
 Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
@@ -431,7 +431,7 @@ Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
 /// 确认框（明示目录表保留，不可撤销）→ 协调器 runAllDataClear：升同步
 /// 代数（作废在途通知任务，R8）→ clearAllData 事务删 7 张表（业务
 /// 4 张 + 加油预测设置 + 加油记录 + 偏好）→ 撤实时活动 + 取消停车
-/// 9001~9004 与保养/里程 8000/8900 系系统通知（偏好已删，残留通知必须
+/// 停车族与保养/里程提醒族系统通知（偏好已删，残留通知必须
 /// 显式取消）→ invalidateAllAppDataProviders 全量刷新（bootstrap
 /// provider 失效后车型目录自动重灌）。
 Future<bool> clearAllData(BuildContext context, WidgetRef ref) async {
