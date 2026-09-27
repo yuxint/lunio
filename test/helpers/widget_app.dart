@@ -15,6 +15,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/drift.dart' show Value;
 
 import 'package:lunio/app/app_router.dart';
 import 'package:lunio/app/providers.dart';
@@ -24,6 +25,7 @@ import 'package:lunio/core/notifications/lunio_notification_service.dart';
 import 'package:lunio/core/theme/lunio_theme.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
+import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
 import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
@@ -34,9 +36,11 @@ import 'package:lunio/domain/entities/fuel_prediction.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
+import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/features/shell/fuel/fuel_prices.dart';
 import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
 
+import 'builders.dart';
 import 'built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 
 /// 油价源测试替身：按请求省份返回固定价表（湖北 92# = 7.61，与 55 升
@@ -186,8 +190,11 @@ class TestRepositories {
         catalogRepository = BuiltInCatalogRepository(
           database,
           loadBuiltInVehicleCatalog: () async => loadBuiltInVehicleCatalogForTest(),
-        ),
-        fuelRepository = FuelRepository(database, LunioPreferences(database)) {
+        ) {
+    // 同一份 preferences 门面贯穿全部仓库（FuelRepository 曾私造第二个
+    // 门面，是装配漂移点，2026-09-26 夹具收编时修复）。
+    fuelRepository = FuelRepository(database, preferences);
+    backupRepository = BackupRepository(database, preferences);
     repository = LunioRepository(
       database,
       preferences: preferences,
@@ -198,8 +205,52 @@ class TestRepositories {
   final AppDatabase database;
   final LunioPreferences preferences;
   final BuiltInCatalogRepository catalogRepository;
-  final FuelRepository fuelRepository;
+  late final FuelRepository fuelRepository;
+  late final BackupRepository backupRepository;
   late final LunioRepository repository;
+
+  /// 测试标准同步元数据（builders.testSync 转发，用例不必再自备一份）。
+  SyncMetadata get sync => testSync;
+
+  int _carSeq = 0;
+
+  /// 测试替身：绕开"至少一个启用项目"业务校验裸插一辆车（等价已删除
+  /// 的 createCar，R26 清理）——有的用例就是要一辆零项目的车。直接走
+  /// database 插入；id 用自增序列（唯一正整数即可，与雪花 id 不冲突）。
+  Future<int> insertCarForTest(Car car) async {
+    final carId = 900000 + ++_carSeq;
+    await database
+        .into(database.cars)
+        .insert(
+          CarsCompanion.insert(
+            id: Value(carId),
+            brand: car.brand,
+            model: car.model,
+            currentMileageKm: car.currentMileageKm,
+            roadDate: car.roadDate.toString(),
+            syncStatus: Value(car.sync.status.name),
+            updatedAt: car.sync.updatedAt.toIso8601String(),
+            version: Value(car.sync.version),
+          ),
+        );
+    return carId;
+  }
+
+  /// 播种一辆车 + 一个机油项目（builders 默认口径），返回 (carId,
+  /// itemId)——数据层测试最常用的种子组合（原 database_test 本地 helper）。
+  Future<(int, int)> seedCarAndItem() async {
+    final carId = await insertCarForTest(defaultCar());
+    final itemId =
+        await repository.saveMaintenanceItem(defaultOilItem(carsId: carId));
+    return (carId, itemId);
+  }
+
+  /// 播种一个指定名称/排序的机油口径项目（原 database_test 本地 helper）。
+  Future<int> saveItem(int carId, String name, int sortOrder) {
+    return repository.saveMaintenanceItem(
+      defaultOilItem(carsId: carId, name: name, sortOrder: sortOrder),
+    );
+  }
 
   // ---- 各域转发（用例体经门面播种/断言，不直接关心模块归属）----
 

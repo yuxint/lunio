@@ -1,209 +1,46 @@
-
-import 'package:drift/drift.dart' show Value;
+// 数据库与核心 CRUD 数据层测试：schema/索引/雪花 id、车辆/保养项目/
+// 保养记录 CRUD 与业务校验（唯一约束、里程只增、至少一启用项）、
+// 记录-项目费用不变量（写 seam 单点补齐）。目录/模板域见
+// catalog_bootstrap_test.dart，备份域见 backup_restore_test.dart；
+// 仓库装配统一走 widget_app 的 TestRepositories（2026-09-26 拆分）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
-import 'package:lunio/data/backup/backup_codec.dart';
-import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
-import '../helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
-import '../helpers/builders.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
-import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
-import 'package:lunio/data/repositories/entity_row_codec.dart'
-    show maintenanceRecordCompanion;
-import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
-import 'package:lunio/domain/errors/lunio_error.dart';
 import 'package:lunio/domain/entities/car.dart';
-import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
-import 'package:lunio/domain/entities/parking_countdown.dart';
-import 'package:lunio/domain/entities/powertrain_type.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
-import 'package:lunio/domain/entities/vehicle_default_maintenance_item.dart';
-import 'package:lunio/domain/entities/vehicle_model.dart';
-import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
+import 'package:lunio/domain/errors/lunio_error.dart';
+
+import '../helpers/builders.dart';
+import '../helpers/widget_app.dart';
 
 void main() {
   late AppDatabase database;
+  late TestRepositories repos;
   late LunioRepository repository;
   late LunioPreferences preferences;
   late BuiltInCatalogRepository catalogRepository;
-  late BackupRepository backupRepository;
-  late FuelRepository fuelRepository;
   late SyncMetadata sync;
-  late BuiltInVehicleCatalog builtInCatalog;
-
-  setUpAll(() {
-    builtInCatalog = loadBuiltInVehicleCatalogForTest();
-  });
 
   setUp(() {
     database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    catalogRepository = BuiltInCatalogRepository(
-      database,
-      loadBuiltInVehicleCatalog: () async => builtInCatalog,
-    );
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    sync = SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026));
+    repos = testRepository(database);
+    repository = repos.repository;
+    preferences = repos.preferences;
+    catalogRepository = repos.catalogRepository;
+    sync = repos.sync;
   });
 
   tearDown(() async {
     await database.close();
   });
 
-  test('vehicle catalog requires stable ids', () {
-    expect(
-      () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-          ],
-        },
-        'vehicles': [
-          {'brand': '日产', 'model': '轩逸（燃油版）', 'template': 'fuel'},
-        ],
-      }),
-      throwsArgumentError,
-    );
-    expect(
-      () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-          ],
-        },
-        'vehicles': [
-          {
-            'id': 'nissan-sylphy-fuel',
-            'brand': '日产',
-            'model': '轩逸（燃油版）',
-            'template': 'fuel',
-          },
-          {
-            'id': 'nissan-sylphy-fuel',
-            'brand': '日产',
-            'model': '轩逸（混动版）',
-            'template': 'fuel',
-          },
-        ],
-      }),
-      throwsArgumentError,
-    );
-    expect(
-      () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-            {
-              'id': 'engine-oil',
-              'name': '机油 Plus',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 8000,
-            },
-          ],
-        },
-        'vehicles': [
-          {
-            'id': 'nissan-sylphy-fuel',
-            'brand': '日产',
-            'model': '轩逸（燃油版）',
-            'template': 'fuel',
-          },
-        ],
-      }),
-      throwsArgumentError,
-    );
-  });
-
-  /// 测试序号（测试替身生成车辆 id 用）。
-  int testCarSeq = 0;
-
-  /// 测试替身：等价已删除的 createCar（裸插车辆、无项目，R26 清理）。
-  /// 直接走 database 插入——原 API 允许零项目，需绕开
-  /// createCarWithMaintenanceItems 的"至少一个启用项目"业务校验。
-  /// id 用自增序列（唯一正整数即可，与雪花 id 不冲突）。
-  Future<int> createCar(LunioRepository repository, Car car) async {
-    final carId = 900000 + ++testCarSeq;
-    await database
-        .into(database.cars)
-        .insert(
-          CarsCompanion.insert(
-            id: Value(carId),
-            brand: car.brand,
-            model: car.model,
-            currentMileageKm: car.currentMileageKm,
-            roadDate: car.roadDate.toString(),
-            syncStatus: Value(car.sync.status.name),
-            updatedAt: car.sync.updatedAt.toIso8601String(),
-            version: Value(car.sync.version),
-          ),
-        );
-    return carId;
-  }
-
-  /// 测试替身：等价已删除的 createCarWithDefaultItems（按默认模板建车，
-  /// R26 清理）——按车的动力类型查当前库里的模板 → 转车辆级项目实体 → 建车。
-  /// 注意不主动 bootstrap：目录由调用方按需灌入（有的用例用自定义目录）。
-  Future<int> createCarWithDefaultItems(
-    LunioRepository repository,
-    Car car,
-  ) async {
-    final defaults = await catalogRepository.listDefaultItemsForPowertrain(
-      powertrainType: car.powertrainType,
-    );
-    return repository.createCarWithMaintenanceItems(
-      car,
-      [for (final item in defaults) maintenanceItemFromDefault(item, car.sync)],
-    );
-  }
-
-  Future<(int, int)> seedCarAndItem() async {
-    final carId = await createCar(repository, defaultCar());
-    final itemId =
-        await repository.saveMaintenanceItem(defaultOilItem(carsId: carId));
-    return (carId, itemId);
-  }
-
-  Future<int> saveItem(int carId, String name, int sortOrder) {
-    return repository.saveMaintenanceItem(
-      defaultOilItem(carsId: carId, name: name, sortOrder: sortOrder),
-    );
-  }
-
   test('creates schema and persists car data', () async {
-    await seedCarAndItem();
+    await repos.seedCarAndItem();
 
     final cars = await repository.listCars();
 
@@ -229,15 +66,13 @@ void main() {
   });
 
   test('allows same brand and model with different road dates', () async {
-    await createCar(
-      repository,
+    await repos.insertCarForTest(
       defaultCar(
         model: '思域（燃油版）',
         roadDate: const LocalDate(2021, 10, 31),
       ),
     );
-    await createCar(
-      repository,
+    await repos.insertCarForTest(
       defaultCar(
         model: '思域（燃油版）',
         currentMileageKm: 0,
@@ -260,562 +95,15 @@ void main() {
       roadDate: const LocalDate(2021, 10, 31),
     );
 
-    await createCar(repository, car);
+    await repos.insertCarForTest(car);
 
-    expect(createCar(repository, car), throwsA(isA<Object>()));
-  });
-
-  test(
-    'create car copies default maintenance items and applies first car',
-    () async {
-      await catalogRepository.ensureDefaultMaintenanceItems();
-
-      final carId = await createCarWithDefaultItems(
-        repository,
-        defaultCar(model: '思域（燃油版）'),
-      );
-
-      final items = await repository.listMaintenanceItemsForCar(carId);
-      expect(
-        items.map((item) => item.name),
-        containsAll(['机油', '机滤', '空调滤芯', '汽油滤芯']),
-      );
-      // 燃油模板整组复制（10 项）。
-      expect(items, hasLength(10));
-      final oilItems = items.where(
-        (item) => item.name == '机油' || item.name == '机滤',
-      );
-      expect(oilItems, hasLength(2));
-      for (final item in oilItems) {
-        expect(item.remindByMileage, isTrue);
-        expect(item.remindByTime, isTrue);
-        expect(item.mileageIntervalKm, 5000);
-        expect(item.timeIntervalMonths, 6);
-      }
-      expect(await preferences.getAppliedCarId(), carId);
-    },
-  );
-
-  test(
-    'bootstraps default maintenance items per powertrain type',
-    () async {
-      await catalogRepository.ensureDefaultMaintenanceItems();
-
-      final fuelItems = await catalogRepository.listDefaultItemsForPowertrain(
-        powertrainType: PowertrainType.fuel,
-      );
-      final hybridItems = await catalogRepository.listDefaultItemsForPowertrain(
-        powertrainType: PowertrainType.hybrid,
-      );
-      final plugInItems = await catalogRepository.listDefaultItemsForPowertrain(
-        powertrainType: PowertrainType.plugIn,
-      );
-      final extendedItems = await catalogRepository.listDefaultItemsForPowertrain(
-        powertrainType: PowertrainType.extendedRange,
-      );
-      final evItems = await catalogRepository.listDefaultItemsForPowertrain(
-        powertrainType: PowertrainType.electric,
-      );
-
-      expect(_defaultItemRules(fuelItems), _genericFuelRules);
-      expect(_defaultItemRules(hybridItems), _genericHybridRules);
-      expect(_defaultItemRules(plugInItems), _genericPlugInRules);
-      // 增程与插混共用同一套保养内容（ADR 0003）。
-      expect(_defaultItemRules(extendedItems), _genericPlugInRules);
-      expect(_defaultItemRules(evItems), _genericEvRules);
-      // 五组模板行数：fuel 10、hybrid 11、plugIn 9、extended 9、ev 7。
-      expect(fuelItems, hasLength(10));
-      expect(hybridItems, hasLength(11));
-      expect(plugInItems, hasLength(9));
-      expect(extendedItems, hasLength(9));
-      expect(evItems, hasLength(7));
-    },
-  );
-
-  test('civic uses its vehicle-specific civicFuel template (ADR 0004)', () async {
-    await catalogRepository.ensureDefaultMaintenanceItems();
-
-    // 目录解析：思域条目带 itemTemplate，civicFuel 组 14 项、首项燃油宝。
-    final civic = builtInCatalog.findVehicle('本田', '思域');
-    expect(civic, isNotNull);
-    expect(civic!.itemTemplate, 'civicFuel');
-    final civicTemplate = builtInCatalog.vehicleTemplateItems('civicFuel');
-    expect(civicTemplate, hasLength(14));
-    expect(civicTemplate!.first.name, '燃油宝');
-
-    // 仓库按（品牌+车型+推荐动力类型一致）返回专属模板。
-    final items = await catalogRepository.listDefaultItemsForVehicleModel(
-      brand: '本田',
-      model: '思域',
-      selectedPowertrain: PowertrainType.fuel,
-    );
-    expect(items, hasLength(14));
-    expect(items!.first.itemName, '燃油宝');
-    expect(items.first.catalogId, 'vtpl:civicFuel:fuel-additive');
-    expect(
-      [for (final item in items) item.sortOrder],
-      [for (var i = 1; i <= 14; i++) i],
-    );
-
-    // 专属模板不写 vehicle_default_maintenance_items 表：
-    // 燃油通用组仍是 10 项、不含燃油宝。
-    final fuelItems = await catalogRepository.listDefaultItemsForPowertrain(
-      powertrainType: PowertrainType.fuel,
-    );
-    expect(fuelItems, hasLength(10));
-    expect(fuelItems.any((item) => item.itemName == '燃油宝'), isFalse);
-  });
-
-  test('vehicle-specific template falls back when rules not met', () async {
-    // 改选其他动力类型：专属模板不适用，返回 null（向导回退通用模板）。
-    expect(
-      await catalogRepository.listDefaultItemsForVehicleModel(
-        brand: '本田',
-        model: '思域',
-        selectedPowertrain: PowertrainType.electric,
-      ),
-      isNull,
-    );
-    // 目录里没有专属模板的车型（本田 型格）→ null。
-    expect(
-      await catalogRepository.listDefaultItemsForVehicleModel(
-        brand: '本田',
-        model: '型格',
-        selectedPowertrain: PowertrainType.fuel,
-      ),
-      isNull,
-    );
-    // 非目录自定义车型 → null。
-    expect(
-      await catalogRepository.listDefaultItemsForVehicleModel(
-        brand: '自定义',
-        model: '手工车',
-        selectedPowertrain: PowertrainType.fuel,
-      ),
-      isNull,
-    );
-  });
-
-  test('resolveDefaultItems composes bootstrap, specific-first, fallback', () async {
-    // 解析唯一入口自带 bootstrap 对账（上面两个用例先手动 ensure，
-    // 这个用例不 ensure，验证 resolveDefaultItems 自己完成灌库）。
-    // 专属命中：思域 + 燃油（与目录推荐一致）→ civicFuel 14 项。
-    final civic = await catalogRepository.resolveDefaultItems(
-      brand: '本田',
-      model: '思域',
-      selectedPowertrain: PowertrainType.fuel,
-    );
-    expect(civic, hasLength(14));
-    expect(civic.first.itemName, '燃油宝');
-
-    // 专属未命中（改选纯电，与推荐不一致）→ 回退纯电通用组（7 项）。
-    final evFallback = await catalogRepository.resolveDefaultItems(
-      brand: '本田',
-      model: '思域',
-      selectedPowertrain: PowertrainType.electric,
-    );
-    expect(evFallback, hasLength(7));
-    expect(evFallback.any((item) => item.itemName == '燃油宝'), isFalse);
-
-    // 非目录车型 → 回退燃油通用组（10 项）。
-    final fuelFallback = await catalogRepository.resolveDefaultItems(
-      brand: '自定义',
-      model: '手工车',
-      selectedPowertrain: PowertrainType.fuel,
-    );
-    expect(fuelFallback, hasLength(10));
-  });
-
-  test('vehicle itemTemplate must reference vehicleTemplates', () {
-    expect(
-      () => BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-          ],
-        },
-        'vehicleTemplates': {
-          'civicFuel': [
-            {
-              'id': 'fuel-additive',
-              'name': '燃油宝',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-          ],
-        },
-        'vehicles': [
-          {
-            'id': 'honda-civic-fuel',
-            'brand': '本田',
-            'model': '思域',
-            'template': 'fuel',
-            'itemTemplate': 'notExist',
-          },
-        ],
-      }),
-      throwsArgumentError,
-    );
-  });
-
-  test('production asset loader keeps vehicleTemplates reachable', () async {
-    // 回归：生产加载器 loadBuiltInVehicleCatalogAsset 手工拼目录 JSON，
-    // 曾把 vehicleTemplates 字段丢掉，导致思域 itemTemplate 校验在真机
-    // 启动时抛错、页面整体加载失败。其余测试走磁盘 helper（已透传该
-    // 字段）或注入目录，抓不到这条路径，必须直连 rootBundle 验证。
-    TestWidgetsFlutterBinding.ensureInitialized();
-    final catalog = await loadBuiltInVehicleCatalogAsset();
-    expect(catalog.findVehicle('本田', '思域')!.itemTemplate, 'civicFuel');
-    expect(catalog.vehicleTemplateItems('civicFuel'), hasLength(14));
-  });
-
-  test('bootstrap updates stale template rows by catalog id', () async {
-    // 旧版本模板行（同 catalogId、旧间隔）：bootstrap 对账后应被目录值覆盖。
-    await catalogRepository.saveVehicleDefaultMaintenanceItem(
-      VehicleDefaultMaintenanceItem(
-        catalogId: 'tpl:fuel:engine-oil',
-        powertrainType: PowertrainType.fuel,
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 3000,
-        timeIntervalMonths: 3,
-        sortOrder: 99,
-        sync: sync,
-      ),
-    );
-
-    await catalogRepository.ensureDefaultMaintenanceItems();
-
-    final items = await catalogRepository.listDefaultItemsForPowertrain(
-      powertrainType: PowertrainType.fuel,
-    );
-    final oilItems = items.where((item) => item.itemName == '机油');
-    expect(oilItems, hasLength(1));
-    expect(_defaultItemRules(oilItems.toList()), ['机油|true|true|5000|6']);
-  });
-
-  test(
-    'bootstrap adopts legacy built-in rows and updates them by catalog id',
-    () async {
-      await catalogRepository.saveVehicleModel(
-        VehicleModel(
-          brand: '日产',
-          model: '轩逸',
-          template: PowertrainType.fuel,
-          sortOrder: 99,
-          sync: sync,
-        ),
-      );
-      await catalogRepository.saveVehicleDefaultMaintenanceItem(
-        VehicleDefaultMaintenanceItem(
-          catalogId: 'tpl:fuel:engine-oil',
-          powertrainType: PowertrainType.fuel,
-          itemName: '机油',
-          remindByMileage: true,
-          remindByTime: true,
-          mileageIntervalKm: 3000,
-          timeIntervalMonths: 3,
-          sortOrder: 99,
-          sync: sync,
-        ),
-      );
-
-      final initialCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': true,
-              'mileageIntervalKm': 5000,
-              'timeIntervalMonths': 6,
-            },
-          ],
-        },
-        'vehicles': [
-          {
-            'id': 'nissan-sylphy-fuel',
-            'brand': '日产',
-            'model': '轩逸',
-            'template': 'fuel',
-          },
-        ],
-      });
-      await BuiltInCatalogRepository(
-        database,
-        loadBuiltInVehicleCatalog: () async => initialCatalog,
-      ).ensureBootstrapData();
-
-      final adoptedModel =
-          (await database.select(database.vehicleModels).get()).single;
-      final adoptedItem =
-          (await database.select(database.vehicleDefaultMaintenanceItems).get())
-              .single;
-      expect(adoptedModel.catalogId, 'nissan-sylphy-fuel');
-      expect(adoptedModel.sortOrder, 1);
-      expect(adoptedModel.template, 'fuel');
-      expect(adoptedItem.catalogId, 'tpl:fuel:engine-oil');
-      expect(adoptedItem.mileageIntervalKm, 5000);
-      expect(adoptedItem.timeIntervalMonths, 6);
-
-      final updatedCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '发动机机油',
-              'remindByMileage': true,
-              'remindByTime': true,
-              'mileageIntervalKm': 8000,
-              'timeIntervalMonths': 12,
-            },
-          ],
-        },
-        'vehicles': [
-          {
-            'id': 'nissan-sylphy-fuel',
-            'brand': '日产',
-            'model': '轩逸经典',
-            'template': 'fuel',
-          },
-        ],
-      });
-      await BuiltInCatalogRepository(
-        database,
-        loadBuiltInVehicleCatalog: () async => updatedCatalog,
-      ).ensureBootstrapData();
-
-      final updatedModel =
-          (await database.select(database.vehicleModels).get()).single;
-      final updatedItem =
-          (await database.select(database.vehicleDefaultMaintenanceItems).get())
-              .single;
-      expect(updatedModel.id, adoptedModel.id);
-      expect(updatedModel.brand, '日产');
-      expect(updatedModel.model, '轩逸经典');
-      expect(updatedItem.id, adoptedItem.id);
-      expect(updatedItem.powertrainType, 'fuel');
-      expect(updatedItem.itemName, '发动机机油');
-      expect(updatedItem.mileageIntervalKm, 8000);
-      expect(updatedItem.timeIntervalMonths, 12);
-    },
-  );
-
-  test(
-    'bootstrap deletes removed catalog rows without touching user car items',
-    () async {
-      final initialCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': {
-          'fuel': [
-            {
-              'id': 'engine-oil',
-              'name': '机油',
-              'remindByMileage': true,
-              'remindByTime': false,
-              'mileageIntervalKm': 5000,
-            },
-          ],
-        },
-        'vehicles': [
-          {
-            'id': 'nissan-sylphy-fuel',
-            'brand': '日产',
-            'model': '轩逸（燃油版）',
-            'template': 'fuel',
-          },
-        ],
-      });
-      final seedCatalogRepository = BuiltInCatalogRepository(
-        database,
-        loadBuiltInVehicleCatalog: () async => initialCatalog,
-      );
-      await seedCatalogRepository.ensureBootstrapData();
-      await catalogRepository.saveVehicleModel(
-        VehicleModel(
-          brand: '自定义品牌',
-          model: '自定义车型',
-          template: PowertrainType.fuel,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      );
-      await catalogRepository.saveVehicleDefaultMaintenanceItem(
-        VehicleDefaultMaintenanceItem(
-          // 放混动组：不混入下面按燃油建车的默认项，测试"目录条目删除
-          // 不碰车辆级项目"的意图不变。
-          powertrainType: PowertrainType.hybrid,
-          itemName: '自定义项目',
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: 1000,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      );
-      final carId = await createCarWithDefaultItems(
-        repository,
-        defaultCar(
-          brand: '日产',
-          model: '轩逸（燃油版）',
-          roadDate: const LocalDate(2024, 1, 1),
-        ),
-      );
-
-      // "目录更新后条目被移除"：模板全撤、车型清空。
-      // 注意默认项目按动力类型展开（与车型列表无关），所以这里
-      // 模板也要清空，模板表才会被对账清到只剩用户自建行。
-      final emptyCatalog = BuiltInVehicleCatalog.fromJson({
-        'schemaVersion': 1,
-        'templates': const <String, Object?>{},
-        'vehicles': <Object?>[],
-      });
-      await BuiltInCatalogRepository(
-        database,
-        loadBuiltInVehicleCatalog: () async => emptyCatalog,
-      ).ensureBootstrapData();
-
-      expect(
-        (await database.select(database.vehicleModels).get()).map(
-          (row) => row.brand,
-        ),
-        ['自定义品牌'],
-      );
-      expect(
-        (await database.select(database.vehicleDefaultMaintenanceItems).get())
-            .map((row) => row.itemName),
-        ['自定义项目'],
-      );
-      expect(await repository.listCars(), hasLength(1));
-      expect(await repository.listMaintenanceItemsForCar(carId), hasLength(1));
-    },
-  );
-
-  test('pure electric templates do not include fuel service items', () async {
-    await catalogRepository.ensureDefaultMaintenanceItems();
-
-    final items = await catalogRepository.listDefaultItemsForPowertrain(
-      powertrainType: PowertrainType.electric,
-    );
-    final names = items.map((item) => item.itemName);
-
-    expect(names, isNot(contains('机油')));
-    expect(names, isNot(contains('机滤')));
-    expect(names, isNot(contains('汽油滤芯')));
-    expect(names, isNot(contains('火花塞')));
-    expect(_defaultItemRules(items), _genericEvRules);
-  });
-
-  test('bootstraps selectable vehicle models for common brands', () async {
-    await catalogRepository.ensureVehicleModels();
-
-    final models = await catalogRepository.listVehicleModels();
-
-    // 目录以懂车帝原始车系名为准（ADR 0003）；2026-09-01 起精简为
-    // 每品牌最多 10 款热门车型，共 1223 条。
-    expect(
-      models.map((model) => '${model.brand} ${model.model}'),
-      containsAll([
-        '本田 思域',
-        '丰田 卡罗拉',
-        '丰田 凯美瑞',
-        '日产 轩逸',
-        '大众 速腾',
-        '大众 帕萨特',
-        '比亚迪 秦PLUS DM',
-        '比亚迪 秦PLUS EV',
-        '比亚迪 海鸥',
-        '吉利汽车 帝豪',
-        '长安 逸动',
-        '哈弗 哈弗H6',
-        '特斯拉 Model 3',
-        'AITO问界 问界M9',
-        '小米汽车 小米SU7',
-        '宝马 宝马3系',
-        '奥迪 奥迪A4L',
-        '讴歌 讴歌ILX', // 停售条目也进目录
-      ]),
-    );
-    // 推荐动力类型随车系给出（添加向导预选用）。
-    final byName = {
-      for (final model in models) '${model.brand} ${model.model}': model.template,
-    };
-    expect(byName['比亚迪 秦PLUS DM'], PowertrainType.plugIn);
-    expect(byName['比亚迪 秦PLUS EV'], PowertrainType.electric);
-    expect(byName['AITO问界 问界M9'], PowertrainType.extendedRange);
-    expect(byName['特斯拉 Model 3'], PowertrainType.electric);
-    expect(byName['丰田 卡罗拉'], PowertrainType.fuel);
-    expect(models.length, greaterThan(1000));
-  });
-
-  test('bootstrap leaves existing brands unchanged', () async {
-    await catalogRepository.saveVehicleModel(
-      VehicleModel(
-        brand: '东风日产',
-        model: '轩逸',
-        template: PowertrainType.fuel,
-        sortOrder: 1,
-        sync: sync,
-      ),
-    );
-
-    await catalogRepository.ensureBootstrapData();
-
-    final modelRows = await database.select(database.vehicleModels).get();
-    final sylphyRows = modelRows
-        .where((row) => row.model == '轩逸')
-        .map((row) => row.brand)
-        .toList();
-    // 无 catalogId 的老行按（品牌, 车型）兜底认领，不被目录覆盖删除。
-    expect(sylphyRows, contains('东风日产'));
-    expect(sylphyRows.where((brand) => brand == '日产'), hasLength(1));
-  });
-
-  test('bootstrap leaves existing car brands unchanged', () async {
-    final oldCarId = await createCar(
-      repository,
-      defaultCar(
-        brand: '东风日产',
-        model: '轩逸（燃油版）',
-        currentMileageKm: 15000,
-        roadDate: const LocalDate(2024, 1, 1),
-      ),
-    );
-    await createCar(
-      repository,
-      defaultCar(
-        brand: '日产',
-        model: '轩逸（燃油版）',
-        currentMileageKm: 20000,
-        roadDate: const LocalDate(2024, 1, 1),
-      ),
-    );
-    await preferences.setAppliedCarId(oldCarId);
-
-    await catalogRepository.ensureBootstrapData();
-
-    final cars = await repository.listCars();
-    expect(cars, hasLength(2));
-    expect(cars.map((car) => car.brand), containsAll(['东风日产', '日产']));
-    expect(await preferences.getAppliedCarId(), oldCarId);
+    expect(repos.insertCarForTest(car), throwsA(isA<Object>()));
   });
 
   test('writes snowflake ids for all local tables', () async {
     await catalogRepository.ensureBootstrapData();
     final carId = await createCarWithDefaultItems(
-      repository,
+      database,
       defaultCar(model: '思域（燃油版）'),
     );
     final item = (await repository.listMaintenanceItemsForCar(carId)).first;
@@ -853,76 +141,9 @@ void main() {
 
     expect(ids, everyElement(greaterThan(0)));
   });
-
-  test('bootstraps selectable vehicle models', () async {
-    await catalogRepository.ensureVehicleModels();
-
-    final models = await catalogRepository.listVehicleModels();
-
-    // 覆盖各字母分片的抽样（懂车帝原名，含动力拆分条目与停售条目）。
-    expect(
-      models.map((model) => '${model.brand} ${model.model}'),
-      containsAll([
-        '本田 思域',
-        '本田 雅阁',
-        '丰田 汉兰达',
-        '日产 天籁',
-        '大众 途观L',
-        '大众 ID.4 CROZZ',
-        '别克 别克GL8 PHEV',
-        '福特 蒙迪欧',
-        '比亚迪 海豹06DM',
-        '比亚迪 汉EV',
-        '腾势 腾势D9 DM',
-        '方程豹 豹5',
-        '吉利银河 星愿',
-        '吉利银河 银河L6',
-        '领克 领克08 EM-P',
-        '奇瑞 瑞虎8',
-        '长安启源 长安启源A07',
-        '哈弗 哈弗H6',
-        '坦克 坦克300 Hi4-T',
-        '魏牌 高山',
-        '五菱汽车 五菱宏光MINIEV',
-        '广汽传祺 传祺M8',
-        '理想汽车 理想L6',
-        '蔚来 蔚来ET5',
-        '小鹏汽车 小鹏MONA M03',
-        '小米汽车 小米YU7',
-        'AITO问界 问界M8',
-        '特斯拉 Model Y',
-        '宝马 宝马3系',
-        '奔驰 奔驰C级',
-        '奥迪 奥迪Q5L',
-        '雷克萨斯 雷克萨斯ES',
-        '马自达 马自达3 昂克赛拉',
-        '路虎 揽胜极光',
-        'MINI 电动MINI COOPER',
-        'smart smart精灵#1',
-        '欧拉 欧拉好猫',
-        '极氪 ZEEKR 001',
-        '智己汽车 智己LS6',
-        '雪佛兰 科尔维特', // 停售、品牌仅在售目录外
-        '道奇 挑战者', // 停售
-        '讴歌 讴歌ILX', // 停售
-      ]),
-    );
-    expect(models.map((model) => model.catalogId), everyElement(isNotNull));
-    expect(
-      models.map((model) => model.catalogId).toSet(),
-      hasLength(models.length),
-    );
-    // 老目录带动力后缀的名字一条都不该再出现。
-    expect(
-      models.where((model) => model.model.endsWith('版）')),
-      isEmpty,
-    );
-  });
-
   test('applied car falls back to first available car', () async {
-    final firstCarId = await createCar(repository, defaultCar());
-    await createCar(
-      repository,
+    final firstCarId = await repos.insertCarForTest(defaultCar());
+    await repos.insertCarForTest(
       defaultCar(
         brand: '日产',
         model: '22款轩逸',
@@ -1004,28 +225,8 @@ void main() {
       ),
     );
   });
-
-  test('applied car falls back to first available car', () async {
-    final firstCarId = await createCar(repository, defaultCar());
-    await createCar(
-      repository,
-      defaultCar(
-        brand: '日产',
-        model: '22款轩逸',
-        currentMileageKm: 8000,
-        roadDate: const LocalDate(2024, 1, 1),
-      ),
-    );
-    await preferences.setAppliedCarId(999);
-
-    final appliedCar = await repository.getAppliedCar();
-
-    expect(appliedCar?.id, firstCarId);
-    expect(await preferences.getAppliedCarId(), firstCarId);
-  });
-
   test('updates car mileage and road date', () async {
-    final carId = await createCar(repository, defaultCar());
+    final carId = await repos.insertCarForTest(defaultCar());
 
     // 更新构造带 id：重建整行语义，保持实体构造器（builder 只管造新数据）。
     await repository.updateCar(
@@ -1045,9 +246,8 @@ void main() {
   });
 
   test('delete applied car switches preference to remaining car', () async {
-    final firstCarId = await createCar(repository, defaultCar());
-    final secondCarId = await createCar(
-      repository,
+    final firstCarId = await repos.insertCarForTest(defaultCar());
+    final secondCarId = await repos.insertCarForTest(
       defaultCar(
         brand: '日产',
         model: '22款轩逸',
@@ -1063,7 +263,7 @@ void main() {
   });
 
   test('same car and date is unique', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     final first = defaultRecord(
       carId: carId,
       date: const LocalDate(2026, 5, 19),
@@ -1096,7 +296,7 @@ void main() {
   test('same car and date rejects a record with different items too', () async {
     // R4 收紧：同车同日只允许一条记录，即使项目不同也拦截
     // （此前业务层放行、插入时撞表级唯一约束抛 SqliteException）。
-    final (carId, firstItemId) = await seedCarAndItem();
+    final (carId, firstItemId) = await repos.seedCarAndItem();
     final secondItemId = await repository.saveMaintenanceItem(
       defaultOilItem(carsId: carId, name: '机滤', sortOrder: 2),
     );
@@ -1133,7 +333,7 @@ void main() {
   });
 
   test('lists updates and deletes maintenance records', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     final recordId = await repository.saveMaintenanceRecord(
       defaultRecord(
         carId: carId,
@@ -1174,8 +374,8 @@ void main() {
   });
 
   test('saves lists and updates record item costs', () async {
-    final (carId, oilId) = await seedCarAndItem();
-    final filterId = await saveItem(carId, '机滤', 2);
+    final (carId, oilId) = await repos.seedCarAndItem();
+    final filterId = await repos.saveItem(carId, '机滤', 2);
     final recordId = await repository.saveMaintenanceRecord(
       defaultRecord(
         carId: carId,
@@ -1233,137 +433,8 @@ void main() {
     );
   });
 
-  test('backup restore keeps record item costs with remapped item ids',
-      () async {
-    final (carId, oilId) = await seedCarAndItem();
-    final filterId = await saveItem(carId, '机滤', 2);
-    await repository.saveMaintenanceRecord(
-      defaultRecord(
-        carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: [oilId, filterId],
-        itemCosts: [
-          RecordItemCost(
-            itemId: oilId,
-            materialCents: 15000,
-            laborCents: 8000,
-            costCents: 23000,
-          ),
-          RecordItemCost(itemId: filterId, costCents: 5000),
-        ],
-        costCents: 28000,
-        mileageKm: 12000,
-      ),
-    );
-
-    final backup = await backupRepository.exportBackupPayload();
-    // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
-    await database.close();
-    database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    await backupRepository.restoreBackupPayload(backup);
-
-    final restoredCar = (await database.select(database.cars).get()).single;
-    final restoredItems = await repository.listMaintenanceItemsForCar(
-      restoredCar.id,
-    );
-    final restoredRecords = await repository.listMaintenanceRecordsForCar(
-      restoredCar.id,
-    );
-    expect(restoredRecords, hasLength(1));
-    // itemId 已重映射、金额原样保留（项目费用为准，不做推导修正）。
-    final costs = restoredRecords.single.itemCosts;
-    expect(costs, hasLength(2));
-    expect(
-      costs.map((cost) => cost.itemId).toSet(),
-      restoredItems.map((item) => item.id).toSet(),
-    );
-    expect(
-      costs.map((cost) => cost.costCents).toSet(),
-      {23000, 5000},
-    );
-    final oilCost = costs.firstWhere((cost) => cost.costCents == 23000);
-    expect(oilCost.materialCents, 15000);
-    expect(oilCost.laborCents, 8000);
-  });
-
-  test(
-      'backup restore normalizes item costs missing cost field (invariant)',
-      () async {
-    final (carId, oilId) = await seedCarAndItem();
-    // 违规形态存量行：材料/工时有值、项目费用为空（不变量落地前写入的
-    // 历史数据）。直插播种模拟——写 seam（关联行 companion）2026-09-25
-    // 起单点补齐，经仓库保存已造不出违规行；而备份文件可能来自旧版本
-    // 导出，修复点在恢复，不把违规数据带进新库。
-    const legacyRecordId = 990001;
-    await database.into(database.maintenanceRecords).insert(
-      maintenanceRecordCompanion(
-        defaultRecord(
-          carId: carId,
-          date: const LocalDate(2026, 5, 19),
-          itemIds: [oilId],
-          itemCosts: [
-            RecordItemCost(
-              itemId: oilId,
-              materialCents: 15000,
-              laborCents: 8000,
-            ),
-          ],
-          costCents: 23000,
-          mileageKm: 12000,
-        ),
-        legacyRecordId,
-      ),
-    );
-    await database.into(database.maintenanceRecordItems).insert(
-      // 裸 companion 绕过写 seam：还原"项目费用为空"的违规形态
-      // （costCents 留空 = NULL）。
-      MaintenanceRecordItemsCompanion.insert(
-        id: const Value(990002),
-        maintenanceRecordId: legacyRecordId,
-        carId: carId,
-        itemId: oilId,
-        date: const LocalDate(2026, 5, 19).toString(),
-        materialCostCents: const Value(15000),
-        laborCostCents: const Value(8000),
-      ),
-    );
-
-    final backup = await backupRepository.exportBackupPayload();
-    // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
-    await database.close();
-    database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    await backupRepository.restoreBackupPayload(backup);
-
-    final restoredCar = (await database.select(database.cars).get()).single;
-    final restoredRecords = await repository.listMaintenanceRecordsForCar(
-      restoredCar.id,
-    );
-    expect(restoredRecords, hasLength(1));
-    final cost = restoredRecords.single.itemCosts.single;
-    // 恢复时按"材料+工时"补齐项目费用（2026-09-20 数据不变量）。
-    expect(cost.materialCents, 15000);
-    expect(cost.laborCents, 8000);
-    expect(cost.costCents, 23000);
-  });
-
   test('save enforces item cost invariant at the write seam', () async {
-    final (carId, oilId) = await seedCarAndItem();
+    final (carId, oilId) = await repos.seedCarAndItem();
     // 调用方不做任何预处理的极端形态：材料/工时有值、项目费用为空。
     // "材料/工时任一有值 ⇒ 项目费用必有值"由关联行 companion 单点
     // 兜住（2026-09-25 收编，取代表单/恢复两写点的上游调用）——
@@ -1392,7 +463,7 @@ void main() {
   test(
     'saves maintenance record and item intervals in one transaction',
     () async {
-      final (carId, itemId) = await seedCarAndItem();
+      final (carId, itemId) = await repos.seedCarAndItem();
 
       await repository.saveMaintenanceRecordWithItemUpdates(
         record: defaultRecord(
@@ -1435,8 +506,8 @@ void main() {
   );
 
   test('removes one item from multi-item maintenance record', () async {
-    final (carId, oilId) = await seedCarAndItem();
-    final filterId = await saveItem(carId, '机滤', 2);
+    final (carId, oilId) = await repos.seedCarAndItem();
+    final filterId = await repos.saveItem(carId, '机滤', 2);
     final recordId = await repository.saveMaintenanceRecord(
       defaultRecord(
         carId: carId,
@@ -1464,7 +535,7 @@ void main() {
   });
 
   test('removing the last item deletes the whole maintenance record', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     final recordId = await repository.saveMaintenanceRecord(
       defaultRecord(
         carId: carId,
@@ -1489,7 +560,7 @@ void main() {
   });
 
   test('record can only increase car mileage', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     final initialUpdatedAt =
         (await database.select(database.cars).get()).single.updatedAt;
     await repository.saveMaintenanceRecord(
@@ -1524,7 +595,7 @@ void main() {
   });
 
   test('delete car removes related local records and items', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     await preferences.setAppliedCarId(carId);
     await repository.saveMaintenanceRecord(
       defaultRecord(
@@ -1549,7 +620,7 @@ void main() {
   });
 
   test('record rejects missing item ids', () async {
-    final (carId, _) = await seedCarAndItem();
+    final (carId, _) = await repos.seedCarAndItem();
 
     expect(
       () => repository.saveMaintenanceRecord(
@@ -1572,9 +643,8 @@ void main() {
   });
 
   test('record rejects items from another car', () async {
-    final (carId, _) = await seedCarAndItem();
-    final otherCarId = await createCar(
-      repository,
+    final (carId, _) = await repos.seedCarAndItem();
+    final otherCarId = await repos.insertCarForTest(
       defaultCar(
         brand: '日产',
         model: '22款轩逸',
@@ -1611,7 +681,7 @@ void main() {
   });
 
   test('updates maintenance item settings', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
 
     await repository.updateMaintenanceItem(
       MaintenanceItem(
@@ -1633,7 +703,7 @@ void main() {
   });
 
   test('cannot disable the last enabled maintenance item', () async {
-    final (_, itemId) = await seedCarAndItem();
+    final (_, itemId) = await repos.seedCarAndItem();
 
     expect(
       () => repository.setMaintenanceItemEnabled(
@@ -1652,7 +722,7 @@ void main() {
   });
 
   test('deletes custom item without history', () async {
-    final (carId, _) = await seedCarAndItem();
+    final (carId, _) = await repos.seedCarAndItem();
     final customItemId = await repository.saveMaintenanceItem(
       defaultOilItem(
         carsId: carId,
@@ -1675,7 +745,7 @@ void main() {
   });
 
   test('deletes item without history', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     await repository.saveMaintenanceItem(
       defaultOilItem(
         carsId: carId,
@@ -1697,7 +767,7 @@ void main() {
   });
 
   test('does not delete item with history', () async {
-    final (carId, itemId) = await seedCarAndItem();
+    final (carId, itemId) = await repos.seedCarAndItem();
     final customItemId = await repository.saveMaintenanceItem(
       defaultOilItem(
         carsId: carId,
@@ -1730,777 +800,4 @@ void main() {
     );
     await repository.deleteMaintenanceItem(customItemId);
   });
-
-  test('backup export and restore round-trips database content', () async {
-    final (carId, itemId) = await seedCarAndItem();
-    await preferences.setAppliedCarId(carId);
-    await preferences.writeRaw('manualDateEnabled', 'true');
-    await preferences.writeRaw('manualDate', '2026-05-23');
-    await catalogRepository.saveVehicleDefaultMaintenanceItem(
-      VehicleDefaultMaintenanceItem(
-        powertrainType: PowertrainType.fuel,
-        itemName: '机油',
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        sortOrder: 1,
-        sync: sync,
-      ),
-    );
-    await repository.saveMaintenanceRecord(
-      defaultRecord(
-        carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: [itemId],
-        costCents: 10000,
-        mileageKm: 12000,
-      ),
-    );
-    final fuelRecordId = await fuelRepository.saveFuelRecord(
-      defaultFuelRecord(
-        carId,
-        date: const LocalDate(2026, 9, 10),
-        unitPriceCents: 750,
-        payableCents: 31200,
-      ),
-    );
-
-    final backup = await backupRepository.exportBackupPayload();
-    expect(const BackupCodec().encode(backup), isNot(contains('preferences')));
-    expect(
-      const BackupCodec().encode(backup),
-      isNot(contains('defaultMaintenanceItems')),
-    );
-    expect(const BackupCodec().encode(backup), isNot(contains('isDefault')));
-    expect(
-      const BackupCodec().encode(backup),
-      contains('"fuelRecords":[{"carId":'),
-    );
-    await database.close();
-    database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    catalogRepository = BuiltInCatalogRepository(
-      database,
-      loadBuiltInVehicleCatalog: () async => builtInCatalog,
-    );
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    // 恢复前在本地写入偏好：主题/手动日期/停车倒计时应跨恢复保留（R2 口径），
-    // 提醒抑制键（snooze）应被恢复清除。
-    await preferences.writeRaw('themeMode', 'dark');
-    await preferences.writeRaw('manualDate', '2026-05-23');
-    await preferences.saveParkingCountdown(
-      ParkingCountdown(
-        startedAt: DateTime(2026, 6, 10, 10, 20, 15),
-        durationSeconds: 1800,
-      ),
-    );
-    await preferences.writeRaw(
-      '${LunioPreferences.maintenanceReminderSnoozedUntilPrefix}42',
-      '2026-06-01',
-    );
-    await preferences.writeRaw(
-      '${LunioPreferences.mileageUpdateInAppAcknowledgedOnPrefix}42',
-      '2026-05-23',
-    );
-    // 恢复前目标库已有一条残留加油记录（fuel_records 无外键，指向不
-    // 存在的车也插得进）：恢复清表名单含新表后它应被一并清掉，不留
-    // 孤儿行（ADR 0014 过渡窗口的回归点）。
-    await fuelRepository.saveFuelRecord(
-      defaultFuelRecord(
-        999,
-        date: const LocalDate(2026, 1, 1),
-        unitPriceCents: 750,
-        payableCents: 1000,
-      ),
-    );
-
-    await backupRepository.restoreBackupPayload(backup);
-
-    expect(await database.select(database.cars).get(), hasLength(1));
-    expect(
-      await database.select(database.vehicleDefaultMaintenanceItems).get(),
-      isEmpty,
-    );
-    expect(
-      await database.select(database.maintenanceItems).get(),
-      hasLength(1),
-    );
-    expect(
-      await database.select(database.maintenanceRecords).get(),
-      hasLength(1),
-    );
-    expect(
-      await database.select(database.maintenanceRecordItems).get(),
-      hasLength(1),
-    );
-    final restoredCar = (await database.select(database.cars).get()).single;
-    expect(restoredCar.id, isNot(carId));
-    expect(await preferences.getAppliedCarId(), restoredCar.id);
-    // 公开查询按新车辆 id 验证（此前回归：恢复循环主表插入漏换 carId，
-    // 记录挂在备份里的旧 id 下，行数断言拦不住，恢复后历史全部不可见）。
-    final restoredItems = await repository.listMaintenanceItemsForCar(
-      restoredCar.id,
-    );
-    expect(restoredItems, hasLength(1));
-    final restoredRecords = await repository.listMaintenanceRecordsForCar(
-      restoredCar.id,
-    );
-    expect(restoredRecords, hasLength(1));
-    expect(restoredRecords.single.date, const LocalDate(2026, 5, 19));
-    expect(restoredRecords.single.costCents, 10000);
-    // 关联表 itemIds 同样指向重映射后的新项目 id。
-    expect(restoredRecords.single.itemIds, [restoredItems.single.id]);
-    // 加油记录随备份恢复：carId 重映射为新车辆 id（漏换会让记录挂在
-    // 备份里的旧 id 下，公开查询查不到），业务字段全量往返。
-    expect(await database.select(database.fuelRecords).get(), hasLength(1));
-    final restoredFuelRecords = await fuelRepository.listFuelRecordsForCar(
-      restoredCar.id,
-    );
-    expect(restoredFuelRecords, hasLength(1));
-    expect(restoredFuelRecords.single.id, isNot(fuelRecordId));
-    expect(restoredFuelRecords.single.carId, restoredCar.id);
-    expect(restoredFuelRecords.single.date, const LocalDate(2026, 9, 10));
-    expect(restoredFuelRecords.single.grade, FuelGrade.gasoline92);
-    expect(restoredFuelRecords.single.unitPriceCents, 750);
-    expect(restoredFuelRecords.single.payableCents, 31200);
-    expect(restoredFuelRecords.single.actualCents, isNull);
-    // 容积由实体按 应付÷单价 重算：31200 ÷ 750 = 41.6（预留字段）。
-    expect(restoredFuelRecords.single.volumeLiters, 41.6);
-    // 偏好保留：恢复只替换三类业务数据。
-    expect(await preferences.readRaw('themeMode'), 'dark');
-    expect(await preferences.readRaw('manualDate'), '2026-05-23');
-    expect(
-      await preferences.getParkingCountdown(),
-      ParkingCountdown(
-        startedAt: DateTime(2026, 6, 10, 10, 20, 15),
-        durationSeconds: 1800,
-      ),
-    );
-    // 提醒抑制键按前缀清除：恢复出的车/项目是全新 id，旧抑制不再生效。
-    expect(
-      await preferences.readRaw(
-        '${LunioPreferences.maintenanceReminderSnoozedUntilPrefix}42',
-      ),
-      isNull,
-    );
-    expect(
-      await preferences.readRaw(
-        '${LunioPreferences.mileageUpdateInAppAcknowledgedOnPrefix}42',
-      ),
-      isNull,
-    );
-  });
-
-  test('backup restore rejects fuel record referencing missing car', () async {
-    final (carId, _) = await seedCarAndItem();
-    final backup = await backupRepository.exportBackupPayload();
-    // 篡改出一条指向不存在车辆的加油记录：引用完整性预校验应拒绝。
-    final orphanFuelRecord = BackupPayload(
-      schemaVersion: BackupCodec.currentSchemaVersion,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: backup.records,
-      fuelRecords: [
-        defaultFuelRecord(
-          carId + 424242,
-          date: const LocalDate(2026, 9, 10),
-          unitPriceCents: 750,
-        ),
-      ],
-    );
-
-    expect(
-      () => backupRepository.restoreBackupPayload(orphanFuelRecord),
-      throwsArgumentError,
-    );
-    // 预校验在事务外执行：库未被改动（残留行一个都没有写入）。
-    expect(await database.select(database.fuelRecords).get(), isEmpty);
-  });
-
-  test('backup restore rejects tampered business data before writing', () async {
-    final (carId, itemId) = await seedCarAndItem();
-    final backup = await backupRepository.exportBackupPayload();
-    expect(backup.cars, hasLength(1));
-
-    MaintenanceRecord tamperedRecord({
-      required int costCents,
-      required int mileageKm,
-      List<int> itemIds = const [],
-    }) {
-      return MaintenanceRecord(
-        id: 1,
-        carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: itemIds,
-        costCents: costCents,
-        mileageKm: mileageKm,
-        sync: sync,
-      );
-    }
-
-    final negativeCost = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [tamperedRecord(costCents: -1, mileageKm: 12000, itemIds: [itemId])],
-    );
-    final negativeMileage = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [tamperedRecord(costCents: 0, mileageKm: -1, itemIds: [itemId])],
-    );
-    final emptyItemIds = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [tamperedRecord(costCents: 0, mileageKm: 12000)],
-    );
-    final invalidItemInterval = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: [
-        MaintenanceItem(
-          id: itemId,
-          carsId: carId,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: null,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      ],
-      records: const [],
-    );
-
-    // R35 校验失败自 ADR 0009 修订节起 typed 化（backupInvalidData），
-    // 不再是裸 ArgumentError。
-    final rejectedAsInvalidData = throwsA(
-      isA<LunioErrorException>().having(
-        (error) => error.kind,
-        'kind',
-        LunioErrorKind.backupInvalidData,
-      ),
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(negativeCost),
-      rejectedAsInvalidData,
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(negativeMileage),
-      rejectedAsInvalidData,
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(emptyItemIds),
-      rejectedAsInvalidData,
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(invalidItemInterval),
-      rejectedAsInvalidData,
-    );
-    // 预校验在事务外执行：库未被任何一次失败恢复改动。
-    expect(await database.select(database.cars).get(), hasLength(1));
-    expect(
-      await database.select(database.maintenanceItems).get(),
-      hasLength(1),
-    );
-    expect(
-      await database.select(database.maintenanceRecords).get(),
-      isEmpty,
-    );
-  });
-
-  test('backup restore rejects same-car same-date duplicate records', () async {
-    final (carId, itemId) = await seedCarAndItem();
-    final backup = await backupRepository.exportBackupPayload();
-    final duplicated = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [
-        MaintenanceRecord(
-          id: 1,
-          carId: carId,
-          date: const LocalDate(2026, 5, 19),
-          itemIds: [itemId],
-          costCents: 10000,
-          mileageKm: 12000,
-          sync: sync,
-        ),
-        MaintenanceRecord(
-          id: 2,
-          carId: carId,
-          date: const LocalDate(2026, 5, 19),
-          itemIds: [itemId],
-          costCents: 20000,
-          mileageKm: 13000,
-          sync: sync,
-        ),
-      ],
-    );
-
-    // 同车同日查重是表级唯一约束 {carId,date} 的业务前置检查：预校验
-    // 拒绝（typed），不靠事务中途炸驱动层异常。注意 restoreBackupPayload
-    // 的预校验在返回 Future 前同步抛出，须用闭包交给 throwsA。
-    expect(
-      () => backupRepository.restoreBackupPayload(duplicated),
-      throwsA(
-        isA<LunioErrorException>()
-            .having(
-              (error) => error.kind,
-              'kind',
-              LunioErrorKind.backupInvalidData,
-            )
-            .having(
-              (error) => error.message,
-              'message',
-              allOf(contains('2026-05-19'), contains('有 2 条')),
-            ),
-      ),
-    );
-    // 预校验在事务外执行：库未被改动（整文件拒绝，零残留）。
-    expect(await database.select(database.cars).get(), hasLength(1));
-    expect(await database.select(database.maintenanceRecords).get(), isEmpty);
-  });
-
-  test('backup restore allows same date across different cars', () async {
-    // 唯一约束是 {carId,date} 联合键：不同车同日各一条是合法数据，
-    // 查重不得误伤。
-    final payload = BackupPayload(
-      schemaVersion: 1,
-      cars: [
-        Car(
-          id: 99,
-          brand: '本田',
-          model: '思域（燃油版）',
-          currentMileageKm: 12000,
-          roadDate: const LocalDate(2024, 1, 1),
-          sync: sync,
-        ),
-        Car(
-          id: 100,
-          brand: '东风日产',
-          model: '轩逸（燃油版）',
-          currentMileageKm: 20000,
-          roadDate: const LocalDate(2024, 1, 1),
-          sync: sync,
-        ),
-      ],
-      maintenanceItems: [
-        MaintenanceItem(
-          id: 199,
-          carsId: 99,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: 5000,
-          sortOrder: 1,
-          sync: sync,
-        ),
-        MaintenanceItem(
-          id: 198,
-          carsId: 100,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: 5000,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      ],
-      records: [
-        MaintenanceRecord(
-          id: 299,
-          carId: 99,
-          date: const LocalDate(2026, 5, 20),
-          itemIds: const [199],
-          costCents: 12000,
-          mileageKm: 12000,
-          sync: sync,
-        ),
-        MaintenanceRecord(
-          id: 298,
-          carId: 100,
-          date: const LocalDate(2026, 5, 20),
-          itemIds: const [198],
-          costCents: 20000,
-          mileageKm: 20000,
-          sync: sync,
-        ),
-      ],
-    );
-
-    await backupRepository.restoreBackupPayload(payload);
-
-    expect(
-      await database.select(database.maintenanceRecords).get(),
-      hasLength(2),
-    );
-  });
-
-  test('backup restore allows same-car same-day duplicate fuel records', () async {
-    // fuel_records 故意没有 {carId,date} 唯一约束（ADR 0014，同车同日
-    // 多箱合法）：同日查重只属于保养记录，不得波及加油记录。
-    final payload = BackupPayload(
-      schemaVersion: BackupCodec.currentSchemaVersion,
-      cars: [
-        Car(
-          id: 99,
-          brand: '本田',
-          model: '思域（燃油版）',
-          currentMileageKm: 12000,
-          roadDate: const LocalDate(2024, 1, 1),
-          sync: sync,
-        ),
-      ],
-      maintenanceItems: [
-        MaintenanceItem(
-          id: 199,
-          carsId: 99,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: 5000,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      ],
-      records: [
-        MaintenanceRecord(
-          id: 299,
-          carId: 99,
-          date: const LocalDate(2026, 5, 20),
-          itemIds: const [199],
-          costCents: 12000,
-          mileageKm: 12000,
-          sync: sync,
-        ),
-      ],
-      fuelRecords: [
-        defaultFuelRecord(
-          99,
-          date: const LocalDate(2026, 5, 20),
-          unitPriceCents: 750,
-        ),
-        defaultFuelRecord(
-          99,
-          date: const LocalDate(2026, 5, 20),
-          unitPriceCents: 752,
-          payableCents: 37600,
-        ),
-      ],
-    );
-
-    await backupRepository.restoreBackupPayload(payload);
-
-    expect(await database.select(database.fuelRecords).get(), hasLength(2));
-  });
-
-  test('parking countdown is temporary preference outside backup', () async {
-    final countdown = ParkingCountdown(
-      startedAt: DateTime(2026, 6, 10, 10, 20, 15),
-      durationSeconds: 1800,
-    );
-
-    await preferences.saveParkingCountdown(countdown);
-
-    expect(await preferences.getParkingCountdown(), countdown);
-    expect(
-      await preferences.readRaw('parkingCountdown'),
-      contains('"durationSeconds":1800'),
-    );
-    final backup = await backupRepository.exportBackupPayload();
-    expect(const BackupCodec().encode(backup), isNot(contains('parking')));
-
-    await preferences.clearParkingCountdown();
-
-    expect(await preferences.getParkingCountdown(), isNull);
-  });
-
-  test(
-    'backup restore tolerates bootstrapped default items after clearing data',
-    () async {
-      final (carId, _) = await seedCarAndItem();
-      await preferences.setAppliedCarId(carId);
-      await catalogRepository.ensureDefaultMaintenanceItems();
-      final backup = await backupRepository.exportBackupPayload();
-
-      await backupRepository.clearAllData();
-      await catalogRepository.ensureDefaultMaintenanceItems();
-
-      await backupRepository.restoreBackupPayload(backup);
-
-      expect(await database.select(database.cars).get(), hasLength(1));
-      expect(
-        await database.select(database.vehicleDefaultMaintenanceItems).get(),
-        isNotEmpty,
-      );
-      expect(
-        await database.select(database.maintenanceItems).get(),
-        hasLength(1),
-      );
-    },
-  );
-
-  test('backup restore replaces data and applies restored first car', () async {
-    final (existingCarId, _) = await seedCarAndItem();
-    await preferences.setAppliedCarId(existingCarId);
-    final backup = BackupPayload(
-      schemaVersion: 1,
-      cars: [
-        Car(
-          id: 99,
-          brand: '东风日产',
-          model: '轩逸（燃油版）',
-          currentMileageKm: 20000,
-          roadDate: const LocalDate(2024, 1, 1),
-          sync: sync,
-        ),
-      ],
-      maintenanceItems: [
-        MaintenanceItem(
-          id: 199,
-          carsId: 99,
-          name: '空调滤芯',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: true,
-          mileageIntervalKm: 20000,
-          timeIntervalMonths: 12,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      ],
-      records: [
-        MaintenanceRecord(
-          id: 299,
-          carId: 99,
-          date: const LocalDate(2026, 5, 20),
-          itemIds: const [199],
-          costCents: 12000,
-          mileageKm: 20000,
-          sync: sync,
-        ),
-      ],
-    );
-
-    await backupRepository.restoreBackupPayload(backup);
-
-    final cars = await database.select(database.cars).get();
-    expect(cars, hasLength(1));
-    expect(cars.single.brand, '东风日产');
-    expect(cars.single.model, '轩逸（燃油版）');
-    expect(
-      await database.select(database.maintenanceItems).get(),
-      hasLength(1),
-    );
-    expect(
-      await database.select(database.maintenanceRecords).get(),
-      hasLength(1),
-    );
-    expect(
-      await database.select(database.maintenanceRecordItems).get(),
-      hasLength(1),
-    );
-    expect(await preferences.getAppliedCarId(), cars.single.id);
-  });
-
-  test(
-    'backup restore rejects invalid references before replacing data',
-    () async {
-      await seedCarAndItem();
-      final backup = await backupRepository.exportBackupPayload();
-      final invalid = BackupPayload(
-        schemaVersion: 1,
-        cars: backup.cars,
-        maintenanceItems: backup.maintenanceItems,
-        records: [
-          MaintenanceRecord(
-            id: 1,
-            carId: 999,
-            date: const LocalDate(2026, 5, 19),
-            itemIds: const [1],
-            costCents: 10000,
-            mileageKm: 12000,
-            sync: sync,
-          ),
-        ],
-      );
-
-      expect(
-        () => backupRepository.restoreBackupPayload(invalid),
-        throwsArgumentError,
-      );
-      expect(await database.select(database.cars).get(), hasLength(1));
-    },
-  );
-
-  test('backup restore rejects record items from another car', () async {
-    final (carId, _) = await seedCarAndItem();
-    final otherCarId = await createCar(
-      repository,
-      defaultCar(
-        brand: '日产',
-        model: '22款轩逸',
-        roadDate: const LocalDate(2024, 1, 1),
-      ),
-    );
-    final otherItemId = await repository.saveMaintenanceItem(
-      defaultOilItem(
-        carsId: otherCarId,
-        name: '空调滤芯',
-        mileageIntervalKm: 20000,
-        timeIntervalMonths: 12,
-      ),
-    );
-    final backup = await backupRepository.exportBackupPayload();
-    final invalid = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [
-        MaintenanceRecord(
-          id: 1,
-          carId: carId,
-          date: const LocalDate(2026, 5, 19),
-          itemIds: [otherItemId],
-          costCents: 10000,
-          mileageKm: 12000,
-          sync: sync,
-        ),
-      ],
-    );
-
-    expect(() => backupRepository.restoreBackupPayload(invalid), throwsArgumentError);
-  });
-
-  test('clear all data removes local rows', () async {
-    final (carId, itemId) = await seedCarAndItem();
-    await preferences.setAppliedCarId(carId);
-    await preferences.writeRaw('manualDateEnabled', 'true');
-    await catalogRepository.ensureBootstrapData();
-    final defaultItemsBeforeClear = await database
-        .select(database.vehicleDefaultMaintenanceItems)
-        .get();
-    final vehicleModelsBeforeClear = await database
-        .select(database.vehicleModels)
-        .get();
-    expect(defaultItemsBeforeClear, isNotEmpty);
-    expect(vehicleModelsBeforeClear, isNotEmpty);
-    await repository.saveMaintenanceRecord(
-      defaultRecord(
-        carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: [itemId],
-        costCents: 10000,
-        mileageKm: 12000,
-      ),
-    );
-
-    await backupRepository.clearAllData();
-
-    expect(await database.select(database.cars).get(), isEmpty);
-    expect(await database.select(database.maintenanceItems).get(), isEmpty);
-    expect(await database.select(database.maintenanceRecords).get(), isEmpty);
-    expect(
-      await database.select(database.maintenanceRecordItems).get(),
-      isEmpty,
-    );
-    expect(await database.select(database.appPreferences).get(), isEmpty);
-    expect(
-      await database.select(database.vehicleDefaultMaintenanceItems).get(),
-      hasLength(defaultItemsBeforeClear.length),
-    );
-    expect(
-      await database.select(database.vehicleModels).get(),
-      hasLength(vehicleModelsBeforeClear.length),
-    );
-  });
-
-  test('backup restore rolls back when unique constraints fail', () async {
-    final (carId, _) = await seedCarAndItem();
-    await preferences.setAppliedCarId(carId);
-    final invalid = BackupPayload(
-      schemaVersion: 1,
-      cars: [
-        Car(
-          id: 99,
-          brand: '本田',
-          model: '22款思域',
-          currentMileageKm: 12000,
-          roadDate: const LocalDate(2023, 8, 12),
-          sync: sync,
-        ),
-        Car(
-          id: 100,
-          brand: '本田',
-          model: '22款思域',
-          currentMileageKm: 13000,
-          roadDate: const LocalDate(2023, 8, 12),
-          sync: sync,
-        ),
-      ],
-    );
-
-    expect(() => backupRepository.restoreBackupPayload(invalid), throwsA(anything));
-    expect(await database.select(database.cars).get(), hasLength(1));
-    expect(await preferences.getAppliedCarId(), carId);
-  });
 }
-
-List<String> _defaultItemRules(List<VehicleDefaultMaintenanceItem> items) {
-  return [
-    for (final item in items)
-      '${item.itemName}|${item.remindByMileage}|${item.remindByTime}|'
-          '${item.mileageIntervalKm}|${item.timeIntervalMonths}',
-  ];
-}
-
-const _genericFuelRules = [
-  '机油|true|true|5000|6',
-  '机滤|true|true|5000|6',
-  '空气滤芯|true|true|20000|12',
-  '空调滤芯|true|true|20000|12',
-  '汽油滤芯|true|false|40000|null',
-  '刹车油|true|true|40000|24',
-  '变速箱油|true|true|60000|36',
-  '火花塞|true|false|100000|null',
-  '轮胎换位|true|false|10000|null',
-  '防冻液|true|true|40000|24',
-];
-
-const _genericHybridRules = [..._genericFuelRules, '混动系统检查|true|true|20000|12'];
-
-const _genericPlugInRules = [
-  '机油|true|true|10000|12',
-  '机滤|true|true|10000|12',
-  '空气滤芯|true|true|20000|12',
-  '空调滤芯|true|true|20000|12',
-  '刹车油|true|true|40000|24',
-  '防冻液|true|true|40000|24',
-  '火花塞|true|false|100000|null',
-  '轮胎换位|true|false|10000|null',
-  '动力电池/电驱系统检查|true|true|20000|12',
-];
-
-const _genericEvRules = [
-  '空调滤芯|true|true|20000|12',
-  '刹车油|true|true|40000|24',
-  '减速器油|true|true|60000|36',
-  '电驱冷却液|true|true|40000|24',
-  '动力电池/高压系统检查|true|true|20000|12',
-  '制动系统检查|true|true|10000|12',
-  '轮胎换位|true|false|10000|null',
-];
