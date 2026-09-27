@@ -34,7 +34,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
   - `reminders/reminder_rows.dart`：提醒行视图模型与组装（`buildReminderRows`）、空态分类单一出口（`classifyReminderRows`）、`reminderRowsProvider`（提醒页数据接缝，watch 车辆/项目/记录/今天，英雄卡与列表共消费）；通知侧复用同一组装函数。
   - `reminders/widget_snapshot.dart`：桌面小组件快照组装纯函数（`buildWidgetSnapshotJson`，契约 `schemaVersion: 1` + 14 天预生成窗口，ADR 0013）；`reminders/widget_snapshot_controller.dart`：快照同步控制器（AppShell 挂载、listenManual 数据上游，内容相同不重写、失败不记账）。
   - `reminders/reminder_notifications.dart`：系统通知内容组装（`buildScheduledNotifications`）、应用内到期清单（`maintenanceNotices`）、全量数据签名。`reminders/reminder_dialogs.dart`：应用内提醒弹窗（抑制读写经通知协调器）。
-  - `profile/vehicles.dart`：车辆列表、车辆卡片、车辆切换，以及添加/编辑车辆 sheet 入口（数据装载守卫 + 提交给动作层的接线）；添加车辆两步向导（第一步表单 + 草稿状态机控制器 `AddCarWizardController`，模板加载经注入、plain-Dart 可单测）在 `profile/add_car_wizard.dart`，车型目录选择器（搜索过滤/品牌派生/生效品牌回退三个纯函数）在 `profile/vehicle_model_picker.dart`。
+  - `profile/vehicles.dart`：车辆列表、车辆卡片、车辆切换，以及添加/编辑车辆 sheet 入口（数据装载守卫 + 提交给动作层的接线）；添加车辆两步向导（第一步表单 + 草稿状态机控制器 `AddCarWizardController`：模板加载经注入、项目草稿变更面（编辑/启停/删除，内置"至少一个启用项目"守卫）plain-Dart 可单测）在 `profile/add_car_wizard.dart`，车型目录选择器（搜索过滤/品牌派生/生效品牌回退三个纯函数）在 `profile/vehicle_model_picker.dart`。
   - `profile/maintenance_items.dart`：保养项目 sheet、列表、卡片、项目表单和恢复默认草稿。
   - `profile/settings_data.dart`：个人中心设置行、主题行与版本 footer（备份导出/恢复/清空的编排 2026-09-25 起在动作层"备份与数据重置"分节，页面只留反馈薄壳）；通知设置与手动日期两个 sheet 拆到 `settings_notifications.dart` / `settings_manual_date.dart`。
   - `shared/shell_shared.dart`：shell shared barrel；具体实现分别在 `shared_widgets.dart`、`date_picker.dart`、`modal_feedback.dart`、`form_sheet.dart`、`formatters.dart`、`shell_actions.dart`、`scroll_snap.dart`（`RowSnapScrollPhysics` 整行/整柱吸附物理：档位列表/加油记录卡/统计图表三处共用，纯手势对齐不记录）。

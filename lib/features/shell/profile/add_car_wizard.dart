@@ -477,8 +477,9 @@ class AddCarWizardState extends ConsumerState<AddCarWizard>
             saving: saving,
             errorText: errorText,
             onBack: saving ? null : _returnToCarStep,
-            onChanged: (nextItems) =>
-                setState(() => _controller.itemDrafts = nextItems),
+            onEdit: saving ? (_) {} : _editItem,
+            onToggle: saving ? (_) {} : _toggleItem,
+            onDelete: saving ? (_) {} : _deleteItem,
             onAdd: saving ? null : _addItem,
             onRestoreDefaults: saving ? null : _restoreDefaultItems,
             onSubmit: saving ? null : _submit,
@@ -521,17 +522,47 @@ class AddCarWizardState extends ConsumerState<AddCarWizard>
     _refresh();
   }
 
-  /// 最终提交：校验在控制器（错误走行内错误位，与动作层失败同一显示
-  /// 位）；提交生命周期归表单运行时（成功关场+toast 归 handle，ADR 0016）。
+  /// 草稿列表"编辑"：弹草稿项目表单（交互与 [_addItem] 同型——sheet
+  /// 留在向导 State），确认后按 identity 替换（editDraft 恒成功）。
+  void _editItem(MaintenanceItem item) {
+    showDraftMaintenanceItemFormSheet(
+      context,
+      item: item,
+      onSubmit: (nextItem) {
+        setState(() => _controller.editDraft(item, nextItem));
+      },
+    );
+  }
+
+  /// 草稿列表"启停/删除"：变更与守卫在控制器的变更面，被拒弹轻提示
+  /// ——与落库路径停用最后一个启用项的 toast 口径一致（2026-09-26 起
+  /// 草稿侧不再是静默拦截）。
+  void _toggleItem(MaintenanceItem item) {
+    final error = _controller.toggleDraft(item);
+    if (error != null) {
+      showStatusOverlay(context, error, StatusOverlayTone.error);
+      return;
+    }
+    setState(() {});
+  }
+
+  /// 草稿列表"删除"：守卫同 [_toggleItem]。
+  void _deleteItem(MaintenanceItem item) {
+    final error = _controller.removeDraft(item);
+    if (error != null) {
+      showStatusOverlay(context, error, StatusOverlayTone.error);
+      return;
+    }
+    setState(() {});
+  }
+
+  /// 最终提交：「至少一个启用项目」由草稿变更面守卫（启停/删除被拒不
+  /// 生效），提交时不可能零启用项、不再复查；提交生命周期归表单运行时
+  /// （成功关场+toast 归 handle，ADR 0016）。
   Future<void> _submit() async {
     final car = _controller.carDraft;
     final items = _controller.itemDrafts;
     if (car == null || items == null) {
-      return;
-    }
-    final validationError = _controller.validateForSubmit();
-    if (validationError != null) {
-      setFormError(validationError);
       return;
     }
     await widget.handle.submit(() => widget.onSubmit(car, items));
@@ -585,7 +616,10 @@ class AddCarWizardState extends ConsumerState<AddCarWizard>
 /// 添加车辆向导的草稿状态机（plain-Dart 控制器，仿记录表单的
 /// RecordCostFormController）：持有第一步车辆草稿与第二步项目草稿的
 /// 全部迁移规则——同车型键复用草稿、换键重转、模板加载的竞态防御、
-/// 失败回退第一步。模板加载经 [loadTemplate] 注入（生产接
+/// 失败回退第一步。第二步项目草稿的变更面（编辑/启停/删除，与新增/
+/// 恢复默认一起）也收在这里：启停/删除内置「至少一个启用项目」守卫，
+/// 被拒返回提示文案（widget 负责展示），提交时零启用项因此不可达、
+/// 无需提交校验。模板加载经 [loadTemplate] 注入（生产接
 /// defaultItemsTemplateProvider family，测试注入 fake），本类不碰
 /// WidgetRef/BuildContext；重建（setState）、sheet/pop 与最终提交的
 /// saving 生命周期留在 widget，调用方在每次调用后自行刷新。
@@ -674,13 +708,62 @@ class AddCarWizardController {
     editingCarDraft = true;
   }
 
-  /// 第二步提交校验：至少一个启用项目。通过返回 null，否则返回错误文案
-  /// （widget 负责写进行内错误位）。
-  String? validateForSubmit() {
+  /// 「至少保留一个启用项目」被拒文案：与仓库侧兜底错误（lunio_repository
+  /// 抛的 typed 错误）同一口径。
+  static const String _lastEnabledItemErrorText = '至少保留一个可用保养项目';
+
+  /// 草稿列表"编辑"：按对象身份（identical）替换那一条草稿。替换不改
+  /// 变启用数量（enabled 由启停管），恒成功返回 null。仅第二步可调
+  /// （itemDrafts 未转出时静默不动）。
+  String? editDraft(MaintenanceItem original, MaintenanceItem next) {
     final items = itemDrafts;
-    if (items != null && !items.any((item) => item.enabled)) {
-      return '至少保留一个可用保养项目';
+    if (items == null) {
+      return null;
     }
+    itemDrafts = [
+      for (final current in items)
+        if (identical(current, original)) next else current,
+    ];
+    return null;
+  }
+
+  /// 草稿列表"启停"：停用最后一个启用项时拒绝（返回提示文案、列表不
+  /// 变），启用永远放行。仅第二步可调（itemDrafts 未转出时静默不动）。
+  String? toggleDraft(MaintenanceItem item) {
+    final items = itemDrafts;
+    if (items == null) {
+      return null;
+    }
+    final nextEnabled = !item.enabled;
+    if (!nextEnabled &&
+        !items.any(
+          (current) => current.enabled && !identical(current, item),
+        )) {
+      return _lastEnabledItemErrorText;
+    }
+    itemDrafts = [
+      for (final current in items)
+        if (identical(current, item))
+          current.copyWith(enabled: nextEnabled)
+        else
+          current,
+    ];
+    return null;
+  }
+
+  /// 草稿列表"删除"：删完没有启用项时拒绝（同启停守卫）。仅第二步可调
+  /// （itemDrafts 未转出时静默不动）。
+  String? removeDraft(MaintenanceItem item) {
+    final items = itemDrafts;
+    if (items == null) {
+      return null;
+    }
+    final nextItems =
+        items.where((current) => !identical(current, item)).toList();
+    if (!nextItems.any((current) => current.enabled)) {
+      return _lastEnabledItemErrorText;
+    }
+    itemDrafts = nextItems;
     return null;
   }
 

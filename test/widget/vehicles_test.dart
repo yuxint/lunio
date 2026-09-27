@@ -352,6 +352,43 @@ void main() {
   });
 
 
+  testWidgets('add car item step blocks disabling the last enabled item '
+      'with a toast', (tester) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    // 燃油模板 10 项全启用；先删掉 8 项（剩 2 项均启用）。
+    for (var i = 0; i < 8; i++) {
+      await tester.tap(find.byTooltip('删除').first);
+      await tester.pumpAndSettle();
+    }
+    // 停用其中一项（还有另一项兜着，放行）。
+    await tester.tap(find.text('已启用').first);
+    await tester.pumpAndSettle();
+    expect(find.text('已禁用'), findsOneWidget);
+
+    // 再停用最后一个启用项 → 被拒 + 轻提示（2026-09-26 起不再静默）。
+    await tester.tap(find.text('已启用'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('至少保留一个可用保养项目'), findsOneWidget);
+    // 拦截不生效：卡片仍是启用态。
+    expect(find.text('已禁用'), findsOneWidget);
+    expect(find.text('已启用'), findsOneWidget);
+
+    // 冲掉 toast 1.6s 自动消失的定时器，避免测试收尾挂起计时器。
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('至少保留一个可用保养项目'), findsNothing);
+  });
+
+
   testWidgets('add car date picker today uses effective app date', (
     tester,
   ) async {

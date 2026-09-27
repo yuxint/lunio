@@ -307,9 +307,9 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 |---|---|---|---|
 | 1 | `showLunioFormSheet` 预装载 `vehicleModelsProvider` + `effectiveTodayProvider`（ADR 0016：装载失败 toast 不开壳；目录为空守卫 toast"暂无可选车型"） | 装载结果经闭包共享变量传给向导 | — |
 | 2 | 第一步 `AddCarForm`（add_car_wizard.dart:41 起） | 选品牌车型（`VehicleModelPicker`（vehicle_model_picker.dart:58）→ 双列选择 sheet `:117 → VehicleModelPickerSheet`，支持搜索——过滤/品牌派生/生效品牌回退是三个纯函数；**列表外可"＋ 自定义输入…"手输品牌车型**，ADR 0003）、**动力类型五选一 chip 行**（`PowertrainPicker`，按目录推荐值预选，换车型时重置推荐、用户可改）、当前里程、上路日期、油箱容积（选填，升，1–999、最多四位小数，`FuelRules.validateTankCapacity` 校验） | — |
-| 3 | "下一步" → `AddCarWizardController.submitCarDraft`（add_car_wizard.dart:611；widget 侧 `_handleCarDraft` :480 只做刷新与 sheet 标题同步） | 草稿状态机（plain-Dart 控制器，单测 test/features/add_car_wizard_controller_test.dart）：同车型同动力复用草稿不重查、换键重转、竞态防御（等待中换车丢弃过期结果/过期失败）。模板加载/缓存归 `defaultItemsTemplateProvider`（providers.dart，**按"品牌·车型·所选动力类型"record 键缓存的 family**，内置只读数据不失效）：仓库 `resolveDefaultItems`（built_in_catalog_repository.dart，解析唯一入口）→ `ensureBootstrapData()` + **车型专属模板优先**（`listDefaultItemsForVehicleModel`：品牌+车型命中目录条目、条目带 itemTemplate、所选动力类型=推荐值三者都满足才命中，目前仅思域→civicFuel 14 项，ADR 0004；不落库）→ 未命中 `listDefaultItemsForPowertrain`（**按车的动力类型取**）；加载失败退回第一步、行内错误可见 | 只读，无写库 |
-| 4 | 第二步 `AddCarMaintenanceItemsStep`（maintenance_items.dart:29） | 默认项目草稿可编辑（草稿表单 `:803 → showDraftMaintenanceItemFormSheet`，纯内存）/启停/删除（均受"至少一个启用项"拦截）/"恢复"补回被删默认项（`:141 → showRestoreDefaultItemsSheet` 勾选式） | 纯内存 |
-| 5 | "保存车辆" → `AddCarWizardState._submit`（add_car_wizard.dart:497，校验在控制器 `validateForSubmit`）→ onSubmit（sheet 入口处）→ `shell_actions.dart → createCar`（动作层，ADR 0007） | `repository.createCarWithMaintenanceItems`（lunio_repository.dart:224，**单事务**：校验至少一个启用项目+逐项 validate → 插车辆 → 逐条插项目 → **无应用车辆时把新车设为当前**）；写完失效车辆家族 | `cars` +1、`maintenance_items` +N、可能写 `appliedCarId` |
+| 3 | "下一步" → `AddCarWizardController.submitCarDraft`（add_car_wizard.dart:674；widget 侧 `_handleCarDraft` :509 只做刷新与 sheet 标题同步） | 草稿状态机（plain-Dart 控制器，单测 test/features/add_car_wizard_controller_test.dart）：同车型同动力复用草稿不重查、换键重转、竞态防御（等待中换车丢弃过期结果/过期失败）。模板加载/缓存归 `defaultItemsTemplateProvider`（providers.dart，**按"品牌·车型·所选动力类型"record 键缓存的 family**，内置只读数据不失效）：仓库 `resolveDefaultItems`（built_in_catalog_repository.dart，解析唯一入口）→ `ensureBootstrapData()` + **车型专属模板优先**（`listDefaultItemsForVehicleModel`：品牌+车型命中目录条目、条目带 itemTemplate、所选动力类型=推荐值三者都满足才命中，目前仅思域→civicFuel 14 项，ADR 0004；不落库）→ 未命中 `listDefaultItemsForPowertrain`（**按车的动力类型取**）；加载失败退回第一步、行内错误可见 | 只读，无写库 |
+| 4 | 第二步 `AddCarMaintenanceItemsStep`（maintenance_items.dart:33，**纯事件转发**） | 默认项目草稿可编辑（草稿表单 `showDraftMaintenanceItemFormSheet`，由向导 State 打开，纯内存）/启停/删除——**变更与守卫收在控制器变更面** `editDraft/toggleDraft/removeDraft`（add_car_wizard.dart，`String?` 返回：停用/删除最后一个启用项被拒返回文案，向导 State 弹**轻提示**"至少保留一个可用保养项目"，2026-09-26 起不再是静默拦截；编辑按 identity 替换、恒成功）/"恢复"补回被删默认项（`showRestoreDefaultItemsSheet` 勾选式） | 纯内存 |
+| 5 | "保存车辆" → `AddCarWizardState._submit`（add_car_wizard.dart；零启用项已由变更面守卫杜绝、**提交不复查**——2026-09-26 删 `validateForSubmit`）→ onSubmit（sheet 入口处）→ `shell_actions.dart → createCar`（动作层，ADR 0007） | `repository.createCarWithMaintenanceItems`（lunio_repository.dart:224，**单事务**：校验至少一个启用项目+逐项 validate → 插车辆 → 逐条插项目 → **无应用车辆时把新车设为当前**，仓库兜底不变）；写完失效车辆家族 | `cars` +1、`maintenance_items` +N、可能写 `appliedCarId` |
 | 6 | 提交成功关 sheet + toast"车辆已保存"（表单运行时统一收口，ADR 0016） | 提醒页立即显示新车 | — |
 
 #### 5.1.2 编辑车辆
@@ -333,7 +333,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 #### 5.2.1 打开项目 sheet
 
-车辆卡"项目" → `maintenance_items.dart:365 → showMaintenanceItemsSheet`（car 为空时管当前应用车辆）。sheet 项目列表 watch `providers.dart → maintenanceItemsForCarProvider`（**按车 family**，加载/竞态/缓存由 Riverpod 接管；`appliedCarMaintenanceItemsProvider` 也是它的派生），增删改经动作层失效车辆家族（含 family 整族失效）后列表自动重算，sheet 无本地刷新通道；重载中/重载失败保留旧列表（滚动位置不丢），失败时列表下方红条提示。
+车辆卡"项目" → `maintenance_items.dart:330 → showMaintenanceItemsSheet`（car 为空时管当前应用车辆）。sheet 项目列表 watch `providers.dart → maintenanceItemsForCarProvider`（**按车 family**，加载/竞态/缓存由 Riverpod 接管；`appliedCarMaintenanceItemsProvider` 也是它的派生），增删改经动作层失效车辆家族（含 family 整族失效）后列表自动重算，sheet 无本地刷新通道；重载中/重载失败保留旧列表（滚动位置不丢），失败时列表下方红条提示。
 
 #### 5.2.2 各操作
 

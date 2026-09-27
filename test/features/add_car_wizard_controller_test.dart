@@ -6,7 +6,8 @@
 //  - 同车型键复用草稿不重载模板；换键（含换动力类型）重转；
 //  - 模板失败回退第一步且错误可见；下一次提交清空错误；
 //  - 竞态防御：等待中换车，过期的成功结果/过期失败都被丢弃；
-//  - 提交校验"至少保留一个可用保养项目"；恢复默认合并、新增追加。
+//  - 变更面守卫「至少保留一个启用项目」（启停/删除被拒不生效）；编辑
+//    按 identity 替换；恢复默认合并、新增追加。
 //
 // 模板加载是注入点：测试用 Completer/fake 控制时序，不碰 Riverpod。
 // 交互（sheet/pop/重建）留在 widget 层，由 widget 测试覆盖。
@@ -254,23 +255,64 @@ void main() {
     expect(controller.stage, AddCarWizardStage.items);
   });
 
-  test('submit validation requires at least one enabled item', () async {
+  test('toggleDraft rejects disabling the last enabled item', () async {
     final controller = buildController();
-    // 草稿未转出时不校验（widget 层有 null 守卫，不会走到提交）。
-    expect(controller.validateForSubmit(), isNull);
-
     await controller.submitCarDraft(makeCar());
-    controller.itemDrafts = [
-      makeDraft('机油', enabled: false),
-      makeDraft('汽油滤芯', enabled: false),
-    ];
-    expect(controller.validateForSubmit(), '至少保留一个可用保养项目');
+    final lastEnabled = makeDraft('汽油滤芯');
+    controller.itemDrafts = [makeDraft('机油', enabled: false), lastEnabled];
 
-    controller.itemDrafts = [
-      makeDraft('机油', enabled: false),
-      makeDraft('汽油滤芯'),
-    ];
-    expect(controller.validateForSubmit(), isNull);
+    expect(
+      controller.toggleDraft(lastEnabled),
+      '至少保留一个可用保养项目',
+    );
+    // 被拒不生效：列表原样，最后一项仍启用。
+    expect(controller.itemDrafts!.last.enabled, isTrue);
+    expect(controller.itemDrafts, hasLength(2));
+  });
+
+  test('toggleDraft allows toggling when a spare enabled item remains',
+      () async {
+    final controller = buildController();
+    await controller.submitCarDraft(makeCar());
+    final first = makeDraft('机油');
+    final second = makeDraft('汽油滤芯');
+    controller.itemDrafts = [first, second];
+
+    // 汽油滤芯兜着，可停用机油。
+    expect(controller.toggleDraft(first), isNull);
+    expect(controller.itemDrafts![0].enabled, isFalse);
+    // 启用永远放行。
+    expect(controller.toggleDraft(controller.itemDrafts![0]), isNull);
+    expect(controller.itemDrafts![0].enabled, isTrue);
+  });
+
+  test('removeDraft rejects when no enabled item would remain', () async {
+    final controller = buildController();
+    await controller.submitCarDraft(makeCar());
+    final enabled = makeDraft('机油');
+    final disabled = makeDraft('汽油滤芯', enabled: false);
+    controller.itemDrafts = [enabled, disabled];
+
+    expect(
+      controller.removeDraft(enabled),
+      '至少保留一个可用保养项目',
+    );
+    expect(controller.itemDrafts, hasLength(2));
+
+    // 删停用项不影响启用数量，放行。
+    expect(controller.removeDraft(disabled), isNull);
+    expect(controller.itemDrafts, [enabled]);
+  });
+
+  test('editDraft replaces the draft by identity', () async {
+    final controller = buildController();
+    await controller.submitCarDraft(makeCar());
+    final original = makeDraft('机油');
+    controller.itemDrafts = [original];
+
+    final next = makeDraft('机油（全合成）', enabled: false);
+    expect(controller.editDraft(original, next), isNull);
+    expect(controller.itemDrafts, [next]);
   });
 
   test('restore defaults appends converted drafts', () async {

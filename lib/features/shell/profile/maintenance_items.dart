@@ -7,8 +7,10 @@
 //  2. showMaintenanceItemsSheet：已保存车辆的项目 sheet（项目列表走
 //     maintenanceItemsForCarProvider family，动作层写库失效后自动重算）。
 //
-// 业务约束（UI 侧前置拦截，Repository 侧兜底）：
-// 至少保留一个启用项目；有历史记录的项目不能删除。
+// 业务约束：至少保留一个启用项目——草稿模式的守卫与变更收在
+// AddCarWizardController 的草稿变更面（被拒轻提示在向导 State），
+// 落库模式由 Repository 兜底（typed 错误、动作层 toast）；
+// 有历史记录的项目不能删除（Repository 校验）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -25,7 +27,9 @@ import '../../../domain/rules/maintenance_rules.dart';
 import '../shared/shell_shared.dart';
 
 /// 向导第二步：车型 pill + 新增/恢复按钮 + 项目列表（限高滚动）+
-/// 上一步/保存车辆。所有修改通过 onChanged 回调交给向导 State。
+/// 上一步/保存车辆。纯事件转发——编辑/启停/删除逐项回调交给向导
+/// State（草稿变更与守卫在 AddCarWizardController，被拒轻提示也在
+/// 向导 State）。
 class AddCarMaintenanceItemsStep extends StatelessWidget {
   const AddCarMaintenanceItemsStep({
     required this.car,
@@ -33,7 +37,9 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
     required this.saving,
     required this.errorText,
     required this.onBack,
-    required this.onChanged,
+    required this.onEdit,
+    required this.onToggle,
+    required this.onDelete,
     required this.onAdd,
     required this.onRestoreDefaults,
     required this.onSubmit,
@@ -44,7 +50,9 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
   final bool saving;
   final String? errorText;
   final VoidCallback? onBack;
-  final ValueChanged<List<MaintenanceItem>> onChanged;
+  final ValueChanged<MaintenanceItem> onEdit;
+  final ValueChanged<MaintenanceItem> onToggle;
+  final ValueChanged<MaintenanceItem> onDelete;
   final VoidCallback? onAdd;
   final VoidCallback? onRestoreDefaults;
   final VoidCallback? onSubmit;
@@ -71,9 +79,9 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
           child: SingleChildScrollView(
             child: MaintenanceItemList(
               items: items,
-              onEdit: saving ? (_) {} : (item) => _editItem(context, item),
-              onToggle: saving ? (_) {} : _toggleItem,
-              onDelete: saving ? (_) {} : _deleteItem,
+              onEdit: saving ? (_) {} : onEdit,
+              onToggle: saving ? (_) {} : onToggle,
+              onDelete: saving ? (_) {} : onDelete,
             ),
           ),
         ),
@@ -91,49 +99,6 @@ class AddCarMaintenanceItemsStep extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  /// 编辑草稿：弹草稿表单，按对象身份（identical）替换列表里的那一条。
-  void _editItem(BuildContext context, MaintenanceItem item) {
-    showDraftMaintenanceItemFormSheet(
-      context,
-      item: item,
-      onSubmit: (nextItem) {
-        onChanged([
-          for (final current in items)
-            if (identical(current, item)) nextItem else current,
-        ]);
-      },
-    );
-  }
-
-  /// 启停草稿：停用最后一个启用项时静默拦截（按钮看起来没反应）。
-  void _toggleItem(MaintenanceItem item) {
-    final nextEnabled = !item.enabled;
-    if (!nextEnabled &&
-        items
-            .where((current) => current.enabled && !identical(current, item))
-            .isEmpty) {
-      return;
-    }
-    onChanged([
-      for (final current in items)
-        if (identical(current, item))
-          current.copyWith(enabled: nextEnabled)
-        else
-          current,
-    ]);
-  }
-
-  /// 删除草稿：删完没有启用项时静默拦截。
-  void _deleteItem(MaintenanceItem item) {
-    final nextItems = items
-        .where((current) => !identical(current, item))
-        .toList();
-    if (!nextItems.any((current) => current.enabled)) {
-      return;
-    }
-    onChanged(nextItems);
   }
 }
 
