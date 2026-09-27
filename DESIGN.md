@@ -360,6 +360,8 @@ Standard cards use very soft shadows with low opacity. Elevated hero cards and s
 
 Blocking sheets and dialogs use a light background blur with a subtle dimming overlay so the underlying page reads as the previous layer. The modal surface itself stays solid and readable; do not turn forms, lists, or confirmation dialogs into glass panels.
 
+All centered dialogs share one card shell (`LunioDialogCard`): solid surface with the 20px card radius, a hairline border, a soft ambient shadow, a title row with an optional 20px semantic-tone icon, and a max height of 82% of screen height with internal scrolling so long content never overflows. Action rows (`LunioDialogActions`) pair a secondary text button with a 50px-tall filled primary (or a single full-width primary), tinted by the dialog's semantic color when one applies.
+
 ## Shapes
 
 The shape language is rounded and tactile. Cards use 20px radii, hero panels use 28px, and bottom sheets use 30px top radii. Icon buttons and input fields use 14px radii. The design should feel soft enough for touch but still professional.

@@ -216,11 +216,11 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 1 | `reminder_notifications.dart → maintenanceNotices` | 到期项收集（无记录直接空）；静默过滤走协调器 `isSilencedForInAppDialog`（"稍后提醒"期内或今天已"知道了"即跳过） | — |
-| 2 | `reminder_dialogs.dart:26 → showMaintenanceReminderDialog` | 弹保养提醒框（逐项列出） | — |
+| 2 | `reminder_dialogs.dart:56 → showMaintenanceReminderDialog` | 弹保养提醒框（逐项列出；与里程弹窗共用 `_ReminderDialog` 骨架 + `LunioDialogCard` 卡片外壳，2026-09-26 收编） | — |
 | 3a | 点"知道了" | 返回 acknowledged，控制器经协调器 `acknowledgeMaintenanceItem` 逐项写当日 ack | `maintenanceInAppReminderAcknowledgedOn:<itemId>` = 今天（当天不再弹，系统通知照发） |
-| 3b | 点"15 天内不再提醒" | 弹窗内 `onSnoozeAll` 经协调器 `snoozeMaintenanceItems` 写 snooze | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（系统+应用内一起静默） |
+| 3b | 点"15 天内不再提醒" | 弹窗内 `onSnooze` 经协调器 `snoozeMaintenanceItems` 写 snooze | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（系统+应用内一起静默） |
 | 4 | 有动作后 | 控制器清空两个签名并立即重跑 `syncFromProviders` | 系统通知按新 snooze 状态重排 |
-| 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:60 → showMileageUpdateReminderDialog`；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>`（经协调器 `snoozeMileageUpdate` / `acknowledgeMileageUpdate` 写入） |
+| 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:97 → showMileageUpdateReminderDialog`；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>`（经协调器 `snoozeMileageUpdate` / `acknowledgeMileageUpdate` 写入） |
 | 6 | 回到前台 | `app_shell.dart → didChangeAppLifecycleState` 转交 `controller.onAppResumed()` 清空应用内签名并重跑同步 | 强制重查（处理完离开再回来，到期会再弹） |
 
 ---

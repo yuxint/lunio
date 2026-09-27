@@ -5,13 +5,15 @@
 //  - snoozed（"15 天内不再提醒"）：这里经协调器写 snooze 偏好
 //    （系统通知和应用内弹窗一起静默 15 天）。
 // 点遮罩关闭返回 null（什么都不写，下次签名变化/resume 还会弹）。
+// 两类弹窗共用同一骨架 _ReminderDialog（标题+内容+snooze/ack 动作行，
+// 2026-09-26 收编——此前是同一套 saving 旗/按钮行/pop 机器手写两遍）；
+// 卡片外壳统一走 shared 的 LunioDialogCard/LunioDialogActions。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
 
 import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
-import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
 import 'notification_coordinator.dart';
@@ -62,11 +64,22 @@ Future<ReminderDialogAction?> showMaintenanceReminderDialog({
     context: context,
     barrierDismissible: true,
     builder: (context) {
-      return _MaintenanceReminderDialog(
-        car: car,
-        maintenanceNotices: maintenanceNotices,
-        today: today,
-        onSnoozeAll: () async {
+      return _ReminderDialog(
+        title: '保养提醒',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (index, notice) in maintenanceNotices.indexed) ...[
+              if (index > 0) const SizedBox(height: 10),
+              ReminderNotificationSegment(
+                title: notice.title,
+                body: dueNoticeText(notice),
+              ),
+            ],
+          ],
+        ),
+        onSnooze: () async {
           final itemIds = [
             for (final notice in maintenanceNotices)
               if (notice.item.id != null) notice.item.id!,
@@ -91,8 +104,12 @@ Future<ReminderDialogAction?> showMileageUpdateReminderDialog({
     context: context,
     barrierDismissible: true,
     builder: (context) {
-      return _MileageUpdateReminderDialog(
-        car: car,
+      return _ReminderDialog(
+        title: '更新当前里程',
+        child: Text(
+          '建议更新 ${car.brand} ${car.model} 的当前里程。',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         onSnooze: () async {
           final carId = car.id;
           if (carId == null) {
@@ -105,180 +122,46 @@ Future<ReminderDialogAction?> showMileageUpdateReminderDialog({
   );
 }
 
-/// 保养提醒弹窗内容（可滚动，防到期项太多溢出）。
-class _MaintenanceReminderDialog extends StatefulWidget {
-  const _MaintenanceReminderDialog({
-    required this.car,
-    required this.maintenanceNotices,
-    required this.today,
-    required this.onSnoozeAll,
-  });
-
-  final Car car;
-  final List<ReminderViewData> maintenanceNotices;
-  final LocalDate today;
-  final Future<void> Function() onSnoozeAll;
-
-  @override
-  State<_MaintenanceReminderDialog> createState() =>
-      _MaintenanceReminderDialogState();
-}
-
-class _MaintenanceReminderDialogState
-    extends State<_MaintenanceReminderDialog> {
-  bool saving = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      backgroundColor: Colors.transparent,
-      child: Container(
-        width: double.infinity,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.82,
-        ),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: tokens.surface,
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          border: Border.all(color: tokens.line),
-          boxShadow: [
-            BoxShadow(
-              color: tokens.ink.withValues(alpha: 0.16),
-              blurRadius: 36,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('保养提醒', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-              for (final notice in widget.maintenanceNotices) ...[
-                ReminderNotificationSegment(
-                  title: notice.title,
-                  body: dueNoticeText(notice),
-                ),
-                const SizedBox(height: 10),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: LunioSecondaryButton(
-                      label: saving ? '处理中...' : '15 天内不再提醒',
-                      onPressed: saving ? null : _snoozeAll,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: saving
-                          ? null
-                          : () => Navigator.of(
-                              context,
-                            ).pop(ReminderDialogAction.acknowledged),
-                      child: const Text('知道了'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _snoozeAll() async {
-    setState(() => saving = true);
-    await widget.onSnoozeAll();
-    if (!mounted) {
-      return;
-    }
-    Navigator.of(context).pop(ReminderDialogAction.snoozed);
-  }
-}
-
-/// 里程更新弹窗内容。
-class _MileageUpdateReminderDialog extends StatefulWidget {
-  const _MileageUpdateReminderDialog({
-    required this.car,
+/// 两类提醒弹窗的公共骨架：标题 + 内容段 + 「15 天内不再提醒 /
+/// 知道了」动作行（卡片外壳 LunioDialogCard）。saving 期间两键禁用、
+/// 次键文案换「处理中...」；snooze 完成后 pop(snoozed)，"知道了"直接
+/// pop(acknowledged)，副作用由通知同步控制器按返回值处理。
+class _ReminderDialog extends StatefulWidget {
+  const _ReminderDialog({
+    required this.title,
+    required this.child,
     required this.onSnooze,
   });
 
-  final Car car;
+  final String title;
+
+  /// 内容主体（保养弹窗=到期项分段卡列表，里程弹窗=一句话正文）。
+  final Widget child;
+
+  /// 点「15 天内不再提醒」时执行的静默写入（经协调器，见各 show 入口）。
   final Future<void> Function() onSnooze;
 
   @override
-  State<_MileageUpdateReminderDialog> createState() =>
-      _MileageUpdateReminderDialogState();
+  State<_ReminderDialog> createState() => _ReminderDialogState();
 }
 
-class _MileageUpdateReminderDialogState
-    extends State<_MileageUpdateReminderDialog> {
+class _ReminderDialogState extends State<_ReminderDialog> {
   bool saving = false;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      backgroundColor: Colors.transparent,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: tokens.surface,
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          border: Border.all(color: tokens.line),
-          boxShadow: [
-            BoxShadow(
-              color: tokens.ink.withValues(alpha: 0.16),
-              blurRadius: 36,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('更新当前里程', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              '建议更新 ${widget.car.brand} ${widget.car.model} 的当前里程。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: LunioSecondaryButton(
-                    label: saving ? '处理中...' : '15 天内不再提醒',
-                    onPressed: saving ? null : _snooze,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: saving
-                        ? null
-                        : () => Navigator.of(
-                            context,
-                          ).pop(ReminderDialogAction.acknowledged),
-                    child: const Text('知道了'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+    return LunioDialogCard(
+      title: widget.title,
+      actions: LunioDialogActions(
+        secondaryLabel: saving ? '处理中...' : '15 天内不再提醒',
+        onSecondaryPressed: saving ? null : _snooze,
+        primaryLabel: '知道了',
+        onPrimaryPressed: saving
+            ? null
+            : () =>
+                  Navigator.of(context).pop(ReminderDialogAction.acknowledged),
       ),
+      child: widget.child,
     );
   }
 

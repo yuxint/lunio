@@ -316,7 +316,7 @@ class PickerOption extends StatelessWidget {
 /// 自定义车型弹窗：品牌/车型两个必填输入框，确认返回 (brand, model)。
 /// 目录（懂车帝命名）覆盖不到的车型从这里手输；取消/校验失败返回 null。
 /// 走 showLunioDialog seam（毛玻璃底/动画/收键盘与全局弹层一致），
-/// 卡片样式与其余弹窗同族（surface + radiusLarge + line）。
+/// 卡片外壳与全部居中弹窗统一走 LunioDialogCard/LunioDialogActions。
 Future<(String, String)?> _showCustomModelDialog(BuildContext context) {
   final brandController = TextEditingController();
   final modelController = TextEditingController();
@@ -337,74 +337,42 @@ Future<(String, String)?> _showCustomModelDialog(BuildContext context) {
           }
 
           final tokens = Theme.of(dialogContext).extension<LunioTokens>()!;
-          return Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-            backgroundColor: Colors.transparent,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: tokens.surface,
-                borderRadius: BorderRadius.circular(tokens.radiusLarge),
-                border: Border.all(color: tokens.line),
-                boxShadow: [
-                  BoxShadow(
-                    color: tokens.ink.withValues(alpha: 0.16),
-                    blurRadius: 36,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('自定义车型',
-                      style: Theme.of(dialogContext).textTheme.titleMedium),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: brandController,
-                    autofocus: true,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(labelText: '品牌'),
-                  ),
+          return LunioDialogCard(
+            title: '自定义车型',
+            actions: LunioDialogActions(
+              secondaryLabel: '取消',
+              onSecondaryPressed: () => Navigator.of(dialogContext).pop(),
+              primaryLabel: '确定',
+              onPrimaryPressed: submit,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: brandController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: '品牌'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: modelController,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => submit(),
+                  decoration: const InputDecoration(labelText: '车型'),
+                ),
+                if (errorText != null) ...[
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: modelController,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => submit(),
-                    decoration: const InputDecoration(labelText: '车型'),
-                  ),
-                  if (errorText != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      errorText!,
-                      style: Theme.of(dialogContext)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: tokens.danger),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: LunioSecondaryButton(
-                          label: '取消',
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: submit,
-                          child: const Text('确定'),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    errorText!,
+                    style: Theme.of(dialogContext)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: tokens.danger),
                   ),
                 ],
-              ),
+              ],
             ),
           );
         },

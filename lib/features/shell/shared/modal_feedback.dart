@@ -5,7 +5,8 @@
 //    支持下滑关闭：内容在滚动顶部时下拉，整块 sheet 跟手，松手过阈值/有
 //    速度即关闭）
 //  - showLunioDialog / showConfirmDialog / showMessageDialog：居中对话框
-//    （确认框返回 bool?，点取消 false、点确认 true、点遮罩关闭 null）
+//    （卡片外壳统一走 LunioDialogCard + LunioDialogActions；确认框返回
+//    bool?，点取消 false、点确认 true、点遮罩关闭 null）
 //  - showStatusOverlay：页面内容区轻量 toast（Overlay 实现，1.6s 自动消失；
 //    这是产品约定的瞬时成功反馈，替代系统 SnackBar）
 //  - dismissTransientUi：切 tab 时统一收起键盘/toast/snackbar
@@ -347,6 +348,150 @@ class _SheetDragDismissState extends State<_SheetDragDismiss>
   }
 }
 
+/// 居中弹窗统一卡片外壳：Dialog 脚手架（水平 24 内边距，透明底配
+/// showLunioDialog 的毛玻璃）+ 卡片装饰（surface 底、radiusLarge 圆角、
+/// line 描边、投影）+ 标题槽（可选语义色图标）+ 内容槽 + 动作行槽。
+/// 内容自带最大高度（屏高 82%）与内部滚动防溢出——此前只有保养提醒
+/// 弹窗手动加了这层，2026-09-26 收编起全部弹窗统一携带。
+/// 所有居中弹窗（确认框/信息框/提醒弹窗/自建车型）都经它组装，
+/// 不要再手写 Dialog+Container 装饰块（收编前曾有五份逐字重复）。
+class LunioDialogCard extends StatelessWidget {
+  const LunioDialogCard({
+    super.key,
+    this.leading,
+    required this.title,
+    required this.child,
+    this.actions,
+  });
+
+  /// 标题左侧的语义色图标（信息框的 tone 图标用；普通弹窗不传）。
+  final Icon? leading;
+
+  /// 弹窗标题（titleMedium）。
+  final String title;
+
+  /// 标题下方的内容主体（正文文本、分段卡、输入框等），间距由壳统一。
+  final Widget child;
+
+  /// 底部动作行（[LunioDialogActions]）；不传则只有内容。
+  final Widget? actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final titleText = Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium,
+    );
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: double.infinity,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.82,
+        ),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: tokens.surface,
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+          border: Border.all(color: tokens.line),
+          boxShadow: [
+            BoxShadow(
+              color: tokens.ink.withValues(alpha: 0.16),
+              blurRadius: 36,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              leading == null
+                  ? titleText
+                  : Row(
+                      children: [
+                        leading!,
+                        const SizedBox(width: 8),
+                        Expanded(child: titleText),
+                      ],
+                    ),
+              const SizedBox(height: 8),
+              child,
+              if (actions != null) ...[const SizedBox(height: 16), actions!],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 弹窗动作行：次按钮 + 主按钮并排（Expanded 均分、10 间距），只给
+/// 主按钮时全宽。主按钮统一 50 高、radiusMedium 圆角，[primaryBackground]
+/// 指定语义色（确认框的危险红/主色、信息框的 tone 色），不传走主题默认。
+/// onPressed 传 null 即禁用对应按钮（如提醒弹窗 saving 期间两键全禁）。
+class LunioDialogActions extends StatelessWidget {
+  const LunioDialogActions({
+    super.key,
+    this.secondaryLabel,
+    this.onSecondaryPressed,
+    required this.primaryLabel,
+    required this.onPrimaryPressed,
+    this.primaryBackground,
+  });
+
+  /// 左侧次要按钮文案；不传 = 只有主按钮（全宽）。
+  final String? secondaryLabel;
+
+  /// 次按钮回调；传 null 禁用。
+  final VoidCallback? onSecondaryPressed;
+
+  /// 主按钮文案。
+  final String primaryLabel;
+
+  /// 主按钮回调；传 null 禁用。
+  final VoidCallback? onPrimaryPressed;
+
+  /// 主按钮背景色（语义色）；不传走 FilledButton 主题默认。
+  final Color? primaryBackground;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final primary = FilledButton(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(50),
+        backgroundColor: primaryBackground,
+        foregroundColor: primaryBackground == null ? null : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusMedium),
+        ),
+      ),
+      onPressed: onPrimaryPressed,
+      child: Text(primaryLabel),
+    );
+    final secondary = secondaryLabel;
+    if (secondary == null) {
+      return SizedBox(width: double.infinity, child: primary);
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: LunioSecondaryButton(
+            label: secondary,
+            onPressed: onSecondaryPressed,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: primary),
+      ],
+    );
+  }
+}
+
 /// 通用确认框：取消/确认双按钮，destructive=true 时确认键为危险红。
 /// 返回 true（确认）/false（取消）/null（点遮罩关闭）。
 /// 删除记录、删车、清空数据、恢复备份等危险操作都用它。
@@ -365,63 +510,16 @@ Future<bool?> showConfirmDialog({
     barrierDismissible: true,
     builder: (context) {
       final tokens = Theme.of(context).extension<LunioTokens>()!;
-      final confirmColor = destructive ? tokens.danger : tokens.primary;
-      return Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-        backgroundColor: Colors.transparent,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: tokens.surface,
-            borderRadius: BorderRadius.circular(tokens.radiusLarge),
-            border: Border.all(color: tokens.line),
-            boxShadow: [
-              BoxShadow(
-                color: tokens.ink.withValues(alpha: 0.16),
-                blurRadius: 36,
-                offset: const Offset(0, 16),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(message, style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: LunioSecondaryButton(
-                      label: cancelLabel,
-                      onPressed: () => Navigator.of(context).pop(false),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(50),
-                        backgroundColor: confirmColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            tokens.radiusMedium,
-                          ),
-                        ),
-                      ),
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: Text(confirmLabel),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      return LunioDialogCard(
+        title: title,
+        actions: LunioDialogActions(
+          secondaryLabel: cancelLabel,
+          onSecondaryPressed: () => Navigator.of(context).pop(false),
+          primaryLabel: confirmLabel,
+          onPrimaryPressed: () => Navigator.of(context).pop(true),
+          primaryBackground: destructive ? tokens.danger : tokens.primary,
         ),
+        child: Text(message, style: Theme.of(context).textTheme.bodySmall),
       );
     },
   );
@@ -440,61 +538,15 @@ Future<void> showMessageDialog({
     builder: (context) {
       final tokens = Theme.of(context).extension<LunioTokens>()!;
       final toneColor = statusToneColor(tokens, tone);
-      return Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-        backgroundColor: Colors.transparent,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: tokens.surface,
-            borderRadius: BorderRadius.circular(tokens.radiusLarge),
-            border: Border.all(color: tokens.line),
-            boxShadow: [
-              BoxShadow(
-                color: tokens.ink.withValues(alpha: 0.16),
-                blurRadius: 36,
-                offset: const Offset(0, 16),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(statusToneIcon(tone), color: toneColor, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(message, style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                    backgroundColor: toneColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(tokens.radiusMedium),
-                    ),
-                  ),
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('确认'),
-                ),
-              ),
-            ],
-          ),
+      return LunioDialogCard(
+        title: title,
+        leading: Icon(statusToneIcon(tone), color: toneColor, size: 20),
+        actions: LunioDialogActions(
+          primaryLabel: '确认',
+          onPrimaryPressed: () => Navigator.of(context).pop(),
+          primaryBackground: toneColor,
         ),
+        child: Text(message, style: Theme.of(context).textTheme.bodySmall),
       );
     },
   );
