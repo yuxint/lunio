@@ -14,9 +14,7 @@ import 'package:lunio/features/shell/shared/shared_widgets.dart';
 
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
-import 'package:lunio/domain/entities/car.dart';
-import 'package:lunio/domain/entities/maintenance_item.dart';
-import 'package:lunio/domain/entities/sync_metadata.dart';
+import '../helpers/builders.dart';
 import '../helpers/widget_app.dart';
 
 void main() {
@@ -56,36 +54,17 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     await repository.setPreferenceValue('fuelProvince', '湖北');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -138,10 +117,6 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
@@ -151,27 +126,12 @@ void main() {
     // 容积必须给：没容积时档位列表整卡换引导文案。
     Future<int> seedCar(String brand, String model, int percent) async {
       final id = await repository.createCarWithMaintenanceItems(
-        Car(
-          brand: brand,
-          model: model,
-          currentMileageKm: 10000,
-          roadDate: const LocalDate(2023, 8, 12),
-          tankCapacityLiters: 55,
-          sync: sync,
-        ),
+        defaultCar(brand: brand, model: model, tankCapacityLiters: 55),
         [
-          MaintenanceItem(
-            carsId: 0,
-            name: '机油',
-            enabled: true,
-            remindByMileage: true,
+          defaultOilItem(
             remindByTime: false,
-            mileageIntervalKm: 5000,
             timeIntervalMonths: null,
-            notOverdueUpperLimit: 100,
-            overdueUpperLimit: 125,
             sortOrder: 0,
-            sync: sync,
           ),
         ],
       );
@@ -213,36 +173,17 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     await repository.setPreferenceValue('fuelProvince', '湖北');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -290,35 +231,16 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -358,16 +280,7 @@ void main() {
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
-    final carId = await createCarWithDefaultItems(
-      database,
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026)),
-      ),
-    );
+    final carId = await createCarWithDefaultItems(database, defaultCar());
     await repository.setAppliedCarId(carId);
     // 调价预告：9月11日下调 → 绿色下行箭头（红涨绿跌）。
     await pumpApp(
@@ -404,35 +317,16 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -467,35 +361,16 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -528,36 +403,17 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     await repository.setPreferenceValue('fuelProvince', '湖北');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -612,34 +468,16 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
+      defaultCar(),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -660,23 +498,10 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
-    final carId = await createCarWithDefaultItems(
-      database,
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
-    );
+    final carId = await createCarWithDefaultItems(database, defaultCar());
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
 
@@ -728,35 +553,16 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
-    final sync = SyncMetadata(
-      status: SyncStatus.synced,
-      updatedAt: DateTime(2026),
-    );
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
     final carId = await repository.createCarWithMaintenanceItems(
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        tankCapacityLiters: 55,
-        sync: sync,
-      ),
+      defaultCar(tankCapacityLiters: 55),
       [
-        MaintenanceItem(
-          carsId: 0,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
+        defaultOilItem(
           remindByTime: false,
-          mileageIntervalKm: 5000,
           timeIntervalMonths: null,
-          notOverdueUpperLimit: 100,
-          overdueUpperLimit: 125,
           sortOrder: 0,
-          sync: sync,
         ),
       ],
     );
@@ -784,8 +590,8 @@ void main() {
     int payableCents = 30000,
     int? actualCents,
   }) {
-    return FuelRecord(
-      carId: carId,
+    return defaultFuelRecord(
+      carId,
       date: LocalDate.parse(date),
       grade: grade,
       unitPriceCents: unitPriceCents,

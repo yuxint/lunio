@@ -16,6 +16,7 @@ import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
+import '../helpers/builders.dart';
 import '../helpers/widget_app.dart';
 
 void main() {
@@ -331,40 +332,32 @@ void main() {
         updatedAt: DateTime.now(),
       );
       final carId = await repos.createCarWithMaintenanceItems(
-        Car(
-          brand: '本田',
+        defaultCar(
           model: '思域',
           currentMileageKm: 60778,
           roadDate: const LocalDate(2021, 10, 31),
           sync: sync,
         ),
         [
-          MaintenanceItem(
-            carsId: 0,
-            name: '机油',
-            enabled: true,
+          defaultOilItem(
             remindByMileage: false,
-            remindByTime: true,
+            mileageIntervalKm: null,
             timeIntervalMonths: 12,
             sortOrder: 0,
             sync: sync,
           ),
-          MaintenanceItem(
-            carsId: 0,
+          defaultOilItem(
             name: '刹车油',
-            enabled: true,
             remindByMileage: false,
-            remindByTime: true,
+            mileageIntervalKm: null,
             timeIntervalMonths: 36,
             sortOrder: 1,
             sync: sync,
           ),
-          MaintenanceItem(
-            carsId: 0,
+          defaultOilItem(
             name: '空调滤芯',
-            enabled: true,
             remindByMileage: false,
-            remindByTime: true,
+            mileageIntervalKm: null,
             timeIntervalMonths: 12,
             sortOrder: 2,
             sync: sync,
@@ -381,7 +374,7 @@ void main() {
       ];
       for (var i = 0; i < items.length; i++) {
         await repos.saveMaintenanceRecord(
-          MaintenanceRecord(
+          defaultRecord(
             carId: carId,
             date: recordDates[i % recordDates.length],
             itemIds: [items[i].id!],

@@ -5,6 +5,7 @@ import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/data/bootstrap/built_in_vehicle_catalog.dart';
 import '../helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
+import '../helpers/builders.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/data/repositories/backup_repository.dart';
@@ -16,7 +17,6 @@ import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/errors/lunio_error.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
-import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/parking_countdown.dart';
@@ -190,48 +190,15 @@ void main() {
   }
 
   Future<(int, int)> seedCarAndItem() async {
-    final carId = await createCar(repository, 
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
-    );
-    final itemId = await repository.saveMaintenanceItem(
-      MaintenanceItem(
-        carsId: carId,
-        name: '机油',
-        enabled: true,
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        notOverdueUpperLimit: 100,
-        overdueUpperLimit: 125,
-        sortOrder: 1,
-        sync: sync,
-      ),
-    );
+    final carId = await createCar(repository, defaultCar());
+    final itemId =
+        await repository.saveMaintenanceItem(defaultOilItem(carsId: carId));
     return (carId, itemId);
   }
 
   Future<int> saveItem(int carId, String name, int sortOrder) {
     return repository.saveMaintenanceItem(
-      MaintenanceItem(
-        carsId: carId,
-        name: name,
-        enabled: true,
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        notOverdueUpperLimit: 100,
-        overdueUpperLimit: 125,
-        sortOrder: sortOrder,
-        sync: sync,
-      ),
+      defaultOilItem(carsId: carId, name: name, sortOrder: sortOrder),
     );
   }
 
@@ -262,22 +229,19 @@ void main() {
   });
 
   test('allows same brand and model with different road dates', () async {
-    await createCar(repository, 
-      Car(
-        brand: '本田',
+    await createCar(
+      repository,
+      defaultCar(
         model: '思域（燃油版）',
-        currentMileageKm: 10000,
         roadDate: const LocalDate(2021, 10, 31),
-        sync: sync,
       ),
     );
-    await createCar(repository, 
-      Car(
-        brand: '本田',
+    await createCar(
+      repository,
+      defaultCar(
         model: '思域（燃油版）',
         currentMileageKm: 0,
         roadDate: const LocalDate(2026, 6, 2),
-        sync: sync,
       ),
     );
 
@@ -291,12 +255,9 @@ void main() {
   });
 
   test('rejects same brand model and road date', () async {
-    final car = Car(
-      brand: '本田',
+    final car = defaultCar(
       model: '思域（燃油版）',
-      currentMileageKm: 10000,
       roadDate: const LocalDate(2021, 10, 31),
-      sync: sync,
     );
 
     await createCar(repository, car);
@@ -309,14 +270,9 @@ void main() {
     () async {
       await catalogRepository.ensureDefaultMaintenanceItems();
 
-      final carId = await createCarWithDefaultItems(repository, 
-        Car(
-          brand: '本田',
-          model: '思域（燃油版）',
-          currentMileageKm: 10000,
-          roadDate: const LocalDate(2023, 8, 12),
-          sync: sync,
-        ),
+      final carId = await createCarWithDefaultItems(
+        repository,
+        defaultCar(model: '思域（燃油版）'),
       );
 
       final items = await repository.listMaintenanceItemsForCar(carId);
@@ -709,13 +665,12 @@ void main() {
           sync: sync,
         ),
       );
-      final carId = await createCarWithDefaultItems(repository, 
-        Car(
+      final carId = await createCarWithDefaultItems(
+        repository,
+        defaultCar(
           brand: '日产',
           model: '轩逸（燃油版）',
-          currentMileageKm: 10000,
           roadDate: const LocalDate(2024, 1, 1),
-          sync: sync,
         ),
       );
 
@@ -829,22 +784,22 @@ void main() {
   });
 
   test('bootstrap leaves existing car brands unchanged', () async {
-    final oldCarId = await createCar(repository, 
-      Car(
+    final oldCarId = await createCar(
+      repository,
+      defaultCar(
         brand: '东风日产',
         model: '轩逸（燃油版）',
         currentMileageKm: 15000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
-    await createCar(repository, 
-      Car(
+    await createCar(
+      repository,
+      defaultCar(
         brand: '日产',
         model: '轩逸（燃油版）',
         currentMileageKm: 20000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
     await preferences.setAppliedCarId(oldCarId);
@@ -859,24 +814,18 @@ void main() {
 
   test('writes snowflake ids for all local tables', () async {
     await catalogRepository.ensureBootstrapData();
-    final carId = await createCarWithDefaultItems(repository, 
-      Car(
-        brand: '本田',
-        model: '思域（燃油版）',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
+    final carId = await createCarWithDefaultItems(
+      repository,
+      defaultCar(model: '思域（燃油版）'),
     );
     final item = (await repository.listMaintenanceItemsForCar(carId)).first;
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [item.id!],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
     await preferences.writeRaw('manualDate', '2026-05-19');
@@ -971,22 +920,14 @@ void main() {
   });
 
   test('applied car falls back to first available car', () async {
-    final firstCarId = await createCar(repository, 
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
-    );
-    await createCar(repository, 
-      Car(
+    final firstCarId = await createCar(repository, defaultCar());
+    await createCar(
+      repository,
+      defaultCar(
         brand: '日产',
         model: '22款轩逸',
         currentMileageKm: 8000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
     await preferences.setAppliedCarId(999);
@@ -1001,34 +942,20 @@ void main() {
     'creates car with configured maintenance items in one transaction',
     () async {
       final carId = await repository.createCarWithMaintenanceItems(
-        Car(
-          brand: '本田',
+        defaultCar(
           model: '思域（燃油版）',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
-          sync: sync,
         ),
         [
-          MaintenanceItem(
-            carsId: 0,
-            name: '机油',
-            enabled: true,
-            remindByMileage: true,
-            remindByTime: true,
-            mileageIntervalKm: 5000,
-            timeIntervalMonths: 6,
-            sortOrder: 1,
-            sync: sync,
-          ),
-          MaintenanceItem(
-            carsId: 0,
+          defaultOilItem(),
+          defaultOilItem(
             name: '玻璃水',
             enabled: false,
-            remindByMileage: true,
             remindByTime: false,
+            timeIntervalMonths: null,
             mileageIntervalKm: 3000,
             sortOrder: 2,
-            sync: sync,
           ),
         ],
       );
@@ -1044,26 +971,13 @@ void main() {
       expect(await preferences.getAppliedCarId(), carId);
 
       final secondCarId = await repository.createCarWithMaintenanceItems(
-        Car(
+        defaultCar(
           brand: '日产',
           model: '22款轩逸',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
-          sync: sync,
         ),
-        [
-          MaintenanceItem(
-            carsId: 0,
-            name: '机油',
-            enabled: true,
-            remindByMileage: true,
-            remindByTime: true,
-            mileageIntervalKm: 5000,
-            timeIntervalMonths: 6,
-            sortOrder: 1,
-            sync: sync,
-          ),
-        ],
+        [defaultOilItem()],
       );
 
       expect(secondCarId, isNot(carId));
@@ -1074,26 +988,12 @@ void main() {
   test('cannot create car without enabled maintenance items', () async {
     expect(
       () => repository.createCarWithMaintenanceItems(
-        Car(
-          brand: '本田',
+        defaultCar(
           model: '思域（燃油版）',
           currentMileageKm: 0,
           roadDate: const LocalDate(2026, 5, 19),
-          sync: sync,
         ),
-        [
-          MaintenanceItem(
-            carsId: 0,
-            name: '机油',
-            enabled: false,
-            remindByMileage: true,
-            remindByTime: true,
-            mileageIntervalKm: 5000,
-            timeIntervalMonths: 6,
-            sortOrder: 1,
-            sync: sync,
-          ),
-        ],
+        [defaultOilItem(enabled: false)],
       ),
       throwsA(
         isA<LunioErrorException>().having(
@@ -1106,22 +1006,14 @@ void main() {
   });
 
   test('applied car falls back to first available car', () async {
-    final firstCarId = await createCar(repository, 
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
-    );
-    await createCar(repository, 
-      Car(
+    final firstCarId = await createCar(repository, defaultCar());
+    await createCar(
+      repository,
+      defaultCar(
         brand: '日产',
         model: '22款轩逸',
         currentMileageKm: 8000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
     await preferences.setAppliedCarId(999);
@@ -1133,16 +1025,9 @@ void main() {
   });
 
   test('updates car mileage and road date', () async {
-    final carId = await createCar(repository, 
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
-    );
+    final carId = await createCar(repository, defaultCar());
 
+    // 更新构造带 id：重建整行语义，保持实体构造器（builder 只管造新数据）。
     await repository.updateCar(
       Car(
         id: carId,
@@ -1160,22 +1045,14 @@ void main() {
   });
 
   test('delete applied car switches preference to remaining car', () async {
-    final firstCarId = await createCar(repository, 
-      Car(
-        brand: '本田',
-        model: '22款思域',
-        currentMileageKm: 10000,
-        roadDate: const LocalDate(2023, 8, 12),
-        sync: sync,
-      ),
-    );
-    final secondCarId = await createCar(repository, 
-      Car(
+    final firstCarId = await createCar(repository, defaultCar());
+    final secondCarId = await createCar(
+      repository,
+      defaultCar(
         brand: '日产',
         model: '22款轩逸',
         currentMileageKm: 8000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
     await preferences.setAppliedCarId(firstCarId);
@@ -1187,21 +1064,19 @@ void main() {
 
   test('same car and date is unique', () async {
     final (carId, itemId) = await seedCarAndItem();
-    final first = MaintenanceRecord(
+    final first = defaultRecord(
       carId: carId,
       date: const LocalDate(2026, 5, 19),
       itemIds: [itemId],
       costCents: 10000,
       mileageKm: 12000,
-      sync: sync,
     );
-    final duplicateDay = MaintenanceRecord(
+    final duplicateDay = defaultRecord(
       carId: carId,
       date: const LocalDate(2026, 5, 19),
       itemIds: [itemId],
       costCents: 10000,
       mileageKm: 13000,
-      sync: sync,
     );
 
     await repository.saveMaintenanceRecord(first);
@@ -1223,35 +1098,21 @@ void main() {
     // （此前业务层放行、插入时撞表级唯一约束抛 SqliteException）。
     final (carId, firstItemId) = await seedCarAndItem();
     final secondItemId = await repository.saveMaintenanceItem(
-      MaintenanceItem(
-        carsId: carId,
-        name: '机滤',
-        enabled: true,
-        remindByMileage: true,
-        remindByTime: true,
-        mileageIntervalKm: 5000,
-        timeIntervalMonths: 6,
-        notOverdueUpperLimit: 100,
-        overdueUpperLimit: 125,
-        sortOrder: 2,
-        sync: sync,
-      ),
+      defaultOilItem(carsId: carId, name: '机滤', sortOrder: 2),
     );
-    final first = MaintenanceRecord(
+    final first = defaultRecord(
       carId: carId,
       date: const LocalDate(2026, 5, 19),
       itemIds: [firstItemId],
       costCents: 10000,
       mileageKm: 12000,
-      sync: sync,
     );
-    final differentItemsSameDay = MaintenanceRecord(
+    final differentItemsSameDay = defaultRecord(
       carId: carId,
       date: const LocalDate(2026, 5, 19),
       itemIds: [secondItemId],
       costCents: 20000,
       mileageKm: 12500,
-      sync: sync,
     );
 
     await repository.saveMaintenanceRecord(first);
@@ -1274,20 +1135,19 @@ void main() {
   test('lists updates and deletes maintenance records', () async {
     final (carId, itemId) = await seedCarAndItem();
     final recordId = await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
     expect(await repository.listMaintenanceRecordsForCar(carId), hasLength(1));
 
     await repository.updateMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         id: recordId,
         carId: carId,
         date: const LocalDate(2026, 5, 20),
@@ -1295,7 +1155,6 @@ void main() {
         costCents: 12000,
         mileageKm: 13000,
         note: '更新',
-        sync: sync,
       ),
     );
     final updated = (await repository.listMaintenanceRecordsForCar(
@@ -1318,7 +1177,7 @@ void main() {
     final (carId, oilId) = await seedCarAndItem();
     final filterId = await saveItem(carId, '机滤', 2);
     final recordId = await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [oilId, filterId],
@@ -1333,7 +1192,6 @@ void main() {
         ],
         costCents: 28000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1349,7 +1207,7 @@ void main() {
     // 编辑：机油费用清空（重新落库为三列 null）、机滤改成不一致价
     // （项目费用 2000 ≠ 材料 3000，合法数据原样落库，ADR 0010）。
     await repository.updateMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         id: recordId,
         carId: carId,
         date: const LocalDate(2026, 5, 19),
@@ -1359,7 +1217,6 @@ void main() {
         ],
         costCents: 28000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
     final updated = (await repository.listMaintenanceRecordsForCar(
@@ -1381,7 +1238,7 @@ void main() {
     final (carId, oilId) = await seedCarAndItem();
     final filterId = await saveItem(carId, '机滤', 2);
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [oilId, filterId],
@@ -1396,7 +1253,6 @@ void main() {
         ],
         costCents: 28000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1449,7 +1305,7 @@ void main() {
     const legacyRecordId = 990001;
     await database.into(database.maintenanceRecords).insert(
       maintenanceRecordCompanion(
-        MaintenanceRecord(
+        defaultRecord(
           carId: carId,
           date: const LocalDate(2026, 5, 19),
           itemIds: [oilId],
@@ -1462,7 +1318,6 @@ void main() {
           ],
           costCents: 23000,
           mileageKm: 12000,
-          sync: sync,
         ),
         legacyRecordId,
       ),
@@ -1514,7 +1369,7 @@ void main() {
     // 兜住（2026-09-25 收编，取代表单/恢复两写点的上游调用）——
     // 还原 companion 内置 normalize 必须让本用例失败（变异验证）。
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [oilId],
@@ -1523,7 +1378,6 @@ void main() {
         ],
         costCents: 23000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1541,13 +1395,12 @@ void main() {
       final (carId, itemId) = await seedCarAndItem();
 
       await repository.saveMaintenanceRecordWithItemUpdates(
-        record: MaintenanceRecord(
+        record: defaultRecord(
           carId: carId,
           date: const LocalDate(2026, 5, 19),
           itemIds: [itemId],
           costCents: 10000,
           mileageKm: 12000,
-          sync: sync,
         ),
         itemUpdates: [
           MaintenanceItem(
@@ -1585,13 +1438,12 @@ void main() {
     final (carId, oilId) = await seedCarAndItem();
     final filterId = await saveItem(carId, '机滤', 2);
     final recordId = await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [oilId, filterId],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1614,13 +1466,12 @@ void main() {
   test('removing the last item deletes the whole maintenance record', () async {
     final (carId, itemId) = await seedCarAndItem();
     final recordId = await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1642,13 +1493,12 @@ void main() {
     final initialUpdatedAt =
         (await database.select(database.cars).get()).single.updatedAt;
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 9000,
-        sync: sync,
       ),
     );
     expect((await repository.listCars()).single.currentMileageKm, 10000);
@@ -1658,13 +1508,12 @@ void main() {
     );
 
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 6, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 13000,
-        sync: sync,
       ),
     );
     expect((await repository.listCars()).single.currentMileageKm, 13000);
@@ -1678,13 +1527,12 @@ void main() {
     final (carId, itemId) = await seedCarAndItem();
     await preferences.setAppliedCarId(carId);
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1705,13 +1553,12 @@ void main() {
 
     expect(
       () => repository.saveMaintenanceRecord(
-        MaintenanceRecord(
+        defaultRecord(
           carId: carId,
           date: const LocalDate(2026, 5, 19),
           itemIds: const [999],
           costCents: 10000,
           mileageKm: 12000,
-          sync: sync,
         ),
       ),
       throwsA(
@@ -1726,38 +1573,31 @@ void main() {
 
   test('record rejects items from another car', () async {
     final (carId, _) = await seedCarAndItem();
-    final otherCarId = await createCar(repository, 
-      Car(
+    final otherCarId = await createCar(
+      repository,
+      defaultCar(
         brand: '日产',
         model: '22款轩逸',
-        currentMileageKm: 10000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
     final otherItemId = await repository.saveMaintenanceItem(
-      MaintenanceItem(
+      defaultOilItem(
         carsId: otherCarId,
         name: '空调滤芯',
-        enabled: true,
-        remindByMileage: true,
-        remindByTime: true,
         mileageIntervalKm: 20000,
         timeIntervalMonths: 12,
-        sortOrder: 1,
-        sync: sync,
       ),
     );
 
     expect(
       () => repository.saveMaintenanceRecord(
-        MaintenanceRecord(
+        defaultRecord(
           carId: carId,
           date: const LocalDate(2026, 5, 19),
           itemIds: [otherItemId],
           costCents: 10000,
           mileageKm: 12000,
-          sync: sync,
         ),
       ),
       throwsA(
@@ -1814,15 +1654,13 @@ void main() {
   test('deletes custom item without history', () async {
     final (carId, _) = await seedCarAndItem();
     final customItemId = await repository.saveMaintenanceItem(
-      MaintenanceItem(
+      defaultOilItem(
         carsId: carId,
         name: '玻璃水',
-        enabled: true,
-        remindByMileage: true,
         remindByTime: false,
+        timeIntervalMonths: null,
         mileageIntervalKm: 3000,
         sortOrder: 2,
-        sync: sync,
       ),
     );
 
@@ -1839,15 +1677,12 @@ void main() {
   test('deletes item without history', () async {
     final (carId, itemId) = await seedCarAndItem();
     await repository.saveMaintenanceItem(
-      MaintenanceItem(
+      defaultOilItem(
         carsId: carId,
         name: '机滤',
-        enabled: true,
-        remindByMileage: true,
         remindByTime: false,
-        mileageIntervalKm: 5000,
+        timeIntervalMonths: null,
         sortOrder: 2,
-        sync: sync,
       ),
     );
 
@@ -1864,25 +1699,22 @@ void main() {
   test('does not delete item with history', () async {
     final (carId, itemId) = await seedCarAndItem();
     final customItemId = await repository.saveMaintenanceItem(
-      MaintenanceItem(
+      defaultOilItem(
         carsId: carId,
         name: '玻璃水',
-        enabled: true,
-        remindByMileage: true,
         remindByTime: false,
+        timeIntervalMonths: null,
         mileageIntervalKm: 3000,
         sortOrder: 2,
-        sync: sync,
       ),
     );
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 1000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
@@ -1917,23 +1749,20 @@ void main() {
       ),
     );
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
     final fuelRecordId = await fuelRepository.saveFuelRecord(
-      FuelRecord(
-        carId: carId,
+      defaultFuelRecord(
+        carId,
         date: const LocalDate(2026, 9, 10),
-        grade: FuelGrade.gasoline92,
         unitPriceCents: 750,
         payableCents: 31200,
-        sync: sync,
       ),
     );
 
@@ -1984,13 +1813,11 @@ void main() {
     // 存在的车也插得进）：恢复清表名单含新表后它应被一并清掉，不留
     // 孤儿行（ADR 0014 过渡窗口的回归点）。
     await fuelRepository.saveFuelRecord(
-      FuelRecord(
-        carId: 999,
+      defaultFuelRecord(
+        999,
         date: const LocalDate(2026, 1, 1),
-        grade: FuelGrade.gasoline92,
         unitPriceCents: 750,
         payableCents: 1000,
-        sync: sync,
       ),
     );
 
@@ -2081,13 +1908,10 @@ void main() {
       maintenanceItems: backup.maintenanceItems,
       records: backup.records,
       fuelRecords: [
-        FuelRecord(
-          carId: carId + 424242,
+        defaultFuelRecord(
+          carId + 424242,
           date: const LocalDate(2026, 9, 10),
-          grade: FuelGrade.gasoline92,
           unitPriceCents: 750,
-          payableCents: 30000,
-          sync: sync,
         ),
       ],
     );
@@ -2365,21 +2189,16 @@ void main() {
         ),
       ],
       fuelRecords: [
-        FuelRecord(
-          carId: 99,
+        defaultFuelRecord(
+          99,
           date: const LocalDate(2026, 5, 20),
-          grade: FuelGrade.gasoline92,
           unitPriceCents: 750,
-          payableCents: 30000,
-          sync: sync,
         ),
-        FuelRecord(
-          carId: 99,
+        defaultFuelRecord(
+          99,
           date: const LocalDate(2026, 5, 20),
-          grade: FuelGrade.gasoline92,
           unitPriceCents: 752,
           payableCents: 37600,
-          sync: sync,
         ),
       ],
     );
@@ -2530,26 +2349,20 @@ void main() {
 
   test('backup restore rejects record items from another car', () async {
     final (carId, _) = await seedCarAndItem();
-    final otherCarId = await createCar(repository, 
-      Car(
+    final otherCarId = await createCar(
+      repository,
+      defaultCar(
         brand: '日产',
         model: '22款轩逸',
-        currentMileageKm: 10000,
         roadDate: const LocalDate(2024, 1, 1),
-        sync: sync,
       ),
     );
     final otherItemId = await repository.saveMaintenanceItem(
-      MaintenanceItem(
+      defaultOilItem(
         carsId: otherCarId,
         name: '空调滤芯',
-        enabled: true,
-        remindByMileage: true,
-        remindByTime: true,
         mileageIntervalKm: 20000,
         timeIntervalMonths: 12,
-        sortOrder: 1,
-        sync: sync,
       ),
     );
     final backup = await backupRepository.exportBackupPayload();
@@ -2587,13 +2400,12 @@ void main() {
     expect(defaultItemsBeforeClear, isNotEmpty);
     expect(vehicleModelsBeforeClear, isNotEmpty);
     await repository.saveMaintenanceRecord(
-      MaintenanceRecord(
+      defaultRecord(
         carId: carId,
         date: const LocalDate(2026, 5, 19),
         itemIds: [itemId],
         costCents: 10000,
         mileageKm: 12000,
-        sync: sync,
       ),
     );
 
