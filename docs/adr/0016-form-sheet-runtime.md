@@ -73,3 +73,17 @@ context)"。这条隐式接口的坑已多次显形：
   widget 测试零改动全绿。
 - 动作层（ADR 0007）不变：写库+失效仍在动作函数；变化的只是 UI 侧
   反馈薄壳从"每个入口手写"归入运行时。
+
+## 修订
+
+- **2026-09-26 宿主接法收编**：本 ADR 落地时给 10 个表单 State 留了
+  "三行转发 shim"（`saving`/`errorText`/`setFormError` 逐行转发
+  `widget.handle`），本是零改动迁移的临时脚手架，此后成了新表单照抄
+  的约定并已开始漂移（3 处抄半份/缺份、1 处绕开 shim 裸呼）。收编为：
+  widget 实现 `FormSheetHandleWidget` 接口（已有的 `handle` 字段天然
+  满足 getter 要求，不需要新成员），State 混入 `FormSheetHandleHost`
+  ——**零状态纯转发**，与落地时删除的旧 `LunioFormSubmit` 状态 mixin
+  （自带提交骨架）性质不同，状态与提交生命周期仍 100% 归
+  `FormSheetHandle`。低频动作（`submit`/`run`/`close`/`setFrame`/
+  `setSubtitle`）不进 mixin，调用点保留显式 `widget.handle.` 直呼。
+  行为零变化（analyze 零问题、533 测试全绿）。

@@ -609,7 +609,8 @@ class MaintenanceItemCard extends StatelessWidget {
 
 /// 项目表单（新增/编辑/草稿三态复用）：名称 + 里程/时间两个开关行 +
 /// 校验（名称非空、至少一种提醒、开启的间隔为正整数）。
-class MaintenanceItemForm extends StatefulWidget {
+class MaintenanceItemForm extends StatefulWidget
+    implements FormSheetHandleWidget {
   const MaintenanceItemForm({
     required this.carId,
     required this.handle,
@@ -621,6 +622,7 @@ class MaintenanceItemForm extends StatefulWidget {
   final MaintenanceItem? item;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<bool> handle;
   final Future<void> Function(MaintenanceItem item) onSubmit;
 
@@ -628,13 +630,8 @@ class MaintenanceItemForm extends StatefulWidget {
   State<MaintenanceItemForm> createState() => MaintenanceItemFormState();
 }
 
-class MaintenanceItemFormState extends State<MaintenanceItemForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
-
+class MaintenanceItemFormState extends State<MaintenanceItemForm>
+    with FormSheetHandleHost<MaintenanceItemForm> {
   late final TextEditingController nameController;
   late final TextEditingController mileageController;
   late final TextEditingController monthsController;

@@ -707,7 +707,8 @@ class _SheetOptionRow extends StatelessWidget {
 /// 编辑手填价表单（两位小数以内的每升价，0.01–99.99）。
 /// 留空提交按校验错误处理（不再有"留空=清除"语义，恢复数据源价走
 /// 价格旁的"重置"按钮）。
-class _ManualPriceForm extends StatefulWidget {
+class _ManualPriceForm extends StatefulWidget
+    implements FormSheetHandleWidget {
   const _ManualPriceForm({
     required this.controller,
     required this.handle,
@@ -717,6 +718,7 @@ class _ManualPriceForm extends StatefulWidget {
   final TextEditingController controller;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<void> handle;
 
   final Future<void> Function(double price) onSubmit;
@@ -725,12 +727,8 @@ class _ManualPriceForm extends StatefulWidget {
   State<_ManualPriceForm> createState() => _ManualPriceFormState();
 }
 
-class _ManualPriceFormState extends State<_ManualPriceForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
+class _ManualPriceFormState extends State<_ManualPriceForm>
+    with FormSheetHandleHost<_ManualPriceForm> {
 
   @override
   Widget build(BuildContext context) {

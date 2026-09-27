@@ -71,7 +71,8 @@ Future<void> showNotificationSettingsSheet(
 /// 通知表单：状态行 + 应用内通知开关 + 到期重复频率三段（每周/每 2 周/
 /// 每月）。提交构造 LunioNotificationSettings。提交生命周期（saving/
 /// 行内错误）归表单运行时把手（ADR 0016，替代原先手搓的 saving 布尔）。
-class NotificationSettingsForm extends StatefulWidget {
+class NotificationSettingsForm extends StatefulWidget
+    implements FormSheetHandleWidget {
   const NotificationSettingsForm({
     required this.initialSettings,
     required this.handle,
@@ -82,6 +83,7 @@ class NotificationSettingsForm extends StatefulWidget {
   final LunioNotificationSettings initialSettings;
 
   /// 表单运行时把手（ADR 0016）。
+  @override
   final FormSheetHandle<void> handle;
   final Future<void> Function() onOpenSystemSettings;
   final Future<void> Function(LunioNotificationSettings settings) onSubmit;
@@ -91,7 +93,8 @@ class NotificationSettingsForm extends StatefulWidget {
       NotificationSettingsFormState();
 }
 
-class NotificationSettingsFormState extends State<NotificationSettingsForm> {
+class NotificationSettingsFormState extends State<NotificationSettingsForm>
+    with FormSheetHandleHost<NotificationSettingsForm> {
   static const dueRepeatOptions = [
     ReminderRepeatFrequency.weekly,
     ReminderRepeatFrequency.everyTwoWeeks,
@@ -100,8 +103,6 @@ class NotificationSettingsFormState extends State<NotificationSettingsForm> {
 
   late bool inAppNotificationsEnabled;
   late ReminderRepeatFrequency dueRepeatFrequency;
-
-  bool get saving => widget.handle.saving;
 
   @override
   void initState() {

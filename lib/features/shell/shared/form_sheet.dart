@@ -6,7 +6,8 @@
 // 守卫 → showLunioModalSheet → PrototypeSheetFrame → 键盘 inset →
 // 提交闭包里 pop + toast），键盘 context 的坑注释在 4 个文件里逐字
 // 重复。现在时序只有这一份，各入口只声明"取数、守卫、画表单、提交、
-// 成功文案"五件事。
+// 成功文案"五件事；表单 State 的宿主接法（widget 实现接口 + State 混入
+// 零状态转发 mixin）也归本模块（2026-09-26 收编，见 FormSheetHandleHost）。
 //
 // 固定时序（2026-09-25 拷问定稿）：
 //   1. [load] 预装载（打开 sheet 前执行；失败 → friendlyError toast，
@@ -244,6 +245,41 @@ class FormSheetHandle<R> extends ChangeNotifier {
   void _detach() {
     _host = null;
   }
+}
+
+/// 表单宿主接缝（2026-09-26 修订）：表单 widget 实现本接口即声明"我
+/// 持有把手"。已有的 `final FormSheetHandle handle` 字段天然满足 getter
+/// 要求（`FormSheetHandle<void>`、`<bool>` 都是
+/// `FormSheetHandle<dynamic>` 的子类型），不需要新增成员——接口只把
+/// "这个表单的把手在哪"变成编译期可查的约定，builder 闭包注入把手的
+/// 接线方式不变。
+abstract interface class FormSheetHandleWidget implements StatefulWidget {
+  /// 本表单绑定的把手（由 showLunioFormSheet 的 builder 闭包注入）。
+  FormSheetHandle get handle;
+}
+
+/// 表单 State 的宿主 mixin：混入后直接以短名读把手的高频三件——
+/// [saving]（提交中）、[errorText]（行内错误）、[setFormError]（同步
+/// 校验错误回显），免写 `widget.handle.` 前缀。状态全部归
+/// [FormSheetHandle]（ChangeNotifier），本 mixin 零状态、纯转发。
+///
+/// 与 2026-09-25 随 ADR 0016 落地删除的旧 LunioFormSubmit mixin 的
+/// 本质区别：旧 mixin **拥有状态**（_saving/_errorText 存 State 里、
+/// 自带 runSubmit 提交骨架）；本 mixin 只有三个一行转发，提交生命周期
+/// 100% 归运行时。低频动作（submit/run/close/setFrame/setSubtitle）不
+/// 进本 mixin，调用点保留显式 `widget.handle.` 直呼。
+mixin FormSheetHandleHost<W extends FormSheetHandleWidget> on State<W> {
+  /// 本表单绑定的把手（来自宿主 widget）。
+  FormSheetHandle get handle => widget.handle;
+
+  /// 提交进行中（转发 [FormSheetHandle.saving]）。
+  bool get saving => handle.saving;
+
+  /// 行内错误文案（转发 [FormSheetHandle.errorText]）。
+  String? get errorText => handle.errorText;
+
+  /// 手动设置/清除行内错误（转发 [FormSheetHandle.setFormError]）。
+  void setFormError(String? text) => handle.setFormError(text);
 }
 
 /// sheet 宿主：挂在 modal 路由里，监听 handle 重建 frame 与表单内容，

@@ -195,7 +195,8 @@ void showQuickMileageUpdateSheet(BuildContext context, WidgetRef ref, Car car) {
 
 /// 快捷更新里程表单：纯整数里程（km），留空提交按校验错误处理；
 /// 未调高（≤ 当前里程）的确认框在提交时拦截，确认后才落库。
-class _QuickMileageForm extends StatefulWidget {
+class _QuickMileageForm extends StatefulWidget
+    implements FormSheetHandleWidget {
   const _QuickMileageForm({
     required this.controller,
     required this.car,
@@ -207,6 +208,7 @@ class _QuickMileageForm extends StatefulWidget {
   final Car car;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<void> handle;
   final Future<void> Function(int mileage) onSubmit;
 
@@ -214,12 +216,8 @@ class _QuickMileageForm extends StatefulWidget {
   State<_QuickMileageForm> createState() => _QuickMileageFormState();
 }
 
-class _QuickMileageFormState extends State<_QuickMileageForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
+class _QuickMileageFormState extends State<_QuickMileageForm>
+    with FormSheetHandleHost<_QuickMileageForm> {
 
   @override
   Widget build(BuildContext context) {

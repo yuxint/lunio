@@ -41,7 +41,7 @@ import 'vehicle_model_picker.dart';
 /// [closeOnSubmit]：提交成功是否关 sheet——编辑车辆 sheet 传 true
 /// （关场+toast 归表单运行时，ADR 0016）；向导第一步传 false（成功 =
 /// 推进第二步，经 handle.run 只走 saving/错误生命周期）。
-class AddCarForm extends StatefulWidget {
+class AddCarForm extends StatefulWidget implements FormSheetHandleWidget {
   const AddCarForm({
     required this.vehicleModels,
     required this.today,
@@ -57,6 +57,7 @@ class AddCarForm extends StatefulWidget {
   final Car? initialCar;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<void> handle;
 
   /// 提交成功是否关 sheet（见类注释）。
@@ -68,13 +69,8 @@ class AddCarForm extends StatefulWidget {
   State<AddCarForm> createState() => AddCarFormState();
 }
 
-class AddCarFormState extends State<AddCarForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
-
+class AddCarFormState extends State<AddCarForm>
+    with FormSheetHandleHost<AddCarForm> {
   late String selectedBrand;
   late String selectedModel;
 
@@ -408,7 +404,8 @@ typedef DefaultTemplateLoader
 /// 添加车辆两步向导（第一步车辆信息 → 第二步保养项目草稿）。
 /// onMaintenanceStepChanged 通知外层 sheet 切标题（入口函数经
 /// handle.setFrame 接线，ADR 0016）。
-class AddCarWizard extends ConsumerStatefulWidget {
+class AddCarWizard extends ConsumerStatefulWidget
+    implements FormSheetHandleWidget {
   const AddCarWizard({
     required this.vehicleModels,
     required this.today,
@@ -422,6 +419,7 @@ class AddCarWizard extends ConsumerStatefulWidget {
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它，
   /// 与第一步表单共用同一把手（错误位/提交态全 sheet 一份）。
+  @override
   final FormSheetHandle<void> handle;
   final ValueChanged<bool> onMaintenanceStepChanged;
   final Future<void> Function(Car car, List<MaintenanceItem> items) onSubmit;
@@ -430,12 +428,8 @@ class AddCarWizard extends ConsumerStatefulWidget {
   ConsumerState<AddCarWizard> createState() => AddCarWizardState();
 }
 
-class AddCarWizardState extends ConsumerState<AddCarWizard> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
+class AddCarWizardState extends ConsumerState<AddCarWizard>
+    with FormSheetHandleHost<AddCarWizard> {
 
   /// 草稿状态机（模板加载经 provider 注入，纯 Dart 可单测）。
   late final AddCarWizardController _controller = AddCarWizardController(

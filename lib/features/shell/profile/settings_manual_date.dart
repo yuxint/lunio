@@ -46,7 +46,7 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
 }
 
 /// 手动日期表单（开关 + 日期选择，可选范围 1990 ~ 今天+10 年）。
-class ManualDateForm extends StatefulWidget {
+class ManualDateForm extends StatefulWidget implements FormSheetHandleWidget {
   const ManualDateForm({
     required this.initialDate,
     required this.fallbackDate,
@@ -58,6 +58,7 @@ class ManualDateForm extends StatefulWidget {
   final LocalDate fallbackDate;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<void> handle;
   final Future<void> Function(LocalDate? date) onSubmit;
 
@@ -65,12 +66,8 @@ class ManualDateForm extends StatefulWidget {
   State<ManualDateForm> createState() => ManualDateFormState();
 }
 
-class ManualDateFormState extends State<ManualDateForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-
+class ManualDateFormState extends State<ManualDateForm>
+    with FormSheetHandleHost<ManualDateForm> {
   late LocalDate selectedDate;
   late bool enabled;
 

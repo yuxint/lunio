@@ -335,7 +335,7 @@ Future<void> showFuelRecordFormSheet(
 /// 一行胶囊（默认 92#）+ 单价（预填生效价，可改）+ 应付金额（必填）
 /// → 箭头 → 实付金额（选填，点箭头一键回填应付）。编辑态底部多一个
 /// 删除按钮（确认框在 sheet 入口函数里弹）。
-class FuelRecordForm extends StatefulWidget {
+class FuelRecordForm extends StatefulWidget implements FormSheetHandleWidget {
   const FuelRecordForm({
     required this.car,
     required this.today,
@@ -358,6 +358,7 @@ class FuelRecordForm extends StatefulWidget {
   final double? prefillUnitPrice;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<void> handle;
 
   /// 保存回调（构造实体后调用，实现在入口函数里接动作层）。
@@ -370,13 +371,8 @@ class FuelRecordForm extends StatefulWidget {
   State<FuelRecordForm> createState() => _FuelRecordFormState();
 }
 
-class _FuelRecordFormState extends State<FuelRecordForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
-
+class _FuelRecordFormState extends State<FuelRecordForm>
+    with FormSheetHandleHost<FuelRecordForm> {
   late LocalDate recordDate;
   late FuelGrade grade;
   late final TextEditingController unitPriceController;

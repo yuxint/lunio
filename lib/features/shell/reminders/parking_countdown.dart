@@ -251,7 +251,8 @@ class _ParkingIcon extends StatelessWidget {
 /// 倒计时开始表单：入场时间（点开时间轮选择器）+ 免费时长输入框
 /// + 快捷时长 chip + 校验 + 开始按钮。入口仅在无倒计时且按钮可用，
 /// 无编辑分支（原 initial 死分支已删，R26）。
-class ParkingCountdownForm extends StatefulWidget {
+class ParkingCountdownForm extends StatefulWidget
+    implements FormSheetHandleWidget {
   const ParkingCountdownForm({
     required this.now,
     required this.handle,
@@ -261,6 +262,7 @@ class ParkingCountdownForm extends StatefulWidget {
   final DateTime now;
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它。
+  @override
   final FormSheetHandle<void> handle;
   final Future<void> Function(ParkingCountdown countdown) onSubmit;
 
@@ -268,13 +270,8 @@ class ParkingCountdownForm extends StatefulWidget {
   State<ParkingCountdownForm> createState() => ParkingCountdownFormState();
 }
 
-class ParkingCountdownFormState extends State<ParkingCountdownForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上。以下转发让既有调用点零改动。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
-  void setFormError(String? text) => widget.handle.setFormError(text);
-
+class ParkingCountdownFormState extends State<ParkingCountdownForm>
+    with FormSheetHandleHost<ParkingCountdownForm> {
   late DateTime entryTime;
   late final TextEditingController durationMinutesController;
 

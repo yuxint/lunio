@@ -490,7 +490,8 @@ class RecordItemRowCard extends StatelessWidget {
 /// 状态机（字段、步进、校验、软提示决策、查重循环）在
 /// RecordFormController，本 widget 渲染两步视图、注入弹窗/日期选择器
 /// 实现并转发事件；reloadItems：行内新增项目保存后从库重拉项目列表。
-class MaintenanceRecordForm extends ConsumerStatefulWidget {
+class MaintenanceRecordForm extends ConsumerStatefulWidget
+    implements FormSheetHandleWidget {
   const MaintenanceRecordForm({
     required this.car,
     required this.items,
@@ -511,6 +512,7 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
 
   /// 表单运行时把手（ADR 0016）：saving/行内错误/提交/关闭都经它，
   /// pop 与 toast 不再由表单或入口闭包手写。
+  @override
   final FormSheetHandle<void> handle;
 
   /// 新增模式同日查重弹窗选「去编辑」时回调（传同日已有记录）：
@@ -530,12 +532,10 @@ class MaintenanceRecordForm extends ConsumerStatefulWidget {
       MaintenanceRecordFormState();
 }
 
-class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
-  // ---- 提交运行时（ADR 0016）：saving/行内错误/提交/关闭统一在把手
-  // 上，本 State 只做渲染与事件转发。错误文案的显示经把手（宿主监听
-  // 重建），控制器的报错经注入闭包落到把手。
-  bool get saving => widget.handle.saving;
-  String? get errorText => widget.handle.errorText;
+class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
+    with FormSheetHandleHost<MaintenanceRecordForm> {
+  // ---- 提交运行时（ADR 0016）：本 State 只做渲染与事件转发，错误文案
+  // 经把手显示（宿主监听重建），控制器的报错经注入闭包落到把手。
 
   /// 两步表单状态机（record_form_controller.dart）：字段、步进、校验、
   /// 两个软提示决策与查重循环都在里面，本 State 持有生命周期并转发事件。
@@ -569,7 +569,7 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm> {
           mounted ? ref.read(appliedCarRecordsProvider).value : null,
       reportError: (text) {
         if (mounted) {
-          widget.handle.setFormError(text);
+          setFormError(text);
         }
       },
       // 选完日期立即重建：查重循环中途（弹窗悬着）tile 也显示新值，
