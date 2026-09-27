@@ -410,7 +410,6 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
           costCents: 0,
           discountCents: 0,
           actualCents: stats.otherCents,
-          fraction: 0,
         ),
     ];
     return LunioCard(

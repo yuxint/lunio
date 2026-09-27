@@ -131,7 +131,7 @@ void main() {
   });
 
   group('年度走势', () {
-    test('首条记录年 → 今年逐点铺满，比例相对峰值年', () {
+    test('首条记录年 → 今年逐点铺满', () {
       final stats = buildCostStats(
         records: [
           _record(date: const LocalDate(2026, 2, 1), costCents: 20000),
@@ -144,13 +144,10 @@ void main() {
       expect(stats.years, hasLength(3));
       expect(stats.years[0].year, 2024);
       expect(stats.years[0].costCents, 10000);
-      expect(stats.years[0].fraction, closeTo(1 / 3, 1e-9));
       expect(stats.years[1].year, 2025);
       expect(stats.years[1].costCents, 30000);
-      expect(stats.years[1].fraction, 1.0);
       expect(stats.years[2].year, 2026);
       expect(stats.years[2].costCents, 20000);
-      expect(stats.years[2].fraction, closeTo(2 / 3, 1e-9));
     });
 
     test('中间无记录年补 0，横轴连续', () {
@@ -166,7 +163,6 @@ void main() {
           [2024, 2025, 2026]);
       expect(stats.years[1].year, 2025);
       expect(stats.years[1].costCents, 0);
-      expect(stats.years[1].fraction, 0.0);
     });
 
     test('同一年多条记录合并；单年只有一个点位', () {
@@ -180,7 +176,6 @@ void main() {
       );
       expect(stats.years, hasLength(1));
       expect(stats.years.single.costCents, 25000);
-      expect(stats.years.single.fraction, 1.0);
     });
   });
 
@@ -319,32 +314,6 @@ void main() {
       expect(stats.topItems[4].name, '项目5');
       expect(stats.topItems[5].name, '项目6');
       _expectConservation(stats);
-    });
-
-    test('条宽比例相对全部行（含其他段）最大实付', () {
-      final stats = buildCostStats(
-        records: [
-          _record(
-            date: const LocalDate(2026, 5, 1),
-            costCents: 40000,
-            itemIds: [1],
-            itemCosts: [_cost(itemId: 1, cost: 40000)],
-          ),
-          _record(
-            date: const LocalDate(2026, 5, 2),
-            costCents: 10000,
-            itemIds: [2],
-            itemCosts: [_cost(itemId: 2, cost: 10000)],
-          ),
-          // 简洁模式 80000：其他段成为最大行，所有条以它为满宽基准。
-          _record(date: const LocalDate(2026, 5, 3), costCents: 80000),
-        ],
-        items: [_item(id: 1, name: '机油'), _item(id: 2, name: '机滤')],
-        today: _today,
-      );
-      expect(stats.otherCents, 80000);
-      expect(stats.topItems[0].fraction, closeTo(40000 / 80000, 1e-9));
-      expect(stats.topItems[1].fraction, closeTo(10000 / 80000, 1e-9));
     });
   });
 

@@ -47,29 +47,25 @@ int costCentsForYear(List<MaintenanceRecord> records, int year) {
   return total;
 }
 
-/// 年度走势点：年份 + 该年总费用 + 条高比例（相对峰值年，0~1）。
+/// 年度走势点：年份 + 该年总费用（柱高比例由图表内部按峰刻度归一，
+/// 不在聚合层出）。
 class CostYearPoint {
   const CostYearPoint({
     required this.year,
     required this.costCents,
-    required this.fraction,
   });
 
   final int year;
   final int costCents;
-
-  /// 条高比例：本年费用 ÷ 峰值年费用（费用为 0 时为 0）。
-  final double fraction;
 }
 
-/// 项目占比行：项目名 + 计费值 + 分摊优惠/实付 + 条宽比例。
+/// 项目占比行：项目名 + 计费值 + 分摊优惠/实付。
 class CostItemShareRow {
   const CostItemShareRow({
     required this.name,
     required this.costCents,
     required this.discountCents,
     required this.actualCents,
-    required this.fraction,
   });
 
   final String name;
@@ -83,10 +79,6 @@ class CostItemShareRow {
 
   /// 实付（分）= [costCents] − [discountCents]。
   final int actualCents;
-
-  /// 条宽比例：本项目实付 ÷ 全部行（含"其他"段）最大实付（0~1），
-  /// 同一把尺子保证各行条宽可比、"其他"条不越界。
-  final double fraction;
 }
 
 /// 费用统计聚合结果（一次算齐的只读视图模型，渲染层直接消费）。
@@ -349,16 +341,12 @@ CostStats buildCostStats({
       firstYear = year;
     }
   }
-  final maxYearCents =
-      centsByYear.values.fold(0, (max, cents) => cents > max ? cents : max);
   final years = [
     if (records.isNotEmpty)
       for (var year = firstYear; year <= today.year; year++)
         CostYearPoint(
           year: year,
           costCents: centsByYear[year] ?? 0,
-          fraction:
-              maxYearCents == 0 ? 0.0 : (centsByYear[year] ?? 0) / maxYearCents,
         ),
   ];
 
@@ -406,17 +394,11 @@ CostStats buildCostStats({
   final totalDiscountCents = discountByName.values
       .fold(0, (sum, cents) => sum + cents);
 
-  // 实付 = 计费值 − 分摊优惠；条宽同一把尺（含其他段的最大实付）。
+  // 实付 = 计费值 − 分摊优惠。
   final actualByName = <String, int>{
     for (final entry in centsByName.entries)
       entry.key: entry.value - (discountByName[entry.key] ?? 0),
   };
-  var barMaxCents = otherCents;
-  for (final actual in actualByName.values) {
-    if (actual > barMaxCents) {
-      barMaxCents = actual;
-    }
-  }
   // 实付从多到少（页面条形列表的展示顺序）；平局按名称稳定排序。
   final namesByActual = actualByName.keys.toList()
     ..sort((left, right) {
@@ -430,8 +412,6 @@ CostStats buildCostStats({
         costCents: centsByName[name]!,
         discountCents: discountByName[name] ?? 0,
         actualCents: actualByName[name]!,
-        fraction:
-            barMaxCents == 0 ? 0.0 : actualByName[name]! / barMaxCents,
       ),
   ];
 
