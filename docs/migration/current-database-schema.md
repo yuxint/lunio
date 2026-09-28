@@ -8,17 +8,16 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 本文只记录当前代码事实，不记录历史版本演变。事实源是
 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
-## 版本和升级策略（ADR 0005，2026-09-20 修订）
+## 版本和升级策略（ADR 0005）
 
 - 当前数据库：`schemaVersion = 3`。
 - 全新安装走 `createAll` 建全部表，然后 bootstrap 从 asset
   目录灌入车型目录与默认保养模板。
 - 纯增量变更（新增表/列）走 `onUpgrade` 增量迁移，老库原地升级、
   存量数据保留：v2→v3 只建 `fuel_records` 表（见
-  `app_database.dart` 的 `migration`）。⚠ 例外（docs/adr/0015，
-  2026-09-22）：`fuel_records` 的表结构在版本号不变的前提下就地
-  重定义过一次（旧五字段 里程/加满模型 → 新五字段 应付/实付模型），
-  旧 v3 库与新代码不兼容，必须卸载重装，不提供升级路径。
+  `app_database.dart` 的 `migration`）。⚠ 例外（docs/adr/0015）：
+  `fuel_records` 表结构在 v3 内按应付/实付模型定义；装载旧里程/加满
+  模型数据的 v3 库与新代码不兼容，必须卸载重装，不提供升级路径。
 - 破坏性变更（改列类型/删表/改字段语义）仍走
   `destructiveFallback`：删光全部表再重建。
 - 改表纪律：改 Drift 表结构必须把 `schemaVersion` +1 并在 `onUpgrade`
@@ -226,7 +225,7 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 
 ### `fuel_records`
 
-加油记录表（docs/adr/0015，2026-09-22 就地重定义 v3 结构）：一次加油
+加油记录表（docs/adr/0015）：一次加油
 的流水，五项输入字段记一笔（日期/油品/单价/应付/实付）；容积由实体按
 应付÷单价算好落列**预留**（页面暂不展示，与 `cars.tank_capacity_liters`
 油箱容积不是同一概念）。
@@ -298,9 +297,9 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 - `fuelPriceCache`（油价缓存 JSON，临时数据）
 - `fuelManualPrices`（手填油价 JSON：`省份\u0000油品code` → 每升价，临时数据）
 - `maintenanceReminderSnoozedUntil:{itemId}`
-- `maintenanceReminderAcknowledgedOn:{itemId}`
+- `maintenanceInAppReminderAcknowledgedOn:{itemId}`
 - `mileageUpdateSnoozedUntil:{carId}`
-- `mileageUpdateAcknowledgedOn:{carId}`
+- `mileageUpdateInAppAcknowledgedOn:{carId}`
 
 ## 删除和恢复边界
 

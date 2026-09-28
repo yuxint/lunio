@@ -44,15 +44,13 @@ colors:
   toast-background: "#111827"
   toast-text: "#ffffff"
 typography:
-  # 2026-09-24 字号治理：本节重写为与 Flutter 实现（lunio_theme.dart
-  # textTheme + 各组件）一致的刻度，删除 web 原型时期从未落地的
-  # 34/28/21/16 档与 780/760/720 非标准字重。
+  # 刻度与 Flutter 实现（lunio_theme.dart textTheme + 各组件）一致。
   # 字重阶梯：400 正文 / 600 半粗（输入框 label、辅助强调）/ 700 粗
   # （标签、卡标题、按钮、图表金额）/ 800 特粗（页面标题、大数字）。
   # 不使用 w900；全 App 最小字号 10px。
   # fontFamily 统一为 "Inter, SF Pro Text, PingFang SC, Microsoft YaHei,
   # sans-serif" 回退链（见 lunio_theme.dart fontFamilyFallback），各档
-  # 不再重复声明。
+  # 不重复声明。
   page-title:
     fontSize: 27px
     fontWeight: 800
@@ -76,7 +74,7 @@ typography:
     fontSize: 15px
     fontWeight: 700
     lineHeight: 1.2
-    note: 卡片分组标题（LunioSection，2026-09-24 从 12/w800 归位，textTheme.titleSmall）
+    note: 卡片分组标题（LunioSection，textTheme.titleSmall）
   input-label:
     fontSize: 15px
     fontWeight: 600
@@ -313,7 +311,7 @@ components:
 
 Lunio Vehicle Care is a calm, utilitarian mobile app design system for personal vehicle maintenance. It should feel like a reliable garage logbook translated into a modern phone interface: quiet, practical, readable, and composed under repeated daily use.
 
-This document now describes the formal v1 product UI. The current Flutter app has real reminder, record, vehicle, backup, notification, parking countdown, manual date, and theme flows; do not treat these screens as placeholder prototypes when making future design changes.
+This document describes the formal v1 product UI. The current Flutter app has real reminder, record, vehicle, fuel, cost statistics, backup, notification, parking countdown, home widget, manual date, and theme flows; do not treat these screens as placeholder prototypes when making future design changes.
 
 The product is not decorative or editorial. The interface is built around three recurring tasks: check maintenance urgency, record service work, and manage vehicles or backups. Every screen should make the current vehicle obvious, keep actions close to the relevant data, and avoid marketing-style hero sections or ornamental card stacks.
 
@@ -338,19 +336,19 @@ Color usage should remain functional. Do not create multicolor decorative backgr
 
 ## Typography
 
-Typography uses a system-first sans-serif stack with Inter as the preferred web font. Chinese UI text must fall back cleanly to PingFang SC or Microsoft YaHei. Letter spacing remains neutral; do not use tight negative tracking.
+Typography uses a system-first sans-serif stack with Inter as the preferred font. Chinese UI text must fall back cleanly to PingFang SC or Microsoft YaHei. Letter spacing remains neutral; do not use tight negative tracking.
 
-Headlines are strong and compact, usually 28px on mobile pages with weight around 780. They should fit tool surfaces and not feel like landing-page hero type. Section titles and card titles use semibold to bold weights, while metadata uses 12px to 13px muted labels.
+Headlines are strong and compact, usually 27px on mobile pages with weight 800. They should fit tool surfaces and not feel like landing-page hero type. Section titles and card titles use semibold to bold weights (the 400/600/700/800 ladder), while metadata uses 12px to 13px muted labels.
 
 Numeric information such as mileage, percentage, cost, and dates should be visually firm. Use heavier weights for values, but keep them aligned with labels and supporting text. Avoid oversized dashboard numerals except inside compact hero metrics where immediate scanning matters.
 
 ## Layout
 
-The layout is mobile-first and organized around a single phone-width content rail. On wide screens, the prototype may show a device frame beside a design notes panel, but the product UI itself should remain a focused mobile surface.
+The layout is mobile-first and organized around a single phone-width content rail; the product UI is a focused mobile surface with no tablet or desktop layout.
 
 Primary mobile pages use 18px horizontal padding and leave clear bottom space for the floating bottom navigation. Content is grouped in vertical sections with 16px to 20px rhythm. Cards use compact internal padding, typically 14px to 16px, so lists remain scannable without becoming dense or cramped.
 
-Navigation is fixed to three tabs: reminders, records, and profile/garage tools. The floating add action belongs near the bottom right and should remain available on the reminder and record flows, because adding a maintenance record is the dominant repeated task.
+Navigation is a floating bottom bar with three primary tabs — reminders, records, and profile/garage tools — plus a conditional fuel tab that appears only when the fuel prediction switch is enabled. The floating add action belongs near the bottom right and should remain available on the reminder and record flows, because adding a maintenance record is the dominant repeated task.
 
 ## Elevation & Depth
 
@@ -384,16 +382,17 @@ Parking countdown is a temporary but high-priority reminder-screen utility. It s
 
 ### Records
 
-Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color. Record cards lazily build as the user scrolls (sliver lists with stable per-record keys). Item name pills inside a card flow with a 6px gap via `Wrap`; they wrap naturally without forced row packing. While the backing data is loading, the whole page shows the shared centered loading placeholder, and load failures show the shared error card — all three main pages use the same loading/error treatment. A single compact summary row ("this year's cost") sits at the top of the records header when records exist and links to the cost statistics page.
+Records are list-first, not chart-first. The record screen supports two display modes: by service cycle and by item. Use segmented controls for the mode switch, horizontal filter chips for year and item filters, and compact cards for rows. Costs sit on the right in the current brand color. Record cards lazily build as the user scrolls (sliver lists with stable per-record keys). Item name pills inside a card flow with a 6px gap via `Wrap`; they wrap naturally without forced row packing. While the backing data is loading, the whole page shows the shared centered loading placeholder, and load failures show the shared error card — all three main pages use the same loading/error treatment. A compact summary row sits at the top of the records header when records exist — "今年保养" and "今年加油" amounts, each shown only when its domain has records — and links to the cost statistics page.
 
 ### Cost Statistics
 
 The cost statistics page is a pushed subpage (not a tab) reached from the records header row or the profile page. It is read-only aggregation rendered with self-drawn primitives — no chart library — and its scope is always the applied vehicle (the vehicle name shows as the title subtitle; there is no "all vehicles" scope). Charts use only existing tokens and never hard-coded hex colors:
 
-- Summary metrics row: a slim four-block card under the totals — visit count (with a "this year n" sub-line), average per visit, monthly average (total cost ÷ calendar months from the first record month to the current one, a fixed whole-history figure that follows nothing), and last service ("n days ago" / "today"). Numbers stay small; the chart cards carry the visual weight.
-- Item share: a horizontal bar list, sorted by paid amount descending, listing every item (no Top-N cut). The card header shows the total cost as the conservation anchor with a green "累计优惠 ¥x" sub-line; each row is item name + solid primary bar (width = paid ratio × entrance progress) + paid amount + a small green "saved" amount + a chevron — tapping a row opens the per-item history sheet (summary blocks + reverse-chronological per-visit rows). The list is a three-column table whose name and value columns take the widest row's width (intrinsic column widths), so every bar starts at the same x and shares one pixel scale — row-local widths would skew the proportions. A neutral "其他" row (surface3, not tappable, shown only when non-zero) absorbs unattributable cost — summary-mode records and per-record excess of total cost over the item sum — so all rows always add up to the total cost.
-- Cost trend: shown only from two record years onward (a single-year car hides the whole card). One point per year (= that year's total cost), spanning the first record year to the current one with zero-filled gap years — a smooth curve (cubic segments) with a soft gradient area fill below (primary at 32% fading to 2%). Overlaid in-chart: solid dots on years that had service, a hollow ring on the last-service year, and the peak amount as an in-chart label. There is no window switcher and no average line. The chart canvas must be given an explicit width (`double.infinity`): inside the section's start-aligned column a childless CustomPaint collapses to zero width and renders nothing.
-- Entrance animation: one shared one-shot 700ms controller — project bars grow by width, the curve reveals left-to-right. Any bar driven by the entrance progress must live inside an `AnimatedBuilder` listening to that controller; a subtree without it never rebuilds during the animation and bars stay invisible at progress 0 (the "bars appear only after tapping" bug). No looping or idle animations.
+- Summary cards: a totals card at the top of the page — 总费用 plus 今年保养, with a third 今年加油 block when the car has fuel records — followed by a slim four-block metrics card: visit count (with a "this year n" sub-line), average per visit, monthly average (total cost ÷ calendar months from the first record month to the current one, a fixed whole-history figure that follows nothing), and last service ("n days ago" / "today"). Numbers stay small; the chart cards carry the visual weight.
+- Item share: one 100% stacked bar whose segments are sorted by paid amount descending and step from dark to light primary, followed by compact detail rows — each row is a color dot, item name, percentage, saved amount, and paid amount, with the three numeric columns in fixed-width slots, right-aligned. The card header is one line: label + total cost (the conservation anchor) + a small green "累计优惠 ¥x" on the right. A neutral "其他" segment (surface3, not tappable, shown only when non-zero) absorbs unattributable cost — summary-mode records and per-record excess of total cost over the item sum — so the bar and the rows always add up to the total cost (总费用 ≡ Σ项目实付 + 其他). Tapping an item row opens the per-item history sheet (summary blocks + reverse-chronological per-visit rows).
+- Maintenance cost trend: shown from two records onward (a single-record car hides the whole card; a single-year car with 2+ records still shows its one column). One column per year (= that year's total cost), uniform primary color with no per-year highlight, capped with an amount label; the vertical axis carries three ticks (0 / half-peak / peak, step adaptive to round numbers) with dashed horizontal grid lines. The chart fills the card width when it fits and scrolls horizontally when it does not (bottom scrollbar shown while scrolling, initially parked at the rightmost year, snapping to whole columns). There is no window switcher and no average line. The chart canvas must be given an explicit width (`double.infinity`): inside the section's start-aligned column a childless CustomPaint collapses to zero width and renders nothing.
+- Fuel cost card: the last card on the page, shown only when the car has fuel records. Header is one line — total fuel cost + monthly average (same whole-history dilution rule as maintenance) — over a full-history continuous monthly column chart in the same axes style (axis fixed on the left, dashed grid lines, amount labels on top, "26.9"-style axis labels). No year dimension.
+- Entrance animation: one shared one-shot 700ms controller — share-bar segments grow by width, chart columns grow by height. Any bar driven by the entrance progress must live inside an `AnimatedBuilder` listening to that controller; a subtree without it never rebuilds during the animation and bars stay invisible at progress 0. No looping or idle animations.
 
 Safe-area handling lives in `LunioPage` itself, so every pushed subpage is correct by construction; exact amounts always accompany charts.
 
@@ -405,7 +404,7 @@ Bottom navigation is a floating rounded container with three equal destinations.
 
 Forms, filters, vehicle switching, project management, and restore confirmation use bottom sheets. Every sheet is built on a single shared skeleton (`PrototypeSheetFrame`): drag handle, strong title, concise supporting text, scrollable content, 30px top radius, and one surface token. Information sheets and form sheets must not introduce alternate surface containers or radii. Open sheets blur and dim the page behind them; closed sheets must not remain reachable to assistive technologies.
 
-Sheet dismissal rules (shared, implemented in `showLunioModalSheet`, not per-sheet): dragging the sheet body down moves the whole sheet with the finger — releasing past one quarter of the sheet height (or with enough downward speed) closes it, otherwise it springs back; when the content is scrollable the drag only grabs the sheet once the content is scrolled to the top. Tapping empty space inside the sheet only dismisses the keyboard; tapping the dimmed area outside the sheet closes the sheet immediately, with no unsaved-changes confirmation. All three behaviors apply uniformly to every bottom sheet.
+Sheet dismissal rules (shared, implemented in the shared sheet runtime, not per-sheet): dragging the sheet body down moves the whole sheet with the finger — releasing past one quarter of the sheet height (or with enough downward speed) closes it, otherwise it springs back; when the content is scrollable the drag only grabs the sheet once the content is scrolled to the top. Tapping empty space inside the sheet only dismisses the keyboard, and the drag rules apply uniformly to every bottom sheet. Tapping the dimmed area outside closes information sheets immediately with no unsaved-changes confirmation; edit-form sheets (built on `showLunioFormSheet`, ADR 0016) are not barrier-dismissible — they close only through their own actions, where a successful submit pops with a success toast and any other exit closes silently.
 
 ### Forms
 

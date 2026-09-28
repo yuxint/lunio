@@ -21,24 +21,24 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/main.dart`：App 启动入口。
 - `lib/app/lunio_app.dart`：`MaterialApp.router`、主题模式和路由挂载。
 - `lib/app/app_router.dart`：GoRouter 配置。`appRouter` 是稳定单例，主题切换时不要重建路由导致跳页。
-- `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、偏好门面、各域仓库（主仓库/目录/加油/备份）、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好、通知服务、偏好纪元（`preferencesEpochProvider`，ADR 0017：偏好类缓存失效走纪元 bump，新增偏好派生 provider 在自己 build 首行 watch 纪元；停车倒计时 provider 例外，维持写点直失效）等（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `features/shell/fuel/fuel_prices.dart`，依赖单向，本文件不再 import 它）。
+- `lib/app/providers.dart`：Riverpod provider 总入口，包含数据库、偏好门面、各域仓库（主仓库/目录/加油/备份）、车辆、当前应用车辆、保养项目、记录、手动日期、主题偏好、通知服务、偏好纪元（`preferencesEpochProvider`，ADR 0017：偏好类缓存失效走纪元 bump，新增偏好派生 provider 在自己 build 首行 watch 纪元；停车倒计时 provider 例外，维持写点直失效）等。油价域 provider（省份/油品/手填价/数据源/油价控制器/生效链）是例外，集中在 `features/shell/fuel/fuel_prices.dart`，本文件不 import 它，依赖单向。
 - `lib/features/shell/app_shell.dart`：主壳层入口，保留平级入口页面挂载（加油项按开关条件显示）、底部导航、生命周期监听和提醒通知同步触发。
 - `lib/features/shell/reminders/`：提醒页、停车倒计时、保养提醒列表、提醒行组装、通知内容组装与调度 helper、桌面小组件快照组装与同步（`widget_snapshot.dart` / `widget_snapshot_controller.dart`）。
-- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。两步表单的状态机（字段、步进、校验、同日查重循环驱动、里程单调软提示决策）2026-09-26 起收在 `record_form_controller.dart`（plain-Dart `RecordFormController`：弹窗/日期选择器实现经 `RecordFormUi` 注入、已有记录经快照 getter 注入，单测 `test/features/record_form_controller_test.dart` 变异 3/3 锁定）；费用区算链控制器 `record_cost_form_controller.dart` 作为它的内部实现被组合、间隔草稿与提交清单在 `record_interval_updates.dart`，widget 只渲染两步视图、转发事件并持有弹窗实现与文案；费用统计的聚合纯函数（`cost_stats.dart`，总额/年度/月度用记录总费用权威值、项目计费值=项目费用没填不参与、优惠分摊按费用权重最大余数法守恒、其他段守恒（总费用≡Σ项目实付+其他）、月均按首条记录月到当月全程摊薄、项目档案逐次明细）与独立统计页（`cost_stats_page.dart`，路由 `/cost-stats`，**作用域永远当前应用车辆**，项目占比为 100% 堆叠条 + 紧凑明细行（2026-09-24：分段按实付降序主色深→浅，行=色点｜项目名｜百分比｜省额｜实付、三数值列固定槽右对齐）、保养费用（原"保养费用走势"）为坐标系年度柱状图（每年一柱=该年总费用、柱色统一主色无高亮，纵轴刻度+虚线网格线、柱顶标金额，≥2 条记录展示；2026-09-24 第五轮起图表行为与加油卡统一：放得下铺满、超一屏横向滚动+底部滚动条+初始停最右，占比/加油卡头部改一行=标签+金额+右侧小字，加油卡「n 笔」删改「月均」）；项目档案 sheet 在 `cost_item_history_sheet.dart`）；加油费用聚合纯函数独立在 `fuel_cost_stats.dart`（口径=实付优先、没填取应付，见 ADR 0015），与保养口径互不掺和。2026-09-22 起统计页新增独立加油费用卡（2026-09-23 删年度行改全历史连续月度柱；2026-09-24 加坐标系——纵轴固定左侧+虚线网格线、柱顶标金额、轴标签「26.9」式，卡内无年度维度；同日第五轮行为统一见上；固定页面最后、头部一行「总费用+月均」）、汇总卡改「总费用｜今年保养｜今年加油」三栏（无加油记录隐藏第三栏）、页面空态守卫放宽为保养+加油都无记录；记录页头部汇总行=「今年保养 + 今年加油」，两段按域各自显隐。
-- `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档；加油记录卡与记一笔/编辑/删除表单在 `fuel_records_card.dart`，2026-09-22 重定义为日期/油品/单价/应付/实付五字段（容积由实体按应付÷单价算好落库预留、页面不展示；单价在表单油品=油价卡油品时预填生效价；应付与实付之间的箭头即「同应付」快捷回填）；2026-09-24 第五轮：删「展开全部/收起」，超 5 条改固定 5 行高卡内滚动+右侧滚动条））；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`；油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`；加油记录数据模型（应付/实付模型、容积预留、v3 就地重定义）见 `docs/adr/0015`（取代 0014 的模型部分；满箱段油耗口径已删除）。
+- `lib/features/shell/records/`：记录页、记录筛选、保养记录表单和记录删除相关交互。两步表单的状态机（字段、步进、校验、同日查重循环驱动、里程单调软提示决策）收在 `record_form_controller.dart`（plain-Dart `RecordFormController`：弹窗/日期选择器实现经 `RecordFormUi` 注入、已有记录经快照 getter 注入，单测在 `test/features/record_form_controller_test.dart`）；费用区算链控制器 `record_cost_form_controller.dart` 作为它的内部实现被组合，间隔草稿与提交清单在 `record_interval_updates.dart`，widget 只渲染两步视图、转发事件并持有弹窗实现与文案。费用统计聚合纯函数在 `cost_stats.dart`（总额/年度/月度用记录总费用权威值、项目计费值=项目费用没填不参与、优惠分摊按费用权重最大余数法守恒、其他段守恒（总费用≡Σ项目实付+其他）、月均按首条记录月到当月全程摊薄、项目档案逐次明细）；独立统计页在 `cost_stats_page.dart`（路由 `/cost-stats`，**作用域永远当前应用车辆**）：项目占比=100% 堆叠条+紧凑明细行（分段按实付降序主色深→浅，行=色点｜项目名｜百分比｜省额｜实付，三数值列固定槽右对齐）；保养费用=坐标系年度柱状图（每年一柱=该年总费用，柱色统一主色无高亮，纵轴刻度+虚线网格线、柱顶标金额，≥2 条记录展示）；加油费用卡固定在页面最后，头部一行「总费用+月均」，全历史连续月度柱（纵轴固定左侧+虚线网格线、柱顶标金额、轴标签「26.9」式，卡内无年度维度）；保养柱状图与加油柱共用同一图表行为（放得下铺满、超一屏横向滚动+底部滚动条+初始停最右），占比卡与加油卡头部一行=标签+金额+右侧小字；汇总卡=「总费用｜今年保养｜今年加油」三栏（无加油记录隐藏第三栏）；页面空态守卫=保养+加油都无记录。项目档案 sheet 在 `cost_item_history_sheet.dart`。加油费用聚合纯函数独立在 `fuel_cost_stats.dart`（口径=实付优先、没填取应付，见 ADR 0015），与保养口径互不掺和。记录页头部汇总行=「今年保养 + 今年加油」，两段按域各自显隐。
+- `lib/features/shell/fuel/`：加油页（油价卡副标题点按改省份/油品、加满预估档位列表滚动定档；加油记录卡与记一笔/编辑/删除表单在 `fuel_records_card.dart`，字段=日期/油品/单价/应付/实付（容积由实体按应付÷单价算好落库**预留**、页面不展示；单价在表单油品=油价卡油品时预填生效价；应付与实付之间的箭头即「同应付」快捷回填）；超过 5 条固定 5 行高卡内滚动+右侧滚动条，无展开/收起）；`fuel_prices.dart` 是油价域状态接缝（省份/油品/手填价/数据源/油价控制器/生效链 provider 集中在此）。油箱容积在添加/编辑车辆表单（非必填）。油价数据源契约见 `docs/adr/0001`，滚动定档与容积归属见 `docs/adr/0002`，油价按省抓详情页、缓存单省价表、换省手动刷新见 `docs/adr/0011`，加油记录数据模型见 `docs/adr/0015`。
 - `lib/features/shell/profile/`：我的页、车辆新增/编辑/切换、保养项目管理、备份导入导出、通知设置、手动日期。
-- `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单 sheet 运行时（`form_sheet.dart`，`showLunioFormSheet` + `FormSheetHandle` + `FormSheetHandleHost` 宿主 mixin（State 短名读 saving/errorText/setFormError，widget 实现 FormSheetHandleWidget 接口），ADR 0016：装载失败/领域守卫 toast、barrierDismissible 固定 false、键盘 inset 经 sheet context、提交成功 pop+successMessage toast、非提交出口 close 全部统一出口——编辑表单一律走它，不再手写 showLunioModalSheet+PrototypeSheetFrame+pop/toast）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`，居中弹窗卡片统一走 `LunioDialogCard`/`LunioDialogActions`——不再手写 Dialog+Container 装饰块）。
+- `lib/features/shell/shared/`：shell 内部共享的 modal/dialog/toast、日期选择器、格式化、错误文案、表单 sheet 运行时（`form_sheet.dart`，`showLunioFormSheet` + `FormSheetHandle` + `FormSheetHandleHost` 宿主 mixin（State 短名读 saving/errorText/setFormError，widget 实现 FormSheetHandleWidget 接口），ADR 0016：装载失败/领域守卫 toast、barrierDismissible 固定 false、键盘 inset 经 sheet context、提交成功 pop+successMessage toast、非提交出口 close 全部统一出口——编辑表单一律走它，不要手写 showLunioModalSheet+PrototypeSheetFrame+pop/toast）和小型 UI 组件（数字输入统一走 `LunioNumberField`，空态占位统一走 `LunioEmptyCard`，居中弹窗卡片统一走 `LunioDialogCard`/`LunioDialogActions`——不要手写 Dialog+Container 装饰块）。
   - `reminders/parking_countdown.dart`：停车倒计时卡片、表单和时间选择器（保存/清除走动作层 `shell_actions.dart`）。
   - `reminders/reminder_list.dart`：保养提醒列表、提醒行、记录详情 sheet 和进度环。
-  - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。`reminders/notification_sync_guard.dart`：通知同步守卫（NotificationSyncGuard/SyncRun）——同步代数与写库中间态旗的唯一拥有者（代数 provider 已从 providers.dart 迁入），协调器是唯一写者、同步控制器与协调器经 `acquire()` 领票在检查点问 `run.isValid`，新检查点不要再手抄旗/代数协议。
+  - `reminders/notification_coordinator.dart`：通知协调器（LunioNotificationCoordinator），通知域规则的唯一拥有者——权限真值对账、删车/恢复/清空的通知清扫模板、停车倒计时通知尾巴、"稍后提醒/知道了"抑制读写；通知相关偏好 key 的唯一写点。`reminders/notification_sync_guard.dart`：通知同步守卫（NotificationSyncGuard/SyncRun）——同步代数与写库中间态旗的唯一拥有者（代数 provider 也定义在此），协调器是唯一写者，同步控制器与协调器经 `acquire()` 领票在检查点问 `run.isValid`，新检查点不要手抄旗/代数协议。
   - `reminders/reminder_rows.dart`：提醒行视图模型与组装（`buildReminderRows`）、空态分类单一出口（`classifyReminderRows`）、`reminderRowsProvider`（提醒页数据接缝，watch 车辆/项目/记录/今天，英雄卡与列表共消费）；通知侧复用同一组装函数。
   - `reminders/widget_snapshot.dart`：桌面小组件快照组装纯函数（`buildWidgetSnapshotJson`，契约 `schemaVersion: 1` + 14 天预生成窗口，ADR 0013）；`reminders/widget_snapshot_controller.dart`：快照同步控制器（AppShell 挂载、listenManual 数据上游，内容相同不重写、失败不记账）。
   - `reminders/reminder_notifications.dart`：系统通知内容组装（`buildScheduledNotifications`）、应用内到期清单（`maintenanceNotices`）、全量数据签名。`reminders/reminder_dialogs.dart`：应用内提醒弹窗（抑制读写经通知协调器）。
   - `profile/vehicles.dart`：车辆列表、车辆卡片、车辆切换，以及添加/编辑车辆 sheet 入口（数据装载守卫 + 提交给动作层的接线）；添加车辆两步向导（第一步表单 + 草稿状态机控制器 `AddCarWizardController`：模板加载经注入、项目草稿变更面（编辑/启停/删除，内置"至少一个启用项目"守卫）plain-Dart 可单测）在 `profile/add_car_wizard.dart`，车型目录选择器（搜索过滤/品牌派生/生效品牌回退三个纯函数）在 `profile/vehicle_model_picker.dart`。
   - `profile/maintenance_items.dart`：保养项目 sheet、列表、卡片、项目表单和恢复默认草稿。
-  - `profile/settings_data.dart`：个人中心设置行、主题行与版本 footer（备份导出/恢复/清空的编排 2026-09-25 起在动作层"备份与数据重置"分节，页面只留反馈薄壳）；通知设置与手动日期两个 sheet 拆到 `settings_notifications.dart` / `settings_manual_date.dart`。
+  - `profile/settings_data.dart`：个人中心设置行、主题行与版本 footer；备份导出/恢复/清空的编排收在动作层「备份与数据重置」分节，页面只留反馈薄壳；通知设置 sheet 在 `settings_notifications.dart`，手动日期 sheet 在 `settings_manual_date.dart`。
   - `shared/shell_shared.dart`：shell shared barrel；具体实现分别在 `shared_widgets.dart`、`date_picker.dart`、`modal_feedback.dart`、`form_sheet.dart`、`formatters.dart`、`shell_actions.dart`、`scroll_snap.dart`（`RowSnapScrollPhysics` 整行/整柱吸附物理：档位列表/加油记录卡/统计图表三处共用，纯手势对齐不记录）。
-  - `shared/shell_actions.dart`：保存动作层（ADR 0007）——每个业务变更一个具名函数，内部固定编排"写库 → 失效 provider 家族 →（需要时）组合通知协调器"；只收 `WidgetRef`，确认框/pop/toast 留在调用方，异常穿透（例外：`deleteCar`/`restoreBackupFromFile`/`clearAllData` 收 `BuildContext`，确认框在动作层内弹——破坏性操作，确认文案属 UI 决策；后两者 2026-09-25 收编，返回 `Future<bool>` 区分完成/用户取消，ADR 0007 修订节）。新增保存路径进动作层加函数，不要在 UI 里手排失效序列。（2026-09-25 起，编辑表单 sheet 的 pop/toast 反馈薄壳归表单运行时 `form_sheet.dart`，ADR 0016；动作层不变。）
+  - `shared/shell_actions.dart`：保存动作层（ADR 0007）——每个业务变更一个具名函数，内部固定编排"写库 → 失效 provider 家族 →（需要时）组合通知协调器"；只收 `WidgetRef`，确认框/pop/toast 留在调用方，异常穿透（例外：`deleteCar`/`restoreBackupFromFile`/`clearAllData` 收 `BuildContext`，确认框在动作层内弹——破坏性操作，确认文案属 UI 决策；后两者返回 `Future<bool>` 区分完成/用户取消，ADR 0007 修订节）。新增保存路径进动作层加函数，不要在 UI 里手排失效序列。编辑表单 sheet 的 pop/toast 反馈薄壳归表单运行时 `form_sheet.dart`（ADR 0016），动作层不变。
 - `lib/core/theme/lunio_tokens.dart`、`lib/core/theme/lunio_theme.dart`：全局视觉 token 和 ThemeData。做全局视觉调整优先改这里。
 - `DESIGN.md`：设计 token 与产品 UI 原则。改视觉、颜色、间距、反馈模式时要同步检查，必要时同步更新。
 
@@ -46,19 +46,19 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - `lib/domain/entities/`：领域实体，保持纯 Dart 数据结构与基础校验。
 - `lib/domain/rules/`：业务规则，例如保养进度、记录校验、当前应用车辆回退规则。优先把可测试的业务判断放这里。
-- `lib/domain/errors/lunio_error.dart`：表单提交路径的业务错误类型（`LunioErrorException` + kind 枚举）。Repository 抛它、`friendlyError` 按类型翻译，不再靠异常文本猜（错误文案在 throw 点书写）。
+- `lib/domain/errors/lunio_error.dart`：表单提交路径的业务错误类型（`LunioErrorException` + kind 枚举）。Repository 抛它、`friendlyError` 按类型翻译，不要靠异常文本猜（错误文案在 throw 点书写）。
 - `lib/data/database/app_database.dart`：Drift 表结构与数据库连接，当前 `schemaVersion` 为 3。
 - `lib/data/database/app_database.g.dart`：Drift 生成文件。改表结构后用 build_runner 生成，不要手写。
 - `lib/data/repositories/`：数据层按域拆分的仓库家族（共享行↔实体↔Companion 编解码在 `entity_row_codec.dart`，一张表的字段清单全库只有一份）：
   - `lunio_repository.dart`：主仓库——车辆/保养项目/保养记录核心域的事务与校验（应用车辆回退统一走 AppliedCarRules）；
   - `built_in_catalog_repository.dart`：车型目录与默认模板两张内置表 + 首启 bootstrap 幂等对账；
-  - `fuel_repository.dart`：加油预测设置表 + 加油记录表（ADR 0015 重定义模型）+ 油价缓存/手填油价（临时偏好经偏好门面原语存取）；
+  - `fuel_repository.dart`：加油预测设置表 + 加油记录表（ADR 0015 应付/实付模型）+ 油价缓存/手填油价（临时偏好经偏好门面原语存取）；
   - `backup_repository.dart`：备份导出/恢复/清空数据（恢复与手工录入共用同一份 Companion 字段清单）。
 - `lib/data/preferences/app_preferences.dart`：偏好门面（`LunioPreferences`）——全部偏好 key 常量、编解码与 typed 读写的唯一出口，新偏好进这里加 typed 方法，不要在调用方拼 key 字符串。停车倒计时偏好与提醒抑制 key 前缀也登记在此。
-- `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝；v3 的 fuelRecords 条目结构经 ADR 0015 就地重定义，旧结构条目解码即拒）。
+- `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝；v3 的 fuelRecords 条目按 ADR 0015 应付/实付模型解码，满箱段旧结构条目解码即拒）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
-- `lib/core/platform/native_channel.dart`：五个原生桥共用的通道降级守卫（`guardedChannelCall`）——PlatformException/MissingPluginException → 哨兵值（false/null）的翻译与 debugPrint 日志的唯一出口（9-26 三轮审查收编）；各桥只声明通道与参数，不再手写 try/catch，新桥一律走它；四个桥的 Dart 侧契约测试在 `test/core/native_*_test.dart`（锁 method 名/参数键/异常翻译，先例 native_live_activities_test）。
+- `lib/core/platform/native_channel.dart`：五个原生桥共用的通道降级守卫（`guardedChannelCall`）——PlatformException/MissingPluginException → 哨兵值（false/null）的翻译与 debugPrint 日志的唯一出口；各桥只声明通道与参数，不要手写 try/catch，新桥一律走它；四个桥的 Dart 侧契约测试在 `test/core/native_*_test.dart`（锁 method 名/参数键/异常翻译，新契约测试参照 native_live_activities_test）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
 - `lib/core/platform/native_live_activities.dart`：停车倒计时 iOS 实时活动（灵动岛/锁屏卡片）的原生桥（ADR 0012）。Swift 执行体在 `ios/Runner/ParkingCountdownActivityController.swift`，卡片 UI 在 Widget Extension target `ios/ParkingCountdownExtension/`，通道经 SceneDelegate 挂 `lunio/native_live_activities`；启停/对账编排挂通知协调器。零更新渲染（系统自动走时），iOS 16.2 以下或系统关实时活动静默降级；本机模拟器构建不可用，外观只能真机验收。
 - `lib/core/platform/native_widgets.dart`：保养提醒桌面小组件（iOS WidgetKit）的快照通道桥（ADR 0013）。扩展 target `ios/LunioWidgetsExtension/`，契约/存取在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（显式编进 Runner 与扩展两个 target），通道经 SceneDelegate 挂 `lunio/native_widgets`；数据经 App Group `group.com.example.lunio`；非 iOS 平台方法自禁用。
@@ -68,28 +68,28 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `test/data/`：数据库、Repository、备份测试，按域拆分（database_test=核心 CRUD/仓库校验、catalog_bootstrap_test=车型目录与默认模板、backup_restore_test=备份导出恢复清空）。
 - `test/widget/`：主 UI 交互测试，按页面域拆分（app_shell / reminders / parking / records / vehicles / maintenance_items / settings / fuel）。
 - `test/helpers/widget_app.dart`：widget 测试共享夹具（pumpApp、TestRepositories 装配/播种门面——含 insertCarForTest 裸插替身与 seedCarAndItem/saveItem 种子、通知/原生通道 mock、造数函数）与两个交互惯用语：`gotoTab`（底部导航切换=断言存在+点击+settle，「加油」tab 条件存在需先种子开关）/ `drainToastTimer`（冲 toast 定时器防 pending timer，时长经 modal_feedback 导出的 `statusOverlayVisibleDuration` 编译期绑定）。
-- `test/helpers/builders.dart`：测试数据 builder 层（defaultCar / defaultOilItem / defaultRecord / defaultFuelRecord + testSync）——四个核心实体「最小合法数据」唯一出口；默认值只收编既有测试的高频事实、不发明数据，备份载荷里带 id 的行重建继续走实体构造器。
-- `docs/code-review-report.md`：代码审查未修条目台账（R9/R17/R30/R36，编号沿用原 R1-R38 报告，已修历史见 git）。
+- `test/helpers/builders.dart`：测试数据 builder 层（defaultCar / defaultOilItem / defaultRecord / defaultFuelRecord + testSync）——四个核心实体「最小合法数据」唯一出口；默认值只取既有测试的高频事实、不发明数据，备份载荷里带 id 的行重建继续走实体构造器。
+- `docs/code-review-report.md`：代码审查未修条目台账（未修 R9/R17/R30/R36；编号沿用原 R1-R38 报告，已修历史见 git）。
 - `docs/operations-manual.md`：UI 操作 ↔ 代码对照手册（改流程须同步维护）。
 - `docs/migration/current-database-schema.md`：当前数据库结构事实（升级策略见 `docs/adr/0005`）。
 
 ## 数据与契约注意点
 
-- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3、备份 JSON `schemaVersion` 为 3（两者的加油结构经 ADR 0015 于 2026-09-22 就地重定义：旧 v3 库不兼容新代码必须卸载重装，含旧结构加油条目的 v3 备份恢复被拒，例外详情见 ADR 0015 与 docs/migration/current-database-schema.md）。数据库升级策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理）+ v3，其余版本直接拒绝。
-- 加油记录（ADR 0015，2026-09-22 重定义）：五项输入=日期（上限今天）/油品（默认 92#）/单价/应付金额/实付金额（选填），容积=应付÷单价由实体算好落库**预留**（页面不展示，与油箱容积无关）；统计口径=实付优先、没填取应付（`FuelRecord.effectiveCostCents` 唯一实现点）。`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于加油记录，别套用保养记录的直觉。
+- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 3、备份 JSON `schemaVersion` 为 3，两者的加油记录结构按 ADR 0015 的应付/实付模型定义——含满箱段旧结构加油条目的 v3 库与新代码不兼容，必须卸载重装；含满箱段旧结构加油条目的 v3 备份恢复被拒（例外详情见 ADR 0015 与 `docs/migration/current-database-schema.md`）。数据库升级策略（ADR 0005）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理）+ v3，其余版本直接拒绝。
+- 加油记录（ADR 0015）：五项输入=日期（上限今天）/油品（默认 92#）/单价/应付金额/实付金额（选填），容积=应付÷单价由实体算好落库**预留**（页面不展示，与油箱容积无关）；统计口径=实付优先、没填取应付（`FuelRecord.effectiveCostCents` 唯一实现点）。`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于加油记录，别套用保养记录的直觉。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同步考虑版本号、测试和文档。
-- 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。**数据不变量（2026-09-20）**：材料/工时任一有值 ⇒ 项目费用必有值——2026-09-25 起由记录-项目关联行写入 seam（`entity_row_codec.dart` 的 `maintenanceRecordItemCompanion`，内置 `RecordRules.normalizeItemCost`）单点补齐，三条写路径（手工录入/编辑重建/恢复备份）天然继承，不要再在上游重复调用 normalize。
-- 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`、`fuelPredictionEnabled`、`fuelProvince`（默认湖北）、`fuelGrade`、`fuelPriceCache`、`fuelManualPrices`（后两个是临时数据，不进备份）。不要把展示文案当作稳定标识。（`maintenanceDueEnabled` 已于 2026-08-29 移除：保养到期提醒是产品核心能力，不提供关闭入口，审查报告 R5；老库残留 key 无人读取，无害。）
+- 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。**数据不变量**：材料/工时任一有值 ⇒ 项目费用必有值，由记录-项目关联行写入 seam（`entity_row_codec.dart` 的 `maintenanceRecordItemCompanion`，内置 `RecordRules.normalizeItemCost`）单点补齐，三条写路径（手工录入/编辑重建/恢复备份）天然继承，不要再在上游重复调用 normalize。
+- 重要偏好 key 包括 `appliedCarId`、`developerModeEnabled`、`manualDateEnabled`、`manualDate`、`themeMode`、`systemNotificationsEnabled`、`inAppNotificationsEnabled`、`maintenanceDueRepeat`、`parkingCountdown`、`fuelPredictionEnabled`、`fuelProvince`（默认湖北）、`fuelGrade`、`fuelPriceCache`、`fuelManualPrices`（后两个是临时数据，不进备份）。不要把展示文案当作稳定标识。（没有 `maintenanceDueEnabled` 开关：保养到期提醒是产品核心能力，不提供关闭入口（审查报告 R5）；老库残留的该 key 无人读取，无害。）
 - 删除车辆、恢复备份、切换当前应用车辆都涉及事务和 provider 失效，优先沿用主仓库（`LunioRepository`）与 `providers.dart` 里的现有模式。读偏好/写偏好走 `LunioPreferences` typed 方法。
 - 默认车辆模型和默认保养项目通过 Repository bootstrap 写入，避免在 UI 层重复拼业务数据。
 - 停车倒计时是临时偏好状态，落在 `app_preferences.parkingCountdown`，不进入 JSON 备份。保存、结束、关闭系统通知、清空数据和恢复备份都要同步考虑通知清理。
 - 停车倒计时在 iOS 16.2+ 有实时活动（Live Activity：锁屏卡片 + 灵动岛 + 通知中心顶部，ADR 0012）：Widget Extension target `ParkingCountdownExtension` 与 Attributes 共享文件（`ParkingCountdownAttributes.swift`）同时编进 Runner 与扩展两个 target，改动活动数据形态要两侧同步；编排（保存→启、清除/清空→撤、删车/恢复备份/通知总开关→不动、冷启/回前台对账三态）挂在通知协调器，不要再在 UI 层碰通道。本机模拟器构建不可用（运行时/SDK 错配），实时活动外观与灵动岛动画只能真机验收。
-- 保养提醒桌面小组件（iOS 16.2+，ADR 0013）：Widget Extension target `LunioWidgetsExtension`；快照 JSON（`schemaVersion: 1`，含 14 天预生成窗口的逐日条目）由 `reminders/widget_snapshot.dart` 组装、经 `WidgetSnapshotController`（监听数据上游，AppShell 挂载）自动重写——数据写点不需要也不能单独通知它；小组件只渲染快照不做计算，点击经 `widgetURL`（`lunio:///reminders`，scheme 注册在 Runner Info.plist，ADR 0013 六轮修订）深链落提醒页——go_router 只匹配 path，URL 必须三斜杠形态，双斜杠 host 吃掉路径会匹配失败。快照存取契约在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（编进 Runner 与扩展两个 target）；App Group 标识 `group.com.example.lunio` 跟 bundle id 走，改 bundle id 时两个 entitlements 与 `appGroupId` 常量要一起改。改快照 JSON 契约要 `widgetSnapshotSchemaVersion` +1 并同步 Swift 侧模型。
+- 保养提醒桌面小组件（iOS 16.2+，ADR 0013）：Widget Extension target `LunioWidgetsExtension`；快照 JSON（`schemaVersion: 1`，含 14 天预生成窗口的逐日条目）由 `reminders/widget_snapshot.dart` 组装、经 `WidgetSnapshotController`（监听数据上游，AppShell 挂载）自动重写——数据写点不需要也不能单独通知它；小组件只渲染快照不做计算，点击经 `widgetURL`（`lunio:///reminders`，scheme 注册在 Runner Info.plist，ADR 0013）深链落提醒页——go_router 只匹配 path，URL 必须三斜杠形态，双斜杠 host 吃掉路径会匹配失败。快照存取契约在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（编进 Runner 与扩展两个 target）；App Group 标识 `group.com.example.lunio` 跟 bundle id 走，改 bundle id 时两个 entitlements 与 `appGroupId` 常量要一起改。改快照 JSON 契约要 `widgetSnapshotSchemaVersion` +1 并同步 Swift 侧模型。
 
 ## UI 与交互约定
 
 - 主交互按 shell 子目录拆分；改 UI 前先从 `app_shell.dart` 定位入口，再读 `reminders/`、`records/`、`profile/` 或 `shared/` 的相关局部代码，避免跨区域重构。
-- 安全区统一由 `LunioPage` 内置 `SafeArea` 提供（2026-09-20）：tab 页的壳层也包一层、嵌套幂等；新的 pushed 子页用了 `LunioPage` 就天生有安全区，不要再自己包。
+- 安全区统一由 `LunioPage` 内置 `SafeArea` 提供：tab 页的壳层也包一层、嵌套幂等；新的 pushed 子页用了 `LunioPage` 就天生有安全区，不要再自己包。
 - 视觉改动优先走 `LunioTokens` 和 `buildLunioTheme`，不要在页面里散落新的硬编码颜色。
 - 改全局视觉、产品原则或 token 时，同步检查 `DESIGN.md`。
 - 瞬时成功反馈使用页面内容区内的轻量 toast 风格；不要轻易改回系统底部 `SnackBar`，也不要贴近系统状态栏。
@@ -141,6 +141,12 @@ dart run build_runner build
 - Drift 表结构改动：先运行 `dart run build_runner build` 并检查 `app_database.g.dart`，再顺序跑分析和测试。
 
 这个仓库里测试或生成任务可能受 Flutter startup lock / native asset generation / codesign 临时文件影响，避免同时并行跑多个 Flutter/Dart 生成或测试命令。推荐顺序是 `dart run build_runner build`（仅表结构改动需要）→ `flutter analyze` → 定向 `flutter test ...` → 全量 `flutter test`。
+
+## 架构改进流水线（arch-pipeline）
+
+- 本仓项目版工作流 `.zcode/workflows/arch-pipeline.dwf.ts` 已同步为全局通用版（8 参数），默认参数即本仓口径：flutter analyze + 全量 flutter test 两层门禁、逐候选提交推送，一般无需传参；在本仓按名字运行命中本仓版（同名遮蔽全局版）。
+- 全局版（`~/.zcode/workflows/arch-pipeline.dwf.ts`）是通用模板：更新后需同步本仓项目版（TypeScript 代码保持逐字节一致，仅元数据与头注释按本仓定制）。
+- 运行：对话里说「用 arch-pipeline 跑一轮架构改进（试跑）」；断点续跑传 resumeDir=.scratch/arch-<MMDD>（现存 .scratch/arch-0928 五张真票可直接续）；图文运行手册在 `.scratch/arch-pipeline-workflow.html`。
 
 ## 汇报格式
 

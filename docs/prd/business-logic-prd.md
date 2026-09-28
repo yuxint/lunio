@@ -16,10 +16,15 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 - 当前应用车辆。
 - 保养项目配置。
 - 保养记录新增、编辑、删除和筛选。
+- 保养记录项目费用（材料/工时/项目费用三列，口径不一致时红字黄三角软提示、不拦截保存）。
 - 保养提醒进度计算。
 - App 内提醒弹窗。
 - 系统本地通知调度。
 - 提醒页停车倒计时。
+- 停车倒计时 iOS 实时活动（灵动岛/锁屏卡片，见第 8 节与 docs/adr/0012）。
+- 加油预测（省份油价、加满预估）和加油记录（应付/实付模型）。
+- 费用统计页（`/cost-stats`）。
+- 保养提醒桌面小组件（iOS WidgetKit）。
 - JSON 备份导出和恢复。
 - 开发者模式下的手动日期。
 - 浅色、深色和跟随系统主题。
@@ -35,13 +40,13 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 
 ## 3. 数据版本和稳定标识
 
-当前数据库 `schemaVersion` 为 5。当前备份 JSON `schemaVersion` 为 2。
+当前数据库 `schemaVersion` 为 3。当前备份 JSON `schemaVersion` 为 3。
 
 稳定标识口径：
 
 - 所有核心业务对象使用 64 位整数 ID。
 - 车辆主键是 `cars.id`。
-- 车型默认保养项目模板主键是 `vehicle_default_maintenance_items.id`。
+- 默认保养项目模板主键是 `vehicle_default_maintenance_items.id`。
 - 内置车型和默认保养模板通过 `catalog_id` 保存内置 JSON 稳定标识；它只用于 bootstrap 同步，不进入备份契约。
 - 车辆内实际保养项目主键是 `maintenance_items.id`。
 - 保养记录主键是 `maintenance_records.id`。
@@ -52,7 +57,7 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 - 不要把展示文案当作稳定主键。
 - 当前内置目录稳定标识字段名是 `catalog_id`，不是 `catalogKey`。
 - 当前 `maintenance_items` 没有 `isDefault` 字段。
-- 车型默认模板和车辆内实际保养项目是两张表，不要混用。
+- 默认保养项目模板和车辆内实际保养项目是两张表，不要混用。
 
 ## 4. 核心业务对象
 
@@ -63,8 +68,10 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 - ID。
 - 品牌。
 - 车型。
+- 动力类型 `powertrainType`，取值 `fuel`/`hybrid`/`plugIn`/`extended`/`ev`；添加车辆时选择，添加后不可改。
 - 当前里程，单位公里，整数。
 - 上路日期，业务日期格式为 `yyyy-MM-dd`。
+- 油箱总容积 `tankCapacityLiters`，单位升，可空非必填（加油预估的加满金额用它计算）。
 - 同步元数据。
 
 当前唯一性：
@@ -131,15 +138,15 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 - 编辑历史记录时，如果原记录包含已禁用项目，该项目仍会显示，避免历史记录无法编辑。
 - 禁用项目不参与提醒页和通知候选计算。
 
-### 4.4 车型默认保养项目
+### 4.4 默认保养项目模板
 
-车型默认保养项目是创建车辆或恢复默认配置时使用的模板。
+默认保养项目模板是创建车辆或恢复默认配置时使用的模板，按动力类型分组存放，不按品牌和车型归属，也不归属于某一辆用户车辆。
 
 字段包括：
 
 - ID。
-- 品牌。
-- 车型。
+- 内置模板稳定标识 `catalog_id`（格式 `tpl:<动力类型>:<templateItemId>`，可空）。
+- 动力类型 `powertrainType`，取值同车辆动力类型。
 - 项目名称。
 - 提醒方式和间隔。
 - 到期和超期阈值。
@@ -149,9 +156,9 @@ Lunio 是本地优先的车辆保养记录 App。当前主业务围绕一辆“�
 关键规则：
 
 - 默认模板不直接等同于某辆车的实际保养项目。
-- 创建车辆时，会按当前车型模板复制一份 `maintenance_items`。
+- 创建车辆时，按车辆动力类型对应分组的模板复制一份 `maintenance_items`。
 - 恢复默认项目时，先回填页面草稿；最终由保存车辆动作统一写库。
-- 车型模板唯一约束为 `vehicleBrand + vehicleModel + itemName`。
+- 模板唯一约束为 `powertrainType + itemName`，不存在按品牌加车型存放的模板。
 
 ### 4.5 保养记录
 
@@ -319,22 +326,18 @@ Lunio 当前有两类通知：
 
 - `systemNotificationsEnabled`：系统通知，默认开启，只有值为 `false` 时关闭。
 - `inAppNotificationsEnabled`：App 内通知，默认开启，只有值为 `false` 时关闭。
-- `maintenanceDueEnabled`：保养到期提醒，默认开启，只有值为 `false` 时关闭。
 - `maintenanceDueRepeat`：保养到期系统通知重复频率，默认 `weekly`。
 - `systemNotificationPermissionRequested`：是否已请求过系统通知权限。
 
-频率枚举支持：
+保养到期提醒是产品核心能力，不提供用户关闭入口（代码审查报告 R5），没有对应的偏好 key。
 
-- `daily`：服务层支持，但当前设置 UI 不展示。
-- `weekly`：每周。
-- `everyTwoWeeks`：每 2 周。
-- `everyThreeWeeks`：每 3 周。
-- `monthly`：每月。
+频率取值：
 
-解析注意：
-
-- 当前 `ReminderRepeatFrequencyCodec.parse` 不解析 `daily`，未知值回退 `weekly`。
-- 当前通知设置 UI 展示每周、每 2 周、每月，不展示每天。
+- 重复频率取值为 `weekly`（每周）、`everyTwoWeeks`（每 2 周）、`everyThreeWeeks`（每 3 周）、`monthly`（每月）四种。
+- `ReminderRepeatFrequencyCodec.parse`（`lib/domain/entities/notification_settings.dart`）只认这四个字符串，其余值一律回退 `weekly`。
+- 里程更新提醒的频率推导也只产出这四种。
+- `daily` 仅作为枚举分支存在，存储和推导都不会产出。
+- 通知设置 UI 展示每周、每 2 周、每月三档。
 
 ### 7.2 系统通知权限
 
@@ -367,13 +370,13 @@ Lunio 当前有两类通知：
 
 调度规则：
 
-- 每次重排先取消 ID 8000 到 8999 范围内的 Lunio 通知。
+- 每次重排先精确取消当前在用的那组提醒族通知 ID（保养到期 8000-8007、里程更新 8900-8907；按代码审查报告 R10 收紧，不按整段范围取消）。
 - 保养到期通知使用起始 ID 8000。
 - 更新车辆里程通知使用起始 ID 8900。
 - 停车倒计时到点通知使用固定 ID 9001。
 - Android 停车倒计时常驻通知使用固定 ID 9002。
 - 每条通知默认预排 8 次。
-- 首次通知时间为本地时区下一个 09:00；如果今天 09:00 已过，则从明天 09:00 开始。
+- 首次通知时间按域错峰：保养到期通知从本地时区下一个 09:00 开始，如果今天 09:00 已过则从明天 09:00 开始；里程更新提醒在此基础上延后 5 分钟（09:05），避免与汇总通知落在同一时刻。
 - 每周、每 2 周、每 3 周使用固定天数递增。
 - 每月使用本地时区月份递增。
 - 常规保养和里程更新通知会避开停车倒计时到点时间，避免与停车到点通知落在同一分钟。
@@ -412,7 +415,6 @@ App 内通知在壳层根据当前数据即时检查。
 
 候选条件：
 
-- `maintenanceDueEnabled=true`。
 - 项目启用。
 - 项目状态为 `warning` 或 `danger`。
 - 项目没有被 15 天延后。
@@ -421,7 +423,7 @@ App 内通知在壳层根据当前数据即时检查。
 抑制 key：
 
 - 延后到期日期：`maintenanceReminderSnoozedUntil:{itemId}`。
-- 当天确认日期：`maintenanceReminderAcknowledgedOn:{itemId}`。
+- 当天确认日期：`maintenanceInAppReminderAcknowledgedOn:{itemId}`。
 
 用户操作：
 
@@ -441,7 +443,7 @@ App 内通知在壳层根据当前数据即时检查。
 抑制 key：
 
 - 延后到期日期：`mileageUpdateSnoozedUntil:{carId}`。
-- 当天确认日期：`mileageUpdateAcknowledgedOn:{carId}`。
+- 当天确认日期：`mileageUpdateInAppAcknowledgedOn:{carId}`。
 
 用户操作：
 
@@ -472,7 +474,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 - 用户点击结束倒计时会删除 `parkingCountdown`。
 - 清空数据会删除所有 App 偏好，因此也会删除停车倒计时。
-- 恢复备份会先清空 App 偏好，因此不会保留恢复前的停车倒计时。
+- 恢复备份不清偏好，恢复前的停车倒计时原样保留，其通知与实时活动也不受影响。
 
 ### 8.2 进度和状态
 
@@ -507,7 +509,7 @@ App 内通知在壳层根据当前数据即时检查。
 - Android 优先使用 exact alarm；无法使用精确闹钟时回退到 inexact 调度。
 - Android 会额外展示 `lunio_parking_ongoing` 常驻通知，使用系统 chronometer 倒计时显示免费离场时间。
 - 结束倒计时会同时取消到点提醒和 Android 常驻通知。
-- 关闭系统通知、清空数据和恢复备份时，也必须清理停车倒计时通知。
+- 结束倒计时和清空数据会清理停车倒计时通知（清空数据同时撤掉 iOS 实时活动）；恢复备份不动停车倒计时偏好，其通知与实时活动原样保留。
 
 当前仓库已接入停车倒计时的 iOS 实时活动（Live Activity：锁屏常驻卡片 + 灵动岛 + 通知中心顶部，ADR 0012）：
 
@@ -526,9 +528,9 @@ App 内通知在壳层根据当前数据即时检查。
 
 - 默认 `weekly`。
 - 当前设置 UI 可选每周、每 2 周、每月。
-- 服务层还支持每天和每 3 周，但不是当前 UI 主路径。
+- `daily` 和 `everyThreeWeeks` 没有用户设置入口，不会由设置路径产生。
 
-当前 `_maintenanceRepeatFrequency` 不根据项目严重程度、超期天数或车辆使用强度动态调整，直接返回设置值。
+保养到期通知频率不根据项目严重程度、超期天数或车辆使用强度动态调整，直接取用户设置值。
 
 ### 9.2 里程更新提醒频率
 
@@ -559,7 +561,6 @@ App 内通知在壳层根据当前数据即时检查。
 
 到期日计算：
 
-- 每天：上次日期 + 1 天。
 - 每周：上次日期 + 7 天。
 - 每 2 周：上次日期 + 14 天。
 - 每 3 周：上次日期 + 21 天。
@@ -630,7 +631,7 @@ App 内通知在壳层根据当前数据即时检查。
 创建车辆时：
 
 - 先创建车辆。
-- 再按车型默认模板复制保养项目。
+- 再按动力类型对应的默认模板复制保养项目。
 - 复制后的项目归属新车，拥有自己的项目 ID。
 
 如果用户在新增车辆流程中调整项目配置，最终保存时应以页面草稿统一写入，而不是在恢复默认或编辑草稿时提前落库。
@@ -657,7 +658,7 @@ App 内通知在壳层根据当前数据即时检查。
 
 - `ensureVehicleModels` 按内置 JSON 车型目录补齐内置车型。
 - `ensureDefaultMaintenanceItems` 按内置 JSON 模板补齐内置默认保养项目。
-- bootstrap 优先按 `catalog_id` 同步内置行；旧数据中没有 `catalog_id` 但品牌、车型、项目名仍匹配的行会被收编。
+- bootstrap 优先按 `catalog_id` 同步内置行；没有 `catalog_id` 但品牌、车型、项目名仍匹配的旧行也会被纳入同步。
 - 内置 JSON 是内置表的权威来源：新增会插入，变更会更新，移除会删除已带 `catalog_id` 的内置行。
 - 这只影响 `vehicle_default_maintenance_items`，不会直接改已经创建车辆的 `maintenance_items`。
 
@@ -665,12 +666,14 @@ App 内通知在壳层根据当前数据即时检查。
 
 ### 12.1 导出
 
-导出结构：
+导出结构（JSON `schemaVersion: 3`，由 `lib/data/backup/backup_codec.dart` 编码）：
 
-- `schemaVersion`，当前为 2。
-- `cars`。
+- `cars`：含动力类型 `powertrainType` 和油箱容积 `tankCapacityLiters`（可空）。
 - `maintenanceItems`。
-- `records`。
+- `records`：条目含记录项目费用 `itemCosts`（`{ itemId, materialCents, laborCents, costCents }`，三个金额可空，只写有内容的项目）。
+- `fuelPrediction`：全局加油设置（省份 + 油品编号），用户改过才有值。
+- `fuelPredictions`：每车加油预测设置（剩余油量）。
+- `fuelRecords`：加油流水（应付/实付模型，条目不带 id，恢复时重新生成行 ID）。
 
 记录导出：
 
@@ -678,6 +681,8 @@ App 内通知在壳层根据当前数据即时检查。
 - 记录项目导出为 `itemIds`。
 - 费用导出为 `costCents`。
 - 里程导出为 `mileageKm`。
+
+版本兼容：解码接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于没有加油记录，均按空读入；其余版本直接拒绝。含满箱段旧结构加油条目的 v3 备份会被拒绝（加油记录模型曾在版本号不变的前提下就地重定义，旧结构与新代码不兼容）。
 
 当前备份不导出 `app_preferences`。这意味着当前应用车辆、开发者模式、手动日期、主题模式、通知设置、提醒延后/确认状态和停车倒计时都不随备份迁移。
 
@@ -687,18 +692,18 @@ App 内通知在壳层根据当前数据即时检查。
 
 恢复规则：
 
-- 只接受 `schemaVersion=2`。
-- 恢复前先校验引用关系。
+- 接受 `schemaVersion` 为 1、2、3 的备份（兼容规则见 12.1），其余版本拒绝。
+- 恢复前先做引用完整性校验和业务规则校验（含保养记录同车同日查重），校验失败整文件拒绝、不碰库。
 - 整个恢复在一个数据库事务中执行。
-- 事务内先清空当前偏好、车辆、车辆内保养项目、保养记录和记录项目关联。
-- 再恢复车辆、车辆内保养项目、保养记录和记录项目关联。
+- 事务内清空的是业务数据表（车辆、车辆内保养项目、保养记录、记录项目关联、加油预测设置、加油记录）和提醒抑制 key（延后/确认前缀）；偏好整体保留，不清空。
+- 再恢复车辆、车辆内保养项目、保养记录、加油预测设置和加油记录。
 - 恢复不导入内置车型或默认保养模板。
 - 恢复时不保留源 ID，会重新生成新 ID。
 - 恢复时维护源 car ID 到新 car ID 的映射。
 - 恢复时维护源 item ID 到新 item ID 的映射。
-- 记录恢复时按映射写入新 car ID 和新 item ID。
+- 保养记录恢复时按映射写入新 car ID 和新 item ID；加油预测设置和加油记录的 carId 同样按映射重写。
 - 恢复后当前应用车辆写为第一辆恢复出来的车辆。
-- 恢复后手动日期、主题模式、通知设置、提醒延后/确认状态和停车倒计时都保持清空状态，除非后续用户重新设置。
+- 偏好整体保留意味着手动日期、主题模式、通知设置、提醒延后/确认状态和停车倒计时都保持恢复前的状态。
 - 如果恢复失败，事务回滚，不留下半导入状态。
 
 引用校验：
@@ -712,17 +717,19 @@ App 内通知在壳层根据当前数据即时检查。
 
 ### 12.3 清空数据
 
-清空数据会删除：
+清空数据会删除（共 7 张表）：
 
 - App 偏好。
 - 保养记录项目关联。
 - 保养记录。
 - 车辆内保养项目。
 - 车辆。
+- 加油预测设置。
+- 加油记录。
 
 注意：
 
-- 当前 `_clearAllDataInTransaction` 不删除 `vehicle_models` 和 `vehicle_default_maintenance_items`。
+- 当前 `clearAllData` 不删除 `vehicle_models` 和 `vehicle_default_maintenance_items`。
 - 恢复备份不会导入默认车型或默认保养模板。
 - 修改恢复逻辑时要特别检查备份边界，避免把内置初始化数据重新纳入用户备份。
 - 清空后 bootstrap provider 会再次补齐内置车型和默认项目。
@@ -738,14 +745,13 @@ App 内通知在壳层根据当前数据即时检查。
 - `themeMode`：主题模式，支持 `light`、`dark`、系统默认。
 - `systemNotificationsEnabled`：系统通知是否开启。
 - `inAppNotificationsEnabled`：App 内通知是否开启。
-- `maintenanceDueEnabled`：保养到期提醒是否开启。
 - `maintenanceDueRepeat`：保养到期系统通知重复频率。
 - `systemNotificationPermissionRequested`：是否请求过系统通知权限。
 - `parkingCountdown`：停车倒计时临时状态，JSON 值，不进入备份。
 - `maintenanceReminderSnoozedUntil:{itemId}`：某保养项目延后提醒到期日。
-- `maintenanceReminderAcknowledgedOn:{itemId}`：某保养项目当天已确认。
+- `maintenanceInAppReminderAcknowledgedOn:{itemId}`：某保养项目应用内提醒当天已确认。
 - `mileageUpdateSnoozedUntil:{carId}`：某车辆里程更新延后提醒到期日。
-- `mileageUpdateAcknowledgedOn:{carId}`：某车辆里程更新当天已确认。
+- `mileageUpdateInAppAcknowledgedOn:{carId}`：某车辆里程更新应用内提醒当天已确认。
 
 修改偏好 key 时必须同步检查：
 
@@ -787,7 +793,7 @@ App 内通知在壳层根据当前数据即时检查。
 - 保养记录按车辆隔离。
 - 提醒、通知和记录列表按当前应用车辆隔离。
 - 删除车辆必须清理车辆边界内的数据。
-- 停车倒计时不按车辆隔离，是全局临时状态；恢复备份和清空数据会清掉它。
+- 停车倒计时不按车辆隔离，是全局临时状态；清空数据会清掉它，恢复备份保留它。
 
 通知：
 
@@ -803,8 +809,8 @@ App 内通知在壳层根据当前数据即时检查。
 
 - `MaintenanceRules.progressForItem`：影响提醒页、通知候选和状态展示。
 - `MaintenanceRules.mileageUpdateFrequencyForRecords`：影响里程更新提醒频率。
-- `_buildReminderRows`：影响提醒排序、通知摘要和到期弹窗。
-- `_buildScheduledNotifications`：影响系统通知内容和调度。
+- `buildReminderRows`：影响提醒排序、通知摘要和到期弹窗。
+- `buildScheduledNotifications`：影响系统通知内容和调度。
 - `ParkingCountdownRules.progress`：影响停车倒计时卡片状态、颜色和文案。
 - `LunioNotificationService.scheduleParkingCountdownNotification`：影响停车倒计时到点提醒和 Android 常驻通知。
 - `_showDueInAppNotifications`：影响 App 内弹窗、当天确认和延后提醒。
@@ -840,4 +846,4 @@ App 内通知在壳层根据当前数据即时检查。
 - `test/domain/maintenance_rules_test.dart`
 - `test/widget/`（widget 测试，按页面域拆分，共享夹具在 `test/helpers/widget_app.dart`）
 
-如果本文档与代码冲突，以已经审阅确认的最新代码事实为准，并同步更新文档。
+如果本文档与代码冲突，以当前代码事实为准；发现文档与代码漂移时，以代码为准并同步更新本文档。
