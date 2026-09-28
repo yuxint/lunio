@@ -4,6 +4,10 @@
 // 实现（执行体 ParkingCountdownActivityController）；其他平台、低版本、
 // 系统实时活动开关关闭等场景一律静默返回"未启用"（false / null），调用
 // 方按 ADR 0012 决定 6 降级为"只有通知"，不提示、不报错。
+// 异常翻译与降级日志统一走 native_channel.dart 的 guardedChannelCall
+// （PlatformException / MissingPluginException → 哨兵值，本文件不再
+// 手写 catch；MissingPluginException 常见于启动早期通道未装配，见该
+// 文件头说明）。
 //
 // 桥只负责传话：什么时候启/停/对账的编排规则在通知协调器
 // （notification_coordinator.dart）。
@@ -13,6 +17,8 @@
 // 各路径，不必 mock 方法通道。
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+import 'native_channel.dart';
 
 /// 实时活动的系统侧状态快照（对账三态的数据来源）。
 class LiveActivitySnapshot {
@@ -53,18 +59,17 @@ class NativeLiveActivities {
     if (!_supported) {
       return false;
     }
-    try {
-      return await _channel.invokeMethod<bool>('start', {
-            'startedAtMs': startedAt.millisecondsSinceEpoch.toDouble(),
-            'endsAtMs': endsAt.millisecondsSinceEpoch.toDouble(),
-          }) ??
-          false;
-    } on PlatformException {
-      return false;
-    } on MissingPluginException {
-      // 通道尚未随 scene 生命周期装配好（启动早期）时等同"未启用"。
-      return false;
-    }
+    return guardedChannelCall(
+      channel: _channel.name,
+      method: 'start',
+      fallback: false,
+      invoke: () async =>
+          await _channel.invokeMethod<bool>('start', {
+                'startedAtMs': startedAt.millisecondsSinceEpoch.toDouble(),
+                'endsAtMs': endsAt.millisecondsSinceEpoch.toDouble(),
+              }) ??
+              false,
+    );
   }
 
   /// 把进行中的活动切到"已超时"正计时形态（到点对账用）。返回是否更新
@@ -73,13 +78,13 @@ class NativeLiveActivities {
     if (!_supported) {
       return false;
     }
-    try {
-      return await _channel.invokeMethod<bool>('markExpired') ?? false;
-    } on PlatformException {
-      return false;
-    } on MissingPluginException {
-      return false;
-    }
+    return guardedChannelCall(
+      channel: _channel.name,
+      method: 'markExpired',
+      fallback: false,
+      invoke: () async =>
+          await _channel.invokeMethod<bool>('markExpired') ?? false,
+    );
   }
 
   /// 结束全部停车实时活动。任何平台都安全（无活动 = 无操作）。
@@ -87,13 +92,12 @@ class NativeLiveActivities {
     if (!_supported) {
       return false;
     }
-    try {
-      return await _channel.invokeMethod<bool>('stop') ?? false;
-    } on PlatformException {
-      return false;
-    } on MissingPluginException {
-      return false;
-    }
+    return guardedChannelCall(
+      channel: _channel.name,
+      method: 'stop',
+      fallback: false,
+      invoke: () async => await _channel.invokeMethod<bool>('stop') ?? false,
+    );
   }
 
   /// 查询活动状态快照；非 iOS / 通道不可用时返回 null（对账据此跳过）。
@@ -101,23 +105,24 @@ class NativeLiveActivities {
     if (!_supported) {
       return null;
     }
-    try {
-      final raw = await _channel.invokeMethod<Object?>('status');
-      if (raw is! Map<Object?, Object?> || raw['running'] != true) {
-        return const LiveActivitySnapshot(running: false, expired: false);
-      }
-      final endsAtMs = raw['endsAtMs'];
-      return LiveActivitySnapshot(
-        running: true,
-        expired: raw['expired'] == true,
-        endsAt: endsAtMs is num
-            ? DateTime.fromMillisecondsSinceEpoch(endsAtMs.toInt())
-            : null,
-      );
-    } on PlatformException {
-      return null;
-    } on MissingPluginException {
-      return null;
-    }
+    return guardedChannelCall<LiveActivitySnapshot?>(
+      channel: _channel.name,
+      method: 'status',
+      fallback: null,
+      invoke: () async {
+        final raw = await _channel.invokeMethod<Object?>('status');
+        if (raw is! Map<Object?, Object?> || raw['running'] != true) {
+          return const LiveActivitySnapshot(running: false, expired: false);
+        }
+        final endsAtMs = raw['endsAtMs'];
+        return LiveActivitySnapshot(
+          running: true,
+          expired: raw['expired'] == true,
+          endsAt: endsAtMs is num
+              ? DateTime.fromMillisecondsSinceEpoch(endsAtMs.toInt())
+              : null,
+        );
+      },
+    );
   }
 }

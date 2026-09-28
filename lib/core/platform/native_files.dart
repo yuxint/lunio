@@ -5,11 +5,14 @@
 //    （ACTION_CREATE_DOCUMENT / ACTION_OPEN_DOCUMENT 系统文件选择器）
 //  - iOS: ios/Runner/SceneDelegate.swift（临时文件 + UIDocumentPicker）
 //
-// channel 调用统一捕获 PlatformException / MissingPluginException
-// （原生侧未注册 channel、或系统选择器被系统杀掉等情况）：
-// 失败按"用户取消"处理并 debugPrint，不让异常冒泡打断备份/恢复流程（R7）。
-import 'package:flutter/foundation.dart';
+// 异常翻译与降级日志统一走 native_channel.dart 的 guardedChannelCall
+// （PlatformException / MissingPluginException → 哨兵值并 debugPrint，
+// 本文件不再手写 catch）：失败按"用户取消"处理，不让异常冒泡打断
+// 备份/恢复流程（R7）。pickJsonFile 的 null 有两义——用户取消（原生
+// 正常回 null）与失败（异常降级），日志可区分，调用方语义不变。
 import 'package:flutter/services.dart';
+
+import 'native_channel.dart';
 
 class NativeFiles {
   const NativeFiles._();
@@ -22,32 +25,27 @@ class NativeFiles {
     required String filename,
     required String content,
   }) async {
-    try {
-      final saved = await _channel.invokeMethod<bool>('exportJsonFile', {
-        'filename': filename,
-        'content': content,
-      });
-      return saved ?? false;
-    } on PlatformException catch (error) {
-      debugPrint('exportJsonFile PlatformException: $error');
-      return false;
-    } on MissingPluginException catch (error) {
-      debugPrint('exportJsonFile MissingPluginException: $error');
-      return false;
-    }
+    return guardedChannelCall(
+      channel: _channel.name,
+      method: 'exportJsonFile',
+      fallback: false,
+      invoke: () async =>
+          await _channel.invokeMethod<bool>('exportJsonFile', {
+                'filename': filename,
+                'content': content,
+              }) ??
+              false,
+    );
   }
 
   /// 选择并读取一个 JSON 文件：弹出系统文件选择器，返回文件内容字符串；
   /// 用户取消返回 null。备份导入的第一步。
   static Future<String?> pickJsonFile() async {
-    try {
-      return await _channel.invokeMethod<String>('pickJsonFile');
-    } on PlatformException catch (error) {
-      debugPrint('pickJsonFile PlatformException: $error');
-      return null;
-    } on MissingPluginException catch (error) {
-      debugPrint('pickJsonFile MissingPluginException: $error');
-      return null;
-    }
+    return guardedChannelCall<String?>(
+      channel: _channel.name,
+      method: 'pickJsonFile',
+      fallback: null,
+      invoke: () => _channel.invokeMethod<String>('pickJsonFile'),
+    );
   }
 }

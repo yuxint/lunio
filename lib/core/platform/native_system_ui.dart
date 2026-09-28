@@ -3,7 +3,12 @@
 // 用途：AppShell 适配 Android 三键导航栏——三键模式下系统导航栏
 // 不占 safeArea，需要原生侧读实际高度来补 inset（详见 app_shell.dart）。
 // iOS 未实现该 channel，Dart 侧返回 null 自然跳过适配。
+// 异常翻译与降级日志统一走 native_channel.dart 的 guardedChannelCall
+// （本文件不再手写 catch）；返回值的形状校验（键缺失 → null）不属于
+// 异常、留在本方法内。
 import 'package:flutter/services.dart';
+
+import 'native_channel.dart';
 
 /// 原生返回的导航信息 DTO。
 class NativeSystemNavigationInfo {
@@ -29,23 +34,21 @@ class NativeSystemUi {
   /// 读取当前导航模式与高度；channel 不存在/返回异常一律返回 null
   /// （调用方按"无需适配"处理）。
   static Future<NativeSystemNavigationInfo?> getSystemNavigationInfo() async {
-    try {
-      final result = await _channel.invokeMapMethod<String, Object?>(
-        'getSystemNavigationInfo',
-      );
-      final navigationMode = result?['navigationMode'];
-      final navigationBarHeight = result?['navigationBarHeight'];
-      if (navigationMode is! int || navigationBarHeight is! num) {
-        return null;
-      }
-      return NativeSystemNavigationInfo(
-        navigationMode: navigationMode,
-        navigationBarHeight: navigationBarHeight.toDouble(),
-      );
-    } on PlatformException {
-      return null;
-    } on MissingPluginException {
+    final result = await guardedChannelCall<Map<String, Object?>?>(
+      channel: _channel.name,
+      method: 'getSystemNavigationInfo',
+      fallback: null,
+      invoke: () =>
+          _channel.invokeMapMethod<String, Object?>('getSystemNavigationInfo'),
+    );
+    final navigationMode = result?['navigationMode'];
+    final navigationBarHeight = result?['navigationBarHeight'];
+    if (navigationMode is! int || navigationBarHeight is! num) {
       return null;
     }
+    return NativeSystemNavigationInfo(
+      navigationMode: navigationMode,
+      navigationBarHeight: navigationBarHeight.toDouble(),
+    );
   }
 }

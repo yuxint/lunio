@@ -5,6 +5,8 @@
 // 重载时间线（ADR 0013）。其他平台、通道尚未随 scene 装配好等场景一律
 // 静默返回 false，调用方降级为"不写"——桌面小组件缺失不影响 App 任何
 // 功能，也不提示、不报错。
+// 异常翻译与降级日志统一走 native_channel.dart 的 guardedChannelCall
+// （本文件不再手写 catch）。
 //
 // 桥只负责传话：什么时候写快照的编排规则在 widget_snapshot_controller。
 //
@@ -12,6 +14,8 @@
 // 用假实现覆盖方法即可驱动各路径，不必 mock 方法通道。
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+import 'native_channel.dart';
 
 class NativeWidgets {
   NativeWidgets({MethodChannel? channel})
@@ -31,15 +35,15 @@ class NativeWidgets {
     if (!_supported) {
       return false;
     }
-    try {
-      return await _channel.invokeMethod<bool>('updateSnapshot', {
-            'json': json,
-          }) ??
-          false;
-    } on PlatformException {
-      return false;
-    } on MissingPluginException {
-      return false;
-    }
+    return guardedChannelCall(
+      channel: _channel.name,
+      method: 'updateSnapshot',
+      fallback: false,
+      invoke: () async =>
+          await _channel.invokeMethod<bool>('updateSnapshot', {
+                'json': json,
+              }) ??
+              false,
+    );
   }
 }

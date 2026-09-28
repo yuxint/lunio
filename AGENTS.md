@@ -58,6 +58,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝；v3 的 fuelRecords 条目结构经 ADR 0015 就地重定义，旧结构条目解码即拒）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
+- `lib/core/platform/native_channel.dart`：五个原生桥共用的通道降级守卫（`guardedChannelCall`）——PlatformException/MissingPluginException → 哨兵值（false/null）的翻译与 debugPrint 日志的唯一出口（9-26 三轮审查收编）；各桥只声明通道与参数，不再手写 try/catch，新桥一律走它；四个桥的 Dart 侧契约测试在 `test/core/native_*_test.dart`（锁 method 名/参数键/异常翻译，先例 native_live_activities_test）。
 - `lib/core/platform/native_files.dart`：原生文件保存/选择桥接。
 - `lib/core/platform/native_live_activities.dart`：停车倒计时 iOS 实时活动（灵动岛/锁屏卡片）的原生桥（ADR 0012）。Swift 执行体在 `ios/Runner/ParkingCountdownActivityController.swift`，卡片 UI 在 Widget Extension target `ios/ParkingCountdownExtension/`，通道经 SceneDelegate 挂 `lunio/native_live_activities`；启停/对账编排挂通知协调器。零更新渲染（系统自动走时），iOS 16.2 以下或系统关实时活动静默降级；本机模拟器构建不可用，外观只能真机验收。
 - `lib/core/platform/native_widgets.dart`：保养提醒桌面小组件（iOS WidgetKit）的快照通道桥（ADR 0013）。扩展 target `ios/LunioWidgetsExtension/`，契约/存取在共享 Swift 文件 `LunioWidgetSnapshotStore.swift`（显式编进 Runner 与扩展两个 target），通道经 SceneDelegate 挂 `lunio/native_widgets`；数据经 App Group `group.com.example.lunio`；非 iOS 平台方法自禁用。
