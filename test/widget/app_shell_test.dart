@@ -147,8 +147,7 @@ void main() {
   ) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.text('深色'));
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -160,8 +159,7 @@ void main() {
   testWidgets('theme switch ignores the current option', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.text('跟随系统'));
     await tester.pump(const Duration(milliseconds: 250));
 

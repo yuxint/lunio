@@ -55,8 +55,7 @@ void main() {
   testWidgets('add car first step does not persist data', (tester) async {
     final database = await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     expect(find.text('添加车辆'), findsOneWidget);
@@ -76,8 +75,7 @@ void main() {
   testWidgets('add car form opens vehicle model picker', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('奥迪 奥迪A3'));
@@ -94,8 +92,7 @@ void main() {
   ) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('奥迪 奥迪A3'));
@@ -122,8 +119,7 @@ void main() {
     (tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('我的'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '我的');
       await tester.tap(find.byTooltip('新增车辆'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('奥迪 奥迪A3'));
@@ -163,8 +159,7 @@ void main() {
   ) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
 
@@ -201,8 +196,7 @@ void main() {
       ],
     );
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下一步'));
@@ -228,8 +222,7 @@ void main() {
       repository: _ThrowingSaveRepository(database),
     );
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下一步'));
@@ -271,8 +264,7 @@ void main() {
   ) async {
     final database = await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下一步'));
@@ -297,8 +289,7 @@ void main() {
   ) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下一步'));
@@ -323,8 +314,7 @@ void main() {
   ) async {
     final database = await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下一步'));
@@ -356,8 +346,7 @@ void main() {
       'with a toast', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('下一步'));
@@ -382,8 +371,7 @@ void main() {
     expect(find.text('已禁用'), findsOneWidget);
     expect(find.text('已启用'), findsOneWidget);
 
-    // 冲掉 toast 1.6s 自动消失的定时器，避免测试收尾挂起计时器。
-    await tester.pump(const Duration(seconds: 2));
+    await drainToastTimer(tester);
     await tester.pumpAndSettle();
     expect(find.text('至少保留一个可用保养项目'), findsNothing);
   });
@@ -397,8 +385,7 @@ void main() {
       dateContext: AppDateContext(readSystemNow: () => DateTime(2026, 1, 31)),
     );
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.byTooltip('新增车辆'));
     await tester.pumpAndSettle();
 

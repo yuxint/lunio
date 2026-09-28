@@ -13,6 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/theme/lunio_theme.dart';
 import 'package:lunio/features/shell/shared/form_sheet.dart';
 
+import '../helpers/widget_app.dart' show drainToastTimer;
+
 void main() {
   /// 夹具：页面上一颗"open"按钮（触发用例注入的入口闭包）+ 页面标记
   /// 文本。页面标记兼作"底层页面还在"的观察点（关场过度会把 home 也
@@ -49,12 +51,6 @@ void main() {
   Future<void> openSheet(WidgetTester tester) async {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-  }
-
-  /// 提交成功的成功文案 toast 有 1.6s 定时器，用例结束前泵过去，
-  /// 避免报 pending timer。
-  Future<void> drainToastTimer(WidgetTester tester) async {
-    await tester.pump(const Duration(milliseconds: 1700));
   }
 
   testWidgets('load 失败：friendlyError toast 且 sheet 不出现', (tester) async {

@@ -515,8 +515,7 @@ void main() {
         (tester) async {
       final database = await seedTwoCarsWithRecords();
       await pumpApp(tester, database: database);
-      await tester.tap(find.text('我的'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '我的');
       await tester.tap(find.text('查看'));
       await pumpUntilFound(tester, find.text('总费用'));
       await tester.pumpAndSettle();
@@ -555,8 +554,7 @@ void main() {
     testWidgets('有记录时显示今年保养/今年加油汇总行，点按进统计页', (tester) async {
       final database = await seedTwoCarsWithRecords();
       await pumpApp(tester, database: database);
-      await tester.tap(find.text('记录'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '记录');
       expect(find.text('今年保养'), findsOneWidget);
       expect(find.text('¥280.00'), findsWidgets); // 汇总行 + 2026 记录卡。
 
@@ -568,8 +566,7 @@ void main() {
     testWidgets('无记录时不显示汇总行', (tester) async {
       final database = await seedCarWithoutRecords();
       await pumpApp(tester, database: database);
-      await tester.tap(find.text('记录'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '记录');
       expect(find.text('今年保养'), findsNothing);
       expect(find.text('费用统计'), findsNothing);
     });
@@ -579,8 +576,7 @@ void main() {
     testWidgets('费用统计设置行进统计页', (tester) async {
       final database = await seedTwoCarsWithRecords();
       await pumpApp(tester, database: database);
-      await tester.tap(find.text('我的'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '我的');
       expect(find.text('费用统计'), findsOneWidget);
 
       await tester.tap(find.text('查看'));
@@ -638,8 +634,7 @@ void main() {
     ) async {
       final database = await seedCarWithFuelRecords();
       await pumpApp(tester, database: database);
-      await tester.tap(find.text('记录'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '记录');
       // 记录页头部：只有加油记录 → 只显示"今年加油 ¥270.00"，
       // "今年保养"段隐藏（不留 ¥0.00 占位，2026-09-22 二轮反馈）。
       expect(find.text('今年保养'), findsNothing);
@@ -749,8 +744,7 @@ void main() {
     ) async {
       final database = await seedCarWithMaintenanceAndFuel();
       await pumpApp(tester, database: database);
-      await tester.tap(find.text('记录'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '记录');
       // 记录页头部两段都在：今年保养 ¥100.00 + 今年加油 ¥270.00
       // （¥100.00 另一处是保养记录卡上的总费用，共两处）。
       expect(find.text('今年保养'), findsOneWidget);

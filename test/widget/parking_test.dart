@@ -22,8 +22,7 @@ void main() {
     );
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
     await tester.pumpAndSettle();
 
@@ -58,8 +57,7 @@ void main() {
       ),
     );
     await createDefaultCar(tester);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     const keyboardHeight = 360.0;
     tester.view.viewInsets = const FakeViewPadding(bottom: keyboardHeight);
@@ -95,8 +93,7 @@ void main() {
       await createDefaultCar(tester);
       notificationCalls.clear();
 
-      await tester.tap(find.text('提醒'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '提醒');
       await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('开始计时'));
@@ -134,8 +131,7 @@ void main() {
     );
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
     await tester.pumpAndSettle();
 
@@ -161,8 +157,7 @@ void main() {
     );
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
     await tester.pumpAndSettle();
 
@@ -201,8 +196,7 @@ void main() {
     );
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('10:20:00'));
@@ -280,8 +274,7 @@ void main() {
     );
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, '停车倒计时'),
@@ -308,8 +301,7 @@ void main() {
         await createDefaultCar(tester);
 
         // 先启动停车倒计时，制造 9001~9004 系统通知。
-        await tester.tap(find.text('提醒'));
-        await tester.pumpAndSettle();
+        await gotoTab(tester, '提醒');
         await tester.tap(find.widgetWithText(FilledButton, '停车倒计时'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('开始计时'));
@@ -320,8 +312,7 @@ void main() {
         );
         notificationCalls.clear();
 
-        await tester.tap(find.text('我的'));
-        await tester.pumpAndSettle();
+        await gotoTab(tester, '我的');
         await tester.tap(find.widgetWithText(TextButton, '清空'));
         await tester.pumpAndSettle();
         // 清空确认文案明示目录表保留。

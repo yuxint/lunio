@@ -28,8 +28,7 @@ void main() {
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
 
     // 开发者模式打开后出现"加油预测"开关行；默认关闭，底部没有加油 tab。
     expect(find.text('加油预测'), findsOneWidget);
@@ -74,8 +73,7 @@ void main() {
     );
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 页面骨架：没有独立设置区/剩余油量区，省份与油品是油价卡副标题的
     // 两个可点段。
@@ -147,21 +145,18 @@ void main() {
     await pumpApp(tester, database: database);
 
     // 初始应用车 B：58% 在第一行。
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
     expect(find.text('58%'), findsOneWidget);
     expect(find.text('42%'), findsNothing);
 
     // 经"我的 → 应用"切到车 A（真实动作层路径）。
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.text('应用'));
     await tester.pumpAndSettle();
 
     // 回加油页：按车 A 的 42% 重新定位——修复前 State 复用，滚动位置/
     // 高亮仍是车 B 的残留。
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
     expect(find.text('42%'), findsOneWidget);
     expect(find.text('58%'), findsNothing);
   });
@@ -204,8 +199,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 预估下次油价块：预估价 + 调价日期，样式与当前油价行一致。
     expect(find.text('7.67 元/升'), findsOneWidget);
@@ -258,8 +252,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 过期预告按无预告处理：预估块占位、无箭头、调价后价格列全"—"。
     expect(find.text('暂无调价预测'), findsOneWidget);
@@ -295,8 +288,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     expect(find.text('预估下次油价'), findsOneWidget);
     expect(find.byIcon(Icons.trending_down), findsOneWidget);
@@ -334,8 +326,7 @@ void main() {
     // 没保存过的车：默认按 50% 定位，不落库。
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     expect(
       await repository.getFuelPredictionForCar(carId),
@@ -380,8 +371,7 @@ void main() {
     );
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 滚走基准档后点返回图标：滚回 50% 在第一行并写库。
     await tester.timedDrag(find.text('50%'), const Offset(0, -132), const Duration(milliseconds: 300));
@@ -420,8 +410,7 @@ void main() {
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 点副标题油品段 → 弹出油品选择 sheet（4 个胶囊一行单选，贴内容收缩）。
     await tester.tap(find.text('92#'));
@@ -484,8 +473,7 @@ void main() {
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 未填容积：空态引导出现（容积入口在车辆管理），不显示金额。
     expect(find.textContaining('填写油箱容积'), findsOneWidget);
@@ -505,8 +493,7 @@ void main() {
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('加油'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '加油');
 
     // 数据源价状态：右侧按钮显示"手填"（进编辑），无"重置"。
     expect(find.text('7.61 元/升'), findsOneWidget);

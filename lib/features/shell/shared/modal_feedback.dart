@@ -7,8 +7,9 @@
 //  - showLunioDialog / showConfirmDialog / showMessageDialog：居中对话框
 //    （卡片外壳统一走 LunioDialogCard + LunioDialogActions；确认框返回
 //    bool?，点取消 false、点确认 true、点遮罩关闭 null）
-//  - showStatusOverlay：页面内容区轻量 toast（Overlay 实现，1.6s 自动消失；
-//    这是产品约定的瞬时成功反馈，替代系统 SnackBar）
+//  - showStatusOverlay：页面内容区轻量 toast（Overlay 实现，自动消失时长
+//    见 statusOverlayVisibleDuration；这是产品约定的瞬时成功反馈，替代
+//    系统 SnackBar）
 //  - dismissTransientUi：切 tab 时统一收起键盘/toast/snackbar
 //
 // 弹窗内点击非输入框区域统一收起键盘（不关弹窗）。点弹窗外遮罩区按弹层
@@ -572,7 +573,12 @@ void hideStatusOverlay() {
   _statusOverlayEntry = null;
 }
 
-/// 在页面内容区中央显示轻量 toast（1.6 秒自动消失，点击不拦截）。
+/// toast 自动消失时长（测试侧 widget_app 的 drainToastTimer 泵过它，
+/// 改这里测试编译期跟随，不需要同步任何注释或魔法数）。
+const Duration statusOverlayVisibleDuration = Duration(milliseconds: 1600);
+
+/// 在页面内容区中央显示轻量 toast（自动消失时长见
+/// statusOverlayVisibleDuration，点击不拦截）。
 /// 成功/失败反馈统一走它，不要用系统 SnackBar。
 void showStatusOverlay(
   BuildContext context,
@@ -604,7 +610,8 @@ void showStatusOverlay(
   overlay.insert(entry);
 }
 
-/// toast 卡片本体（1.6s 定时器触发 onDismiss 移除 Overlay）。
+/// toast 卡片本体（statusOverlayVisibleDuration 定时器触发 onDismiss
+/// 移除 Overlay）。
 class _StatusOverlay extends StatefulWidget {
   const _StatusOverlay({
     required this.message,
@@ -628,7 +635,7 @@ class _StatusOverlayState extends State<_StatusOverlay> {
   @override
   void initState() {
     super.initState();
-    timer = Timer(const Duration(milliseconds: 1600), widget.onDismiss);
+    timer = Timer(statusOverlayVisibleDuration, widget.onDismiss);
   }
 
   @override

@@ -22,8 +22,7 @@ void main() {
   ) async {
     await pumpApp(tester);
     await createDefaultCar(tester);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     expect(find.byType(FloatingActionButton), findsNothing);
     expect(find.widgetWithText(FilledButton, '新增保养记录'), findsOneWidget);
@@ -71,8 +70,7 @@ void main() {
     await pumpApp(tester);
     await createDefaultCar(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     expect(find.text('到期概览'), findsOneWidget);
     expect(find.text('暂无'), findsOneWidget);
@@ -107,8 +105,7 @@ void main() {
 
     await pumpApp(tester, database: database, inAppNotificationsEnabled: true);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     expect(find.text('暂无保养记录'), findsOneWidget);
     expect(find.text('15 天内不再提醒'), findsNothing);
@@ -271,8 +268,7 @@ void main() {
     await createDefaultCar(tester);
     await createDefaultRecord(tester);
 
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     expect(find.text('保养提醒'), findsWidgets);
     expect(find.text('机油'), findsOneWidget);
@@ -297,8 +293,7 @@ void main() {
         manualDate: const LocalDate(2027, 5, 19),
       ),
     );
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     expect(find.text('超期'), findsWidgets);
     expect(find.textContaining('已超期'), findsNothing);
@@ -566,8 +561,7 @@ void main() {
     );
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     expect(find.text('更新里程'), findsOneWidget);
     await tester.tap(find.text('更新里程'));
@@ -615,8 +609,7 @@ void main() {
     );
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.text('更新里程'));
     await tester.pumpAndSettle();
 
@@ -665,8 +658,7 @@ void main() {
     );
     await repository.setAppliedCarId(carId);
     await pumpApp(tester, database: database);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.text('更新里程'));
     await tester.pumpAndSettle();
 

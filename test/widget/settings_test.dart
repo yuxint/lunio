@@ -51,8 +51,7 @@ void main() {
     });
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     expect(find.text('备份数据'), findsOneWidget);
     expect(find.text('JSON 备份'), findsNothing);
 
@@ -87,8 +86,7 @@ void main() {
     });
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.widgetWithText(TextButton, '导出').first);
     await tester.pump(const Duration(milliseconds: 250));
 
@@ -398,8 +396,7 @@ void main() {
         return null;
       });
 
-      await tester.tap(find.text('我的'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '我的');
       await tester.tap(find.widgetWithText(TextButton, '恢复').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('恢复').last);
@@ -580,8 +577,7 @@ void main() {
           systemNotificationsEnabled: true,
         );
 
-        await tester.tap(find.text('我的'));
-        await tester.pumpAndSettle();
+        await gotoTab(tester, '我的');
         notificationCalls.clear();
         await tester.tap(find.widgetWithText(TextButton, '设置').first);
         await tester.pumpAndSettle();
@@ -616,8 +612,7 @@ void main() {
     });
     try {
       await pumpApp(tester, inAppNotificationsEnabled: true);
-      await tester.tap(find.text('我的'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '我的');
 
       await tester.tap(find.widgetWithText(TextButton, '设置').first);
       await tester.pumpAndSettle();

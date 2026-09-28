@@ -66,7 +66,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `test/domain/`：领域规则测试。
 - `test/data/`：数据库、Repository、备份测试，按域拆分（database_test=核心 CRUD/仓库校验、catalog_bootstrap_test=车型目录与默认模板、backup_restore_test=备份导出恢复清空）。
 - `test/widget/`：主 UI 交互测试，按页面域拆分（app_shell / reminders / parking / records / vehicles / maintenance_items / settings / fuel）。
-- `test/helpers/widget_app.dart`：widget 测试共享夹具（pumpApp、TestRepositories 装配/播种门面——含 insertCarForTest 裸插替身与 seedCarAndItem/saveItem 种子、通知/原生通道 mock、造数函数）。
+- `test/helpers/widget_app.dart`：widget 测试共享夹具（pumpApp、TestRepositories 装配/播种门面——含 insertCarForTest 裸插替身与 seedCarAndItem/saveItem 种子、通知/原生通道 mock、造数函数）与两个交互惯用语：`gotoTab`（底部导航切换=断言存在+点击+settle，「加油」tab 条件存在需先种子开关）/ `drainToastTimer`（冲 toast 定时器防 pending timer，时长经 modal_feedback 导出的 `statusOverlayVisibleDuration` 编译期绑定）。
 - `test/helpers/builders.dart`：测试数据 builder 层（defaultCar / defaultOilItem / defaultRecord / defaultFuelRecord + testSync）——四个核心实体「最小合法数据」唯一出口；默认值只收编既有测试的高频事实、不发明数据，备份载荷里带 id 的行重建继续走实体构造器。
 - `docs/code-review-report.md`：代码审查未修条目台账（R9/R17/R30/R36，编号沿用原 R1-R38 报告，已修历史见 git）。
 - `docs/operations-manual.md`：UI 操作 ↔ 代码对照手册（改流程须同步维护）。

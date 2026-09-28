@@ -39,6 +39,8 @@ import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/features/shell/fuel/fuel_prices.dart';
 import 'package:lunio/features/shell/shared/formatters.dart' show maintenanceItemFromDefault;
+import 'package:lunio/features/shell/shared/modal_feedback.dart'
+    show statusOverlayVisibleDuration;
 
 import 'builders.dart';
 import 'built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
@@ -446,8 +448,7 @@ Future<AppDatabase> pumpApp(
 
 /// UI 造数：经"我的"页向导建一辆默认车并设为应用车辆。
 Future<void> createDefaultCar(WidgetTester tester) async {
-  await tester.tap(find.text('我的'));
-  await tester.pumpAndSettle();
+  await gotoTab(tester, '我的');
   await tester.tap(find.byTooltip('新增车辆'));
   await pumpUntilFound(tester, find.text('下一步'));
   if (find.text('下一步').evaluate().isEmpty) {
@@ -467,8 +468,7 @@ Future<void> createDefaultCar(WidgetTester tester) async {
 
 /// UI 造数：连点版本号 5 次打开开发者模式。
 Future<void> enableDeveloperMode(WidgetTester tester) async {
-  await tester.tap(find.text('我的'));
-  await tester.pumpAndSettle();
+  await gotoTab(tester, '我的');
   for (var index = 0; index < 5; index++) {
     await tester.tap(find.text('版本 1.0.0'));
     await tester.pumpAndSettle();
@@ -478,8 +478,7 @@ Future<void> enableDeveloperMode(WidgetTester tester) async {
 
 /// UI 造数：经提醒页表单建一条默认保养记录（13000km / ¥428 / 机油）。
 Future<void> createDefaultRecord(WidgetTester tester) async {
-  await tester.tap(find.text('提醒'));
-  await tester.pumpAndSettle();
+  await gotoTab(tester, '提醒');
   await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
   await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField).at(0), '13000');
@@ -490,4 +489,23 @@ Future<void> createDefaultRecord(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(find.text('保存记录'));
   await tester.pumpAndSettle();
+}
+
+/// 底部导航切 tab：断言 tab 存在 → 点击 → pumpAndSettle。
+/// 「加油」tab 仅在开发者模式 + 加油预测开关都开时存在——相关用例要
+/// 在 pumpApp 前种子开关；tab 缺失时这里直接 fail，不做静默空点。
+Future<void> gotoTab(WidgetTester tester, String label) async {
+  final tab = find.text(label);
+  expect(tab, findsOneWidget, reason: '底部导航缺少「$label」');
+  await tester.tap(tab);
+  await tester.pumpAndSettle();
+}
+
+/// 冲掉状态 toast 的自动消失定时器（时长真源见 modal_feedback 的
+/// statusOverlayVisibleDuration），避免用例收尾报 pending timer。
+/// 只负责泵时间：先断言 toast 文案、再调本函数，别把断言窗口吞掉。
+Future<void> drainToastTimer(WidgetTester tester) async {
+  await tester.pump(
+    statusOverlayVisibleDuration + const Duration(milliseconds: 100),
+  );
 }

@@ -145,8 +145,7 @@ Future<void> openConflictPromptDialog(WidgetTester tester) async {
     (const LocalDate(2026, 5, 25), 10000),
   ]);
   await pumpApp(tester, database: database);
-  await tester.tap(find.text('提醒'));
-  await tester.pumpAndSettle();
+  await gotoTab(tester, '提醒');
   await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('机油').last);
@@ -164,8 +163,7 @@ void main() {
     await createDefaultCar(tester);
     await createDefaultRecord(tester);
 
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '记录');
     expect(find.text('2026-05-19'), findsOneWidget);
     expect(find.text('13,000 km'), findsOneWidget);
     expect(find.byIcon(Icons.check), findsNWidgets(2));
@@ -190,8 +188,7 @@ void main() {
   ) async {
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
 
     await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
@@ -331,8 +328,7 @@ void main() {
   testWidgets('editing zero cost clears formatted zero on tap', (tester) async {
     await pumpApp(tester);
     await createDefaultCar(tester);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), '12000');
@@ -343,8 +339,7 @@ void main() {
     await tester.tap(find.text('保存记录'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '记录');
     await tester.tap(find.widgetWithText(TextButton, '编辑').last);
     await tester.pumpAndSettle();
 
@@ -368,8 +363,7 @@ void main() {
     await createDefaultCar(tester);
     await createDefaultRecord(tester);
 
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '记录');
     expect(find.text('同车同日仅保留一条记录'), findsNothing);
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
@@ -398,8 +392,7 @@ void main() {
   ) async {
     final database = await pumpApp(tester);
     await createDefaultCar(tester);
-    await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
     await tester.tap(find.widgetWithText(FilledButton, '新增保养记录'));
     await tester.pumpAndSettle();
 
@@ -466,8 +459,7 @@ void main() {
     final database = await seedCostedRecord();
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '记录');
     await tester.tap(find.widgetWithText(TextButton, '编辑').first);
     await tester.pumpAndSettle();
 
@@ -523,8 +515,7 @@ void main() {
     final database = await seedCostedRecord();
     await pumpApp(tester, database: database);
 
-    await tester.tap(find.text('记录'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '记录');
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
     // 行卡标题是"机油"，点标题触发整行 onTap → 只看该项目的详情弹窗。
@@ -561,8 +552,7 @@ void main() {
       );
       await pumpApp(tester, database: database);
 
-      await tester.tap(find.text('记录'));
-      await tester.pumpAndSettle();
+      await gotoTab(tester, '记录');
       await tester.tap(find.widgetWithText(TextButton, '编辑').first);
       await tester.pumpAndSettle();
 

@@ -116,7 +116,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
-    await tester.pump(const Duration(seconds: 3));
+    await drainToastTimer(tester);
     await tester.tap(find.text('机油'));
     await tester.pumpAndSettle();
     expect(find.text('编辑保养项目'), findsNothing);
@@ -182,8 +182,7 @@ void main() {
     }
 
     await pumpApp(tester, database: database);
-    await tester.tap(find.text('我的'));
-    await tester.pumpAndSettle();
+    await gotoTab(tester, '我的');
     await tester.tap(find.widgetWithText(TextButton, '项目').first);
     await tester.pumpAndSettle();
     final scrollView = find.byType(SingleChildScrollView).last;
