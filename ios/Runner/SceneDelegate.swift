@@ -6,10 +6,10 @@ import WidgetKit
 class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   private var documentPickerResult: FlutterResult?
   private var documentPickerMode: DocumentPickerMode?
-  private var nativeFilesChannel: FlutterMethodChannel?
-  private var nativeNotificationSettingsChannel: FlutterMethodChannel?
-  private var nativeLiveActivitiesChannel: FlutterMethodChannel?
-  private var nativeWidgetsChannel: FlutterMethodChannel?
+
+  /// 已挂载通道表：键 = 通道名，兼任幂等守卫与 channel 强持有（等价于旧实现
+  /// 的四个逐通道属性——那些属性除幂等守卫外没有任何读者，故收编进这里）。
+  private var mountedChannels: [String: FlutterMethodChannel] = [:]
 
   private enum DocumentPickerMode {
     case exportJson
@@ -22,84 +22,92 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     options connectionOptions: UIScene.ConnectionOptions
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
-    configureNativeFilesChannelIfNeeded()
+    // scene 连接瞬间 rootViewController 尚未就绪，跳一拍主线程再挂；
+    // 仍不满足前置条件时由 didBecomeActive 兜底再试（两段式重试，历史修复）。
+    // 挂载时机编排只在这两处生命周期回调 + mountChannelsIfNeeded，不在各通道重复。
     DispatchQueue.main.async { [weak self] in
-      self?.configureNativeFilesChannelIfNeeded()
-      self?.configureNativeNotificationSettingsChannelIfNeeded()
-      self?.configureNativeLiveActivitiesChannelIfNeeded()
-      self?.configureNativeWidgetsChannelIfNeeded()
+      self?.mountChannelsIfNeeded()
     }
   }
 
   override func sceneDidBecomeActive(_ scene: UIScene) {
     super.sceneDidBecomeActive(scene)
-    configureNativeFilesChannelIfNeeded()
-    configureNativeNotificationSettingsChannelIfNeeded()
-    configureNativeLiveActivitiesChannelIfNeeded()
-    configureNativeWidgetsChannelIfNeeded()
+    mountChannelsIfNeeded()
   }
 
-  private func configureNativeFilesChannelIfNeeded() {
-    guard nativeFilesChannel == nil else {
-      return
-    }
+  /// 四条原生通道的挂载名册：通道名 + 方法分发闭包（闭包各自 [weak self]，
+  /// 与 Dart 侧桥接文件的通道名一一对应）。加第五条通道 = 这里加一行；
+  /// 挂载时机、幂等守卫、channel 构造与 handler 接线全部归
+  /// mountChannelsIfNeeded 独享，不再按通道复制（旧实现四份 configure
+  /// 方法各抄一遍生命周期，且已出现微漂移）。
+  private var channelRoster: [(name: String, handle: (FlutterMethodCall, @escaping FlutterResult) -> Void)] {
+    [
+      (name: "lunio/native_files", handle: { [weak self] call, result in
+        self?.handleFilesCall(call, result: result)
+      }),
+      (name: "lunio/native_notification_settings", handle: { [weak self] call, result in
+        self?.handleNotificationSettingsCall(call, result: result)
+      }),
+      (name: "lunio/native_live_activities", handle: { [weak self] call, result in
+        self?.handleLiveActivityCall(call, result: result)
+      }),
+      (name: "lunio/native_widgets", handle: { [weak self] call, result in
+        self?.handleWidgetCall(call, result: result)
+      }),
+    ]
+  }
+
+  /// 把名册里未挂载的通道全部挂上；幂等，可随生命周期反复调用。
+  /// 前置条件 = window?.rootViewController 已是 FlutterViewController，不满足
+  /// 时静默返回、等下一次生命周期回调再试。旧实现里 files 通道有一次
+  /// willConnect 同步尝试，属历史化石（它早于重试机制诞生），本轮统一去掉：
+  /// 四条通道节奏一致 = willConnect 跳一拍主线程首试 + didBecomeActive 兜底。
+  private func mountChannelsIfNeeded() {
     guard let controller = window?.rootViewController as? FlutterViewController else {
       return
     }
-    let channel = FlutterMethodChannel(
-      name: "lunio/native_files",
-      binaryMessenger: controller.binaryMessenger
-    )
-    channel.setMethodCallHandler { [weak self, weak controller] call, result in
-      switch call.method {
-      case "exportJsonFile":
-        self?.exportJsonFile(call: call, controller: controller, result: result)
-      case "pickJsonFile":
-        self?.pickJsonFile(controller: controller, result: result)
-      default:
-        result(FlutterMethodNotImplemented)
+    for entry in channelRoster where mountedChannels[entry.name] == nil {
+      let channel = FlutterMethodChannel(
+        name: entry.name,
+        binaryMessenger: controller.binaryMessenger
+      )
+      let handle = entry.handle
+      channel.setMethodCallHandler { call, result in
+        handle(call, result)
       }
+      mountedChannels[entry.name] = channel
     }
-    nativeFilesChannel = channel
   }
 
-  private func configureNativeNotificationSettingsChannelIfNeeded() {
-    guard nativeNotificationSettingsChannel == nil else {
-      return
+  /// 备份导出/导入通道分发（Dart 侧桥接 lib/core/platform/native_files.dart）。
+  /// 文档选择器要挂在 rootViewController 上，分发时现场取——通道能挂上即意味着
+  /// controller 已就绪，这里取到 nil 只会让两个方法按约定回 no_controller 错误。
+  private func handleFilesCall(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    let controller = window?.rootViewController as? FlutterViewController
+    switch call.method {
+    case "exportJsonFile":
+      exportJsonFile(call: call, controller: controller, result: result)
+    case "pickJsonFile":
+      pickJsonFile(controller: controller, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
     }
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return
-    }
-    let channel = FlutterMethodChannel(
-      name: "lunio/native_notification_settings",
-      binaryMessenger: controller.binaryMessenger
-    )
-    channel.setMethodCallHandler { [weak self] call, result in
-      switch call.method {
-      case "openNotificationSettings":
-        self?.openNotificationSettings(result: result)
-      default:
-        result(FlutterMethodNotImplemented)
-      }
-    }
-    nativeNotificationSettingsChannel = channel
   }
 
-  private func configureNativeLiveActivitiesChannelIfNeeded() {
-    guard nativeLiveActivitiesChannel == nil else {
-      return
+  /// 通知设置跳转通道分发（Dart 侧桥接 lib/core/platform/native_notification_settings.dart）。
+  private func handleNotificationSettingsCall(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    switch call.method {
+    case "openNotificationSettings":
+      openNotificationSettings(result: result)
+    default:
+      result(FlutterMethodNotImplemented)
     }
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return
-    }
-    let channel = FlutterMethodChannel(
-      name: "lunio/native_live_activities",
-      binaryMessenger: controller.binaryMessenger
-    )
-    channel.setMethodCallHandler { [weak self] call, result in
-      self?.handleLiveActivityCall(call, result: result)
-    }
-    nativeLiveActivitiesChannel = channel
   }
 
   /// 停车实时活动通道分发（Dart 侧桥接 lib/core/platform/native_live_activities.dart）。
@@ -157,23 +165,6 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
   /// 把快照 JSON 写进 App Group 共享存储（LunioWidgetSnapshotStore，ADR
   /// 0013）并请求 WidgetKit 重载时间线。iOS < 14 无 WidgetKit，按"未启用"
   /// 回 false，Dart 侧静默降级（桌面小组件缺失不影响 App 功能）。
-  private func configureNativeWidgetsChannelIfNeeded() {
-    guard nativeWidgetsChannel == nil else {
-      return
-    }
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return
-    }
-    let channel = FlutterMethodChannel(
-      name: "lunio/native_widgets",
-      binaryMessenger: controller.binaryMessenger
-    )
-    channel.setMethodCallHandler { [weak self] call, result in
-      self?.handleWidgetCall(call, result: result)
-    }
-    nativeWidgetsChannel = channel
-  }
-
   private func handleWidgetCall(
     _ call: FlutterMethodCall,
     result: @escaping FlutterResult
