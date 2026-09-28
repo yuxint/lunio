@@ -205,22 +205,17 @@ class SceneDelegate: FlutterSceneDelegate, UIDocumentPickerDelegate {
     }
   }
 
+  /// 打开系统设置里本应用的通知页（Dart 侧桥接 lib/core/platform/native_notification_settings.dart），
+  /// result 回传 Bool 表示是否打开成功。iOS 只有一级可开——openSettingsURLString
+  /// 就是应用设置页（内含通知开关），不像 Android（MainActivity.openNotificationSettings）
+  /// 的通知 action 可能被厂商 ROM 拦截、需要第二级兜底；iOS 没有第二级 URL，不做降级链。
   private func openNotificationSettings(result: @escaping FlutterResult) {
-    let fallbackURL = URL(string: UIApplication.openSettingsURLString)
-    guard let url = fallbackURL else {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else {
       result(FlutterError(code: "invalid_url", message: "Unable to open app settings", details: nil))
       return
     }
-    openSettingsURL(url, fallbackURL: nil, result: result)
-  }
-
-  private func openSettingsURL(_ url: URL, fallbackURL: URL?, result: @escaping FlutterResult) {
-    let completion: (Bool) -> Void = { [weak self] opened in
-      guard !opened, url.absoluteString != fallbackURL?.absoluteString, let fallbackURL else {
-        result(opened)
-        return
-      }
-      self?.openSettingsURL(fallbackURL, fallbackURL: nil, result: result)
+    let completion: (Bool) -> Void = { opened in
+      result(opened)
     }
     if let windowScene = window?.windowScene {
       windowScene.open(url, options: nil, completionHandler: completion)
