@@ -195,15 +195,17 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 `reminder_page.dart:101` → 记录表单（完整流程见 §4.2）。
 
-### 2.4 保养提醒列表（"待关注项目"）
+### 2.4 保养提醒列表（分层清单，ADR 0018）
 
 | 步骤 | 代码位置 | 做了什么 |
 |---|---|---|
-| 1 | `reminder_list.dart:21 → ReminderList` | 自取 `reminderRowsProvider`（页面不透传数据）：加载中 → 菊花；加载失败 → "加载失败：…"（车辆/项目/记录/今天四数据源合并成一个 provider，出错不区分来源）；空态经 `classifyReminderRows` 单一出口：无任何记录 → "暂无保养记录"（产品约定：无记录不产生提醒）；无启用项目 → 引导去"我的"配置 |
+| 1 | `reminder_list.dart:27 → ReminderList` | 自取 `reminderRowsProvider`（页面不透传数据）：加载中 → 菊花；加载失败 → "加载失败：…"（车辆/项目/记录/今天四数据源合并成一个 provider，出错不区分来源）；空态经 `classifyReminderRows` 单一出口：无任何记录 → "暂无保养记录"（产品约定：无记录不产生提醒）；无启用项目 → 引导去"我的"配置 |
 | 2 | `reminder_rows.dart:88 → buildReminderRows` | 只取启用项目 → 逐项找最近记录（`RecordRules.latestRecordForItem`，domain 层；同项目同日唯一约束保证按日期可唯一定位，无"同日多条"并列）→ 调 **进度计算**（见下）→ 排序（状态→百分比→sortOrder）。通知侧 `maintenanceNotices` 复用同一函数 |
 | 3 | `lib/domain/rules/maintenance_rules.dart:120 → progressForItem` | 里程维（当前里程−基线）/间隔、时间维（今天−基线日）/总天数，**双维取大**为展示进度；状态按项目阈值（默认 100 黄 / 125 红） |
-| 4 | `reminder_list.dart:59 → ReminderRow` | 进度环（`ReminderProgressRingPainter`）+ 状态徽章 + 剩余里程/时间文案 |
-| 5 | 点击行 → `reminder_list.dart:151 → showReminderRecordDetail` | 弹上次保养日期/里程 + 距上次时间/里程 sheet（距上次字段在 `buildReminderRows` 构造 `ReminderViewData` 时经 `RecordRules.daysSinceLast` / `kmSinceLast` 算好：基线记录 → 今天 / 当前里程；无记录或差值为负（补录乱序）已在 domain 折叠成 null，格式层只把 null 显示"—"） |
+| 4 | `reminder_rows.dart:189 → splitReminderRows` | 把排好序的行分成两组（纯函数，只过滤不重排）：**需要处理**（到期+超期）与**其余**（正常）。分组完全由 provider 最新数据驱动——保存记录/更新里程/跨天/切页进入都重算，新急项立即进"需要处理"平铺区，不会被折叠藏住 |
+| 5 | `reminder_list.dart:60 → _buildBoard` | 有"需要处理"项 → 该组平铺（`LunioSection` 标题"需要处理 · N"），其余组折叠成一行"一切正常 · N 项"（点开才展开，展开态是 UI 状态不随数据重置）；没有"需要处理"项 → 全部平铺（标题"全部项目"，无折叠行） |
+| 6 | `reminder_list.dart:154 → ReminderRow` | **横向量规行**（ADR 0018）：语义色圆角进度条 + 右侧百分比，配状态徽章 + 剩余里程/时间文案（旧进度环保留给停车倒计时卡，`ReminderProgressRingPainter` 仍共用） |
+| 7 | 点击行 → `reminder_list.dart:241 → showReminderRecordDetail` | 弹上次保养日期/里程 + 距上次时间/里程 sheet（距上次字段在 `buildReminderRows` 构造 `ReminderViewData` 时经 `RecordRules.daysSinceLast` / `kmSinceLast` 算好：基线记录 → 今天 / 当前里程；无记录或差值为负（补录乱序）已在 domain 折叠成 null，格式层只把 null 显示"—"）。折叠行里的项目先展开再点，行为同 |
 
 ---
 

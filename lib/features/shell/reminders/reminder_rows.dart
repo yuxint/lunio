@@ -172,6 +172,31 @@ int reminderStatusRank(ReminderStatus status) {
   };
 }
 
+/// 分层分组结果（ADR 0018 提醒页重设计）：提醒行分成「需要处理」与
+/// 「其余」两层——需要处理的平铺展示，其余的折叠弱化。
+class ReminderRowGroups {
+  const ReminderRowGroups({required this.attention, required this.normal});
+
+  /// warning / danger 行（需要处理），组内保持入参排序（超期>到期 优先）。
+  final List<ReminderViewData> attention;
+
+  /// normal 行（其余，默认折叠展示）。
+  final List<ReminderViewData> normal;
+}
+
+/// 把已排序的提醒行分成「需要处理 / 其余」两组（纯函数，提醒页分层用）。
+/// 入参沿用 [buildReminderRows] 的排序，分组只是过滤，不重排。
+ReminderRowGroups splitReminderRows(List<ReminderViewData> rows) {
+  return ReminderRowGroups(
+    attention: rows
+        .where((row) => row.progress.status != ReminderStatus.normal)
+        .toList(growable: false),
+    normal: rows
+        .where((row) => row.progress.status == ReminderStatus.normal)
+        .toList(growable: false),
+  );
+}
+
 /// 提醒行组装结果：rows 之外附带"还没有任何保养记录"标志。
 /// 这个标志不能从 rows 推出来——rows 按启用项目生成，一条记录都没有
 /// 时也有行（进度走无历史基线），而"暂无保养记录"空态（与

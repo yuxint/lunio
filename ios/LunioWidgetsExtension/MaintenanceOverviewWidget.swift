@@ -327,14 +327,14 @@ enum LunioStatusColor {
     static func color(for status: String) -> Color {
         switch status {
         case "warning":
-            // #F59E0B（到期/黄）
-            return Color(red: 245 / 255, green: 158 / 255, blue: 11 / 255)
+            // #B45309（到期/黄，ADR 0019 浅色对比度档）
+            return Color(red: 180 / 255, green: 83 / 255, blue: 9 / 255)
         case "danger":
-            // #EF4444（超期/红）
-            return Color(red: 239 / 255, green: 68 / 255, blue: 68 / 255)
+            // #DC2626（超期/红，ADR 0019 浅色对比度档）
+            return Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)
         default:
-            // #22C55E（正常/绿）
-            return Color(red: 34 / 255, green: 197 / 255, blue: 94 / 255)
+            // #15803D（正常/绿，ADR 0019 浅色对比度档）
+            return Color(red: 21 / 255, green: 128 / 255, blue: 61 / 255)
         }
     }
 }

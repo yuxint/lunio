@@ -28,15 +28,15 @@ colors:
   secondary: "#475569"
   secondary-container: "#e2e8f0"
   on-secondary: "#ffffff"
-  success: "#22c55e"
+  success: "#15803d"
   success-container: "#dcfce7"
-  on-success-container: "#22c55e"
-  warning: "#f59e0b"
+  on-success-container: "#15803d"
+  warning: "#b45309"
   warning-container: "#fef3c7"
-  on-warning-container: "#f59e0b"
-  danger: "#ef4444"
+  on-warning-container: "#b45309"
+  danger: "#dc2626"
   danger-container: "#fee2e2"
-  on-danger-container: "#ef4444"
+  on-danger-container: "#dc2626"
   device-frame: "#101611"
   hero-gradient-start: "#2563eb"
   hero-gradient-mid: "#1d4ed8"
@@ -323,12 +323,12 @@ The palette is a restrained service-tool palette that separates brand color from
 
 - **Primary Blue (#2563eb):** The light-mode brand and interaction color. Use it for the active tab, primary buttons, floating action button, current vehicle highlights, and high-emphasis selected states.
 - **Primary Deep Cyan (#0e7490):** The dark-mode brand and interaction color. It keeps the tool-like mechanical feel of the vehicle-care workflow while staying separate from green status semantics. Use it in the same places as primary blue when the app is in dark mode.
-- **Status Green (#22c55e):** Used only for normal vehicle health, positive maintenance status, normal progress ranges, and the fuel price falling arrow on the fuel page (red-rise/green-fall convention, see below).
+- **Status Green (#15803d):** Used only for normal vehicle health, positive maintenance status, normal progress ranges, and the fuel price falling arrow on the fuel page (red-rise/green-fall convention, see below). The light-mode value is the ADR 0019 contrast tier (dark mode keeps its brighter tier).
 - **Neutral Canvas (#f6f7f9):** The app background. It should read as a cool off-white, not pure white, beige, or cream.
 - **White Surface (#ffffff):** The main card and sheet surface. Use it for readable information containers and controls.
 - **Secondary Slate (#475569):** A secondary accent used sparingly for system variety and visual balance, not for primary actions.
-- **Warning Amber (#f59e0b):** Used only for due-soon maintenance states and cautionary progress ranges.
-- **Danger Red (#ef4444):** Used only for overdue states, destructive actions, critical warning badges, and the fuel price rising arrow on the fuel page.
+- **Warning Amber (#b45309):** Used only for due-soon maintenance states and cautionary progress ranges. The light-mode value is the ADR 0019 contrast tier (dark mode keeps its brighter tier).
+- **Danger Red (#dc2626):** Used only for overdue states, destructive actions, critical warning badges, and the fuel price rising arrow on the fuel page. The light-mode value is the ADR 0019 contrast tier (dark mode keeps its brighter tier).
 
 Fuel price trend arrow exception (red-rise/green-fall): the "预估下次油价" block uses Danger Red for a predicted rise and Status Green for a predicted fall, following the Chinese stock-market color convention users expect for prices. This is a price-direction semantic, not vehicle health — do not reuse red/green this way outside the fuel price block.
 
@@ -374,7 +374,7 @@ The current vehicle card is the anchor of the reminder screen. It uses the curre
 
 ### Reminder Rows
 
-Reminder rows combine a circular progress indicator, item title, status badge, and plain-language remaining distance or time. The row should support normal, warning, and overdue states without changing its structure. Sort high-urgency rows first.
+The reminder list is layered (ADR 0018): items whose status is due or overdue are always expanded first under a "需要处理 · N" section, each rendered as a horizontal gauge row — rounded semantic-color fill bar with the percentage at its right, plus item title, status badge, and plain-language remaining distance or time. Normal items are folded into a single "一切正常 · N 项" row (tap to expand) whenever attention items exist; when nothing needs attention all items are laid flat under "全部项目". Rows keep supporting normal, warning, and overdue states without changing their structure, sorted high-urgency first; tapping a row opens the last-service detail sheet.
 
 ### Parking Countdown
 

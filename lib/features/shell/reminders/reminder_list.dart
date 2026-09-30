@@ -1,9 +1,15 @@
-// 提醒列表：待关注项目卡片列表 + 单行卡片 + 点击详情 sheet + 进度环画笔。
+// 提醒列表：分层清单（需要处理量规行 / 其余折叠）+ 单行卡片 +
+// 点击详情 sheet + 进度环画笔（停车倒计时仍共用）。
 //
-// 空态处理（按优先级）：加载中 → 加载失败 → 无任何记录（"暂无保养
-// 记录"）→ 无启用项目 → 正常列表；优先级判断单一出口在
-// reminder_rows.dart 的 classifyReminderRows。数据自取（watch
-// reminderRowsProvider），不再由页面透传 items/records/today。
+// ADR 0018 提醒页重设计（原型稿方案 A，见
+// .scratch/design-pipeline/0929-app-redesign/）：行从进度环改横向量规
+// （保留 标题/状态徽章/百分比/剩余详情行 全部旧展示数据）；列表分
+// 「需要处理 / 其余」两层（splitReminderRows 纯函数分组），需要处理的
+// 平铺、其余默认折叠成一行「一切正常 · N 项」点开才展开；没有需要
+// 处理项时不折叠，直接平铺全部项目（此时没有要弱化的内容）。
+// 空态处理（按优先级）不变：加载中 → 加载失败 → 暂无保养记录 →
+// 暂无启用项目 → 正常列表；优先级判断单一出口在 classifyReminderRows。
+// 数据自取（watch reminderRowsProvider），不再由页面透传 items/records/today。
 // ⚠ 无记录时不显示提醒行（新车主不轰炸），产品约定见 maintenanceNotices。
 // 列表用 Column 直排非懒加载（列表项有限，可接受）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
@@ -16,46 +22,135 @@ import '../../../core/widgets/lunio_components.dart';
 import '../shared/shell_shared.dart';
 import 'reminder_rows.dart';
 
-/// 提醒列表容器：自取 reminderRowsProvider，处理各种空态/错误态后渲染
-/// ReminderRow 列表。
-class ReminderList extends ConsumerWidget {
+/// 提醒列表容器：自取 reminderRowsProvider，渲染 需要处理量规行 +
+/// 其余折叠行；空态/错误态同旧版。
+class ReminderList extends ConsumerStatefulWidget {
   const ReminderList();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReminderList> createState() => _ReminderListState();
+}
+
+class _ReminderListState extends ConsumerState<ReminderList> {
+  /// 「其余（一切正常）」组是否展开。默认折叠——需要处理组为空时不走
+  /// 折叠直接平铺（此时没有要弱化的内容，全量项目本来就是主角）。
+  /// 展开态只是 UI 状态，数据变化不重置：新出现的急项由数据直接驱动
+  /// 进上方平铺区，永远不会被折叠藏住（ADR 0018 Q3）。
+  bool _restExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
     final board = ref.watch(reminderRowsProvider);
     return board.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stackTrace) =>
           LunioEmptyCard('加载失败：${friendlyError(error)}'),
       data: (value) => switch (classifyReminderRows(value)) {
-        ReminderRowsNoRecords() => LunioCard(
-          child: Text(
-            '暂无保养记录',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-        ReminderRowsNoEnabledItems() => LunioCard(
-          child: Text(
+        ReminderRowsNoRecords() => const LunioEmptyCard('暂无保养记录'),
+        ReminderRowsNoEnabledItems() => const LunioEmptyCard(
             '暂无启用的保养项目，请先在“我的”里配置保养项目。',
-            style: Theme.of(context).textTheme.bodyMedium,
           ),
-        ),
-        ReminderRowsData(:final rows) => Column(
-          children: [
-            for (final row in rows) ...[
-              ReminderRow(row: row),
-              const SizedBox(height: 12),
-            ],
-          ],
-        ),
+        ReminderRowsData(:final rows) => _buildBoard(rows),
       },
+    );
+  }
+
+  /// 正常数据形态：需要处理量规行 + 其余折叠/平铺。
+  Widget _buildBoard(List<ReminderViewData> rows) {
+    final groups = splitReminderRows(rows);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (groups.attention.isNotEmpty)
+          LunioSection(
+            title: '需要处理 · ${groups.attention.length}',
+            children: [
+              for (final row in groups.attention) ...[
+                ReminderRow(row: row),
+                const SizedBox(height: 12),
+              ],
+            ],
+          ),
+        if (groups.normal.isNotEmpty)
+          groups.attention.isNotEmpty
+              ? _buildRestFold(groups.normal)
+              : Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: LunioSection(
+                    title: '全部项目',
+                    children: [
+                      for (final row in groups.normal) ...[
+                        ReminderRow(row: row),
+                        const SizedBox(height: 12),
+                      ],
+                    ],
+                  ),
+                ),
+      ],
+    );
+  }
+
+  /// 「其余」组折叠行：一行「一切正常 · N 项」，点开才展开量规行。
+  Widget _buildRestFold(List<ReminderViewData> rows) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LunioCard(
+            padding: EdgeInsets.zero,
+            child: InkWell(
+              onTap: () => setState(() => _restExpanded = !_restExpanded),
+              borderRadius: BorderRadius.circular(tokens.radiusLarge),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 13,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '一切正常 · ${rows.length} 项',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _restExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: Icon(
+                        Icons.expand_more,
+                        size: 20,
+                        color: tokens.subtle,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_restExpanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
+                children: [
+                  for (final row in rows) ...[
+                    ReminderRow(row: row),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
 
-/// 单条提醒卡片：进度环（百分比）+ 项目名 + 状态徽章 + 剩余里程/时间文案。
-/// 整行可点 → 弹出上次保养详情 sheet。
+/// 单条提醒卡片（ADR 0018 重设计）：横向量规替代进度环——
+/// 标题 + 状态徽章 / 量规（按语义色着色，按展示百分比填充）+ 百分比 /
+/// 剩余里程/时间详情行。旧版展示数据一项不少，整行可点 → 详情 sheet。
 class ReminderRow extends StatelessWidget {
   const ReminderRow({required this.row});
 
@@ -75,68 +170,63 @@ class ReminderRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(tokens.radiusLarge),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox.square(
-                  dimension: 58,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      CustomPaint(
-                        size: const Size.square(58),
-                        painter: ReminderProgressRingPainter(
-                          percent: row.displayPercent.toDouble(),
-                          color: color,
-                          backgroundColor: tokens.surface3,
-                        ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        row.title,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      SizedBox(
-                        width: 44,
-                        height: 22,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            row.percentText,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: color,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13,
-                                ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    LunioStatusBadge(label: row.badge, tone: row.tone),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              row.title,
-                              style: Theme.of(context).textTheme.titleMedium,
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          height: 8,
+                          color: tokens.surface3,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: (row.displayPercent / 100).clamp(
+                                0.0,
+                                1.0,
+                              ),
+                              child: Container(color: color),
                             ),
                           ),
-                          LunioStatusBadge(label: row.badge, tone: row.tone),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      for (final detail in row.detailTexts) ...[
-                        Text(
-                          detail,
-                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        if (detail != row.detailTexts.last)
-                          const SizedBox(height: 2),
-                      ],
-                    ],
-                  ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      row.percentText,
+                      textAlign: TextAlign.right,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 8),
+                for (final detail in row.detailTexts) ...[
+                  Text(
+                    detail,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (detail != row.detailTexts.last)
+                    const SizedBox(height: 2),
+                ],
               ],
             ),
           ),
@@ -223,7 +313,10 @@ void showReminderRecordDetail(BuildContext context, ReminderViewData row) {
 
 /// 详情 sheet 里的指标格（标签 + 值）。
 class ReminderRecordMetric extends StatelessWidget {
-  const ReminderRecordMetric({required this.label, required this.value});
+  const ReminderRecordMetric({
+    required this.label,
+    required this.value,
+  });
 
   final String label;
   final String value;
@@ -263,6 +356,7 @@ class ReminderRecordMetric extends StatelessWidget {
 
 /// 进度环画笔（CustomPainter ≈ 自定义 Canvas 绘制）：
 /// 背景圆 + 从 12 点方向顺时针的进度弧。提醒列表与停车倒计时共用。
+/// ADR 0018 重设计后提醒行改横向量规，本画笔当前只服务停车倒计时卡。
 class ReminderProgressRingPainter extends CustomPainter {
   const ReminderProgressRingPainter({
     required this.percent,

@@ -427,7 +427,7 @@ void main() {
     expect(find.byIcon(Icons.warning_amber_rounded), findsNWidgets(2));
     expect(
       tester.widget<TextField>(find.byType(TextField).at(5)).style?.color,
-      const Color(0xffef4444),
+      const Color(0xffdc2626),
     );
     expect(
       tester.widget<TextField>(find.byType(TextField).at(1)).controller!.text,
@@ -487,7 +487,7 @@ void main() {
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField).at(1)).style?.color,
-      const Color(0xffef4444),
+      const Color(0xffdc2626),
     );
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -565,7 +565,7 @@ void main() {
       expect(find.byIcon(Icons.warning_amber_rounded), findsNWidgets(2));
       expect(
         tester.widget<TextField>(find.byType(TextField).at(5)).style?.color,
-        const Color(0xffef4444),
+        const Color(0xffdc2626),
       );
 
       // 改材料费触发自动算链：优惠价 200 不被覆盖为材料+工时 240。

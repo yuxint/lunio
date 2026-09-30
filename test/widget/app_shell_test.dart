@@ -182,7 +182,7 @@ void main() {
       find.widgetWithText(FilledButton, '删除'),
     );
     final background = deleteButton.style?.backgroundColor?.resolve({});
-    expect(background, const Color(0xffef4444));
+    expect(background, const Color(0xffdc2626));
 
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();

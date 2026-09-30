@@ -189,4 +189,46 @@ void main() {
       );
     });
   });
+
+  group('splitReminderRows 分层分组（ADR 0018）', () {
+    test('非 normal 进需要处理组，normal 进其余组，组内保持入参顺序', () {
+      final groups = splitReminderRows([
+        _row(ReminderStatus.danger), // 超期
+        _row(ReminderStatus.warning), // 到期
+        _row(ReminderStatus.normal),
+        _row(ReminderStatus.normal),
+      ]);
+      expect(groups.attention, hasLength(2));
+      expect(groups.normal, hasLength(2));
+      expect(
+        groups.attention.map((row) => row.progress.status),
+        everyElement(isNot(ReminderStatus.normal)),
+      );
+      expect(
+        groups.normal.map((row) => row.progress.status),
+        everyElement(ReminderStatus.normal),
+      );
+    });
+
+    test('全正常：需要处理组为空（页面据此走平铺不折叠）', () {
+      final groups = splitReminderRows([
+        _row(ReminderStatus.normal),
+        _row(ReminderStatus.normal),
+      ]);
+      expect(groups.attention, isEmpty);
+      expect(groups.normal, hasLength(2));
+    });
+
+    test('全需处理：其余组为空（页面据此不渲染折叠行）', () {
+      final groups = splitReminderRows([_row(ReminderStatus.danger)]);
+      expect(groups.attention, hasLength(1));
+      expect(groups.normal, isEmpty);
+    });
+
+    test('空列表：两组都空', () {
+      final groups = splitReminderRows(const []);
+      expect(groups.attention, isEmpty);
+      expect(groups.normal, isEmpty);
+    });
+  });
 }

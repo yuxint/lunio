@@ -14,6 +14,7 @@ import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
+import '../helpers/builders.dart';
 import '../helpers/widget_app.dart';
 
 void main() {
@@ -271,6 +272,12 @@ void main() {
     await gotoTab(tester, '提醒');
 
     expect(find.text('保养提醒'), findsWidgets);
+    // ADR 0018 分层：超期项平铺在「需要处理」，机油 0% 正常项折叠——
+    // 点开「一切正常」行后原展示数据全部可见。
+    final foldTile = find.textContaining('一切正常');
+    expect(foldTile, findsOneWidget);
+    await tester.tap(foldTile);
+    await tester.pumpAndSettle();
     expect(find.text('机油'), findsOneWidget);
     expect(find.text('0%'), findsWidgets);
     expect(find.text('里程：距离下次约 5,000 公里'), findsOneWidget);
@@ -299,6 +306,12 @@ void main() {
     expect(find.textContaining('已超期'), findsNothing);
     expect(find.text('时间：已超 6个月'), findsWidgets);
 
+    // ADR 0018 分层：机油若在折叠的「一切正常」组里，先展开再点行。
+    final foldTile = find.textContaining('一切正常');
+    if (foldTile.evaluate().isNotEmpty) {
+      await tester.tap(foldTile.first);
+      await tester.pumpAndSettle();
+    }
     await tester.tap(find.text('机油').first);
     await tester.pumpAndSettle();
     expect(find.text('上次保养日期'), findsOneWidget);
@@ -538,6 +551,196 @@ void main() {
       }
     },
   );
+
+  testWidgets('reminder list layers attention items and folds normal ones', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repos = testRepository(database);
+    await repos.ensureBootstrapData();
+    final carId = await repos.insertCarForTest(
+      Car(
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 4, 1),
+        ),
+      ),
+    );
+    // 机油：上次 2026-03-01 → 今天(2026-09-10) 时间维已超 9 天 = 需要处理。
+    final oilId = await repos.saveItem(carId, '机油', 1);
+    // 空调滤芯：上次 2026-08-15 → 双维远未到 = 正常（应折叠）。
+    final filterId = await repos.saveItem(carId, '空调滤芯', 2);
+    await repos.repository.saveMaintenanceRecord(
+      defaultRecord(
+        carId: carId,
+        date: const LocalDate(2026, 3, 1),
+        itemIds: [oilId],
+        costCents: 10000,
+        mileageKm: 5000,
+      ),
+    );
+    await repos.repository.saveMaintenanceRecord(
+      defaultRecord(
+        carId: carId,
+        date: const LocalDate(2026, 8, 15),
+        itemIds: [filterId],
+        costCents: 5000,
+        mileageKm: 9500,
+      ),
+    );
+    await repos.setAppliedCarId(carId);
+
+    await pumpApp(
+      tester,
+      database: database,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 9, 10),
+        manualDate: const LocalDate(2026, 9, 10),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
+
+    // 需要处理组平铺（超期机油），其余组折叠（正常空调滤芯藏起来）。
+    expect(find.text('需要处理 · 1'), findsOneWidget);
+    expect(find.text('机油'), findsOneWidget);
+    expect(find.text('一切正常 · 1 项'), findsOneWidget);
+    expect(find.text('空调滤芯'), findsNothing);
+
+    // 点折叠行展开其余组：正常项目行出现，且可点开详情 sheet（ADR 0018
+    // 行为同旧版——折叠只是展示分层，不改变交互）。
+    await tester.tap(find.text('一切正常 · 1 项'));
+    await tester.pumpAndSettle();
+    expect(find.text('空调滤芯'), findsOneWidget);
+    await tester.tap(find.text('空调滤芯'));
+    await tester.pumpAndSettle();
+    expect(find.text('上次保养日期'), findsOneWidget);
+  });
+
+  testWidgets('reminder list lays all items flat when nothing needs attention', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repos = testRepository(database);
+    await repos.ensureBootstrapData();
+    final carId = await repos.insertCarForTest(
+      Car(
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 6000,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 4, 1),
+        ),
+      ),
+    );
+    final oilId = await repos.saveItem(carId, '机油', 1);
+    await repos.repository.saveMaintenanceRecord(
+      defaultRecord(
+        carId: carId,
+        date: const LocalDate(2026, 9, 1),
+        itemIds: [oilId],
+        costCents: 10000,
+        mileageKm: 6000,
+      ),
+    );
+    await repos.setAppliedCarId(carId);
+
+    await pumpApp(
+      tester,
+      database: database,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 9, 10),
+        manualDate: const LocalDate(2026, 9, 10),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
+
+    // 无需要处理项：不出现折叠行，全部项目直接平铺（ADR 0018）。
+    expect(find.textContaining('需要处理'), findsNothing);
+    expect(find.textContaining('一切正常'), findsNothing);
+    expect(find.text('全部项目'), findsOneWidget);
+    expect(find.text('机油'), findsOneWidget);
+  });
+
+  testWidgets('attention group dissolves after a fresh record is saved', (
+    tester,
+  ) async {
+    // ADR 0018 Q3 行为锁定：数据永远重算（保存记录失效 provider 家族、
+    // 切页/跨天同理）。初始机油超期在「需要处理」平铺区，保存一条
+    // 新记录后立即回到「全部项目」平铺——分组完全由最新数据驱动。
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repos = testRepository(database);
+    await repos.ensureBootstrapData();
+    final carId = await repos.insertCarForTest(
+      Car(
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 10000,
+        roadDate: const LocalDate(2020, 1, 1),
+        sync: SyncMetadata(
+          status: SyncStatus.pendingCreate,
+          updatedAt: DateTime(2026, 4, 1),
+        ),
+      ),
+    );
+    final oilId = await repos.saveItem(carId, '机油', 1);
+    // 初始：唯一记录在 9 个月前 → 时间维超期 → 需要处理。
+    await repos.repository.saveMaintenanceRecord(
+      defaultRecord(
+        carId: carId,
+        date: const LocalDate(2025, 12, 10),
+        itemIds: [oilId],
+        costCents: 10000,
+        mileageKm: 9000,
+      ),
+    );
+    await repos.setAppliedCarId(carId);
+
+    await pumpApp(
+      tester,
+      database: database,
+      dateContext: AppDateContext(
+        readSystemNow: () => DateTime(2026, 9, 10),
+        manualDate: const LocalDate(2026, 9, 10),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await gotoTab(tester, '提醒');
+
+    expect(find.text('需要处理 · 1'), findsOneWidget);
+    expect(find.text('机油'), findsOneWidget);
+    expect(find.text('超期'), findsOneWidget);
+
+    // 保存一条今天的记录（写库 + 失效 provider，同动作层保存后的路径）：
+    // 最新记录变为今天 → 立即回到全正常平铺。
+    await repos.repository.saveMaintenanceRecord(
+      defaultRecord(
+        carId: carId,
+        date: const LocalDate(2026, 9, 10),
+        itemIds: [oilId],
+        costCents: 10000,
+        mileageKm: 10000,
+      ),
+    );
+    ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    ).invalidate(appliedCarRecordsProvider);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('需要处理'), findsNothing);
+    expect(find.text('全部项目'), findsOneWidget);
+    expect(find.text('机油'), findsOneWidget);
+  });
 
   testWidgets('quick mileage update saves higher mileage directly', (
     tester,

@@ -7,7 +7,8 @@
 //      右上角"更新里程"打开快捷改里程 sheet，见文件末尾）；
 //   3. ReminderActionRow：新增保养记录 / 停车倒计时 两个按钮；
 //   4. 停车倒计时进行中 → ParkingCountdownCard（进度环 + 结束按钮）；
-//   5. ReminderList：待关注项目列表（进度环 + 状态徽章）。
+//   5. ReminderList：分层清单（需要处理量规行 / 其余折叠，
+//      ADR 0018，见 reminder_list.dart）。
 //
 // 性能（R11 修复后）：停车倒计时卡片内部 1s Timer 自刷新，
 // 页面本身不再有周期性重建；英雄卡"到期概览"只在数据变化时重算。
@@ -114,11 +115,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
             ),
             const SizedBox(height: 22),
           ],
-          if (car != null)
-            LunioSection(
-              title: '待关注项目',
-              children: const [ReminderList()],
-            ),
+          if (car != null) const ReminderList(),
         ],
       ),
     );
