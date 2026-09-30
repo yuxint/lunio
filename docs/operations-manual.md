@@ -270,7 +270,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 4.4 记录详情弹窗（ADR 0010）
 
-**入口**：按周期视图点记录卡任意位置（`RecordCycleCard` 内 `InkWell`）或按项目视图点项目行（`RecordItemRowCard`）→ `record_detail_sheet.dart → showRecordDetailSheet`（弹窗自取数据：自己 watch 该车**全量**记录与项目两个 provider——按项目视图找"上一条"必须用未筛选列表，按年份筛选会把上一条筛掉）。
+**入口**：按周期视图点记录卡任意位置或按项目视图点项目行（整卡可点结构统一在 `shared/shared_widgets.dart → LunioTappableCard`，`RecordCycleCard` / `RecordItemRowCard` 换用）→ `record_detail_sheet.dart → showRecordDetailSheet`（弹窗自取数据：自己 watch 该车**全量**记录与项目两个 provider——按项目视图找"上一条"必须用未筛选列表，按年份筛选会把上一条筛掉）。
 
 | 视图 | 内容 | 展示规则 |
 |---|---|---|

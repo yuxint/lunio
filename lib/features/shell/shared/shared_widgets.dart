@@ -2,6 +2,8 @@
 //
 // 复用度统计（引用次数，含定义处）：
 //  - SmallActionButton 18 处 / PrototypeSheetFrame 11 处 —— 高复用，核心组件
+//  - LunioTappableCard 4 处 —— 整卡可点卡片（记录页两种记录卡 + 费用
+//    汇总行、提醒页量规行），圆角与水波裁剪只在这一份里对齐
 //  - LoadingPage / ErrorPage —— 三页统一 loading/error 占位（§5.2）
 //  - IntervalNumberInputRow —— 记录表单与项目表单共用的间隔输入行（§5.3.1）
 //  - FilterBar / ChoiceChipButton 已回收为记录页私有组件（单一调用点）
@@ -139,6 +141,56 @@ class SmallActionButton extends StatelessWidget {
             ),
           ),
           child: Text(label),
+        ),
+      ),
+    );
+  }
+}
+
+/// 整卡可点的卡片：LunioCard 表面 + 透明 Material 绘制底板 + InkWell 水波。
+///
+/// 卡片圆角与水波裁剪圆角在组件内部取同一个 `tokens.radiusLarge`，
+/// 调用点不再手抄圆角数值（收编前四处手写"卡 + Material + InkWell"
+/// 三明治，两处圆角必须逐字一致，不一致时按压高亮会溢出卡角）。
+/// 下一轮全局调卡片圆角或按压水波行为只改这一个组件。
+///
+/// [padding] 施加在 InkWell 之内：按压高亮延伸到卡边而不是缩在内容区。
+/// 当前调用点：记录页按周期卡 / 按项目行卡 / 费用汇总行、提醒页量规行。
+class LunioTappableCard extends StatelessWidget {
+  const LunioTappableCard({
+    super.key,
+    required this.onTap,
+    this.padding = const EdgeInsets.all(12),
+    required this.child,
+  });
+
+  /// 整卡点击回调。必填非空：现有调用点都是必点卡片，无禁用态需求，
+  /// 不留可空回调以免出现无人定义语义的"禁用卡"。
+  final VoidCallback onTap;
+
+  /// 内容内边距（默认 12，与 LunioCard 默认一致）。
+  final EdgeInsetsGeometry padding;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    // 卡圆角与水波裁剪圆角同一处取值：全局调圆角只动这一行。
+    final radius = BorderRadius.circular(tokens.radiusLarge);
+    return LunioCard(
+      // 卡片自带 padding 固定置零：InkWell 要铺满整卡（含内边距区域），
+      // 按压高亮才会延伸到卡边；真实内边距垫在 InkWell 之内。
+      padding: EdgeInsets.zero,
+      child: Material(
+        // 透明 Material 只作 InkWell 水波的绘制底板（类比 Java 自绘面板
+        // 前先垫一块透明玻璃层），自身不带任何视觉。
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Padding(padding: padding, child: child),
         ),
       ),
     );

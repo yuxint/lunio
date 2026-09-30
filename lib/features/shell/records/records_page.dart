@@ -312,104 +312,95 @@ class RecordCycleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 整卡可点 → 记录详情弹窗（ADR 0010）；编辑/删除按钮在卡内，
-    // 点击按钮不会触发整卡 onTap（InkWell 子级按钮优先消费手势）。
-    return LunioCard(
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        child: InkWell(
-          onTap: () => showRecordDetailSheet(context, record: record),
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    // 整卡可点 → 记录详情弹窗（ADR 0010）；圆角与水波裁剪在共享的
+    // LunioTappableCard 内部对齐；编辑/删除按钮在卡内，点击按钮不会
+    // 触发整卡 onTap（InkWell 子级按钮优先消费手势）。
+    return LunioTappableCard(
+      onTap: () => showRecordDetailSheet(context, record: record),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                record.date.toString(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                // 方向稿 A：行标题 17→15，与提醒行同档
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              // 总费用 ≠ 项目费用合计：黄色警告角标（纯提示不拦截，
+              // 与详情弹窗同一判定 RecordRules.totalCostMismatch）。
+              if (RecordRules.totalCostMismatch(
+                totalCostCents: record.costCents,
+                itemCosts: record.itemCosts,
+              )) ...[
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 16,
+                  color: tokens.warning,
+                ),
+              ],
+              const Spacer(),
+              const SizedBox(width: 10),
+              Text(
+                formatMoneyCents(record.costCents),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: tokens.primary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Row(
                   children: [
                     Text(
-                      record.date.toString(),
+                      '${formatNumber(record.mileageKm)} km',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      // 方向稿 A：行标题 17→15，与提醒行同档
-                      style: Theme.of(context).textTheme.titleSmall,
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                    // 总费用 ≠ 项目费用合计：黄色警告角标（纯提示不拦截，
-                    // 与详情弹窗同一判定 RecordRules.totalCostMismatch）。
-                    if (RecordRules.totalCostMismatch(
-                      totalCostCents: record.costCents,
-                      itemCosts: record.itemCosts,
-                    )) ...[
-                      const SizedBox(width: 6),
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        size: 16,
-                        color: tokens.warning,
+                    if ((record.note ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          record.note!.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                     ],
-                    const Spacer(),
-                    const SizedBox(width: 10),
-                    Text(
-                      formatMoneyCents(record.costCents),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: tokens.primary,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text(
-                            '${formatNumber(record.mileageKm)} km',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if ((record.note ?? '').trim().isNotEmpty) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                record.note!.trim(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SmallActionButton(
-                          label: '编辑',
-                          onPressed: () => onEdit(record),
-                        ),
-                        const SizedBox(width: 8),
-                        SmallActionButton(
-                          label: '删除',
-                          danger: true,
-                          onPressed: () => onDelete(record),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ItemPills(labels: recordItemPillLabels(record, items)),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SmallActionButton(
+                    label: '编辑',
+                    onPressed: () => onEdit(record),
+                  ),
+                  const SizedBox(width: 8),
+                  SmallActionButton(
+                    label: '删除',
+                    danger: true,
+                    onPressed: () => onDelete(record),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: 12),
+          ItemPills(labels: recordItemPillLabels(record, items)),
+        ],
       ),
     );
   }
@@ -435,58 +426,48 @@ class RecordItemRowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 整行可点 → 该项目的费用详情（按项目视图只看这一个项目，ADR 0010）。
-    return LunioCard(
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        child: InkWell(
-          onTap: () => showRecordDetailSheet(
-            context,
-            record: record,
-            focusItemId: itemId,
+    // 整行可点 → 该项目的费用详情（按项目视图只看这一个项目，ADR 0010）；
+    // 圆角与水波裁剪在共享的 LunioTappableCard 内部对齐。
+    return LunioTappableCard(
+      onTap: () => showRecordDetailSheet(
+        context,
+        record: record,
+        focusItemId: itemId,
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item?.name ?? '未知项目',
+            // 行标题统一 titleSmall（15/w700），与按周期卡同档
+            style: Theme.of(context).textTheme.titleSmall,
           ),
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item?.name ?? '未知项目',
-                  // 行标题统一 titleSmall（15/w700），与按周期卡同档
-                  style: Theme.of(context).textTheme.titleSmall,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${record.date} · ${formatNumber(record.mileageKm)} km',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${record.date} · ${formatNumber(record.mileageKm)} km',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    SmallActionButton(
-                      label: '编辑',
-                      onPressed: () => onEdit(record, itemId),
-                    ),
-                    const SizedBox(width: 8),
-                    SmallActionButton(
-                      label: '删除',
-                      danger: true,
-                      onPressed: () => onDelete(record, itemId),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              SmallActionButton(
+                label: '编辑',
+                onPressed: () => onEdit(record, itemId),
+              ),
+              const SizedBox(width: 8),
+              SmallActionButton(
+                label: '删除',
+                danger: true,
+                onPressed: () => onDelete(record, itemId),
+              ),
+            ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1105,40 +1086,30 @@ class _CostSummaryRow extends StatelessWidget {
       color: tokens.primary,
       fontWeight: FontWeight.w700,
     );
-    return LunioCard(
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              children: [
-                if (showMaintenance) ...[
-                  Text('今年保养', style: labelStyle),
-                  const SizedBox(width: 8),
-                  Text(
-                    formatMoneyCents(thisYearMaintenanceCents),
-                    style: moneyStyle,
-                  ),
-                ],
-                if (showMaintenance && showFuel)
-                  const SizedBox(width: 14),
-                if (showFuel) ...[
-                  Text('今年加油', style: labelStyle),
-                  const SizedBox(width: 8),
-                  Text(formatMoneyCents(thisYearFuelCents), style: moneyStyle),
-                ],
-                const Spacer(),
-                Text('费用统计', style: entryStyle),
-                Icon(Icons.chevron_right, size: 16, color: tokens.primary),
-              ],
+    // 整行可点进费用统计页；圆角与水波裁剪在共享的 LunioTappableCard
+    // 内部对齐（原 symmetric(12,12) 与组件默认 all(12) 等价，吃默认值）。
+    return LunioTappableCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          if (showMaintenance) ...[
+            Text('今年保养', style: labelStyle),
+            const SizedBox(width: 8),
+            Text(
+              formatMoneyCents(thisYearMaintenanceCents),
+              style: moneyStyle,
             ),
-          ),
-        ),
+          ],
+          if (showMaintenance && showFuel) const SizedBox(width: 14),
+          if (showFuel) ...[
+            Text('今年加油', style: labelStyle),
+            const SizedBox(width: 8),
+            Text(formatMoneyCents(thisYearFuelCents), style: moneyStyle),
+          ],
+          const Spacer(),
+          Text('费用统计', style: entryStyle),
+          Icon(Icons.chevron_right, size: 16, color: tokens.primary),
+        ],
       ),
     );
   }

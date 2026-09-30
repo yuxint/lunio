@@ -69,86 +69,78 @@ class ReminderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final color = row.tone.statusForeground(tokens);
-    return LunioCard(
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        child: InkWell(
-          onTap: () => showReminderRecordDetail(context, row),
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.title,
-                        // 方向稿 A：行标题用 titleSmall（15/w700），整页更紧
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    LunioStatusBadge(label: row.badge, tone: row.tone),
-                  ],
+    // 整行可点 → 详情 sheet；圆角与水波裁剪在共享的 LunioTappableCard
+    // 内部对齐。
+    return LunioTappableCard(
+      onTap: () => showReminderRecordDetail(context, row),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  row.title,
+                  // 方向稿 A：行标题用 titleSmall（15/w700），整页更紧
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-                const SizedBox(height: 9),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: Container(
-                          height: 8,
-                          color: tokens.surface3,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: FractionallySizedBox(
-                              widthFactor: (row.displayPercent / 100).clamp(
-                                0.0,
-                                1.0,
-                              ),
-                              child: Container(color: color),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    SizedBox(
-                      // 与上方状态徽章同宽的固定槽（两字徽章 ≈ 40px），
-                      // 百分比在槽内居中——中心与徽章对齐（用户反馈右
-                      // 对齐时"正常"和 50% 视觉上错位）；40 宽容纳
-                      // "102%" 且强制单行不折行。
-                      width: 40,
-                      child: Text(
-                        row.percentText,
-                        maxLines: 1,
-                        softWrap: false,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: color,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 7),
-                for (final detail in row.detailTexts) ...[
-                  Text(
-                    detail,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  if (detail != row.detailTexts.last)
-                    const SizedBox(height: 2),
-                ],
-              ],
-            ),
+              ),
+              LunioStatusBadge(label: row.badge, tone: row.tone),
+            ],
           ),
-        ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    height: 8,
+                    color: tokens.surface3,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: (row.displayPercent / 100).clamp(
+                          0.0,
+                          1.0,
+                        ),
+                        child: Container(color: color),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              SizedBox(
+                // 与上方状态徽章同宽的固定槽（两字徽章 ≈ 40px），
+                // 百分比在槽内居中——中心与徽章对齐（用户反馈右
+                // 对齐时"正常"和 50% 视觉上错位）；40 宽容纳
+                // "102%" 且强制单行不折行。
+                width: 40,
+                child: Text(
+                  row.percentText,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          for (final detail in row.detailTexts) ...[
+            Text(
+              detail,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (detail != row.detailTexts.last)
+              const SizedBox(height: 2),
+          ],
+        ],
       ),
     );
   }
