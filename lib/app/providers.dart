@@ -36,9 +36,11 @@
 //   │    ├─ effectiveTodayProvider（手动日期 ?? 系统今天）
 //   │    ├─ carsProvider ──> appliedCarProvider
 //   │    │                    ├─ appliedCarMaintenanceItemsProvider（派生自下面的 family）
-//   │    │                    ├─ appliedCarRecordsProvider
+//   │    │                    ├─ appliedCarRecordsProvider（派生自下面的 family）
 //   │    │                    └─ appliedCarFuelRecordsProvider
 //   │    │                       （派生自 fuelRecordsForCarProvider）
+//   │    ├─ appliedCarBoardProvider（应用车辆数据束：上面四路的车/项目/
+//   │    │    记录/生效今天一次拿齐，按车消费的页面与控制器共用的读侧接缝）
 //   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
 //   │    ├─ recordsForCarProvider（按车记录 family：费用统计页等按车消费者）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
@@ -339,16 +341,75 @@ final recordsForCarProvider =
 });
 
 /// 应用车辆的保养记录全量列表（记录页与提醒计算共用，无分页）。
-final appliedCarRecordsProvider = FutureProvider<List<MaintenanceRecord>>((
-  ref,
-) async {
+/// 仿 [appliedCarMaintenanceItemsProvider] 的派生模式：只承载"当前应用
+/// 车辆解析 + 无车返回空列表"两条规则，数据拉取统一走
+/// [recordsForCarProvider]（与项目/加油派生同构——此前这里直查仓库、
+/// 不 watch 按车 family，是三个 applied 派生里的例外写法，2026-10-01
+/// 随数据束收编统一）。
+final appliedCarRecordsProvider =
+    FutureProvider<List<MaintenanceRecord>>((ref) async {
+      final car = await ref.watch(appliedCarProvider.future);
+      if (car?.id == null) {
+        return const [];
+      }
+      return ref.watch(recordsForCarProvider(car!.id!).future);
+    });
+
+/// 应用车辆数据束：当前应用车辆 + 项目清单 + 保养记录 + 生效今天
+/// 四件套一次拿齐（CONTEXT.md 词条「应用车辆数据束」）。
+///
+/// 就绪语义只有这一份实现：
+///  - 任一上游未就绪（loading/error）→ 数据束整体未就绪（AsyncValue
+///    的 loading/error，消费方 AsyncValue.when 收口）；
+///  - 无车是合法空态：car = null 时仍是 data 态（items/records 按
+///    applied 派生的既有规则给空表），不是 loading——新车主不阻塞页面。
+///
+/// 谁该 watch 它：一切"按当前应用车辆消费车况数据"的页面/控制器/表单
+/// （提醒行组装、记录页、费用统计页、通知同步控制器、小组件快照
+/// 控制器），不要再各自手抄"逐个 watch、loading 折叠成 null、生效今天
+/// 兜底系统日期"的装载策略。不装进来的：通知设置与停车倒计时（各自
+/// 域内的偏好 provider，控制器自己监听）；加油记录（加油域，ADR 0015，
+/// 消费方按域单独 watch）。
+///
+/// 边界（与 arch-0928 票正交）：数据束是读侧接缝（watch 哪些上游），
+/// 车辆数据纪元是写侧失效机制（bump 代替名单）——纪元落地时本 provider
+/// 无需改（它不直接读库，上游失效会传导）；偏好纪元边界不动（today
+/// 上游自己 watch 纪元，属既有行为）。
+class AppliedCarBoard {
+  const AppliedCarBoard({
+    required this.car,
+    required this.items,
+    required this.records,
+    required this.today,
+  });
+
+  /// 当前应用车辆；null = 没有车（合法空态）。
+  final Car? car;
+
+  /// 应用车辆的保养项目清单（无车为空表）。
+  final List<MaintenanceItem> items;
+
+  /// 应用车辆的保养记录全量列表（无车为空表）。
+  final List<MaintenanceRecord> records;
+
+  /// 生效今天（手动日期优先，否则系统今天）。
+  final LocalDate today;
+}
+
+/// 数据束 provider：顺序 await 四个上游（车辆/项目/记录/生效今天），
+/// 全部落定才算就绪。写库后的刷新随 [invalidateVehicleProviders] 失效
+/// 上游传导（名单里也显式列出了数据束，防上游 watch 行被改时陈旧）。
+final appliedCarBoardProvider = FutureProvider<AppliedCarBoard>((ref) async {
   final car = await ref.watch(appliedCarProvider.future);
-  if (car?.id == null) {
-    return const [];
-  }
-  return ref
-      .watch(lunioRepositoryProvider)
-      .listMaintenanceRecordsForCar(car!.id!);
+  final items = await ref.watch(appliedCarMaintenanceItemsProvider.future);
+  final records = await ref.watch(appliedCarRecordsProvider.future);
+  final today = await ref.watch(effectiveTodayProvider.future);
+  return AppliedCarBoard(
+    car: car,
+    items: items,
+    records: records,
+    today: today,
+  );
 });
 
 /// 通知服务：生产装配为全局单例；测试可整体覆盖为新实例
@@ -378,7 +439,12 @@ void invalidateVehicleProviders(WidgetRef ref) {
   ref.invalidate(vehicleModelsProvider);
   ref.invalidate(appliedCarProvider);
   ref.invalidate(appliedCarMaintenanceItemsProvider);
+  // 保养记录 applied 派生（数据束与记录页在用）：取数口径与项目派生
+  // 同构，watch 按车 family。
   ref.invalidate(appliedCarRecordsProvider);
+  // 应用车辆数据束：上游失效会传导（它 watch 四上游），这里显式列出
+  // 与 applied 派生写法对齐，防将来 watch 行被改时数据束陈旧。
+  ref.invalidate(appliedCarBoardProvider);
   // family 整体逐出：项目 sheet 可能正看着非当前应用车辆（车辆卡入口），
   // 写库/删车/恢复备份后所有按车实例都要重查。
   ref.invalidate(maintenanceItemsForCarProvider);

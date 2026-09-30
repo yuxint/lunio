@@ -374,9 +374,10 @@ Future<bool> exportBackup(WidgetRef ref) async {
 /// 选文件（取消静默返回 false）→ 仓库解码（版本不符抛 UnsupportedError）
 /// → 协调器 runBackupRestore：升同步代数 + 置写库中间态旗 → restore
 /// 事务恢复（偏好保留，抑制键清除）→ refreshProviders 屏障重算（旗内
-/// 失效全量 provider 并等 6 个被监听 provider 全部落定，期间触发的同步
-/// 轮被入口早退丢弃；混合快照在结构上读不到，2026-09-26 真机复现残余
-/// 漏洞的修复）→ _settleDataReset 收尾（再升一次代数 + 关旗）→ 取消
+/// 失效全量 provider 并等通知同步控制器监听的 3 个数据源——通知设置 /
+/// 应用车辆数据束 / 停车倒计时——全部落定，期间触发的同步轮被入口
+/// 早退丢弃；混合快照在结构上读不到，2026-09-26 真机复现残余漏洞的
+/// 修复）→ _settleDataReset 收尾（再升一次代数 + 关旗）→ 取消
 /// 保养/里程提醒族旧数据残留通知（空备份时同步引擎不会重排，显式
 /// 取消；停车族不动——倒计时偏好保留且仍有效）→ 模板强制补判一轮
 /// （重排系统通知 + 应用内弹窗检查用最终数据）。
@@ -406,15 +407,17 @@ Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
             .restoreBackupPayload(payload),
         refreshProviders: () async {
           invalidateAllAppDataProviders(ref);
-          // 屏障：等通知同步控制器监听的 6 个 provider 全部重算落定（此刻
-          // 写库中间态旗还举着）。逐个 await、单读失败不拦收尾——provider
-          // 出错时同步控制器本来就走 null 早退，与旧行为一致。
+          // 屏障：等通知同步控制器监听的 3 个数据源（通知设置 / 应用
+          // 车辆数据束 / 停车倒计时）全部重算落定（此刻写库中间态旗还
+          // 举着）。数据束 future 落定 = 车/项目/记录/生效今天四上游
+          // 全部落定——等待名单不再手抄控制器监听清单的另一份副本，
+          // 控制器改监听数据束后这里等数据束即自然对齐（2026-10-01
+          // 随数据束收编收缩，原 6 项逐个 await）。逐个 await、单读失败
+          // 不拦收尾——provider 出错时同步控制器本来就走 null 早退，
+          // 与旧行为一致。
           final reloads = [
             ref.read(notificationSettingsProvider.future),
-            ref.read(appliedCarProvider.future),
-            ref.read(appliedCarMaintenanceItemsProvider.future),
-            ref.read(appliedCarRecordsProvider.future),
-            ref.read(effectiveTodayProvider.future),
+            ref.read(appliedCarBoardProvider.future),
             ref.read(parkingCountdownProvider.future),
           ];
           for (final reload in reloads) {

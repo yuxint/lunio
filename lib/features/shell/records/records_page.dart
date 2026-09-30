@@ -83,27 +83,23 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
   /// ValueKey 便于 diff）。
   @override
   Widget build(BuildContext context) {
-    final car = ref
-        .watch(appliedCarProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    final records = ref.watch(appliedCarRecordsProvider);
-    final items = ref
-        .watch(appliedCarMaintenanceItemsProvider)
-        .maybeWhen(
-          data: (value) => value,
-          orElse: () => const <MaintenanceItem>[],
-        );
-    // 头部"今年加油"数据源：应用车辆的加油记录。加载失败/未就绪按 0
-    // 处理（头部金额少一块不挡记录列表主功能）。
+    // 数据接缝：应用车辆数据束（providers.dart 的 appliedCarBoardProvider，
+    // 车/项目/记录/生效今天四件套一次拿齐）。任一上游未就绪整页占位
+    // （三页统一 loading/error 形态，§5.2）；不再手写逐个 watch 的
+    // AsyncValue 折叠与"生效今天未就绪兜底系统日期"的局部策略。
+    final boardAsync = ref.watch(appliedCarBoardProvider);
+    // 头部"今年加油"数据源：应用车辆的加油记录（加油域，不入数据束）。
+    // 加载失败/未就绪按 0 处理（头部金额少一块不挡记录列表主功能）。
     final fuelRecords = ref
         .watch(appliedCarFuelRecordsProvider)
         .maybeWhen(data: (value) => value, orElse: () => const <FuelRecord>[]);
-    // 三页统一 loading/error 形态（§5.2）：与提醒页同构，
-    // 记录 provider 就绪前整页占位。
-    return records.when(
+    return boardAsync.when(
       loading: () => const LoadingPage(title: '保养记录'),
       error: (error, stackTrace) => ErrorPage(title: '保养记录', error: error),
-      data: (value) {
+      data: (board) {
+        final car = board.car;
+        final items = board.items;
+        final value = board.records;
         // 筛选选中集的有效化（R21）与列表组装口径都在 record_rows.dart，
         // 这里算一次传下去（此前筛选条和列表各算一遍有效集）。
         final selections = validSelections(
@@ -119,14 +115,8 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           selections: selections,
         );
         // 头部"今年保养 + 今年加油"汇总行（任一非空就显示，整行可点
-        // 进费用统计页）。生效今天未就绪时兜底系统日期——与我的页
-        // today 取值同款模式。
-        final today = ref
-            .watch(effectiveTodayProvider)
-            .maybeWhen(
-              data: (value) => value,
-              orElse: () => LocalDate.fromDateTime(DateTime.now()),
-            );
+        // 进费用统计页）。today 来自数据束（生效今天，手动日期优先）。
+        final today = board.today;
         return LunioPage.slivers(
           title: '保养记录',
           slivers: [
@@ -965,9 +955,12 @@ Future<void> showMaintenanceRecordFormSheet(
     context: context,
     title: record == null ? '新增保养记录' : '编辑保养记录',
     load: (handle) async {
-      car = await ref.read(appliedCarProvider.future);
-      items = await ref.read(appliedCarMaintenanceItemsProvider.future);
-      today = await ref.read(effectiveTodayProvider.future);
+      // 表单是"按当前应用车辆消费数据"的典型形态：车/项目/今天经数据束
+      // 一次 read 拿齐（appliedCarBoardProvider），不再逐个 read 上游。
+      final board = await ref.read(appliedCarBoardProvider.future);
+      car = board.car;
+      items = board.items;
+      today = board.today;
       // 闭包捕获变量不做类型提升（装载数据跨闭包共享的标准写法），
       // 先落本地再判空。
       final loadedCar = car;
@@ -1044,9 +1037,9 @@ Future<void> deleteMaintenanceRecordItem(
   int itemId,
 ) async {
   final itemName = ref
-      .read(appliedCarMaintenanceItemsProvider)
+      .read(appliedCarBoardProvider)
       .maybeWhen(
-        data: (items) => itemById(items, itemId)?.name,
+        data: (board) => itemById(board.items, itemId)?.name,
         orElse: () => null,
       );
   final confirmed = await showConfirmDialog(

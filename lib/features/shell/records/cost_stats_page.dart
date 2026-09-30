@@ -80,35 +80,34 @@ class CostStatsPageData {
   final LocalDate today;
 }
 
-/// 统计页数据接缝：当前应用车辆的记录与项目清单。直接取按车 family
-/// （[recordsForCarProvider] / [maintenanceItemsForCarProvider]），复用
-/// 既有按车查询、无新 SQL；失效随家族走——写库后
+/// 统计页数据接缝：车/记录/项目/生效今天经应用车辆数据束拿齐
+/// （[appliedCarBoardProvider]，其记录与项目上游即按车 family——复用
+/// 既有按车查询、无新 SQL）；加油记录按域另取 [fuelRecordsForCarProvider]
+/// （ADR 0015，加油域不入数据束）。失效随家族走——写库后
 /// [invalidateVehicleProviders] 整族逐出，这里 watch 上游自动重算。
 /// 应用车辆未解析时整页在 build 门卫里 loading，本 provider 只在解析
 /// 完成后才会被 watch。
 final costStatsDataProvider = FutureProvider<CostStatsPageData>((ref) async {
-  final today = await ref.watch(effectiveTodayProvider.future);
-  final car = await ref.watch(appliedCarProvider.future);
-  if (car == null || car.id == null) {
+  final board = await ref.watch(appliedCarBoardProvider.future);
+  final car = board.car;
+  if (car?.id == null) {
     return CostStatsPageData(
       carName: null,
       records: const [],
       fuelRecords: const [],
       items: const [],
-      today: today,
+      today: board.today,
     );
   }
-  final records = await ref.watch(recordsForCarProvider(car.id!).future);
-  final items = await ref.watch(maintenanceItemsForCarProvider(car.id!).future);
   final fuelRecords = await ref.watch(
-    fuelRecordsForCarProvider(car.id!).future,
+    fuelRecordsForCarProvider(car!.id!).future,
   );
   return CostStatsPageData(
     carName: '${car.brand} ${car.model}',
-    records: records,
+    records: board.records,
     fuelRecords: fuelRecords,
-    items: items,
-    today: today,
+    items: board.items,
+    today: board.today,
   );
 });
 
@@ -158,18 +157,19 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 作用域 = 当前应用车辆：应用车辆未就绪（含其上游车辆清单 loading）
-    // 时整页 loading；任一解析失败直接错误页兜底（带返回键），不留在
-    // 加载态。应用车辆由车辆清单派生（providers.dart），一份门卫即可。
-    final appliedAsync = ref.watch(appliedCarProvider);
+    // 作用域 = 当前应用车辆：数据束（车/项目/记录/生效今天）任一上游
+    // 未就绪时整页 loading；任一解析失败直接错误页兜底（带返回键），
+    // 不留在加载态。应用车辆由车辆清单派生（providers.dart），一份门卫
+    // 即可。
+    final boardAsync = ref.watch(appliedCarBoardProvider);
     final Widget body;
-    if (appliedAsync.isLoading) {
+    if (boardAsync.isLoading) {
       body = const LoadingPage(title: '费用统计');
-    } else if (appliedAsync.hasError) {
-      // hasError 已保证 error 非 null（应用车辆与车辆清单同源失败）。
+    } else if (boardAsync.hasError) {
+      // hasError 已保证 error 非 null（数据束四上游任一失败同源兜底）。
       body = ErrorPage(
         title: '费用统计',
-        error: appliedAsync.error!,
+        error: boardAsync.error!,
         leading: _backKey(),
       );
     } else {

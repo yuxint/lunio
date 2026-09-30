@@ -2,9 +2,11 @@
 // 从 AppShell 的 build 里抽出来的独立协调器（≈ Spring 的一个 @Service，
 // 生命周期挂在主壳层 State 上）。
 //
-// 触发方式（R12 修复）：start() 对 6 个数据 provider ref.listenManual
-// （fireImmediately: true）——数据一变（或首拍）就调 syncFromProviders，
-// 不再依赖"build 里 watch + postFrame 副作用"的反模式。
+// 触发方式（R12 修复）：start() 对 3 个数据源 ref.listenManual
+// （fireImmediately: true）——应用车辆数据束（appliedCarBoardProvider，
+// 车/项目/记录/生效今天四件套）+ 通知设置 + 停车倒计时，任何一个
+// 变化（或首拍）就调 syncFromProviders，不再依赖"build 里 watch +
+// postFrame 副作用"的反模式。
 //
 // 同步策略（沿用签名比对）：
 //  - 系统通知签名 = 提醒频率 + 停车倒计时摘要 + 全量数据签名；
@@ -95,8 +97,10 @@ class NotificationSyncController {
     },
   );
 
-  /// 启动：订阅 6 个数据 provider，任何一个变化（含首拍）都触发
-  /// syncFromProviders。AppShell initState 调用。
+  /// 启动：订阅 3 个数据源（应用车辆数据束 + 通知设置 + 停车倒计时，
+  /// 2026-10-01 起车/项目/记录/生效今天四路由数据束一并触发），
+  /// 任何一个变化（含首拍）都触发 syncFromProviders。AppShell
+  /// initState 调用。
   void start() {
     _subscriptions.add(
       ref.listenManual(
@@ -106,28 +110,10 @@ class NotificationSyncController {
       ),
     );
     _subscriptions.add(
-      ref.listenManual(appliedCarProvider, (_, _) => syncFromProviders()),
+      ref.listenManual(appliedCarBoardProvider, (_, _) => syncFromProviders()),
     );
     _subscriptions.add(
-      ref.listenManual(
-        appliedCarMaintenanceItemsProvider,
-        (_, _) => syncFromProviders(),
-      ),
-    );
-    _subscriptions.add(
-      ref.listenManual(
-        appliedCarRecordsProvider,
-        (_, _) => syncFromProviders(),
-      ),
-    );
-    _subscriptions.add(
-      ref.listenManual(effectiveTodayProvider, (_, _) => syncFromProviders()),
-    );
-    _subscriptions.add(
-      ref.listenManual(
-        parkingCountdownProvider,
-        (_, _) => syncFromProviders(),
-      ),
+      ref.listenManual(parkingCountdownProvider, (_, _) => syncFromProviders()),
     );
     // 停车实时活动对账（ADR 0012）：倒计时偏好装载/变化时对一轮，兜住
     // "重启后活动丢失""到点后未切正计时"两类漂移。fireImmediately 兜住
@@ -183,10 +169,9 @@ class NotificationSyncController {
         .reconcileParkingLiveActivity();
   }
 
-  /// 同步入口：从 6 个 provider 读当前值（loading 中的当 null），
-  /// 数据就绪后按两个签名分别触发系统通知重排 / 应用内弹窗。
-  /// car/items/records/today 任一还在加载就不做同步——所以刚装 App
-  /// 或恢复备份后，等 provider 全部就绪那一拍才触发首次通知同步。
+  /// 同步入口：从 3 个数据源读当前值（数据束 + 通知设置 + 停车倒计时，
+  /// loading 中的当 null / 数据束整体未就绪即 null），数据就绪后按两个
+  /// 签名分别触发系统通知重排 / 应用内弹窗。数据束未就绪就不做同步。
   void syncFromProviders() {
     if (_disposed) {
       return;
@@ -209,24 +194,27 @@ class NotificationSyncController {
     if (settings.systemNotificationsEnabled) {
       _ensureInitialSystemNotificationPermission();
     }
-    final car = ref
-        .read(appliedCarProvider)
+    // 车/项目/记录/生效今天经应用车辆数据束一次拿齐：数据束未就绪
+    // （任一上游 loading/error）return——所以刚装 App 或恢复备份后，
+    // 等 provider 全部就绪那一拍才触发首次通知同步。
+    final board = ref
+        .read(appliedCarBoardProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
-    final items = ref
-        .read(appliedCarMaintenanceItemsProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    final records = ref
-        .read(appliedCarRecordsProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    final today = ref
-        .read(effectiveTodayProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
+    if (board == null) {
+      return;
+    }
+    // 无车短路（R1 语义保持）：删最后一辆车后不重排，旧调度由删车
+    // 模板显式取消。
+    final car = board.car;
+    if (car == null) {
+      return;
+    }
+    final items = board.items;
+    final records = board.records;
+    final today = board.today;
     final parkingCountdown = ref
         .read(parkingCountdownProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
-    if (car == null || items == null || records == null || today == null) {
-      return;
-    }
     final dataSignature = bridge.reminderNotificationDataSignature(
       car: car,
       items: items,

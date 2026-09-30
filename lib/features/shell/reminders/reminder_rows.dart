@@ -7,9 +7,10 @@
 // 通知侧经 reminder_notifications.dart 复用同一个 buildReminderRows，
 // 保证"界面看到的"和"通知里发的"来自同一次组装规则。
 //
-// reminderRowsProvider watch 当前应用车辆/项目/记录/有效今天四个上游，
-// 英雄卡与列表都消费它——rows 每次数据变化只组装一遍（此前英雄卡与
-// 列表各算一遍），空态优先级判断也只有一个出口。
+// reminderRowsProvider watch 应用车辆数据束（appliedCarBoardProvider：
+// 当前应用车辆/项目/记录/有效今天四件套），英雄卡与列表都消费它——
+// rows 每次数据变化只组装一遍（此前英雄卡与列表各算一遍），空态优先级
+// 判断也只有一个出口。
 // Java 类比：一个按上游数据自动重算的只读视图对象（Spring 的
 // @Cacheable service 方法），widget 只是它的渲染皮。
 
@@ -227,23 +228,21 @@ ReminderRowsState classifyReminderRows(ReminderRows board) {
   return ReminderRowsData(board.rows);
 }
 
-/// 提醒行 provider：watch 当前应用车辆 + 项目 + 记录 + 有效今天四个上游，
+/// 提醒行 provider：watch 应用车辆数据束（providers.dart 的
+/// [appliedCarBoardProvider]，车/项目/记录/生效今天四件套一次拿齐），
 /// 数据变化时自动重算。车辆为 null（还没建车）时给空结果——
 /// 此时页面也不会渲染英雄卡与列表，这只是让 provider 永不抛错。
 final reminderRowsProvider = FutureProvider<ReminderRows>((ref) async {
-  final car = await ref.watch(appliedCarProvider.future);
-  final items = await ref.watch(appliedCarMaintenanceItemsProvider.future);
-  final records = await ref.watch(appliedCarRecordsProvider.future);
-  final today = await ref.watch(effectiveTodayProvider.future);
+  final board = await ref.watch(appliedCarBoardProvider.future);
   return ReminderRows(
-    noRecordsYet: records.isEmpty,
-    rows: car == null
+    noRecordsYet: board.records.isEmpty,
+    rows: board.car == null
         ? const []
         : buildReminderRows(
-            car: car,
-            items: items,
-            records: records,
-            today: today,
+            car: board.car!,
+            items: board.items,
+            records: board.records,
+            today: board.today,
           ),
   );
 });

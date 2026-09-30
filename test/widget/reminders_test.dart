@@ -212,7 +212,10 @@ void main() {
           sync: car.sync,
         ),
       );
-      container.invalidate(appliedCarRecordsProvider);
+      // 失效按生产口径打在整族 family 上（invalidateVehicleProviders 同
+      // 款）：applied 记录派生 watch family，单失效派生会读到 family 的
+      // 旧缓存（2026-10-01 数据束收编后的传导语义）。
+      container.invalidate(recordsForCarProvider);
       for (var i = 0; i < 30 && notificationCalls.isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 20));
       }
@@ -233,7 +236,7 @@ void main() {
           sync: car.sync,
         ),
       );
-      container.invalidate(appliedCarRecordsProvider);
+      container.invalidate(recordsForCarProvider);
       await tester.pump(const Duration(milliseconds: 100));
 
       // 打开闸门 → 第一轮收尾 → finally 里按 pending 用最新数据重跑一轮。
@@ -721,7 +724,7 @@ void main() {
     );
     ProviderScope.containerOf(
       tester.element(find.byType(MaterialApp)),
-    ).invalidate(appliedCarRecordsProvider);
+    ).invalidate(recordsForCarProvider);
     await tester.pumpAndSettle();
 
     expect(find.textContaining('需要处理'), findsNothing);

@@ -8,9 +8,10 @@
 // 理由：快照重写是所有数据写点的统一下游，逐个函数收尾要记 14 处，
 // 监听器一处收齐，动作层零改动；冷启动首拍顺带自愈陈旧快照。
 //
-// 触发方式：start() 对 4 个数据 provider ref.listenManual
-// （fireImmediately: true），数据一变（或首拍就绪）就组装快照并经
-// 原生桥写入。loading 中的上游当"未就绪"跳过，等就绪那一拍补写。
+// 触发方式：start() 对应用车辆数据束 ref.listenManual
+// （fireImmediately: true，车/项目/记录/生效今天四件套一并触发），
+// 数据一变（或首拍就绪）就组装快照并经原生桥写入。loading 中的上游
+// 当"未就绪"跳过，等就绪那一拍补写。
 //
 // 防重复/防竞态（比通知同步简单——快照写入幂等、无弹窗无权限链）：
 //  - 相同 JSON 不重写（跨零点失效等触发不产生重复 I/O）；
@@ -47,27 +48,16 @@ class WidgetSnapshotController {
   /// 控制器是否已销毁。
   bool _disposed = false;
 
-  /// 启动：订阅 4 个数据 provider，任何一个变化（含首拍）都触发
-  /// [syncSnapshot]。AppShell initState 调用。
+  /// 启动：订阅应用车辆数据束（providers.dart 的 appliedCarBoardProvider，
+  /// 车/项目/记录/生效今天四件套，2026-10-01 起四路由它一并触发），
+  /// 任何变化（含首拍）都触发 [syncSnapshot]。AppShell initState 调用。
   void start() {
     _subscriptions.add(
       ref.listenManual(
-        appliedCarProvider,
+        appliedCarBoardProvider,
         (_, _) => syncSnapshot(),
         fireImmediately: true,
       ),
-    );
-    _subscriptions.add(
-      ref.listenManual(
-        appliedCarMaintenanceItemsProvider,
-        (_, _) => syncSnapshot(),
-      ),
-    );
-    _subscriptions.add(
-      ref.listenManual(appliedCarRecordsProvider, (_, _) => syncSnapshot()),
-    );
-    _subscriptions.add(
-      ref.listenManual(effectiveTodayProvider, (_, _) => syncSnapshot()),
     );
   }
 
@@ -81,34 +71,26 @@ class WidgetSnapshotController {
     _subscriptions.clear();
   }
 
-  /// 同步入口：4 个上游任一还在加载就跳过（等就绪那一拍的 listenManual
-  /// 再补）；数据就绪后组装快照，内容有变化才经原生桥写入。
+  /// 同步入口：数据束（车/项目/记录/生效今天四件套）未就绪就跳过
+  /// （等就绪那一拍的 listenManual 再补）；数据就绪后组装快照，
+  /// 内容有变化才经原生桥写入。
   Future<void> syncSnapshot() async {
     if (_writing || _disposed) {
       _pending = !_disposed;
       return;
     }
-    final car = ref
-        .read(appliedCarProvider)
+    final board = ref
+        .read(appliedCarBoardProvider)
         .maybeWhen(data: (value) => value, orElse: () => null);
-    final items = ref
-        .read(appliedCarMaintenanceItemsProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    final records = ref
-        .read(appliedCarRecordsProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    final today = ref
-        .read(effectiveTodayProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    if (items == null || records == null || today == null) {
+    if (board == null) {
       return;
     }
     // 车辆为 null（还没建车）是合法输入：快照按 noCar 空态组装。
     final json = buildWidgetSnapshotJson(
-      car: car,
-      items: items,
-      records: records,
-      today: today,
+      car: board.car,
+      items: board.items,
+      records: board.records,
+      today: board.today,
     );
     if (json == _lastJson) {
       return;
