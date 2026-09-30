@@ -82,7 +82,8 @@ class ProfileSettingRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  // 方向稿 A：行标题 17→15，与全 App 行标题同档
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: 5),
                   Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
                 ],
@@ -131,7 +132,7 @@ class ThemeModeSettingRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('主题模式', style: Theme.of(context).textTheme.titleMedium),
+          Text('主题模式', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 10),
           LunioSegmentedControl(
             values: const ['跟随系统', '浅色', '深色'],

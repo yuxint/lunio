@@ -127,7 +127,8 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
                   children: [
                     Text(
                       '停车倒计时',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      // 方向稿 A：标题随提醒行一起降到 titleSmall（15/w700）
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -139,10 +140,11 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+          // 方向稿 A：进度环 152→118，卡更紧凑（中心钟宽度随之收窄）
           Center(
             child: SizedBox.square(
-              dimension: 152,
+              dimension: 118,
               child: TweenAnimationBuilder<double>(
                 tween: Tween<double>(end: animatedPercent),
                 duration: const Duration(milliseconds: 250),
@@ -152,16 +154,16 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
                     alignment: Alignment.center,
                     children: [
                       CustomPaint(
-                        size: const Size.square(152),
+                        size: const Size.square(118),
                         painter: ReminderProgressRingPainter(
                           percent: percent,
                           color: color,
                           backgroundColor: tokens.surface3,
-                          strokeWidth: 10,
+                          strokeWidth: 9,
                         ),
                       ),
                       SizedBox(
-                        width: 112,
+                        width: 86,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -173,12 +175,11 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
                                     : _formatCountdownClock(
                                         progress.remainingSeconds,
                                       ),
-                                style: Theme.of(context).textTheme.titleLarge
+                                style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
                                       color: color,
-                                      // 2026-09-24 字号治理：字重阶梯定
-                                      // 400/600/700/800，取消孤例 w900。
                                       fontWeight: FontWeight.w800,
+                                      fontSize: 19,
                                     ),
                               ),
                             ),
@@ -210,7 +211,7 @@ class _ParkingCountdownCardState extends ConsumerState<ParkingCountdownCard> {
                   progress.status == ReminderStatus.danger
                       ? '${formatClock(countdown.endsAt)} 已到点'
                       : '${formatClock(countdown.endsAt)} 前离场',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -237,13 +238,14 @@ class _ParkingIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Container(
-      width: 48,
-      height: 48,
+      // 方向稿 A：入口图标 48→42，与收紧后的标题行对齐
+      width: 42,
+      height: 42,
       decoration: BoxDecoration(
         color: tokens.primarySoft,
         borderRadius: BorderRadius.circular(tokens.radiusMedium),
       ),
-      child: Icon(Icons.local_parking, color: tokens.primary),
+      child: Icon(Icons.local_parking, size: 22, color: tokens.primary),
     );
   }
 }

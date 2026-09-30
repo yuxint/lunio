@@ -272,12 +272,9 @@ void main() {
     await gotoTab(tester, '提醒');
 
     expect(find.text('保养提醒'), findsWidgets);
-    // ADR 0018 分层：超期项平铺在「需要处理」，机油 0% 正常项折叠——
-    // 点开「一切正常」行后原展示数据全部可见。
-    final foldTile = find.textContaining('一切正常');
-    expect(foldTile, findsOneWidget);
-    await tester.tap(foldTile);
-    await tester.pumpAndSettle();
+    // 2026-09-30 起去分组平铺：超期项与正常项都在同一列表里直接可见，
+    // 无「一切正常」折叠行（ADR 0018 修订）。
+    expect(find.textContaining('一切正常'), findsNothing);
     expect(find.text('机油'), findsOneWidget);
     expect(find.text('0%'), findsWidgets);
     expect(find.text('里程：距离下次约 5,000 公里'), findsOneWidget);
@@ -306,12 +303,7 @@ void main() {
     expect(find.textContaining('已超期'), findsNothing);
     expect(find.text('时间：已超 6个月'), findsWidgets);
 
-    // ADR 0018 分层：机油若在折叠的「一切正常」组里，先展开再点行。
-    final foldTile = find.textContaining('一切正常');
-    if (foldTile.evaluate().isNotEmpty) {
-      await tester.tap(foldTile.first);
-      await tester.pumpAndSettle();
-    }
+    // 2026-09-30 起去分组平铺：机油行直接在列表里，无需先展开折叠组。
     await tester.tap(find.text('机油').first);
     await tester.pumpAndSettle();
     expect(find.text('上次保养日期'), findsOneWidget);
@@ -552,7 +544,7 @@ void main() {
     },
   );
 
-  testWidgets('reminder list layers attention items and folds normal ones', (
+  testWidgets('reminder list shows all items flat without folding', (
     tester,
   ) async {
     final database = AppDatabase.inMemory();
@@ -606,17 +598,13 @@ void main() {
     await tester.pumpAndSettle();
     await gotoTab(tester, '提醒');
 
-    // 需要处理组平铺（超期机油），其余组折叠（正常空调滤芯藏起来）。
-    expect(find.text('需要处理 · 1'), findsOneWidget);
+    // 2026-09-30 起去分组平铺（ADR 0018 修订）：超期项与正常项同一列表
+    // 直接可见，无节头无折叠行。
+    expect(find.textContaining('需要处理'), findsNothing);
+    expect(find.textContaining('一切正常'), findsNothing);
     expect(find.text('机油'), findsOneWidget);
-    expect(find.text('一切正常 · 1 项'), findsOneWidget);
-    expect(find.text('空调滤芯'), findsNothing);
-
-    // 点折叠行展开其余组：正常项目行出现，且可点开详情 sheet（ADR 0018
-    // 行为同旧版——折叠只是展示分层，不改变交互）。
-    await tester.tap(find.text('一切正常 · 1 项'));
-    await tester.pumpAndSettle();
     expect(find.text('空调滤芯'), findsOneWidget);
+    // 正常项行也可直接点开详情 sheet。
     await tester.tap(find.text('空调滤芯'));
     await tester.pumpAndSettle();
     expect(find.text('上次保养日期'), findsOneWidget);
@@ -664,19 +652,18 @@ void main() {
     await tester.pumpAndSettle();
     await gotoTab(tester, '提醒');
 
-    // 无需要处理项：不出现折叠行，全部项目直接平铺（ADR 0018）。
+    // 全正常：同样平铺，无任何节头/折叠行（去分组后形态唯一）。
     expect(find.textContaining('需要处理'), findsNothing);
     expect(find.textContaining('一切正常'), findsNothing);
-    expect(find.text('全部项目'), findsOneWidget);
+    expect(find.textContaining('全部项目'), findsNothing);
     expect(find.text('机油'), findsOneWidget);
   });
 
-  testWidgets('attention group dissolves after a fresh record is saved', (
+  testWidgets('row status refreshes after a fresh record is saved', (
     tester,
   ) async {
-    // ADR 0018 Q3 行为锁定：数据永远重算（保存记录失效 provider 家族、
-    // 切页/跨天同理）。初始机油超期在「需要处理」平铺区，保存一条
-    // 新记录后立即回到「全部项目」平铺——分组完全由最新数据驱动。
+    // 去分组平铺后的数据驱动锁定：保存记录（写库 + 失效 provider）后
+    // 行状态立即重算——超期徽章翻转为正常，行始终在列表里可见。
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repos = testRepository(database);
@@ -717,12 +704,12 @@ void main() {
     await tester.pumpAndSettle();
     await gotoTab(tester, '提醒');
 
-    expect(find.text('需要处理 · 1'), findsOneWidget);
+    expect(find.textContaining('需要处理'), findsNothing);
     expect(find.text('机油'), findsOneWidget);
     expect(find.text('超期'), findsOneWidget);
 
     // 保存一条今天的记录（写库 + 失效 provider，同动作层保存后的路径）：
-    // 最新记录变为今天 → 立即回到全正常平铺。
+    // 最新记录变为今天 → 徽章立即翻转为正常，行仍在列表里。
     await repos.repository.saveMaintenanceRecord(
       defaultRecord(
         carId: carId,
@@ -738,8 +725,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('需要处理'), findsNothing);
-    expect(find.text('全部项目'), findsOneWidget);
     expect(find.text('机油'), findsOneWidget);
+    expect(find.text('正常'), findsOneWidget);
   });
 
   testWidgets('quick mileage update saves higher mileage directly', (

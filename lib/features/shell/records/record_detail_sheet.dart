@@ -257,7 +257,8 @@ class _RecordMetricTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   value,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  // 指标格数值与提醒详情 sheet 同档（15/w800），两族统一
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
                 ),

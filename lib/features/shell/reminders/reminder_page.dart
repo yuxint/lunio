@@ -168,12 +168,17 @@ class ReminderActionRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: LunioPrimaryButton(label: '新增保养记录', onPressed: onAddRecord),
+          child: LunioPrimaryButton(
+            label: '新增保养记录',
+            icon: Icons.post_add,
+            onPressed: onAddRecord,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: LunioPrimaryButton(
             label: '停车倒计时',
+            icon: Icons.timer_outlined,
             onPressed: onParkingCountdown,
           ),
         ),

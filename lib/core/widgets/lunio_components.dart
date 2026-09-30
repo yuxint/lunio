@@ -342,16 +342,13 @@ class LunioHeroCard extends StatelessWidget {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
+        // 方向稿 A：两段主色渐变（去掉向 ink 收拢的第三段），冷静工具感
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            tokens.primary,
-            tokens.primaryStrong,
-            Color.lerp(tokens.primaryStrong, tokens.ink, 0.32)!,
-          ],
+          colors: [tokens.primary, tokens.primaryStrong],
         ),
         borderRadius: BorderRadius.circular(tokens.radiusXl),
         boxShadow: [
@@ -362,81 +359,72 @@ class LunioHeroCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned(
-            right: -72,
-            top: -18,
-            child: Transform.rotate(
-              angle: -0.31,
-              child: Container(
-                width: 210,
-                height: 110,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Column(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                              ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.76),
-                              ),
-                        ),
-                      ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.76),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (actionLabel != null)
+                TextButton(
+                  onPressed: onAction,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white.withValues(alpha: 0.16),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
                     ),
                   ),
-                  if (actionLabel != null)
-                    TextButton(
-                      onPressed: onAction,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.white.withValues(alpha: 0.14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            tokens.radiusSmall,
-                          ),
-                        ),
-                      ),
-                      child: Text(actionLabel!),
+                  child: Text(actionLabel!),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 方向稿 A：指标从两个独立盒子收成一条横向指标条（白 12% 底、
+          // 竖分隔线），页面密度更紧
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(tokens.radiusMedium),
+            ),
+            child: Row(
+              children: [
+                for (final metric in metrics) ...[
+                  Expanded(child: _HeroMetric(metric: metric)),
+                  if (metric != metrics.last) ...[
+                    const SizedBox(width: 16),
+                    Container(
+                      width: 1,
+                      height: 30,
+                      color: Colors.white.withValues(alpha: 0.25),
                     ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  for (final metric in metrics) ...[
-                    Expanded(child: _HeroMetric(metric: metric)),
-                    if (metric != metrics.last) const SizedBox(width: 12),
+                    const SizedBox(width: 16),
                   ],
                 ],
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -470,61 +458,38 @@ class _HeroMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final valueStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+    final valueStyle = Theme.of(context).textTheme.titleSmall?.copyWith(
       color: Colors.white,
-      fontSize: 23,
       fontWeight: FontWeight.w800,
     );
-    return Container(
-      constraints: const BoxConstraints(minHeight: 82),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              metric.label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.white.withValues(alpha: 0.72),
-              ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 28,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child:
-                    metric.segments == null
-                        ? Text(
-                          metric.value,
-                          maxLines: 1,
-                          style: valueStyle,
-                        )
-                        : Text.rich(
-                          TextSpan(
-                            children: [
-                              for (final segment in metric.segments!)
-                                TextSpan(
-                                  text: segment.text,
-                                  style: valueStyle?.copyWith(
-                                    color: segment.color ?? Colors.white,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          maxLines: 1,
-                        ),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          metric.label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Colors.white.withValues(alpha: 0.72),
+          ),
         ),
-      ),
+        const SizedBox(height: 2),
+        if (metric.segments == null)
+          Text(metric.value, maxLines: 1, style: valueStyle)
+        else
+          Text.rich(
+            TextSpan(
+              children: [
+                for (final segment in metric.segments!)
+                  TextSpan(
+                    text: segment.text,
+                    style: valueStyle?.copyWith(
+                      color: segment.color ?? Colors.white,
+                    ),
+                  ),
+              ],
+            ),
+            maxLines: 1,
+          ),
+      ],
     );
   }
 }
@@ -668,20 +633,33 @@ class _SegmentButton extends StatelessWidget {
   }
 }
 
-/// 主按钮（FilledButton 换肤）。
+/// 主按钮（FilledButton 换肤）。icon 非空时在文案前带一枚小图标
+/// （方向稿 A：动作行「新增保养记录 / 停车倒计时」各配功能图标）。
 class LunioPrimaryButton extends StatelessWidget {
   const LunioPrimaryButton({
     super.key,
     required this.label,
     required this.onPressed,
+    this.icon,
   });
 
   final String label;
   final VoidCallback? onPressed;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(onPressed: onPressed, child: Text(label));
+    final Widget content = icon == null
+        ? Text(label)
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17),
+              const SizedBox(width: 6),
+              Text(label),
+            ],
+          );
+    return FilledButton(onPressed: onPressed, child: content);
   }
 }
 

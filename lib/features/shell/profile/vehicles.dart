@@ -76,9 +76,10 @@ class VehicleList extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       '${car.brand} ${car.model}',
+                                      // 方向稿 A：车名 17→15，与行标题同档
                                       style: Theme.of(
                                         context,
-                                      ).textTheme.titleMedium,
+                                      ).textTheme.titleSmall,
                                     ),
                                   ),
                                   if (selected)
@@ -226,7 +227,12 @@ class EmptyVehicleCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('还没有车辆', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            '还没有车辆',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 14),
           Tooltip(
             message: '新增车辆',
@@ -421,7 +427,7 @@ class SwitchCarCard extends StatelessWidget {
                   children: [
                     Text(
                       '${car.brand} ${car.model}',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 5),
                     Text(

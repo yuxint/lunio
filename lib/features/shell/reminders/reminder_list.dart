@@ -1,12 +1,10 @@
-// 提醒列表：分层清单（需要处理量规行 / 其余折叠）+ 单行卡片 +
-// 点击详情 sheet + 进度环画笔（停车倒计时仍共用）。
+// 提醒列表：全部项目平铺（横向量规行）+ 单行卡片 + 点击详情 sheet +
+// 进度环画笔（停车倒计时仍共用）。
 //
-// ADR 0018 提醒页重设计（原型稿方案 A，见
-// .scratch/design-pipeline/0929-app-redesign/）：行从进度环改横向量规
-// （保留 标题/状态徽章/百分比/剩余详情行 全部旧展示数据）；列表分
-// 「需要处理 / 其余」两层（splitReminderRows 纯函数分组），需要处理的
-// 平铺、其余默认折叠成一行「一切正常 · N 项」点开才展开；没有需要
-// 处理项时不折叠，直接平铺全部项目（此时没有要弱化的内容）。
+// 2026-09-30 用户拍板去掉 ADR 0018 的分层分组（修订见 docs/adr/0018
+// 修订节）：不再分「需要处理 / 其余」两层、没有折叠行与节头，全部项目
+// 按紧迫度直接平铺（排序仍在 buildReminderRows：状态差 → 百分比降序 →
+// sortOrder）。行形态保持量规行（标题/徽章/量规/百分比/详情行）。
 // 空态处理（按优先级）不变：加载中 → 加载失败 → 暂无保养记录 →
 // 暂无启用项目 → 正常列表；优先级判断单一出口在 classifyReminderRows。
 // 数据自取（watch reminderRowsProvider），不再由页面透传 items/records/today。
@@ -22,24 +20,13 @@ import '../../../core/widgets/lunio_components.dart';
 import '../shared/shell_shared.dart';
 import 'reminder_rows.dart';
 
-/// 提醒列表容器：自取 reminderRowsProvider，渲染 需要处理量规行 +
-/// 其余折叠行；空态/错误态同旧版。
-class ReminderList extends ConsumerStatefulWidget {
+/// 提醒列表容器：自取 reminderRowsProvider，全部项目平铺；空态/错误态
+/// 同旧版。
+class ReminderList extends ConsumerWidget {
   const ReminderList();
 
   @override
-  ConsumerState<ReminderList> createState() => _ReminderListState();
-}
-
-class _ReminderListState extends ConsumerState<ReminderList> {
-  /// 「其余（一切正常）」组是否展开。默认折叠——需要处理组为空时不走
-  /// 折叠直接平铺（此时没有要弱化的内容，全量项目本来就是主角）。
-  /// 展开态只是 UI 状态，数据变化不重置：新出现的急项由数据直接驱动
-  /// 进上方平铺区，永远不会被折叠藏住（ADR 0018 Q3）。
-  bool _restExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final board = ref.watch(reminderRowsProvider);
     return board.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -55,95 +42,17 @@ class _ReminderListState extends ConsumerState<ReminderList> {
     );
   }
 
-  /// 正常数据形态：需要处理量规行 + 其余折叠/平铺。
+  /// 正常数据形态：全部量规行平铺（无节头、无折叠），排序继承
+  /// buildReminderRows 的紧迫度排序。
   Widget _buildBoard(List<ReminderViewData> rows) {
-    final groups = splitReminderRows(rows);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (groups.attention.isNotEmpty)
-          LunioSection(
-            title: '需要处理 · ${groups.attention.length}',
-            children: [
-              for (final row in groups.attention) ...[
-                ReminderRow(row: row),
-                const SizedBox(height: 12),
-              ],
-            ],
-          ),
-        if (groups.normal.isNotEmpty)
-          groups.attention.isNotEmpty
-              ? _buildRestFold(groups.normal)
-              : Padding(
-                  padding: const EdgeInsets.only(top: 14),
-                  child: LunioSection(
-                    title: '全部项目',
-                    children: [
-                      for (final row in groups.normal) ...[
-                        ReminderRow(row: row),
-                        const SizedBox(height: 12),
-                      ],
-                    ],
-                  ),
-                ),
-      ],
-    );
-  }
-
-  /// 「其余」组折叠行：一行「一切正常 · N 项」，点开才展开量规行。
-  Widget _buildRestFold(List<ReminderViewData> rows) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LunioCard(
-            padding: EdgeInsets.zero,
-            child: InkWell(
-              onTap: () => setState(() => _restExpanded = !_restExpanded),
-              borderRadius: BorderRadius.circular(tokens.radiusLarge),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 13,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '一切正常 · ${rows.length} 项',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    AnimatedRotation(
-                      turns: _restExpanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: Icon(
-                        Icons.expand_more,
-                        size: 20,
-                        color: tokens.subtle,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (_restExpanded)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Column(
-                children: [
-                  for (final row in rows) ...[
-                    ReminderRow(row: row),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              ),
-            ),
+        for (final row in rows) ...[
+          ReminderRow(row: row),
+          const SizedBox(height: 9),
         ],
-      ),
+      ],
     );
   }
 }
@@ -169,7 +78,7 @@ class ReminderRow extends StatelessWidget {
           onTap: () => showReminderRecordDetail(context, row),
           borderRadius: BorderRadius.circular(tokens.radiusLarge),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -178,13 +87,14 @@ class ReminderRow extends StatelessWidget {
                     Expanded(
                       child: Text(
                         row.title,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        // 方向稿 A：行标题用 titleSmall（15/w700），整页更紧
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
                     ),
                     LunioStatusBadge(label: row.badge, tone: row.tone),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 9),
                 Row(
                   children: [
                     Expanded(
@@ -206,19 +116,26 @@ class ReminderRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Text(
-                      row.percentText,
-                      textAlign: TextAlign.right,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: color,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
-                          ),
+                    const SizedBox(width: 9),
+                    SizedBox(
+                      // 固定槽宽右对齐：不同位数（7% vs 102%）下量规右端
+                      // 不随百分比文字宽度抖动；40 宽容纳 3 位数 + %
+                      // 且强制单行（102% 不折行，右缘与上方徽章对齐）。
+                      width: 40,
+                      child: Text(
+                        row.percentText,
+                        maxLines: 1,
+                        softWrap: false,
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 7),
                 for (final detail in row.detailTexts) ...[
                   Text(
                     detail,
@@ -346,7 +263,9 @@ class ReminderRecordMetric extends StatelessWidget {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),

@@ -150,7 +150,10 @@ class _PriceCard extends ConsumerWidget {
               Expanded(
                 child: Text(
                   '当前油价',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  // 方向稿 A：卡头 17→15/w800
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               SmallActionButton(
@@ -257,10 +260,16 @@ class _PriceCard extends ConsumerWidget {
         const SizedBox(height: 6),
         priceLine,
         const SizedBox(height: 14),
-        // 预估下次油价块：标题字号与"当前油价"一致，数值行的
-        // 价格/单位与日期展示方式复用 _priceRow 的样式（去掉清除按钮）。
-        // 预告走生效过滤（过期按无预告，ADR 0011 修订）。
-        Text('预估下次油价', style: Theme.of(context).textTheme.titleMedium),
+        // 预估下次油价块：数值行的价格/单位与日期展示方式复用 _priceRow
+        // 的样式（去掉清除按钮）。预告走生效过滤（过期按无预告，ADR 0011
+        // 修订）。方向稿 A：块标题降为小字，与主卡头拉开层级。
+        Text(
+          '预估下次油价',
+          // 方向稿 A：块标题降为小字（与主卡头拉开层级）
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: tokens.muted,
+          ),
+        ),
         const SizedBox(height: 6),
         _buildForecastLine(
           context,
@@ -340,6 +349,7 @@ class _PriceCard extends ConsumerWidget {
             children: [
               Text(
                 priceText,
+                // 油价字号还原（用户拍板）：回到 17/w800，不升大字。
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: priceColor,
                   fontWeight: FontWeight.w800,
@@ -866,7 +876,9 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
               Expanded(
                 child: Text(
                   '加满预估',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               Tooltip(
@@ -1055,16 +1067,8 @@ class _TierRow extends StatelessWidget {
     );
     // 行高由列表的 itemExtent 统一控制（44），这里只管横向布局。
     // 列宽比例与表头 _TierHeaderRow 完全一致，保证上下对齐。
-    // 方向稿 A：基准档整行垫 primarySoft 软底（原来只有文字变主色）。
-    return Container(
-      width: double.infinity,
-      decoration: isCurrent
-          ? BoxDecoration(
-              color: tokens.primarySoft,
-              borderRadius: BorderRadius.circular(tokens.radiusSmall),
-            )
-          : null,
-      child: Row(
+    // 基准档保持文字主色高亮（用户反馈不要整行蓝色底条，已还原）。
+    return Row(
       children: [
         SizedBox(
           width: _kPercentColumnWidth,
@@ -1108,8 +1112,7 @@ class _TierRow extends StatelessWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
-        ],
-      ),
+      ],
     );
   }
 

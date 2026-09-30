@@ -344,6 +344,8 @@ Headlines are strong and compact, usually 27px on mobile pages with weight 800. 
 
 Numeric information such as mileage, percentage, cost, and dates should be visually firm. Use heavier weights for values, but keep them aligned with labels and supporting text. Avoid oversized dashboard numerals except inside compact hero metrics where immediate scanning matters.
 
+Row-level title usage (2026-10-01 audit, direction A density): list-row and setting-row titles — reminder rows, record cycle cards, setting rows, car names, switch-car cards, maintenance-item rows, parking card title — all use titleSmall 15/w700. Card headers (当前油价/加满预估/加油记录) use titleSmall 15/w800. Detail-sheet metric values (reminder and record detail tiles) use titleSmall 15/w800. Sub-lines stay bodySmall 13, small labels labelSmall 12. titleMedium 17 remains only for control-level surfaces: date-picker headers/actions, dialog titles, the fuel price and forecast numbers, and the parking countdown clock. Do not introduce per-page exceptions to this mapping.
+
 ## Layout
 
 The layout is mobile-first and organized around a single phone-width content rail; the product UI is a focused mobile surface with no tablet or desktop layout.
@@ -372,11 +374,11 @@ Use full pills only for circular progress rings, switch tracks, and small meter-
 
 ### Hero Vehicle Card
 
-The current vehicle card is the anchor of the reminder screen. It uses the current brand gradient, white text, and two compact metrics: current mileage and most urgent item. It must clearly identify the active vehicle and expose a switch action.
+The current vehicle card is the anchor of the reminder screen. It uses a two-stop brand gradient (primary → primaryStrong, no third darkening stop and no decorative rings), white text, and a single translucent metrics strip near the bottom edge: current mileage and due overview sit in one white-12% rounded band separated by a hairline divider, with 15/w800 values. The "更新里程" action is a small ghost pill (white-16% fill, fully rounded) in the top-right corner. It must clearly identify the active vehicle and expose a switch action.
 
 ### Reminder Rows
 
-The reminder list is layered (ADR 0018): items whose status is due or overdue are always expanded first under a "需要处理 · N" section, each rendered as a horizontal gauge row — rounded semantic-color fill bar with the percentage at its right, plus item title, status badge, and plain-language remaining distance or time. Normal items are folded into a single "一切正常 · N 项" row (tap to expand) whenever attention items exist; when nothing needs attention all items are laid flat under "全部项目". Rows keep supporting normal, warning, and overdue states without changing their structure, sorted high-urgency first; tapping a row opens the last-service detail sheet.
+The reminder list lays every item flat in one list (ADR 0018 revision, 2026-09-30): no "需要处理 / 其余" grouping, no fold row, no section headers — just gauge rows sorted high-urgency first (worse status, then higher percentage, then item order). Each row is a horizontal gauge — rounded semantic-color fill bar with the percentage at its right in a fixed 40px right-aligned single-line slot (so 102% never wraps and the bar's right edge never jitters), plus item title (15/w700, one type tier down from card headers), status badge, and plain-language remaining distance or time. Rows sit 9px apart. Rows keep supporting normal, warning, and overdue states without changing their structure; tapping a row opens the last-service detail sheet.
 
 ### Parking Countdown
 

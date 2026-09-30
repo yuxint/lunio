@@ -388,7 +388,8 @@ class RecordCycleCard extends StatelessWidget {
                       record.date.toString(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      // 方向稿 A：行标题 17→15，与提醒行同档
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     // 总费用 ≠ 项目费用合计：黄色警告角标（纯提示不拦截，
                     // 与详情弹窗同一判定 RecordRules.totalCostMismatch）。
@@ -407,7 +408,7 @@ class RecordCycleCard extends StatelessWidget {
                     const SizedBox(width: 10),
                     Text(
                       formatMoneyCents(record.costCents),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: tokens.primary,
                         fontWeight: FontWeight.w800,
                       ),
@@ -510,34 +511,46 @@ class RecordItemRowCard extends StatelessWidget {
           focusItemId: itemId,
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Row(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  '${record.date} · ${formatNumber(record.mileageKm)} km',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+              // 两行展示（用户反馈单行会截断长数据）：第一行日期·里程+
+              // 该项费用，第二行操作按钮靠右。
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${record.date} · ${formatNumber(record.mileageKm)} km',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    feeCents == null ? '—' : formatMoneyCents(feeCents),
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Text(
-                feeCents == null ? '—' : formatMoneyCents(feeCents),
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 10),
-              SmallActionButton(
-                label: '编辑',
-                onPressed: () => onEdit(record, itemId),
-              ),
-              const SizedBox(width: 8),
-              SmallActionButton(
-                label: '删除',
-                danger: true,
-                onPressed: () => onDelete(record, itemId),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Spacer(),
+                  SmallActionButton(
+                    label: '编辑',
+                    onPressed: () => onEdit(record, itemId),
+                  ),
+                  const SizedBox(width: 8),
+                  SmallActionButton(
+                    label: '删除',
+                    danger: true,
+                    onPressed: () => onDelete(record, itemId),
+                  ),
+                ],
               ),
             ],
           ),
@@ -837,7 +850,12 @@ class MaintenanceRecordFormState extends ConsumerState<MaintenanceRecordForm>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('确认下次提醒间隔', style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          '确认下次提醒间隔',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         const SizedBox(height: 6),
         Text(
           '间隔会存为项目默认值，下次提醒从最近一次保养记录起算。',
@@ -1138,12 +1156,19 @@ class _CostSummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: tokens.muted,
+    // 方向稿 A：汇总行字号收紧——标签 12/金额 15/w800，「费用统计」
+    // 由灰字升为主色 w700 入口字。
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: tokens.subtle,
+      fontWeight: FontWeight.w600,
     );
-    final moneyStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+    final moneyStyle = Theme.of(context).textTheme.titleSmall?.copyWith(
       color: tokens.primary,
       fontWeight: FontWeight.w800,
+    );
+    final entryStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: tokens.primary,
+      fontWeight: FontWeight.w700,
     );
     return LunioCard(
       padding: EdgeInsets.zero,
@@ -1173,13 +1198,8 @@ class _CostSummaryRow extends StatelessWidget {
                   Text(formatMoneyCents(thisYearFuelCents), style: moneyStyle),
                 ],
                 const Spacer(),
-                Text(
-                  '费用统计',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: tokens.muted,
-                  ),
-                ),
-                Icon(Icons.chevron_right, size: 18, color: tokens.subtle),
+                Text('费用统计', style: entryStyle),
+                Icon(Icons.chevron_right, size: 16, color: tokens.primary),
               ],
             ),
           ),

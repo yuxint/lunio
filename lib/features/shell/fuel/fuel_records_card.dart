@@ -76,7 +76,9 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
               Expanded(
                 child: Text(
                   '加油记录',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               SmallActionButton(

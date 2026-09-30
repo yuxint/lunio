@@ -312,7 +312,10 @@ class _FuelPredictionSettingRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('加油预测', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                  '加油预测',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                   const SizedBox(height: 5),
                   Text(
                     enabled ? '开启 · 底部显示加油入口' : '关闭',
