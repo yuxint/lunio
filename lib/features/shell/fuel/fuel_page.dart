@@ -12,7 +12,7 @@
 //      下方是"预估下次油价"块：按调价预告算出的调价后每升价 + 调价日期
 //      （见 docs/adr/0006），价格旁带涨跌箭头（红涨绿跌），预告缺失时
 //      显示占位文案；
-//   2. 加满预估卡：表头四列（当前油量/可加油量/加满价格/调价后价格），
+//   2. 加满预估卡：表头五列（档位/当前油量/可加油量/加满价格/调价后价格），
 //      全量档位列表（100%→0%，2% 一档共 51 档），窗口内可见 5 档，
 //      可上下滚动；滚动停稳后第一行所在的档位就是剩余油量（自动写库，
 //      下次进入定位到该档在第一行）；右上角返回图标滚回默认 50%。
@@ -896,7 +896,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     );
   }
 
-  /// 滚动列表：表头（当前油量/可加油量/加满价格/调价后价格）+ 定高窗口
+  /// 滚动列表：表头（档位/当前油量/可加油量/加满价格/调价后价格）+ 定高窗口
   /// + 每档定行高；滚动停稳吸附整行并落库。右侧细滚动条，滑动时淡入、
   /// 停稳淡出（2026-09-24 五轮复验反馈补齐同款样式，2026-09-26 起拇指
   /// 不再常显，与加油记录卡/费用统计图表一致），表头与行内容同步右缩
@@ -1013,7 +1013,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
   }
 }
 
-/// 单档行：档位% + 表头四列取值（当前油量/可加油量/加满价格/调价后价格）。
+/// 单档行：档位% + 表头四列取值（当前油量/可加油量/加满价格/调价后价格）。基准档整行垫 primarySoft 软底。
 /// 第一行（基准档）高亮。
 class _TierRow extends StatelessWidget {
   const _TierRow({
@@ -1055,7 +1055,16 @@ class _TierRow extends StatelessWidget {
     );
     // 行高由列表的 itemExtent 统一控制（44），这里只管横向布局。
     // 列宽比例与表头 _TierHeaderRow 完全一致，保证上下对齐。
-    return Row(
+    // 方向稿 A：基准档整行垫 primarySoft 软底（原来只有文字变主色）。
+    return Container(
+      width: double.infinity,
+      decoration: isCurrent
+          ? BoxDecoration(
+              color: tokens.primarySoft,
+              borderRadius: BorderRadius.circular(tokens.radiusSmall),
+            )
+          : null,
+      child: Row(
       children: [
         SizedBox(
           width: _kPercentColumnWidth,
@@ -1099,7 +1108,8 @@ class _TierRow extends StatelessWidget {
             fontWeight: FontWeight.w800,
           ),
         ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1120,7 +1130,7 @@ class _TierRow extends StatelessWidget {
 /// 档位%列的固定宽度（"100%"最宽，各档等宽左对齐）。
 const double _kPercentColumnWidth = 42;
 
-/// 加满预估表头：当前油量 / 可加油量 / 加满价格 / 调价后价格。
+/// 加满预估表头：档位 / 当前油量 / 可加油量 / 加满价格 / 调价后价格。
 /// 列宽比例与 [_TierRow] 完全一致。
 class _TierHeaderRow extends StatelessWidget {
   const _TierHeaderRow();
@@ -1141,7 +1151,11 @@ class _TierHeaderRow extends StatelessWidget {
 
     return Row(
       children: [
-        const SizedBox(width: _kPercentColumnWidth),
+        // 档位列与行侧同宽（_kPercentColumnWidth），左对齐补齐表头语义。
+        SizedBox(
+          width: _kPercentColumnWidth,
+          child: Text('档位', style: style),
+        ),
         cell(3, '当前油量'),
         cell(3, '可加油量'),
         cell(4, '加满价格'),

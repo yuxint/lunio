@@ -269,20 +269,39 @@ final reminderRowsProvider = FutureProvider<ReminderRows>((ref) async {
   );
 });
 
+/// 英雄卡"到期概览"的分段：一段文本 + 语义档（null = 中性色，不染）。
+/// 方向稿 A：概览里"超期 n / 到期 n"分别带语义色，扫一眼就知道车况。
+class DueOverviewSegment {
+  const DueOverviewSegment(this.text, {this.status});
+
+  final String text;
+  final ReminderStatus? status;
+}
+
+/// 英雄卡"到期概览"分段版：如 [超期1(danger), ' / '(null), 到期2(warning)]、
+/// [全部正常]、[暂无]。[dueOverviewText] 是它的纯文本投影（小组件快照
+/// 等纯文本消费方走那个）。
+List<DueOverviewSegment> dueOverviewSegments(ReminderRows board) {
+  return switch (classifyReminderRows(board)) {
+    ReminderRowsNoRecords() => [DueOverviewSegment('暂无')],
+    ReminderRowsNoEnabledItems() => [DueOverviewSegment('无项目')],
+    ReminderRowsData(:final rows) => _overviewSegmentsForRows(rows),
+  };
+}
+
 /// 英雄卡"到期概览"文案：如"超期 1 / 到期 2"、"全部正常"、"暂无"。
+/// 分段版的纯文本投影——两处永远同源，不会出现文案与颜色分叉。
 /// 只收 [ReminderRows] 纯数据——loading/error 由页面对 AsyncValue 做
 /// when 后才进来（此前本函数直接吃 AsyncValue，Riverpod 异步态泄漏进
 /// view-data 接口）。
 String dueOverviewText(ReminderRows board) {
-  return switch (classifyReminderRows(board)) {
-    ReminderRowsNoRecords() => '暂无',
-    ReminderRowsNoEnabledItems() => '无项目',
-    ReminderRowsData(:final rows) => _overviewForRows(rows),
-  };
+  return dueOverviewSegments(board).map((segment) => segment.text).join();
 }
 
-/// 有行时的概览文案：超期/到期计数，全正常给"全部正常"。
-String _overviewForRows(List<ReminderViewData> rows) {
+/// 有行时的概览分段：超期/到期计数分别染色，全正常给"全部正常"（中性）。
+List<DueOverviewSegment> _overviewSegmentsForRows(
+  List<ReminderViewData> rows,
+) {
   final overdueCount = rows
       .where((row) => row.progress.status == ReminderStatus.danger)
       .length;
@@ -290,15 +309,23 @@ String _overviewForRows(List<ReminderViewData> rows) {
       .where((row) => row.progress.status == ReminderStatus.warning)
       .length;
   if (overdueCount > 0 && dueCount > 0) {
-    return '超期 $overdueCount / 到期 $dueCount';
+    return [
+      DueOverviewSegment('超期 $overdueCount', status: ReminderStatus.danger),
+      const DueOverviewSegment(' / '),
+      DueOverviewSegment('到期 $dueCount', status: ReminderStatus.warning),
+    ];
   }
   if (overdueCount > 0) {
-    return '超期 $overdueCount';
+    return [
+      DueOverviewSegment('超期 $overdueCount', status: ReminderStatus.danger),
+    ];
   }
   if (dueCount > 0) {
-    return '到期 $dueCount';
+    return [
+      DueOverviewSegment('到期 $dueCount', status: ReminderStatus.warning),
+    ];
   }
-  return '全部正常';
+  return [const DueOverviewSegment('全部正常')];
 }
 
 // ---- 文件内私有格式化（仅本文件消费的函数不留公共面）----

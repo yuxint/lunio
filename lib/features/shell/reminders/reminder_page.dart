@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
+import '../../../domain/entities/reminder.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../profile/vehicles.dart';
 import '../records/records_page.dart';
@@ -58,6 +59,26 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
       data: (value) => value.length > 1,
       orElse: () => false,
     );
+    // 到期概览指标：就绪时按分段渲染（超期/到期各自带语义浅调），
+    // loading/error 沿用纯文本。
+    final overviewMetric = reminderRows.when(
+      loading: () => const LunioMetric(label: '到期概览', value: '计算中'),
+      error: (error, stackTrace) =>
+          const LunioMetric(label: '到期概览', value: '加载失败'),
+      data: (value) => LunioMetric(
+        label: '到期概览',
+        // 保留纯文本投影（无障碍读屏/测试查找走它），渲染用分段。
+        value: dueOverviewText(value),
+        segments: dueOverviewSegments(value)
+            .map(
+              (segment) => LunioMetricSegment(
+                segment.text,
+                color: _overviewSegmentColor(segment.status),
+              ),
+            )
+            .toList(),
+      ),
+    );
     return appliedCar.when(
       loading: () => const LoadingPage(title: '保养提醒'),
       error: (error, stackTrace) => ErrorPage(title: '保养提醒', error: error),
@@ -84,16 +105,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
                   label: '当前里程',
                   value: formatNumber(car.currentMileageKm),
                 ),
-                LunioMetric(
-                  label: '到期概览',
-                  // loading/error 由 rows provider 的 when 收口，
-                  // 英雄卡只把就绪数据交给概览文案函数（纯数据入参）。
-                  value: reminderRows.when(
-                    loading: () => '计算中',
-                    error: (error, stackTrace) => '加载失败',
-                    data: (value) => dueOverviewText(value),
-                  ),
-                ),
+                overviewMetric,
               ],
             ),
           if (car != null) ...[
@@ -120,6 +132,24 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
       ),
     );
   }
+}
+
+// ---------------- 到期概览的分段配色（方向稿 A） ----------------
+
+// 渐变底上的语义浅调：ADR 0019 的语义三色按白底调校（较深的色调），
+// 直接放到主色渐变上对比度不足。这里用同色相的浅调常量——浅色（品牌
+// 蓝）与深色（青）两套渐变上都有足够对比度；不进 LunioTokens 是因为
+// token 会按明暗主题切换，而渐变底上需要的是明暗稳定的浅色。
+const Color _kOverviewDangerTint = Color(0xFFFECACA);
+const Color _kOverviewWarningTint = Color(0xFFFDE68A);
+
+/// 概览分段 → 颜色：danger/warning 染浅调，其余（中性段）走默认白。
+Color? _overviewSegmentColor(ReminderStatus? status) {
+  return switch (status) {
+    ReminderStatus.danger => _kOverviewDangerTint,
+    ReminderStatus.warning => _kOverviewWarningTint,
+    _ => null,
+  };
 }
 
 /// 两个主操作按钮的行：新增保养记录（打开记录表单 sheet）+

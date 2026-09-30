@@ -58,6 +58,7 @@ import 'record_cost_form_controller.dart';
 import 'record_detail_sheet.dart';
 import 'record_form_controller.dart';
 import 'record_rows.dart';
+import '../../../domain/rules/record_rules.dart';
 
 /// 记录页主组件。
 class RecordsPreviewPage extends ConsumerStatefulWidget {
@@ -272,27 +273,73 @@ class RecordsPreviewPageState extends ConsumerState<RecordsPreviewPage> {
           );
         }
         // 详情弹窗自取全量记录（record_detail_sheet.dart），这里只传
-        // 筛选后的展示列表。
+        // 筛选后的展示列表。方向稿 A：按项目先归组（组头 = 项目名，
+        // 组序 = 费用合计降序），组内一行一条记录明细。
+        final groups = groupRecordItemRows(itemRows);
         return SliverList.builder(
-          itemCount: itemRows.length,
+          itemCount: groups.length,
           itemBuilder: (context, index) {
-            final row = itemRows[index];
+            final group = groups[index];
+            final tokens = Theme.of(context).extension<LunioTokens>()!;
+            final groupRows = group.rows;
             return Padding(
-              key: ValueKey('record-${row.record.id}-item-${row.itemId}'),
               padding: EdgeInsets.only(
-                bottom: index == itemRows.length - 1 ? 0 : 12,
+                bottom: index == groups.length - 1 ? 0 : 14,
               ),
-              child: RecordItemRowCard(
-                record: row.record,
-                itemId: row.itemId,
-                item: row.item,
-                onEdit: (record, itemId) => showMaintenanceRecordFormSheet(
-                  context,
-                  ref,
-                  record: record,
-                ),
-                onDelete: (record, itemId) =>
-                    deleteMaintenanceRecordItem(context, ref, record, itemId),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 6),
+                    child: Text(
+                      group.item?.name ?? '未知项目',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: tokens.subtle,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                  // LunioCard 本身不提供 Material，组内行 InkWell 的
+                  // 水波纹需要一个墨水宿主——整组共用一层透明 Material
+                  // 垫在卡片上（与按周期卡 RecordCycleCard 同一手法，
+                  // 涟漪裁成卡角）。
+                  LunioCard(
+                    padding: EdgeInsets.zero,
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(tokens.radiusLarge),
+                      child: Column(
+                        children: [
+                          for (var rowAt = 0; rowAt < groupRows.length;
+                              rowAt++)
+                            RecordItemRowCard(
+                              key: ValueKey(
+                                'record-${groupRows[rowAt].record.id}'
+                                '-item-${groupRows[rowAt].itemId}',
+                              ),
+                              record: groupRows[rowAt].record,
+                              itemId: groupRows[rowAt].itemId,
+                              isLast: rowAt == groupRows.length - 1,
+                              onEdit: (record, itemId) =>
+                                  showMaintenanceRecordFormSheet(
+                                    context,
+                                    ref,
+                                    record: record,
+                                  ),
+                              onDelete: (record, itemId) =>
+                                  deleteMaintenanceRecordItem(
+                                    context,
+                                    ref,
+                                    record,
+                                    itemId,
+                                  ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -343,6 +390,19 @@ class RecordCycleCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    // 总费用 ≠ 项目费用合计：黄色警告角标（纯提示不拦截，
+                    // 与详情弹窗同一判定 RecordRules.totalCostMismatch）。
+                    if (RecordRules.totalCostMismatch(
+                      totalCostCents: record.costCents,
+                      itemCosts: record.itemCosts,
+                    )) ...[
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 16,
+                        color: tokens.warning,
+                      ),
+                    ],
                     const Spacer(),
                     const SizedBox(width: 10),
                     Text(
@@ -399,7 +459,7 @@ class RecordCycleCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                ItemPills(labels: recordItemNameList(record, items)),
+                ItemPills(labels: recordItemPillLabels(record, items)),
               ],
             ),
           ),
@@ -409,74 +469,77 @@ class RecordCycleCard extends StatelessWidget {
   }
 }
 
-/// 按项目视图的单行卡（记录×项目展开后一行一个项目，可单独删该项）。
-/// 编辑按钮打开整条记录的表单，删除只删该记录里的这个项目。
+/// 按项目视图的单行（分组卡内的一行：日期·里程 + 项目费用 + 编辑/删除）。
+/// 项目名在分组节头上，行内不再重复；整行可点 → 该项目的费用详情
+/// （按项目视图只看这一个项目，ADR 0010）。编辑打开整条记录的表单，
+/// 删除只删该记录里的这个项目。
 class RecordItemRowCard extends StatelessWidget {
   const RecordItemRowCard({
+    super.key,
     required this.record,
     required this.itemId,
-    required this.item,
+    required this.isLast,
     required this.onEdit,
     required this.onDelete,
   });
 
   final MaintenanceRecord record;
   final int itemId;
-  final MaintenanceItem? item;
+
+  /// 是否组内最后一行（最后一行不画分隔线）。
+  final bool isLast;
   final void Function(MaintenanceRecord record, int itemId) onEdit;
   final void Function(MaintenanceRecord record, int itemId) onDelete;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 整行可点 → 该项目的费用详情（按项目视图只看这一个项目，ADR 0010）。
-    return LunioCard(
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(tokens.radiusLarge),
-        child: InkWell(
-          onTap: () => showRecordDetailSheet(
-            context,
-            record: record,
-            focusItemId: itemId,
-          ),
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item?.name ?? '未知项目',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${record.date} · ${formatNumber(record.mileageKm)} km',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    SmallActionButton(
-                      label: '编辑',
-                      onPressed: () => onEdit(record, itemId),
-                    ),
-                    const SizedBox(width: 8),
-                    SmallActionButton(
-                      label: '删除',
-                      danger: true,
-                      onPressed: () => onDelete(record, itemId),
-                    ),
-                  ],
-                ),
-              ],
+    final feeCents = recordItemCostById(record, itemId)?.costCents;
+    return Container(
+      decoration: isLast
+          ? null
+          : BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: tokens.surface2),
+              ),
             ),
+      child: InkWell(
+        onTap: () => showRecordDetailSheet(
+          context,
+          record: record,
+          focusItemId: itemId,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${record.date} · ${formatNumber(record.mileageKm)} km',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                feeCents == null ? '—' : formatMoneyCents(feeCents),
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 10),
+              SmallActionButton(
+                label: '编辑',
+                onPressed: () => onEdit(record, itemId),
+              ),
+              const SizedBox(width: 8),
+              SmallActionButton(
+                label: '删除',
+                danger: true,
+                onPressed: () => onDelete(record, itemId),
+              ),
+            ],
           ),
         ),
       ),

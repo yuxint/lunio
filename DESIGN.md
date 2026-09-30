@@ -332,6 +332,8 @@ The palette is a restrained service-tool palette that separates brand color from
 
 Fuel price trend arrow exception (red-rise/green-fall): the "预估下次油价" block uses Danger Red for a predicted rise and Status Green for a predicted fall, following the Chinese stock-market color convention users expect for prices. This is a price-direction semantic, not vehicle health — do not reuse red/green this way outside the fuel price block.
 
+On-gradient status tints (hero "到期概览"): inside the hero vehicle card the due/overdue counts carry their status hue as pale tints — #fecaca for overdue, #fde68a for due — instead of the ADR 0019 tiers. The tier colors are tuned for text on white; on the primary gradient they drop below readable contrast. The tints are theme-stable light constants (declared next to the hero usage) because the gradient itself already flips with light/dark mode. Anything outside the hero gradient keeps using the normal semantic tiers.
+
 Color usage should remain functional. Do not create multicolor decorative backgrounds. Green must not be used as a generic brand accent; reserve it for normal status so users can distinguish action from health.
 
 ## Typography

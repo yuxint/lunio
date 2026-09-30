@@ -444,12 +444,23 @@ class LunioHeroCard extends StatelessWidget {
   }
 }
 
+/// 英雄卡指标值的一个分段（一段文本 + 颜色；color 为 null 时用默认色）。
+/// 用于"到期概览"这类一个值里要区分语义色的场景（超期/到期各染各的）。
+class LunioMetricSegment {
+  const LunioMetricSegment(this.text, {this.color});
+
+  final String text;
+  final Color? color;
+}
+
 /// 英雄卡指标格的数据（label + value，如"当前里程 / 12,345"）。
+/// [valueSegments] 非空时按分段渲染（优先于 [value] 纯文本）。
 class LunioMetric {
-  const LunioMetric({required this.label, required this.value});
+  const LunioMetric({required this.label, required this.value, this.segments});
 
   final String label;
   final String value;
+  final List<LunioMetricSegment>? segments;
 }
 
 class _HeroMetric extends StatelessWidget {
@@ -459,6 +470,11 @@ class _HeroMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final valueStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+      color: Colors.white,
+      fontSize: 23,
+      fontWeight: FontWeight.w800,
+    );
     return Container(
       constraints: const BoxConstraints(minHeight: 82),
       decoration: BoxDecoration(
@@ -483,15 +499,27 @@ class _HeroMetric extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  metric.value,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                    fontSize: 23,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                child:
+                    metric.segments == null
+                        ? Text(
+                          metric.value,
+                          maxLines: 1,
+                          style: valueStyle,
+                        )
+                        : Text.rich(
+                          TextSpan(
+                            children: [
+                              for (final segment in metric.segments!)
+                                TextSpan(
+                                  text: segment.text,
+                                  style: valueStyle?.copyWith(
+                                    color: segment.color ?? Colors.white,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          maxLines: 1,
+                        ),
               ),
             ),
           ],

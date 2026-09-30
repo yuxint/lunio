@@ -190,6 +190,56 @@ void main() {
     });
   });
 
+  group('dueOverviewSegments 概览分段（方向稿 A：超期/到期分别染色）', () {
+    List<DueOverviewSegment> segments({
+      required bool noRecords,
+      required List<ReminderStatus> statuses,
+    }) => dueOverviewSegments(
+      ReminderRows(
+        noRecordsYet: noRecords,
+        rows: [for (final status in statuses) _row(status)],
+      ),
+    );
+
+    test('超期+到期：三段，两段各带语义档，分隔段中性', () {
+      final result = segments(
+        noRecords: false,
+        statuses: [
+          ReminderStatus.danger,
+          ReminderStatus.warning,
+          ReminderStatus.normal,
+        ],
+      );
+      expect(result, hasLength(3));
+      expect(result[0].text, '超期 1');
+      expect(result[0].status, ReminderStatus.danger);
+      expect(result[1].text, ' / ');
+      expect(result[1].status, isNull);
+      expect(result[2].text, '到期 1');
+      expect(result[2].status, ReminderStatus.warning);
+    });
+
+    test('纯文本投影 dueOverviewText 与分段永远同源', () {
+      final result = segments(
+        noRecords: false,
+        statuses: [ReminderStatus.danger, ReminderStatus.warning],
+      );
+      expect(result.map((segment) => segment.text).join(), '超期 1 / 到期 1');
+    });
+
+    test('全正常/空态：单段中性', () {
+      final normal = segments(
+        noRecords: false,
+        statuses: [ReminderStatus.normal],
+      );
+      expect(normal.single.text, '全部正常');
+      expect(normal.single.status, isNull);
+      final noRecords = segments(noRecords: true, statuses: const []);
+      expect(noRecords.single.text, '暂无');
+      expect(noRecords.single.status, isNull);
+    });
+  });
+
   group('splitReminderRows 分层分组（ADR 0018）', () {
     test('非 normal 进需要处理组，normal 进其余组，组内保持入参顺序', () {
       final groups = splitReminderRows([

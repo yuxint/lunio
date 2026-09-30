@@ -41,13 +41,16 @@ MaintenanceItem _item({required int id, required String name}) =>
 MaintenanceRecord _record({
   required LocalDate date,
   required List<int> itemIds,
+  int costCents = 0,
+  List<RecordItemCost> itemCosts = const [],
 }) => MaintenanceRecord(
   carId: 1,
   date: date,
   itemIds: itemIds,
-  costCents: 0,
+  costCents: costCents,
   mileageKm: 10000,
   sync: _sync,
+  itemCosts: itemCosts,
 );
 
 void main() {
@@ -123,6 +126,75 @@ void main() {
       expect(rows[0].record, r1);
       expect(rows[0].item?.name, '机滤');
       expect(rows[1].item?.name, '机油');
+    });
+
+    test('分组：一个项目一组，组内保持展开顺序（记录日期倒序）', () {
+      final rows = buildRecordItemRows(
+        records: [
+          _record(date: const LocalDate(2026, 8, 2), itemIds: [1]),
+          _record(date: const LocalDate(2026, 1, 10), itemIds: [2, 1]),
+        ],
+        items: items,
+        selectedItemIds: const {},
+      );
+      final groups = groupRecordItemRows(rows);
+      expect(groups, hasLength(2));
+      expect(groups[0].itemId, 1);
+      expect(groups[0].rows, hasLength(2));
+      // 组内顺序 = 展开顺序（记录日期倒序）：8 月在前。
+      expect(groups[0].rows[0].record.date, const LocalDate(2026, 8, 2));
+      expect(groups[0].item?.name, '机油');
+      expect(groups[1].itemId, 2);
+      expect(groups[1].rows, hasLength(1));
+    });
+
+    test('组序 = 项目费用合计降序；未填费用按 0 殿后但保持首现顺序', () {
+      final costed = _record(
+        date: const LocalDate(2026, 3, 1),
+        itemIds: [2],
+        itemCosts: const [RecordItemCost(itemId: 2, costCents: 50000)],
+      );
+      // 项目 1 两条记录各 30000 分（合计 60000）；项目 2 一条 50000、
+      // 一条未填（合计 50000）。首条记录故意先出现项目 2——首现顺序
+      // [2, 1] 与降序期望 [1, 2] 相反，删掉排序（保持首现序）断言会红。
+      final rows = buildRecordItemRows(
+        records: [
+          _record(date: const LocalDate(2026, 1, 1), itemIds: [2]),
+          _record(
+            date: const LocalDate(2026, 8, 2),
+            itemIds: [1],
+            itemCosts: const [RecordItemCost(itemId: 1, costCents: 30000)],
+          ),
+          costed,
+          _record(
+            date: const LocalDate(2026, 2, 1),
+            itemIds: [1],
+            itemCosts: const [RecordItemCost(itemId: 1, costCents: 30000)],
+          ),
+        ],
+        items: items,
+        selectedItemIds: const {},
+      );
+      final groups = groupRecordItemRows(rows);
+      // 项目 1 首现更晚但合计 60000 > 项目 2 的 50000，降序后排最前。
+      expect(groups.map((group) => group.itemId).toList(), [1, 2]);
+      expect(groups[0].feeCentsSum, 60000);
+      expect(groups[1].feeCentsSum, 50000);
+
+      // 同额（都未填费用 = 0）：保持首现顺序。小组数下 Dart 的
+      // List.sort 本就是稳定插入排序，这里锁的是行为契约；首现序号
+      // 兜底防的是大列表（≥32 走快排）时的抖动，小夹具无法直接锁它。
+      final plainRows = buildRecordItemRows(
+        records: [
+          _record(date: const LocalDate(2026, 8, 2), itemIds: [2, 1]),
+        ],
+        items: items,
+        selectedItemIds: const {},
+      );
+      expect(
+        groupRecordItemRows(plainRows).map((group) => group.itemId).toList(),
+        [2, 1],
+      );
     });
 
     test('项目选中集非空时只保留命中的行', () {

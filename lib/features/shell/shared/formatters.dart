@@ -48,14 +48,27 @@ MaintenanceItem maintenanceItemFromDefault(
   );
 }
 
-/// 记录的项目名列表（按 itemIds 顺序查名，查不到显示"未知项目"）。
-List<String> recordItemNameList(
+/// 记录里某个项目的费用行（ADR 0010）；没填过费用返回 null。
+RecordItemCost? recordItemCostById(MaintenanceRecord record, int itemId) {
+  for (final cost in record.itemCosts) {
+    if (cost.itemId == itemId) {
+      return cost;
+    }
+  }
+  return null;
+}
+
+/// 记录卡项目 pills 的标签：项目名，填了项目费用的追加" · ¥x"
+/// （方向稿 A：胶囊直接带金额，一眼看到单项花费）。
+List<String> recordItemPillLabels(
   MaintenanceRecord record,
   List<MaintenanceItem> items,
 ) {
-  return record.itemIds
-      .map((id) => itemById(items, id)?.name ?? '未知项目')
-      .toList();
+  return record.itemIds.map((id) {
+    final name = itemById(items, id)?.name ?? '未知项目';
+    final costCents = recordItemCostById(record, id)?.costCents;
+    return costCents == null ? name : '$name · ${formatMoneyCents(costCents)}';
+  }).toList();
 }
 
 /// 按 id 线性查找项目（列表小，不做索引）。

@@ -483,8 +483,9 @@ void main() {
       '280.00',
     );
     // 只提示总费用（280 ≠ 合计 230）：总费用框尾警告角标；项目费用本身
-    // 一致（230 = 150 + 80）不再加标。
-    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+    // 一致（230 = 150 + 80）不再加标。方向稿 A 后周期卡日期行也有同一
+    // 判定的角标（sheet 悬着时背后的列表仍在树上），所以是 2 个。
+    expect(find.byIcon(Icons.warning_amber_rounded), findsNWidgets(2));
     expect(
       tester.widget<TextField>(find.byType(TextField).at(1)).style?.color,
       const Color(0xffdc2626),
@@ -503,10 +504,13 @@ void main() {
     // （记录日期在生效今天所在年），共三处（sheet 打开时卡片仍在树下）。
     expect(find.text('¥280.00'), findsNWidgets(3));
     expect(find.text('项目费用'), findsOneWidget);
+    // ¥230.00 只有弹窗项目费用格一处：周期卡 pills 是"机油 · ¥230.00"
+    // 整串文本，不会被精确匹配命中。
     expect(find.text('¥230.00'), findsOneWidget);
     expect(find.textContaining('材料 ¥150.00 / 工时 ¥80.00'), findsOneWidget);
-    // 总费用与合计不一致 → 弹窗里也有黄色警告角标。
-    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+    // 总费用与合计不一致 → 周期卡日期行 + 弹窗总费用格各一个黄色角标
+    // （方向稿 A 给周期卡也加了同一判定的角标）。
+    expect(find.byIcon(Icons.warning_amber_rounded), findsNWidgets(2));
   });
 
   testWidgets('item mode card tap opens single item detail sheet', (
@@ -518,8 +522,10 @@ void main() {
     await gotoTab(tester, '记录');
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
-    // 行卡标题是"机油"，点标题触发整行 onTap → 只看该项目的详情弹窗。
-    await tester.tap(find.text('机油').last);
+    // 方向稿 A：按项目视图按项目分组（组头"机油"），行内是"日期 · km"+
+    // 费用。行级点击打开该项目的详情弹窗——点行内的费用文本（节头
+    // 只是展示，不可点）。
+    await tester.tap(find.text('¥230.00'));
     await tester.pumpAndSettle();
 
     expect(find.text('机油'), findsWidgets);
@@ -527,13 +533,14 @@ void main() {
     expect(find.text('距上次时间'), findsOneWidget);
     expect(find.text('距上次里程'), findsOneWidget);
     expect(find.text('—'), findsNWidgets(2));
-    // 项目费用拆两行：材料费/工时费一行 + 项目费用一行。
+    // 项目费用拆两行：材料费/工时费一行 + 项目费用一行。屏上 ¥230.00
+    // 有两处：分组行内的费用 + 弹窗里的项目费用格（方向稿 A 行内带金额）。
     expect(find.text('材料费'), findsOneWidget);
     expect(find.text('工时费'), findsOneWidget);
     expect(find.text('¥150.00'), findsOneWidget);
     expect(find.text('¥80.00'), findsOneWidget);
     expect(find.text('项目费用'), findsOneWidget);
-    expect(find.text('¥230.00'), findsOneWidget);
+    expect(find.text('¥230.00'), findsNWidgets(2));
     // 按项目弹窗不再展示整条记录总费用（格子和副标题都已移除）；屏上
     // 唯一的 ¥280.00 是头部"今年保养/今年加油"汇总行（记录日期在生效今天所在年）。
     expect(find.text('总费用'), findsNothing);
