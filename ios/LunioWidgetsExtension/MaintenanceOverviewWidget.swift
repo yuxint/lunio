@@ -321,8 +321,10 @@ private struct EmptyHintView: View {
 // MARK: - 语义色常量副本
 
 /// 状态键 → 语义色。色值是 DESIGN.md LunioTokens success/warning/danger
-/// 的常量副本（浅深主题同值），扩展进程读不到 Flutter 主题——照实时
-/// 活动 ADR 0012 五轮的先例。
+/// 浅色档的按值副本（ADR 0019 对比度档），扩展进程读不到 Flutter 主题
+/// ——照实时活动 ADR 0012 五轮的先例。与 Dart token 的一致性由契约测试
+/// test/core/semantic_color_contract_test.dart 逐值守卫：改任何一侧
+/// 色值，跑 flutter test 即红灯指路。
 enum LunioStatusColor {
     static func color(for status: String) -> Color {
         switch status {

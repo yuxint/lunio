@@ -187,7 +187,8 @@ private struct ParkingProgressBar: View {
 }
 
 /// 到点警示红（DESIGN.md LunioTokens danger 浅色 0xffdc2626 的按值副本，
-/// ADR 0019 对比度档；扩展进程拿不到 Flutter 主题——改 token 时两处一起改）。
+/// ADR 0019 对比度档；扩展进程拿不到 Flutter 主题——改 token 时两处一起改，
+/// 一致性由契约测试 test/core/semantic_color_contract_test.dart 逐值守卫）。
 private enum ParkingThemeColors {
   static let danger = Color(red: 0xdc / 255, green: 0x26 / 255, blue: 0x26 / 255)
 }
