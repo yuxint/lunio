@@ -91,19 +91,22 @@ class _FuelContent extends ConsumerWidget {
         predictionAsync.when(
           skipLoadingOnReload: true,
           loading: () => const LunioEmptyCard('读取中'),
-          // key 挂"车 id + 已存档位"：任一输入变化都强制重建 State 并按
-          // 最新真值重新定位。只挂 carId 不够——skipLoadingOnReload 会让
-          // 换车后的首次重载先用旧车的档位建 State（key 已是新车），真
-          // 数据到达时 key 不再变化、残留就此留下。自身保存后的 reload
-          // 传入的正是用户刚停稳的档位，重建前后滚动位置重合、无跳动。
+          // key 只挂车 id：换车 → key 变 → State 重建按新车档位定位。
+          // 档位纠偏不再走 key（2026-10-01 修复连续滚动：此前 key 挂
+          // "车id:已存档位"，每次停稳写库 provider 回读后 key 就变，
+          // 整个列表 State 连同 ScrollController 被销毁重建——用户快速
+          // 第二次拖动时手指按在旧元素上、手势随销毁解散，外层页面抢
+          // 走滚动。现改为 State 常驻，档位外部变化由 didUpdateWidget
+          // 静默重定位：与当前第一行相同（自己停稳写库的回读）不动作，
+          // 不同（换车后旧档位→真档位、恢复备份）才 jumpTo）。
           error: (error, stackTrace) => _TierListCard(
-            key: ValueKey('${car.id!}:null'),
+            key: ValueKey(car.id!),
             carId: car.id!,
             capacity: car.tankCapacityLiters,
             savedPercent: null,
           ),
           data: (prediction) => _TierListCard(
-            key: ValueKey('${car.id!}:${prediction?.fuelPercent}'),
+            key: ValueKey(car.id!),
             carId: car.id!,
             capacity: car.tankCapacityLiters,
             savedPercent: prediction?.fuelPercent,
@@ -853,6 +856,27 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     _controller = ScrollController(
       initialScrollOffset: _firstIndex * _rowExtent,
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant _TierListCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 已存档位变化（换车后旧值→真值、恢复备份、error→data）且与当前
+    // 第一行不一致时静默重定位；正在拖动/惯性滑行时不抢位置——本轮
+    // 手势停稳后会写库覆盖。自己停稳写库的回读与当前档位相同，直接
+    // 返回：State 与 ScrollController 保持存活，连续滚动手势不再被
+    // key 变化的销毁重建打断（2026-10-01 修复）。
+    if (widget.savedPercent == oldWidget.savedPercent) {
+      return;
+    }
+    final target = _indexForPercent(widget.savedPercent);
+    if (target == _firstIndex ||
+        !_controller.hasClients ||
+        _controller.position.isScrollingNotifier.value) {
+      return;
+    }
+    _controller.jumpTo(target * _rowExtent);
+    setState(() => _firstIndex = target);
   }
 
   @override

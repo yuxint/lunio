@@ -118,15 +118,16 @@ class ReminderRow extends StatelessWidget {
                     ),
                     const SizedBox(width: 9),
                     SizedBox(
-                      // 固定槽宽右对齐：不同位数（7% vs 102%）下量规右端
-                      // 不随百分比文字宽度抖动；40 宽容纳 3 位数 + %
-                      // 且强制单行（102% 不折行，右缘与上方徽章对齐）。
+                      // 与上方状态徽章同宽的固定槽（两字徽章 ≈ 40px），
+                      // 百分比在槽内居中——中心与徽章对齐（用户反馈右
+                      // 对齐时"正常"和 50% 视觉上错位）；40 宽容纳
+                      // "102%" 且强制单行不折行。
                       width: 40,
                       child: Text(
                         row.percentText,
                         maxLines: 1,
                         softWrap: false,
-                        textAlign: TextAlign.right,
+                        textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: color,
                           fontWeight: FontWeight.w800,

@@ -83,61 +83,9 @@ List<RecordItemRow> buildRecordItemRows({
   return rows;
 }
 
-/// 按项目视图的分组：一个项目一组（组头 = 项目名，行 = 该项目在各条
-/// 记录里的明细）。方向稿 A 的展示模型——先按项目归堆，组内按记录
-/// 日期倒序（继承展开顺序），组间按项目费用合计降序。
-class RecordItemGroup {
-  const RecordItemGroup({
-    required this.itemId,
-    required this.item,
-    required this.rows,
-  });
-
-  final int itemId;
-  final MaintenanceItem? item;
-  final List<RecordItemRow> rows;
-
-  /// 组内项目费用合计（未填按 0；与费用统计"项目计费值"口径一致）。
-  int get feeCentsSum => rows.fold(
-    0,
-    (sum, row) =>
-        sum +
-        (recordItemCostById(row.record, row.itemId)?.costCents ?? 0),
-  );
-}
-
-/// 把展开行归组。组序 = 费用合计降序；费用相同的组保持首次出现顺序
-/// （Dart 的 List.sort 不稳定，用首现序号兜底，避免同额组顺序抖动）。
-List<RecordItemGroup> groupRecordItemRows(List<RecordItemRow> rows) {
-  final ordered = <RecordItemGroup>[];
-  final byItemId = <int, RecordItemGroup>{};
-  for (final row in rows) {
-    final group = byItemId[row.itemId];
-    if (group == null) {
-      final newGroup = RecordItemGroup(
-        itemId: row.itemId,
-        item: row.item,
-        rows: [row],
-      );
-      byItemId[row.itemId] = newGroup;
-      ordered.add(newGroup);
-    } else {
-      group.rows.add(row);
-    }
-  }
-  final firstSeenIndex = <int, int>{
-    for (var index = 0; index < ordered.length; index++)
-      ordered[index].itemId: index,
-  };
-  ordered.sort((left, right) {
-    final delta = right.feeCentsSum - left.feeCentsSum;
-    if (delta != 0) {
-      return delta;
-    }
-    return firstSeenIndex[left.itemId]! - firstSeenIndex[right.itemId]!;
-  });
-  return ordered;
-}
+// 2026-10-01 按项目视图的分组模型（RecordItemGroup/groupRecordItemRows）
+// 已随分组块形态回退删除——用户拍板按项目回到与按周期同族的独立卡片
+// （一行一卡），不再归组。
 
 /// 把"已选值集合"映射成 FilterBar 的选中下标集合
 /// （第 0 格是"全部"，没选中任何值时高亮第 0 格）。

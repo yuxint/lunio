@@ -522,10 +522,9 @@ void main() {
     await gotoTab(tester, '记录');
     await tester.tap(find.text('按项目'));
     await tester.pumpAndSettle();
-    // 方向稿 A：按项目视图按项目分组（组头"机油"），行内是"日期 · km"+
-    // 费用。行级点击打开该项目的详情弹窗——点行内的费用文本（节头
-    // 只是展示，不可点）。
-    await tester.tap(find.text('¥230.00'));
+    // 按项目一行一卡（2026-10-01 回退掉分组块）：行卡标题是"机油"，
+    // 点标题触发整行 onTap → 只看该项目的详情弹窗。
+    await tester.tap(find.text('机油').last);
     await tester.pumpAndSettle();
 
     expect(find.text('机油'), findsWidgets);
@@ -533,14 +532,13 @@ void main() {
     expect(find.text('距上次时间'), findsOneWidget);
     expect(find.text('距上次里程'), findsOneWidget);
     expect(find.text('—'), findsNWidgets(2));
-    // 项目费用拆两行：材料费/工时费一行 + 项目费用一行。屏上 ¥230.00
-    // 有两处：分组行内的费用 + 弹窗里的项目费用格（方向稿 A 行内带金额）。
+    // 项目费用拆两行：材料费/工时费一行 + 项目费用一行。
     expect(find.text('材料费'), findsOneWidget);
     expect(find.text('工时费'), findsOneWidget);
     expect(find.text('¥150.00'), findsOneWidget);
     expect(find.text('¥80.00'), findsOneWidget);
     expect(find.text('项目费用'), findsOneWidget);
-    expect(find.text('¥230.00'), findsNWidgets(2));
+    expect(find.text('¥230.00'), findsOneWidget);
     // 按项目弹窗不再展示整条记录总费用（格子和副标题都已移除）；屏上
     // 唯一的 ¥280.00 是头部"今年保养/今年加油"汇总行（记录日期在生效今天所在年）。
     expect(find.text('总费用'), findsNothing);

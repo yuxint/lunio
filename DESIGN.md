@@ -378,7 +378,7 @@ The current vehicle card is the anchor of the reminder screen. It uses a two-sto
 
 ### Reminder Rows
 
-The reminder list lays every item flat in one list (ADR 0018 revision, 2026-09-30): no "需要处理 / 其余" grouping, no fold row, no section headers — just gauge rows sorted high-urgency first (worse status, then higher percentage, then item order). Each row is a horizontal gauge — rounded semantic-color fill bar with the percentage at its right in a fixed 40px right-aligned single-line slot (so 102% never wraps and the bar's right edge never jitters), plus item title (15/w700, one type tier down from card headers), status badge, and plain-language remaining distance or time. Rows sit 9px apart. Rows keep supporting normal, warning, and overdue states without changing their structure; tapping a row opens the last-service detail sheet.
+The reminder list lays every item flat in one list (ADR 0018 revision, 2026-09-30): no "需要处理 / 其余" grouping, no fold row, no section headers — just gauge rows sorted high-urgency first (worse status, then higher percentage, then item order). Each row is a horizontal gauge — rounded semantic-color fill bar with the percentage at its right in a fixed 40px single-line slot centered under the status badge above (badge and percentage share the same ~40px column so their centers align and 102% never wraps), plus item title (15/w700, one type tier down from card headers), status badge, and plain-language remaining distance or time. Rows sit 9px apart. Rows keep supporting normal, warning, and overdue states without changing their structure; tapping a row opens the last-service detail sheet.
 
 ### Parking Countdown
 
