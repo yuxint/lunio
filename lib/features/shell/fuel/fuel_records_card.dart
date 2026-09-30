@@ -17,7 +17,10 @@
 // 表单（记一笔/编辑共用一个 sheet）：日期（上路日期起、**上限今天**，
 // 不能未来）+ 油品（一行胶囊，默认 92#）+ 单价（与油价卡油品一致时
 // 预填生效价，可改）+ 应付金额（必填）→ 箭头 → 实付金额（选填，点
-// 箭头一键回填应付）。装载/守卫/pop/toast 时序归表单运行时
+// 箭头一键回填应付）。表单决策体（字段态、回填优先级、预填一次性
+// 语义、快捷回填守卫、校验与提交载荷构造）在
+// fuel_record_form_controller.dart 的 plain-Dart 控制器（单测镜像），
+// 本文件只留渲染与事件转发。装载/守卫/pop/toast 时序归表单运行时
 // showLunioFormSheet（ADR 0016）；保存/删除走动作层 saveFuelRecord /
 // removeFuelRecord（ADR 0007）；删除只在编辑态出现，确认框在 sheet
 // 入口函数弹。加油记录没有"同日查重"（同车同日多箱合法，ADR 0014）。
@@ -33,9 +36,9 @@ import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/entities/fuel_record.dart';
-import '../../../domain/entities/sync_metadata.dart';
 import '../shared/shell_shared.dart';
 import 'fuel_prices.dart';
+import 'fuel_record_form_controller.dart';
 
 /// 加油记录卡（加油页第三张卡）。
 class FuelRecordsCard extends ConsumerStatefulWidget {
@@ -336,7 +339,11 @@ Future<void> showFuelRecordFormSheet(
 /// 加油记录表单（新增/编辑共用）：日期（上路日期起、上限今天）+ 油品
 /// 一行胶囊（默认 92#）+ 单价（预填生效价，可改）+ 应付金额（必填）
 /// → 箭头 → 实付金额（选填，点箭头一键回填应付）。编辑态底部多一个
-/// 删除按钮（确认框在 sheet 入口函数里弹）。
+/// 删除按钮（确认框在 sheet 入口函数里弹）。表单决策体（字段态、回填
+/// 优先级、预填一次性语义、快捷回填守卫、校验与提交载荷构造）收在
+/// FuelRecordFormController（fuel_record_form_controller.dart，同
+/// RecordFormController 先例），本 widget 只渲染字段、注入日期选择器
+/// 实现并转发事件。
 class FuelRecordForm extends StatefulWidget implements FormSheetHandleWidget {
   const FuelRecordForm({
     required this.car,
@@ -375,68 +382,68 @@ class FuelRecordForm extends StatefulWidget implements FormSheetHandleWidget {
 
 class _FuelRecordFormState extends State<FuelRecordForm>
     with FormSheetHandleHost<FuelRecordForm> {
-  late LocalDate recordDate;
-  late FuelGrade grade;
-  late final TextEditingController unitPriceController;
-  late final TextEditingController payableController;
-  late final TextEditingController actualController;
+  // ---- 提交运行时（ADR 0016）：本 State 只做渲染与事件转发，错误文案
+  // 经把手显示（宿主监听重建），控制器的报错经注入闭包落到把手。
+
+  /// 表单决策体（fuel_record_form_controller.dart）：字段态、回填优先级、
+  /// 快捷回填守卫、校验与提交载荷构造都在里面，本 State 持有生命周期
+  /// 并转发事件（同 MaintenanceRecordFormState 接法）。
+  late final FuelRecordFormController form;
 
   bool get isEditing => widget.record != null;
 
   @override
   void initState() {
     super.initState();
-    final record = widget.record;
-    recordDate = record?.date ?? widget.today;
-    grade = record?.grade ?? FuelGrade.gasoline92;
-    // 单价回填优先级：编辑态记录值 > 预填生效价 > 空。toStringAsFixed(2)
-    // 与数字键盘两位小数上限一致（8.1 → "8.10"）。
-    unitPriceController = TextEditingController(
-      text: record != null
-          ? formatMoneyText(record.unitPriceCents)
-          : widget.prefillUnitPrice?.toStringAsFixed(2) ?? '',
-    );
-    payableController = TextEditingController(
-      text: record == null ? '' : formatMoneyText(record.payableCents),
-    );
-    // 实付没填（null）回填空串，保留"选填"语义。
-    final existingActual = record?.actualCents;
-    actualController = TextEditingController(
-      text: existingActual == null ? '' : formatMoneyText(existingActual),
+    form = FuelRecordFormController(
+      car: widget.car,
+      today: widget.today,
+      record: widget.record,
+      prefillUnitPrice: widget.prefillUnitPrice,
+      ui: FuelRecordFormUi(
+        // 生命周期守卫在注入闭包里（widget 的 mounted 是唯一可信的
+        // 生命周期真值）：选择器 await 期间表单可能已被卸载，未挂载按
+        // 取消（null）返回，不再碰 context。
+        pickDate: (initial, first, last) async {
+          if (!mounted) {
+            return null;
+          }
+          return showSimpleDatePicker(
+            context,
+            initialDate: initial,
+            firstDate: first,
+            lastDate: last,
+            today: widget.today,
+          );
+        },
+      ),
+      reportError: (text) {
+        if (mounted) {
+          setFormError(text);
+        }
+      },
     );
   }
 
   @override
   void dispose() {
-    unitPriceController.dispose();
-    payableController.dispose();
-    actualController.dispose();
+    form.dispose();
     super.dispose();
   }
 
-  /// 点中间箭头：把应付金额一键回填进实付（应付没填/非法时不动）。
+  /// 点中间箭头：控制器守卫 + 回填，这里只负责重建。
   void _copyPayableToActual() {
-    final text = payableController.text;
-    if (text.isEmpty || double.tryParse(text) == null) {
-      return;
-    }
-    setState(() => actualController.text = text);
+    form.copyPayableToActual();
+    setState(() {});
   }
 
-  /// 选加油日期：上路日期起、**上限今天**（不能未来，2026-09-22 拍板，
-  /// 与保养记录同规则）。没有同日查重——同车同日多箱合法（ADR 0014）。
+  /// 选加油日期：控制器弹注入的选择器并落新日期（边界判定在控制器），
+  /// 这里只负责重建日期行。
   Future<void> _pickDate() async {
-    final picked = await showSimpleDatePicker(
-      context,
-      initialDate: recordDate,
-      firstDate: widget.car.roadDate,
-      lastDate: widget.today,
-      today: widget.today,
-    );
-    if (picked == null || !mounted) {
-      return;
+    await form.pickRecordDate();
+    if (mounted) {
+      setState(() {});
     }
-    setState(() => recordDate = picked);
   }
 
   @override
@@ -447,7 +454,7 @@ class _FuelRecordFormState extends State<FuelRecordForm>
       children: [
         LunioPickerTile(
           label: '加油日期',
-          value: formatDateForUser(recordDate),
+          value: formatDateForUser(form.recordDate),
           enabled: !saving,
           onTap: _pickDate,
         ),
@@ -464,9 +471,9 @@ class _FuelRecordFormState extends State<FuelRecordForm>
                   for (final option in FuelGrade.values) ...[
                     _GradeChip(
                       grade: option,
-                      selected: option == grade,
+                      selected: option == form.grade,
                       enabled: !saving,
-                      onTap: () => setState(() => grade = option),
+                      onTap: () => setState(() => form.setGrade(option)),
                     ),
                     if (option != FuelGrade.values.last)
                       const SizedBox(width: 8),
@@ -478,7 +485,7 @@ class _FuelRecordFormState extends State<FuelRecordForm>
         ),
         const SizedBox(height: 10),
         LunioNumberField(
-          controller: unitPriceController,
+          controller: form.unitPriceController,
           enabled: !saving,
           labelText: '单价',
           suffixText: '元/升',
@@ -492,7 +499,7 @@ class _FuelRecordFormState extends State<FuelRecordForm>
           children: [
             Expanded(
               child: LunioNumberField(
-                controller: payableController,
+                controller: form.payableController,
                 enabled: !saving,
                 labelText: '应付金额',
                 suffixText: '元',
@@ -506,7 +513,7 @@ class _FuelRecordFormState extends State<FuelRecordForm>
             ),
             Expanded(
               child: LunioNumberField(
-                controller: actualController,
+                controller: form.actualController,
                 enabled: !saving,
                 labelText: '实付（选填）',
                 suffixText: '元',
@@ -540,40 +547,13 @@ class _FuelRecordFormState extends State<FuelRecordForm>
     );
   }
 
-  /// 校验 + 构造实体 + 提交：单价 > 0、应付 > 0、实付可空但填了必须
-  /// 非负（与实体 validate 同口径，提前给中文行内错误）。金额/单价
-  /// 元→分四舍五入；容积由实体按 应付÷单价 自算。
+  /// 提交：控制器校验并构造载荷（失败已报行内错误、留场），非 null 交给
+  /// 表单运行时的提交生命周期（ADR 0016）→ 动作层写库（ADR 0007）。
   Future<void> _submit() async {
-    final unitPrice = double.tryParse(unitPriceController.text);
-    final payable = double.tryParse(payableController.text);
-    final actual = actualController.text.isEmpty
-        ? null
-        : double.tryParse(actualController.text);
-    if (unitPrice == null || unitPrice <= 0) {
-      setFormError('单价必须大于 0');
+    final record = form.submitPayload();
+    if (record == null) {
       return;
     }
-    if (payable == null || payable <= 0) {
-      setFormError('应付金额必须大于 0');
-      return;
-    }
-    if (actual != null && actual < 0) {
-      setFormError('实付金额必须是非负数字');
-      return;
-    }
-    final record = FuelRecord(
-      id: widget.record?.id,
-      carId: widget.car.id!,
-      date: recordDate,
-      grade: grade,
-      unitPriceCents: (unitPrice * 100).round(),
-      payableCents: (payable * 100).round(),
-      actualCents: actual == null ? null : (actual * 100).round(),
-      sync: SyncMetadata(
-        status: isEditing ? SyncStatus.pendingUpdate : SyncStatus.pendingCreate,
-        updatedAt: DateTime.now(),
-      ),
-    );
     await widget.handle.submit(() => widget.onSubmit(record));
   }
 }
