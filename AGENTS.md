@@ -71,6 +71,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - `test/helpers/widget_app.dart`：widget 测试共享夹具（pumpApp、TestRepositories 装配/播种门面——含 insertCarForTest 裸插替身与 seedCarAndItem/saveItem 种子、通知/原生通道 mock、造数函数）与两个交互惯用语：`gotoTab`（底部导航切换=断言存在+点击+settle，「加油」tab 条件存在需先种子开关）/ `drainToastTimer`（冲 toast 定时器防 pending timer，时长经 modal_feedback 导出的 `statusOverlayVisibleDuration` 编译期绑定）。
 - `test/helpers/builders.dart`：测试数据 builder 层（defaultCar / defaultOilItem / defaultRecord / defaultFuelRecord + testSync）——四个核心实体「最小合法数据」唯一出口；默认值只取既有测试的高频事实、不发明数据，备份载荷里带 id 的行重建继续走实体构造器。
 - `docs/code-review-report.md`：代码审查未修条目台账（未修 R9/R17/R30/R36；编号沿用原 R1-R38 报告，已修历史见 git）。
+- `docs/iteration-plan.md`：迭代跟进总账（已排队事项与未排期产品方向，每条含来源与验收口径，维护规则见该文件第 2 节）——完成或新增事项时同步更新其状态。
 - `docs/operations-manual.md`：UI 操作 ↔ 代码对照手册（改流程须同步维护）。
 - `docs/migration/current-database-schema.md`：当前数据库结构事实（升级策略见 `docs/adr/0005`）。
 
@@ -122,6 +123,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 - 改动 UI 流程、数据写点、通知行为或 Provider 依赖关系时，必须同步维护 `docs/operations-manual.md` 对应章节（维护规则见该手册第 8 节）。
 - 修复 `docs/code-review-report.md` 中记录的问题后，把对应条目标记为已修复并注明日期。
+- 完成或新增 `docs/iteration-plan.md` 中的迭代事项时，同步更新该文档的状态与分组（勾选注明日期，规则见其第 2 节）。
 - 视觉/token 改动同步 `DESIGN.md`；数据库结构改动同步 `docs/migration/current-database-schema.md`；新业务词汇或架构决定同步 `CONTEXT.md`（词汇表）与 `docs/adr/`（决定记录）。
 
 ## 常用命令
