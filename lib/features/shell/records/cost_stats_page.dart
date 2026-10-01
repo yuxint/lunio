@@ -36,8 +36,10 @@
 // 进页面播一次，不做持续循环。所有随入场动画变宽/变高的条形必须包在
 // 监听 [_entrance] 的 AnimatedBuilder 里——历史上按年条漏包导致"有时
 // 不渲染、点开才出来"的 bug（动画只重建 AnimatedBuilder 子树）。
-// 聚合口径统一收在 cost_stats.dart（纯函数），本文件只负责"把当前车
-// 的数据拿到"与渲染；无车辆/无记录时给空态卡。
+// 聚合口径统一收在 cost_stats.dart（纯函数）；数据装载（数据束 + 加油
+// 派生一次拿齐、无车空表语义）2026-10-01 起收在 providers.dart 的
+// costStatsDataProvider——本页面 watch 它一处单门卫收口（loading/error
+// 随上游传导），只做组装与渲染；无车辆/无记录时给空态卡。
 // Java 类比：一个只读报表页——provider ≈ 按当前车参数化的查询服务，
 // 页面本身只做组装结果的表达。
 // ignore_for_file: use_key_in_widget_constructors
@@ -54,66 +56,11 @@ import '../../../core/date/local_date.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/fuel_record.dart';
-import '../../../domain/entities/maintenance_item.dart';
-import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
 import 'chart_scale.dart';
 import 'cost_item_history_sheet.dart';
 import 'cost_stats.dart';
 import 'fuel_cost_stats.dart';
-
-/// 统计页要用的全部数据：当前应用车辆名（null = 无车）、该车记录、
-/// 加油记录、项目清单（项目名解析用）、生效今天。
-class CostStatsPageData {
-  const CostStatsPageData({
-    required this.carName,
-    required this.records,
-    required this.fuelRecords,
-    required this.items,
-    required this.today,
-  });
-
-  /// 当前应用车辆显示名（"品牌 型号"）；null = 没有应用车辆（无车）。
-  final String? carName;
-
-  final List<MaintenanceRecord> records;
-
-  /// 当前应用车辆的加油记录（加油费用卡数据源）。
-  final List<FuelRecord> fuelRecords;
-  final List<MaintenanceItem> items;
-  final LocalDate today;
-}
-
-/// 统计页数据接缝：车/记录/项目/生效今天经应用车辆数据束拿齐
-/// （[appliedCarBoardProvider]，其记录与项目上游即按车 family——复用
-/// 既有按车查询、无新 SQL）；加油记录按域另取 [fuelRecordsForCarProvider]
-/// （ADR 0015，加油域不入数据束）。失效随家族走——写库后
-/// [invalidateVehicleProviders] 整族逐出，这里 watch 上游自动重算。
-/// 应用车辆未解析时整页在 build 门卫里 loading，本 provider 只在解析
-/// 完成后才会被 watch。
-final costStatsDataProvider = FutureProvider<CostStatsPageData>((ref) async {
-  final board = await ref.watch(appliedCarBoardProvider.future);
-  final car = board.car;
-  if (car?.id == null) {
-    return CostStatsPageData(
-      carName: null,
-      records: const [],
-      fuelRecords: const [],
-      items: const [],
-      today: board.today,
-    );
-  }
-  final fuelRecords = await ref.watch(
-    fuelRecordsForCarProvider(car!.id!).future,
-  );
-  return CostStatsPageData(
-    carName: '${car.brand} ${car.model}',
-    records: board.records,
-    fuelRecords: fuelRecords,
-    items: board.items,
-    today: board.today,
-  );
-});
 
 /// 费用统计页主组件。
 class CostStatsPage extends ConsumerStatefulWidget {
@@ -161,29 +108,17 @@ class CostStatsPageState extends ConsumerState<CostStatsPage>
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    // 作用域 = 当前应用车辆：数据束（车/项目/记录/生效今天）任一上游
-    // 未就绪时整页 loading；任一解析失败直接错误页兜底（带返回键），
-    // 不留在加载态。应用车辆由车辆清单派生（providers.dart），一份门卫
-    // 即可。
-    final boardAsync = ref.watch(appliedCarBoardProvider);
-    final Widget body;
-    if (boardAsync.isLoading) {
-      body = const LoadingPage(title: '费用统计');
-    } else if (boardAsync.hasError) {
-      // hasError 已保证 error 非 null（数据束四上游任一失败同源兜底）。
-      body = ErrorPage(
-        title: '费用统计',
-        error: boardAsync.error!,
-        leading: _backKey(),
-      );
-    } else {
-      body = ref.watch(costStatsDataProvider).when(
-            loading: () => const LoadingPage(title: '费用统计'),
-            error: (error, stackTrace) =>
-                ErrorPage(title: '费用统计', error: error, leading: _backKey()),
-            data: (data) => _buildContent(context, data),
-          );
-    }
+    // 作用域 = 当前应用车辆，单门卫收口（2026-10-01 并轨）：页面数据
+    // provider（providers.dart 的 costStatsDataProvider）watch 数据束与
+    // 加油 applied 派生两条链，任一上游未就绪/loading 时它整体 loading、
+    // 任一失败传导为 error 态——这里 when 一层收口即可，不再叠一层
+    // 数据束门卫。错误页带返回键（pushed 子页无底部导航可退）。
+    final Widget body = ref.watch(costStatsDataProvider).when(
+          loading: () => const LoadingPage(title: '费用统计'),
+          error: (error, stackTrace) =>
+              ErrorPage(title: '费用统计', error: error, leading: _backKey()),
+          data: (data) => _buildContent(context, data),
+        );
     // pushed 子页不经过 AppShell，Scaffold（页面底色）要自己提供——
     // 页内的 InkWell/chips 需要 Material 祖先，与 AppShell 同款底色。
     return Scaffold(backgroundColor: tokens.background, body: body);

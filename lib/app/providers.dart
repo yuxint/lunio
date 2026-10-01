@@ -41,6 +41,8 @@
 //   │    │                       （派生自 fuelRecordsForCarProvider）
 //   │    ├─ appliedCarBoardProvider（应用车辆数据束：上面四路的车/项目/
 //   │    │    记录/生效今天一次拿齐，按车消费的页面与控制器共用的读侧接缝）
+//   │    │    └─ costStatsDataProvider（费用统计页数据接缝：数据束 +
+//   │    │       appliedCarFuelRecordsProvider 一次拿齐，页面单门卫）
 //   │    ├─ maintenanceItemsForCarProvider（按车项目列表 family：项目 sheet / 记录表单行内新增）
 //   │    ├─ recordsForCarProvider（按车记录 family：费用统计页等按车消费者）
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
@@ -329,8 +331,9 @@ final appliedCarMaintenanceItemsProvider =
       return ref.watch(maintenanceItemsForCarProvider(car!.id!).future);
     });
 
-/// 某辆车的保养记录全量列表，按车 id 缓存的 family（无分页）。费用统计
-/// 页（作用域 = 当前应用车辆）等按车消费者共用；
+/// 某辆车的保养记录全量列表，按车 id 缓存的 family（无分页）。
+/// 应用车辆记录派生（[appliedCarRecordsProvider]，数据束与费用统计页
+/// 经它消费）等按车消费者共用；
 /// 加载、竞态、缓存、逐出由 Riverpod 接管，写库后经
 /// [invalidateVehicleProviders] 整族失效（同项目 family 的约定）。
 final recordsForCarProvider =
@@ -412,6 +415,52 @@ final appliedCarBoardProvider = FutureProvider<AppliedCarBoard>((ref) async {
   );
 });
 
+/// 费用统计页要用的全部数据（/cost-stats 一次拿齐）：当前应用车辆名
+/// （null = 无车）、该车保养记录、加油记录、项目清单（项目名解析用）、
+/// 生效今天。2026-10-01 自 cost_stats_page.dart 迁入，与数据束同款
+/// "数据类 + provider 同处"的写法。
+class CostStatsPageData {
+  const CostStatsPageData({
+    required this.carName,
+    required this.records,
+    required this.fuelRecords,
+    required this.items,
+    required this.today,
+  });
+
+  /// 当前应用车辆显示名（"品牌 型号"）；null = 没有应用车辆（无车）。
+  final String? carName;
+
+  final List<MaintenanceRecord> records;
+
+  /// 当前应用车辆的加油记录（加油费用卡数据源；无车为空表——
+  /// [appliedCarFuelRecordsProvider] 的派生规则，页面不再手抄）。
+  final List<FuelRecord> fuelRecords;
+  final List<MaintenanceItem> items;
+  final LocalDate today;
+}
+
+/// 费用统计页数据接缝：车/记录/项目/生效今天经 [appliedCarBoardProvider]
+/// 拿齐；加油记录经 [appliedCarFuelRecordsProvider] 派生（与记录页头部
+/// 汇总行、加油记录卡同一条派生链，"当前应用车辆解析 + 无车空表"语义
+/// 只有那一份）。就绪语义随上游传导：数据束任一上游 loading/error →
+/// 本 provider 同态 loading/error——费用统计页 watch 这一个 provider
+/// 单门卫收口即可（2026-10-01 并轨，此前页面文件里双层门卫 + 手抄
+/// 无车分支）。失效随家族走——写库后 [invalidateVehicleProviders] 整族
+/// 逐出，这里 watch 上游自动重算。
+final costStatsDataProvider = FutureProvider<CostStatsPageData>((ref) async {
+  final board = await ref.watch(appliedCarBoardProvider.future);
+  final fuelRecords = await ref.watch(appliedCarFuelRecordsProvider.future);
+  final car = board.car;
+  return CostStatsPageData(
+    carName: car == null ? null : '${car.brand} ${car.model}',
+    records: board.records,
+    fuelRecords: fuelRecords,
+    items: board.items,
+    today: board.today,
+  );
+});
+
 /// 通知服务：生产装配为全局单例；测试可整体覆盖为新实例
 /// （服务是普通可实例化类，实例间不共享状态）。
 final lunioNotificationServiceProvider = Provider<LunioNotificationService>((
@@ -445,6 +494,9 @@ void invalidateVehicleProviders(WidgetRef ref) {
   // 应用车辆数据束：上游失效会传导（它 watch 四上游），这里显式列出
   // 与 applied 派生写法对齐，防将来 watch 行被改时数据束陈旧。
   ref.invalidate(appliedCarBoardProvider);
+  // 费用统计页数据接缝：纯派生（watch 数据束与加油 applied 派生），上游
+  // 失效会传导；显式列出与数据束的防御写法对齐（防 watch 行被改时陈旧）。
+  ref.invalidate(costStatsDataProvider);
   // family 整体逐出：项目 sheet 可能正看着非当前应用车辆（车辆卡入口），
   // 写库/删车/恢复备份后所有按车实例都要重查。
   ref.invalidate(maintenanceItemsForCarProvider);

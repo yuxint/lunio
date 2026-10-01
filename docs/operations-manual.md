@@ -87,13 +87,15 @@ appDatabaseProvider(:215)
   │                             （另挂加油仓库 family :185，ADR 0014）
   ├─→ appliedCarBoardProvider（应用车辆数据束：车辆/项目/记录/生效今天
   │     四上游一次拿齐，提醒行/记录页/统计页/两同步控制器/恢复屏障共用）
+  │     └─→ costStatsDataProvider（费用统计页数据接缝：数据束 +
+  │           appliedCarFuelRecordsProvider 一次拿齐，页面单门卫）
   ├─→ fuelRepositoryProvider(:235)（另挂偏好门面）
   │     └─ fuel_prices.dart：手填价、油价控制器 FuelPriceController、
   │        生效链（effectiveFuelPrice/effectiveFuelForecast/predictedFuelPrice）
   ├─→ backupRepositoryProvider(:243)（另挂偏好门面）
   └─→ lunioRepositoryProvider(:252)（另挂偏好门面 + 加油仓库）
-        └─→ recordsForCarProvider(:336)（按车记录 family——费用统计页
-            作用域=当前应用车辆）
+        └─→ recordsForCarProvider(:336)（按车记录 family——应用车辆
+            记录派生等按车消费者共用，费用统计页经数据束间接消费）
 ```
 
 ---
@@ -285,7 +287,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 |---|---|---|
 | 记录页头部汇总行（**保养或加油任一非空即显示**）："今年保养 ¥x" + "今年加油 ¥y"（**两段按域各自显隐**——无加油记录不显示"今年加油"，无保养记录对称隐藏"今年保养"，不留 ¥0.00 占位） | `records_page.dart → _CostSummaryRow`（保养口径 `costCentsForYear`、加油口径 `fuelCostCentsForYear`（`fuel_cost_stats.dart`，实付优先）；加油记录 watch `appliedCarFuelRecordsProvider`，未就绪按 0；生效今天未就绪兜底系统日期） | 整行可点 → `context.push('/cost-stats')` |
 | 我的页「数据与工具」首行"费用统计 → 查看" | `profile_page.dart`（`ProfileSettingRow`，onTap `context.push`） | 进同一统计页 |
-| 统计页作用域（**永远当前应用车辆，无"全部"/切车入口**） | `cost_stats_page.dart → costStatsDataProvider`（**非 family**，车/记录/项目/生效今天经应用车辆数据束 `appliedCarBoardProvider` 拿齐；加油记录同源拉 `fuelRecordsForCarProvider` 供加油费用卡） | 数据束未就绪（含应用车辆解析中）整页 loading，解析失败走错误页兜底（带返回键）；当前车辆名在标题副字"当前车辆：XX"展示；无车 → "请先新增车辆"空态 |
+| 统计页作用域（**永远当前应用车辆，无"全部"/切车入口**） | `providers.dart → costStatsDataProvider`（2026-10-01 自 cost_stats_page.dart 迁入并并轨，**非 family**，车/记录/项目/生效今天经应用车辆数据束 `appliedCarBoardProvider` 拿齐；加油记录经 `appliedCarFuelRecordsProvider` 派生（与记录页头部汇总行同链，无车空表语义只有那一份）供加油费用卡，机制测试 `test/features/cost_stats_data_test.dart`；页面 watch 它一处**单门卫**收口——loading/error 随上游传导，页面不再叠数据束门卫） | 数据束未就绪（含应用车辆解析中）整页 loading，解析失败走错误页兜底（带返回键）；当前车辆名在标题副字"当前车辆：XX"展示；无车 → "请先新增车辆"空态 |
 | 加油费用卡（ADR 0015；`fuelRecords` 非空才渲染，**固定页面最后**，卡内无任何按年统计） | 同页 `_FuelCostCard`（无内嵌 state；逐月聚合在 `fuel_cost_stats.dart` 纯函数 `fuelMonthlyCents(records, today)` → `FuelCostMonthPoint` 全历史序列，实付优先口径；卡头数字 `buildFuelCostStats(records, today)` 含月均） | 头部一行 = "总费用"标签 + 金额（15/w800，基线对齐）+ 右侧"月均 ¥y"（= 总费用 ÷ 首条加油记录月到当月的自然月数，全程摊薄，口径同保养月均）；月份图 = 首条加油月 → 当月**全历史连续月度柱**（共用的 `_AxesColumnChart`：**纵轴固定左侧**三条刻度 + 虚线网格线，柱顶标 `formatMoneyCents` 全格式金额、0 元月灰色基线桩不标金额、轴标签"26.9"式；记录晚于生效今天（手动日期异常）时序列终点顺延不丢钱） |
 | 汇总指标行 | 同页 `_buildMetricsCard` | 保养次数（副字"今年 n 次"）/ 单次均价 / 月均（全程摊薄定值）/ 上次保养（"n 天前"，当天为"今天"），四块一行 |
 | 项目占比（**100% 堆叠条 + 紧凑明细行**）→ 点项目行 → 项目档案 sheet | 同页 `_buildProjectCard` + `_shareRow` + `_stackColor` → `cost_item_history_sheet.dart → showCostItemHistorySheet`（`buildItemHistories` 聚合，按项目名映射） | 头部一行 = "总费用"标签 + 金额（15/w800，基线对齐）+ 右侧"累计优惠 ¥x"小字（无优惠整段省略；守恒锚点：各行相加 ≡ 总费用）；**堆叠条**：一条 14dp 高的满宽条按实付降序分段（主色透明度深→浅、"其他"段灰），分段宽度 = 实付占比，入场随 `_entrance` 从左往右长出；**明细行** = 色点 | 项目名（截断）| 百分比 | 省额 | 实付——三个数值列**固定槽右对齐**（百分比 34 / 省额 52 / 实付 64，无优惠行省槽留空），百分比 = 实付 ÷ 总费用取整；行带 `cost-pct/cost-amt-<项目名>` key 供对齐断言，堆叠段带 `cost-seg-<项目名>` key；实付降序、全部项目不截断；末尾"其他"段（仅有缺口时出现）= 简洁模式费用 + 总费用超出项目合计的差额，不可下钻。档案头：次数/单次均价（累计实付÷次数）/累计计费三格 + 副字累计实付（有优惠附省额）；逐次明细日期倒序（日期、里程、实付 + 优惠小字）。费用全空的记录不进档案 |
