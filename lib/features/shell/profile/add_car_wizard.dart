@@ -5,7 +5,11 @@
 // 职责分界：
 //   - AddCarForm：第一步表单（品牌车型/动力类型/里程/上路日期/油箱容积），
 //     编辑车辆复用（品牌车型与动力类型只读），校验与提交生命周期走
-//     表单运行时把手 FormSheetHandle（ADR 0016）；
+//     表单运行时把手 FormSheetHandle（ADR 0016）；字段决策（初始态、
+//     换车型重置推荐动力类型、校验、提交载荷构造）收在
+//     car_form_controller.dart 的 plain-Dart 控制器（单测见
+//     test/features/car_form_controller_test.dart），本 State 只做渲染
+//     与事件转发；
 //   - AddCarWizard + AddCarWizardController：两步之间的草稿状态机收在
 //     plain-Dart 控制器（同键复用/换键重转/失败回退/竞态防御，模板加载
 //     经注入，单测见 test/features/add_car_wizard_controller_test.dart），
@@ -30,8 +34,8 @@ import '../../../domain/entities/powertrain_type.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/entities/vehicle_default_maintenance_item.dart';
 import '../../../domain/entities/vehicle_model.dart';
-import '../../../domain/rules/fuel_rules.dart';
 import '../shared/shell_shared.dart';
+import 'car_form_controller.dart';
 import 'maintenance_items.dart';
 import 'vehicle_model_picker.dart';
 
@@ -71,63 +75,48 @@ class AddCarForm extends StatefulWidget implements FormSheetHandleWidget {
 
 class AddCarFormState extends State<AddCarForm>
     with FormSheetHandleHost<AddCarForm> {
-  late String selectedBrand;
-  late String selectedModel;
+  // ---- 表单决策体（car_form_controller.dart）：字段态、初始态回填、
+  // 换车型重置推荐动力类型、校验与提交载荷构造都在控制器里，本 State
+  // 持有生命周期并转发事件（同 _FuelRecordFormState 接法）。
 
-  /// 选中的动力类型。选车型时重置为该车型的目录推荐值，用户可改；
-  /// 自定义车型没有推荐值，从燃油开始。
-  late PowertrainType selectedPowertrain;
-  late final TextEditingController mileageController;
-  late final TextEditingController capacityController;
-  late LocalDate roadDate;
+  /// 表单决策体控制器（2026-10-01 从本 State 收编，决策清单见其文件头）。
+  late final CarFormController form;
 
-  bool get isEditing => widget.initialCar?.id != null;
+  bool get isEditing => form.isEditing;
 
   @override
   void initState() {
     super.initState();
-    final initialCar = widget.initialCar;
-    final options = widget.vehicleModels;
-    // 新增时默认选中目录第一项（老目录时代写死的"本田 思域（燃油版）"
-    // 已随 ADR 0003 废弃）；编辑模式回显当前车。
-    selectedBrand = initialCar?.brand ?? options.first.brand;
-    selectedModel = initialCar?.model ?? _modelsForBrand(selectedBrand).first;
-    selectedPowertrain =
-        initialCar?.powertrainType ??
-        _recommendedPowertrain(selectedBrand, selectedModel);
-    mileageController = TextEditingController(
-      text: initialCar?.currentMileageKm.toString() ?? '0',
+    form = CarFormController(
+      vehicleModels: widget.vehicleModels,
+      today: widget.today,
+      initialCar: widget.initialCar,
+      ui: CarFormUi(
+        // 生命周期守卫在注入闭包里（widget 的 mounted 是唯一可信的
+        // 生命周期真值）：选择器 await 期间表单可能已被卸载，未挂载按
+        // 取消（null）返回，不再碰 context。
+        pickDate: (initial, first, last) async {
+          if (!mounted) {
+            return null;
+          }
+          return showSimpleDatePicker(
+            context,
+            initialDate: initial,
+            firstDate: first,
+            lastDate: last,
+            today: widget.today,
+          );
+        },
+      ),
+      // 校验错误的文案经把手显示（ADR 0016 错误统一在把手上）。
+      reportError: setFormError,
     );
-    capacityController = TextEditingController(
-      text: _capacityInputText(initialCar?.tankCapacityLiters),
-    );
-    roadDate = initialCar?.roadDate ?? widget.today;
   }
 
   @override
   void dispose() {
-    mileageController.dispose();
-    capacityController.dispose();
+    form.dispose();
     super.dispose();
-  }
-
-  /// 容积回填文本：整数不带小数位（55），非整数按原样（64.5、55.1234）。
-  static String _capacityInputText(double? liters) {
-    if (liters == null) {
-      return '';
-    }
-    return liters % 1 == 0 ? liters.toStringAsFixed(0) : liters.toString();
-  }
-
-  /// 目录推荐动力类型：按（品牌, 车型）查 vehicleModels；自定义车型
-  /// 不在目录里，没有推荐值，默认燃油。
-  PowertrainType _recommendedPowertrain(String brand, String model) {
-    for (final candidate in widget.vehicleModels) {
-      if (candidate.brand == brand && candidate.model == model) {
-        return candidate.template;
-      }
-    }
-    return PowertrainType.fuel;
   }
 
   @override
@@ -146,16 +135,12 @@ class AddCarFormState extends State<AddCarForm>
         else
           VehicleModelPicker(
             vehicleModels: widget.vehicleModels,
-            selectedBrand: selectedBrand,
-            selectedModel: selectedModel,
+            selectedBrand: form.selectedBrand,
+            selectedModel: form.selectedModel,
             enabled: !saving,
             onSelected: (brand, model) {
-              setState(() {
-                selectedBrand = brand;
-                selectedModel = model;
-                // 换车型时动力类型重置为该车型的推荐值（用户可再改）。
-                selectedPowertrain = _recommendedPowertrain(brand, model);
-              });
+              // 换车型：决策（重置推荐动力类型）在控制器，这里只刷新。
+              setState(() => form.selectModel(brand, model));
             },
           ),
         const SizedBox(height: 10),
@@ -169,31 +154,31 @@ class AddCarFormState extends State<AddCarForm>
           )
         else
           PowertrainPicker(
-            selected: selectedPowertrain,
+            selected: form.selectedPowertrain,
             enabled: !saving,
             onSelected: (next) => setState(() {
-              selectedPowertrain = next;
+              form.setPowertrain(next);
             }),
           ),
         const SizedBox(height: 10),
         LunioNumberField(
-          controller: mileageController,
+          controller: form.mileageController,
           enabled: !saving,
           labelText: '当前里程',
           onTap: isEditing
               ? null
-              : () => LunioNumberField.clearLeadingZero(mileageController),
+              : () => LunioNumberField.clearLeadingZero(form.mileageController),
         ),
         const SizedBox(height: 10),
         LunioPickerTile(
           label: '上路日期',
-          value: formatDateForUser(roadDate),
+          value: formatDateForUser(form.roadDate),
           enabled: !saving,
           onTap: _pickRoadDate,
         ),
         const SizedBox(height: 10),
         LunioNumberField(
-          controller: capacityController,
+          controller: form.capacityController,
           enabled: !saving,
           // 最多四位小数，整数部分至多 3 位。
           decimals: 4,
@@ -219,83 +204,27 @@ class AddCarFormState extends State<AddCarForm>
     );
   }
 
-  List<String> _modelsForBrand(String brand) {
-    return widget.vehicleModels
-        .where((model) => model.brand == brand)
-        .map((model) => model.model)
-        .toList();
-  }
-
-  /// 选上路日期：1990-01-01 ~ 生效今天+365。
+  /// 选上路日期：边界（1990-01-01 ~ 生效今天+365）与落值在控制器，
+  /// 这里只负责重建日期行。
   Future<void> _pickRoadDate() async {
-    final picked = await showSimpleDatePicker(
-      context,
-      initialDate: roadDate,
-      firstDate: const LocalDate(1990, 1, 1),
-      lastDate: LocalDate.fromDateTime(
-        widget.today.toDateTime().add(const Duration(days: 365)),
-      ),
-      today: widget.today,
-    );
-    if (picked == null || !mounted) {
-      return;
+    await form.pickRoadDate();
+    if (mounted) {
+      setState(() {});
     }
-    setState(() => roadDate = picked);
   }
 
-  /// 提交车辆草稿：里程非负校验 → 油箱容积校验（选填，1–999、
-  /// 最多四位小数，规则在 FuelRules）→ 构造 Car（编辑保留原品牌车型
-  /// 与 id）→ onSubmit → 成功不关 sheet（由外层向导控制）；
-  /// 失败表单内展示错误。
+  /// 提交车辆草稿：校验与 Car 载荷构造在控制器（失败报行内错误、
+  /// 返回 null 早退）。
   Future<void> _submit() async {
-    final mileage = int.tryParse(mileageController.text);
-    if (mileage == null || mileage < 0) {
-      setFormError('当前里程必须是非负整数');
+    final car = form.submitPayload();
+    if (car == null) {
       return;
     }
-    final capacityText = capacityController.text.trim();
-    double? tankCapacity;
-    if (capacityText.isNotEmpty) {
-      final parsed = double.tryParse(capacityText);
-      var valid = parsed != null;
-      if (valid) {
-        try {
-          FuelRules.validateTankCapacity(parsed);
-        } on ArgumentError {
-          valid = false;
-        }
-      }
-      if (!valid) {
-        setFormError('油箱容积需在 1–999 升之间，最多四位小数');
-        return;
-      }
-      tankCapacity = parsed;
-    }
-    final initialCar = widget.initialCar;
     // 提交生命周期归表单运行时（ADR 0016）：编辑 sheet 走 submit
     // （成功关场+toast），向导第一步走 run（成功推进阶段，不关场）。
-    Future<void> submitAction() => widget.onSubmit(
-      Car(
-        id: initialCar?.id,
-        brand: isEditing ? initialCar!.brand : selectedBrand,
-        model: isEditing ? initialCar!.model : selectedModel,
-        powertrainType: isEditing
-            ? initialCar!.powertrainType
-            : selectedPowertrain,
-        currentMileageKm: mileage,
-        roadDate: roadDate,
-        tankCapacityLiters: tankCapacity,
-        sync: SyncMetadata(
-          status: isEditing
-              ? SyncStatus.pendingUpdate
-              : SyncStatus.pendingCreate,
-          updatedAt: DateTime.now(),
-        ),
-      ),
-    );
     await (widget.closeOnSubmit
-        ? widget.handle.submit(submitAction)
-        : widget.handle.run(submitAction));
+        ? widget.handle.submit(() => widget.onSubmit(car))
+        : widget.handle.run(() => widget.onSubmit(car)));
   }
 }
 
