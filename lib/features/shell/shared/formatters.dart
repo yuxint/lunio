@@ -142,7 +142,10 @@ String formatKmSinceLast(int? km) {
 }
 
 /// 金额输入文本 → 分（四舍五入）。空/非法文本返回 null（= 未填）。
-/// 记录表单费用草稿（解析、算链、不一致判定）与提交清单共用。
+/// 全部表单金额字段「元文本 → 分」的唯一解析接缝（2026-10-01 收编）：
+/// 记录表单费用草稿（解析、算链、不一致判定）、保养/加油记录表单的
+/// 提交载荷、手填油价表单都走这里——四舍五入、trim、空串处理只有这
+/// 一份实现，改口径只改这一处。
 int? parseMoneyCents(String text) {
   final value = double.tryParse(text.trim());
   return value == null ? null : (value * 100).round();

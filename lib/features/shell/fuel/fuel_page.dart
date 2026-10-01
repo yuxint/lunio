@@ -775,17 +775,24 @@ class _ManualPriceFormState extends State<_ManualPriceForm>
   }
 
   Future<void> _submit() async {
-    final text = widget.controller.text.trim();
-    final price = double.tryParse(text);
-    if (text.isEmpty) {
+    final text = widget.controller.text;
+    if (text.trim().isEmpty) {
       setFormError('请输入价格');
       return;
     }
-    if (price == null || price <= 0 || price > 99.99) {
+    // 金额解析复用全表单唯一的元→分接缝 parseMoneyCents（与保养/加油
+    // 记录表单同一份实现，2026-10-01 收编）；区间校验站在分上做：
+    // 1–9999 分 ⇔ 0.01–99.99 元（输入框限 2 位整数 + 2 位小数，
+    // 可达输入两位小数，两侧边界一一对应）。
+    final cents = parseMoneyCents(text);
+    if (cents == null || cents < 1 || cents > 9999) {
       setFormError('请输入 0.01–99.99 之间的价格');
       return;
     }
-    await widget.handle.submit(() => widget.onSubmit(price));
+    // 下游契约是元（double，动作层/偏好按元存储）：分 → 元换回。
+    // IEEE 除法正确舍入，两位小数域内与直接解析文本所得 double 逐位
+    // 相同，存量偏好值不变。
+    await widget.handle.submit(() => widget.onSubmit(cents / 100));
   }
 }
 

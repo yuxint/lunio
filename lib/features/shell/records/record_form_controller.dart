@@ -34,6 +34,7 @@ import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/sync_metadata.dart';
 import '../../../domain/rules/record_rules.dart';
+import '../shared/formatters.dart';
 import 'record_cost_form_controller.dart';
 import 'record_interval_updates.dart';
 
@@ -360,17 +361,20 @@ class RecordFormController {
   }
 
   /// 第一步校验 + 构造记录草稿：里程非负整数、费用非负数字、至少选一
-  /// 个项目。费用元→分四舍五入。失败返回 null 并报行内错误文案。项目
-  /// 费用清单由费用控制器生成（全空草稿跳过；不一致是合法数据不校验，
-  /// ADR 0010）。
+  /// 个项目。费用元→分四舍五入经全表单唯一解析接缝 parseMoneyCents
+  /// （与费用算链同一份实现，2026-10-01 收编）。失败返回 null 并报行内
+  /// 错误文案。项目费用清单由费用控制器生成（全空草稿跳过；不一致是
+  /// 合法数据不校验，ADR 0010）。
   MaintenanceRecord? _buildRecordDraft() {
     final mileage = int.tryParse(mileageController.text);
-    final cost = double.tryParse(_costForm.totalController.text);
+    // 总费用一次解析到位（元→分）：校验与落库都站在分上做，不再并行
+    // 保留 double 解析；空/非法文本 → null 走"费用必须是非负数字"。
+    final costCents = parseMoneyCents(_costForm.totalController.text);
     if (mileage == null || mileage < 0) {
       reportError('保养里程必须是非负整数');
       return null;
     }
-    if (cost == null || cost < 0) {
+    if (costCents == null || costCents < 0) {
       reportError('费用必须是非负数字');
       return null;
     }
@@ -385,7 +389,7 @@ class RecordFormController {
       date: recordDate,
       itemIds: selectedItemIds.toList(),
       itemCosts: _costForm.buildItemCosts(),
-      costCents: (cost * 100).round(),
+      costCents: costCents,
       mileageKm: mileage,
       note: noteController.text.trim().isEmpty
           ? null

@@ -8,8 +8,10 @@
 //   3. "同应付"快捷回填的守卫：应付为空/非法输入时不动；
 //   4. 三条金额校验阶梯：单价 > 0、应付 > 0、实付填了必须非负
 //      （与实体 validate 同口径，提前给中文行内错误）；
-//   5. 提交载荷构造：金额元→分四舍五入、实付空 = null（选填语义）、
-//      sync 状态位按新增/编辑取 pendingCreate/pendingUpdate。
+//   5. 提交载荷构造：三个金额经全表单唯一解析接缝 parseMoneyCents
+//      元→分四舍五入（与保养记录费用算链同一份实现，2026-10-01 收编）、
+//      实付空 = null（选填语义）、sync 状态位按新增/编辑取
+//      pendingCreate/pendingUpdate。
 //
 // 在 App 中的位置：只被 fuel_records_card.dart 的 FuelRecordForm 使用。
 // ≈ Java Web 里表单页抽出来的 BackingBean（同 RecordFormController /
@@ -155,26 +157,27 @@ class FuelRecordFormController {
   }
 
   /// 「保存」的提交载荷：三条金额校验阶梯失败时报行内错误（中文文案）
-  /// 并返回 null；成功时构造 [FuelRecord]——金额/单价元→分四舍五入、
-  /// 实付空 = null（选填语义，留空存无优惠）、sync 状态位按新增/编辑取
-  /// pendingCreate/pendingUpdate、updatedAt 经注入的 now。容积由实体按
-  /// 应付÷单价自算（预留字段）。写库由 widget 经 handle.submit → 动作层
-  /// 完成，本类不碰。
+  /// 并返回 null；成功时构造 [FuelRecord]——三个金额经全表单唯一解析
+  /// 接缝 parseMoneyCents 元→分四舍五入（校验也站在分上做，与实体
+  /// validate 同口径）、实付空 = null（选填语义，留空存无优惠）、sync
+  /// 状态位按新增/编辑取 pendingCreate/pendingUpdate、updatedAt 经注入
+  /// 的 now。容积由实体按应付÷单价自算（预留字段）。写库由 widget 经
+  /// handle.submit → 动作层完成，本类不碰。
   FuelRecord? submitPayload() {
-    final unitPrice = double.tryParse(unitPriceController.text);
-    final payable = double.tryParse(payableController.text);
-    final actual = actualController.text.isEmpty
-        ? null
-        : double.tryParse(actualController.text);
-    if (unitPrice == null || unitPrice <= 0) {
+    // 三个金额一次解析到位（元→分，trim/四舍五入/空与非法 = null 只有
+    // parseMoneyCents 这一份实现）；实付空/非法 → null 即"未填"。
+    final unitPriceCents = parseMoneyCents(unitPriceController.text);
+    final payableCents = parseMoneyCents(payableController.text);
+    final actualCents = parseMoneyCents(actualController.text);
+    if (unitPriceCents == null || unitPriceCents <= 0) {
       reportError('单价必须大于 0');
       return null;
     }
-    if (payable == null || payable <= 0) {
+    if (payableCents == null || payableCents <= 0) {
       reportError('应付金额必须大于 0');
       return null;
     }
-    if (actual != null && actual < 0) {
+    if (actualCents != null && actualCents < 0) {
       reportError('实付金额必须是非负数字');
       return null;
     }
@@ -183,9 +186,9 @@ class FuelRecordFormController {
       carId: car.id!,
       date: recordDate,
       grade: grade,
-      unitPriceCents: (unitPrice * 100).round(),
-      payableCents: (payable * 100).round(),
-      actualCents: actual == null ? null : (actual * 100).round(),
+      unitPriceCents: unitPriceCents,
+      payableCents: payableCents,
+      actualCents: actualCents,
       sync: SyncMetadata(
         status: isEditing ? SyncStatus.pendingUpdate : SyncStatus.pendingCreate,
         updatedAt: _now(),
