@@ -15,6 +15,10 @@
 //    pending，弹窗关闭后强制重跑补判（R3 同款，2026-09-24 补齐）；
 //    展示前复查（2026-09-25 补用例）：保养弹窗开着时发起/结束恢复，
 //    里程弹窗展示前被旗、代数两半各拦一轮。
+//  - 同步数据源清单单一出口（2026-10-01 收编）：start() 的订阅集合与
+//    恢复备份屏障的等待名单都遍历 notificationSyncSources 一份声明——
+//    订阅侧=计数替身逐源失效重算断言触发，屏障侧=假 read 断言咨询序列
+//    恰好等于清单且吞失败继续（任一侧退回手抄名单即红）。
 //  说明：弹窗路径中间态守卫分两道——方法内旗检查（与 syncFromProviders
 //  入口早退之间无 await，公开 API 单独不可达，靠评审保障）与展示前复查
 //  （保养/里程两处展示调用各一道）。本文件锁定里程位点（已变异验证）：
@@ -91,12 +95,21 @@ void main() {
   }
 
   /// 挂载宿主 widget（真实构造并 start 控制器），返回控制器句柄。
-  Future<NotificationSyncController> pumpHost(WidgetTester tester) async {
+  /// [create] 缺省构造生产控制器；机制测试注入计数子类覆写
+  /// syncFromProviders 观察触发轮数。
+  Future<NotificationSyncController> pumpHost(
+    WidgetTester tester, {
+    NotificationSyncController Function(
+      WidgetRef ref,
+      BuildContext? Function() shellContext,
+    )?
+        create,
+  }) async {
     final hostKey = GlobalKey<_ControllerHostState>();
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: _ControllerHost(key: hostKey),
+        child: _ControllerHost(key: hostKey, create: create),
       ),
     );
     return hostKey.currentState!.controller;
@@ -466,12 +479,75 @@ void main() {
       expect(find.text('更新当前里程'), findsNothing);
     });
   });
+
+  // 同步数据源清单单一出口（2026-10-01 收编）：start() 的订阅集合与
+  // 恢复备份屏障的等待名单都从 notificationSyncSources 一份声明推导。
+  // 两条用例都遍历同一份清单：清单增删数据源时测试自动跟随；任一侧
+  // 退回手抄名单（清单变了、消费面没跟着变）即红。"订阅集合没有清单
+  // 之外的成员"这个反方向不可测（Riverpod 无公开 API 枚举订阅，且失效
+  // 会经 watch 级联触发），由 start() 是对清单的 for 循环结构性保证。
+  group('sync source list single seam（清单单一出口）', () {
+    testWidgets('start() 的订阅跟随清单：清单内每个数据源变化都触发一轮同步',
+        timeout: const Timeout(Duration(seconds: 30)), (tester) async {
+      mockAndroidNotifications();
+      // 计数子类替身：覆写 syncFromProviders 只计数（权限链/调度链都不
+      // 跑），观察"哪些 provider 的变化会触发同步"。
+      final controller = await pumpHost(
+        tester,
+        create: (ref, shellContext) =>
+            _CountingSyncController(ref: ref, shellContext: shellContext),
+      ) as _CountingSyncController;
+      await tester.pumpAndSettle();
+
+      // 遍历单一声明（不各自枚举字面量）：清单里每个数据源做一次确定性
+      // 失效重算（同 refreshItems 三步：失效 → 推帧放行调度 → 读 .future
+      // 强制重算 → 再推帧让监听微任务落帧），都必须触发一轮同步——
+      // start() 若漏订清单内某项（退回手抄名单）此处红。
+      for (final source in notificationSyncSources) {
+        final before = controller.syncCalls;
+        container.invalidate(source);
+        await tester.pump();
+        await container.read(source.future);
+        await tester.pump();
+        expect(
+          controller.syncCalls,
+          greaterThan(before),
+          reason: '$source 在同步数据源清单内，其失效重算必须触发同步',
+        );
+      }
+    });
+
+    test('屏障等待名单与清单同源：恰好逐个等清单成员，单读失败不拦后续',
+        () async {
+      // 假 read 记录咨询序列：waitForNotificationSyncSources 必须恰好按
+      // notificationSyncSources 的成员逐个等待（同实例、同序）。若等待段
+      // 退回手抄名单而清单已变（增删数据源），此处红。
+      final consulted = <FutureProvider<Object?>>[];
+      await waitForNotificationSyncSources((source) {
+        consulted.add(source);
+        // 生产失败形态 = provider 落在 AsyncError，read(source.future) 抛
+        // 异步错：首个成员模拟之，等待段必须吞掉并继续等其余成员。
+        if (source == notificationSyncSources.first) {
+          return Future<Object?>.error(StateError('provider 重算失败'));
+        }
+        return Future<Object?>.value();
+      });
+      expect(consulted, notificationSyncSources);
+    });
+  });
 }
 
 /// 宿主 widget：真实构造 NotificationSyncController 并 start（生产由
-/// AppShell 的 State 做），控制器随宿主卸载 dispose。
+/// AppShell 的 State 做），控制器随宿主卸载 dispose。create 缺省构造
+/// 生产控制器，机制测试注入替身（pumpHost 的 create 参数）。
 class _ControllerHost extends ConsumerStatefulWidget {
-  const _ControllerHost({super.key});
+  const _ControllerHost({super.key, this.create});
+
+  final NotificationSyncController Function(
+    WidgetRef ref,
+    BuildContext? Function() shellContext,
+  )?
+  create;
 
   @override
   ConsumerState<_ControllerHost> createState() => _ControllerHostState();
@@ -487,9 +563,13 @@ class _ControllerHostState extends ConsumerState<_ControllerHost> {
   @override
   void initState() {
     super.initState();
-    controller = NotificationSyncController(
-      ref: ref,
-      shellContext: () => _dialogContext ?? context,
+    final create =
+        widget.create ??
+        (ref, shellContext) =>
+            NotificationSyncController(ref: ref, shellContext: shellContext);
+    controller = create(
+      ref,
+      () => _dialogContext ?? context,
     )..start();
   }
 
@@ -515,6 +595,17 @@ class _ControllerHostState extends ConsumerState<_ControllerHost> {
       ),
     );
   }
+}
+
+/// 计数替身控制器：覆写 syncFromProviders 只计数不执行，供"清单单一
+/// 出口"分组观察订阅触发（同步链自身的行为由上方守卫用例锁，不重复）。
+class _CountingSyncController extends NotificationSyncController {
+  _CountingSyncController({required super.ref, required super.shellContext});
+
+  int syncCalls = 0;
+
+  @override
+  void syncFromProviders() => syncCalls++;
 }
 
 /// 实时活动假桥：记录调用、编排 status 返回值（协调器测试同款最小集）。

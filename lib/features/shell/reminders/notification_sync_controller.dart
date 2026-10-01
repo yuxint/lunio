@@ -2,11 +2,13 @@
 // 从 AppShell 的 build 里抽出来的独立协调器（≈ Spring 的一个 @Service，
 // 生命周期挂在主壳层 State 上）。
 //
-// 触发方式（R12 修复）：start() 对 3 个数据源 ref.listenManual
-// （fireImmediately: true）——应用车辆数据束（appliedCarBoardProvider，
-// 车/项目/记录/生效今天四件套）+ 通知设置 + 停车倒计时，任何一个
-// 变化（或首拍）就调 syncFromProviders，不再依赖"build 里 watch +
-// postFrame 副作用"的反模式。
+// 触发方式（R12 修复）：start() 对同步数据源清单（notificationSyncSources，
+// 本文件顶层唯一声明 = 应用车辆数据束 + 通知设置 + 停车倒计时）逐个
+// ref.listenManual（fireImmediately: true），任何一个变化（或首拍）就调
+// syncFromProviders，不再依赖"build 里 watch + postFrame 副作用"的反
+// 模式。这份清单同时是恢复备份屏障重算的等待名单来源
+// （waitForNotificationSyncSources，动作层恢复编排经注入 read 调用），
+// "同步引擎监听哪些数据源"只有这一份声明，两侧不会再各抄一份。
 //
 // 同步策略（沿用签名比对）：
 //  - 系统通知签名 = 提醒频率 + 停车倒计时摘要 + 全量数据签名；
@@ -41,6 +43,45 @@ import 'reminder_dialogs.dart' as bridge;
 // 函数仍在 reminder_notifications.dart）；两个 import 共用 bridge 别名。
 import 'reminder_notifications.dart' as bridge;
 import 'reminder_rows.dart' as bridge;
+
+/// 通知同步数据源清单：同步引擎"监听哪些数据源"的唯一声明（2026-10-01
+/// 收编）。两个消费面都从这一份推导，增删/换数据源只改这里：
+///  - [NotificationSyncController.start] 的 listenManual 订阅（数据变化
+///    触发同步）；
+///  - 恢复备份屏障重算的等待名单（[waitForNotificationSyncSources]，由
+///    动作层恢复编排调用）——此前动作层手抄过这份名单（6 项收 3 项时
+///    靠人肉对齐），属真实发生过事故的缝。
+///
+/// 类型取 [FutureProvider] 且擦到 `Object?`：屏障侧要统一逐个 await
+/// `source.future`，清单成员必须是 Future 形态的 provider（三源现状皆是；
+/// 非 Future 形态的数据源接入时类型会在此显式拦下）。数据束的就绪语义
+/// （任一上游未就绪整体未就绪）使单等它即等于等齐车/项目/记录/生效
+/// 今天四上游。
+final List<FutureProvider<Object?>> notificationSyncSources = [
+  notificationSettingsProvider,
+  appliedCarBoardProvider,
+  parkingCountdownProvider,
+];
+
+/// 等同步数据源全部重算落定：恢复备份屏障重算的"等待段"（整体编排见
+/// 动作层 restoreBackupFromFile 与协调器 runBackupRestore——失效全量
+/// provider 后、写库中间态旗还举着的窗口内调用本函数）。
+///
+/// 等待名单 = [notificationSyncSources] 本身（与 start() 的订阅同源，
+/// 单一声明两处推导）。逐个 await、单读失败不拦收尾：provider 出错时
+/// 同步控制器本来就走 null 早退，与屏障引入前（2026-09-26）的行为一致。
+/// [read] 由调用方注入（生产 = `(source) => ref.read(source.future)`，
+/// 测试注入假实现锁"两侧同源"）——等待语义留在引擎模块，读的手法归
+/// 调用方。
+Future<void> waitForNotificationSyncSources(
+  Future<Object?> Function(FutureProvider<Object?> source) read,
+) async {
+  for (final source in notificationSyncSources) {
+    try {
+      await read(source);
+    } catch (_) {}
+  }
+}
 
 /// 通知同步控制器。由 AppShell 的 State 创建/销毁：
 ///  - [ref]：主壳层的 WidgetRef（读 provider、listenManual）；
@@ -97,28 +138,30 @@ class NotificationSyncController {
     },
   );
 
-  /// 启动：订阅 3 个数据源（应用车辆数据束 + 通知设置 + 停车倒计时，
-  /// 2026-10-01 起车/项目/记录/生效今天四路由数据束一并触发），
-  /// 任何一个变化（含首拍）都触发 syncFromProviders。AppShell
+  /// 启动：对同步数据源清单 [notificationSyncSources]（通知设置 + 应用
+  /// 车辆数据束 + 停车倒计时，2026-10-01 起车/项目/记录/生效今天四路
+  /// 由数据束一并触发）逐个 listenManual，任何一个变化（含首拍）都触发
+  /// syncFromProviders。订阅集合从清单推导（单一声明，恢复备份屏障的
+  /// 等待名单同源）；"没有清单之外的订阅"由本循环结构性保证。首拍口径
+  /// 统一 fireImmediately：syncFromProviders 本就重读全部数据源、未就绪
+  /// 即早退，启动时多出的首拍是无害空轮（签名守卫幂等）。AppShell
   /// initState 调用。
   void start() {
-    _subscriptions.add(
-      ref.listenManual(
-        notificationSettingsProvider,
-        (_, _) => syncFromProviders(),
-        fireImmediately: true,
-      ),
-    );
-    _subscriptions.add(
-      ref.listenManual(appliedCarBoardProvider, (_, _) => syncFromProviders()),
-    );
-    _subscriptions.add(
-      ref.listenManual(parkingCountdownProvider, (_, _) => syncFromProviders()),
-    );
+    for (final source in notificationSyncSources) {
+      _subscriptions.add(
+        ref.listenManual(
+          source,
+          (_, _) => syncFromProviders(),
+          fireImmediately: true,
+        ),
+      );
+    }
     // 停车实时活动对账（ADR 0012）：倒计时偏好装载/变化时对一轮，兜住
     // "重启后活动丢失""到点后未切正计时"两类漂移。fireImmediately 兜住
     // "start() 时偏好已就绪"的时序；未就绪时 syncParkingLiveActivity
-    // 自行跳过，等装载那一拍再对。
+    // 自行跳过，等装载那一拍再对。这条订阅是实时活动对账、不是同步引擎
+    // 的数据触发面（回调与守卫模型都不同），故不在清单内——屏障覆盖的
+    // parkingCountdownProvider 本身已在清单里。
     _subscriptions.add(
       ref.listenManual(
         parkingCountdownProvider,
@@ -169,7 +212,7 @@ class NotificationSyncController {
         .reconcileParkingLiveActivity();
   }
 
-  /// 同步入口：从 3 个数据源读当前值（数据束 + 通知设置 + 停车倒计时，
+  /// 同步入口：从同步数据源清单读当前值（数据束 + 通知设置 + 停车倒计时，
   /// loading 中的当 null / 数据束整体未就绪即 null），数据就绪后按两个
   /// 签名分别触发系统通知重排 / 应用内弹窗。数据束未就绪就不做同步。
   void syncFromProviders() {

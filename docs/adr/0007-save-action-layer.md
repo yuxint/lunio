@@ -122,3 +122,20 @@ wiring bug 在历次审查中反复出现（R1/R8/R13 都涉及编排顺序）�
   吞掉的对账拍是冗余的，漂移仍由既有回前台/冷启对账兜住。
 - **范围明确只收恢复路径**：清空数据维持 settle 后失效的既有编排，删车同；
   两者的同形混合快照窗口是否也要屏障化另行评估。
+
+## 更新（2026-10-01：屏障等待名单收成同步数据源清单单一出口）
+
+- 上一节"等通知同步控制器监听的 6 个 provider"先随应用车辆数据束收编
+  缩成 3 个（通知设置 / 数据束 / 停车倒计时——数据束落定即四上游齐），
+  本节起进一步收编：**"同步引擎监听哪些数据源"只有一份声明**——
+  `notification_sync_controller.dart` 顶层的 `notificationSyncSources`，
+  `start()` 的 listenManual 订阅与恢复备份屏障的等待名单
+  （`waitForNotificationSyncSources`，provider 读法经注入闭包）都从它推导。
+  动作层 `restoreBackupFromFile` 的 `refreshProviders` 闭包只保留
+  "`invalidateAllAppDataProviders` 失效 + 委托等待"两步，不再出现按
+  provider 逐个枚举的第二份手抄名单（该名单 6 收 3 时靠人肉对齐过一次）。
+  逐个 await 吞异常的等待语义原样收进上述函数。机制测试
+  （`test/features/notification_sync_controller_test.dart`）两侧遍历同一份
+  清单锁"同源"：清单增删数据源时订阅集合与等待集合自动跟随，任一侧
+  退回手抄名单即红。
+

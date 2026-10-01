@@ -119,7 +119,7 @@ appDatabaseProvider(:215)
 | 1 | `lib/app/providers.dart:262 → defaultMaintenanceBootstrapProvider` | AppShell 首帧 watch 触发 `ensureBootstrapData()` | 见第 2 步 |
 | 2 | `lib/data/repositories/built_in_catalog_repository.dart → BuiltInCatalogRepository.ensureBootstrapData()` → `_ensureVehicleModels` + `_ensureDefaultMaintenanceItems` | 从 asset `assets/data/catalog/`（templates.json + vehicles_a–z.json 字母分片）加载目录（**现 1223 条：懂车帝在售+停售，车系名用懂车帝原名，每条带推荐动力类型；默认保养模板按动力类型分五组；每品牌最多 10 款热门车型**，见 ADR 0003），**按 catalogId 幂等对账**写入两张内置表 | `vehicle_models`、`vehicle_default_maintenance_items` 两表灌入/更新 |
 | 3 | `lib/features/shell/reminders/reminder_page.dart:102 → EmptyVehicleCard` | appliedCarProvider 返回 null → 显示"还没有车辆"卡片 | 无 |
-| 4 | `lib/features/shell/app_shell.dart:69-74 → NotificationSyncController` + `start()`（`reminders/notification_sync_controller.dart`，对 3 个数据源——通知设置/应用车辆数据束/停车倒计时——`listenManual` 且首拍即触发） | 系统通知开关为默认开 → 同步链对账系统真值并触发首启权限请求 | 见 1.3 |
+| 4 | `lib/features/shell/app_shell.dart:69-74 → NotificationSyncController` + `start()`（`reminders/notification_sync_controller.dart`，对同步数据源清单 `notificationSyncSources`——通知设置/应用车辆数据束/停车倒计时，模块内单一声明——逐个 `listenManual` 且首拍即触发） | 系统通知开关为默认开 → 同步链对账系统真值并触发首启权限请求 | 见 1.3 |
 
 **首启不会创建默认车辆**——必须用户手动走添加向导；车辆级保养项目也是添加车辆时才从模板复制。
 
@@ -366,7 +366,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 2. `NativeFiles.pickJsonFile` 选文件 → `backupRepository.decodeBackupJson`（解码收在 data 层；版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**guard.beginDataReset()**——先 bump() 通知同步代数（守卫模块 `notification_sync_guard.dart` 的 `notificationSyncGenerationProvider`，作废同步控制器在途任务）并**置写库中间态旗**（`isDataResetInFlight`，同步入口在此期间丢弃一切触发，见第 3 节）再执行恢复；
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内；**末段做保养记录的同车同日查重**——跨行检查，表级唯一约束 {carId,date} 的业务前置检查、与手工录入 `_ensureRecordIsUnique` 同一条规则，真实导出的备份不可能触发（源库约束挡着），触发即文件被手工编辑过/外来，整文件拒绝；只查保养记录，加油记录无 {carId,date} 约束是 ADR 0014 有意设计；变异验证锁定）；**校验失败统一抛 typed `LunioErrorException(backupInvalidData)`**（ADR 0009 修订节），篡改备份直接拒绝且不碰库 → 单一大事务：`_clearRestorableDataInTransaction` **只清 6 张业务表（4 张主业务表 + 加油预测设置 + 加油记录）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的旧备份条目由关联行 companion 内置 `RecordRules.normalizeItemCost` 按材料+工时补齐（写 seam 单点），恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚；
-5. 恢复成功后模板在**旗还举着时执行屏障重算**（`refreshProviders` 闭包）：`invalidateAllAppDataProviders` 全量失效 + 逐个 await 通知同步控制器监听的 3 个数据源的新 future 全部落定（`notificationSettings` / 应用车辆数据束 `appliedCarBoard` / `parkingCountdown`——数据束落定即车/项目/记录/生效今天四上游全落定，等待名单与控制器监听清单经数据束自然对齐，不再各持一份副本；单读失败不拦收尾）——屏障期间一切同步触发被入口早退丢弃，settle 时数据必然已收敛，"部分 provider 新、部分旧"的混合快照在结构上读不到；
+5. 恢复成功后模板在**旗还举着时执行屏障重算**（`refreshProviders` 闭包）：`invalidateAllAppDataProviders` 全量失效 + 逐个 await 同步数据源清单（`notificationSyncSources`，与 `start()` 订阅同一份单一声明，2026-10-01 收编）内各数据源的新 future 全部落定（`notificationSettings` / 应用车辆数据束 `appliedCarBoard` / `parkingCountdown`——数据束落定即车/项目/记录/生效今天四上游全落定；单读失败不拦收尾）——屏障期间一切同步触发被入口早退丢弃，settle 时数据必然已收敛，"部分 provider 新、部分旧"的混合快照在结构上读不到；
 6. 模板收尾：**guard.settleDataReset()**（finally：**再 bump 一次代数**作废写库期间启动的同步 + 关中间态旗；失败回滚同样执行）→ 取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
 7. 成功结局模板**强制补判一轮**（失效 `notificationSettingsProvider` 让同步控制器重发一拍）：屏障吞掉了窗口内全部重算触发，settle 后没有自然触发，系统通知重排与应用内弹窗检查由这一轮用收敛后的最终数据补跑；失败结局数据已回滚、签名与数据仍一致，不会出假弹窗也无需补判；
 8. 失败分支（错误分类留页面薄壳，ADR 0009 修订节）：**恢复预校验拒绝（typed backupInvalidData）→ 弹对话框给 throw 点具体原因**（同车同日重复=哪辆车哪天几条；实体校验失败=字段+原因；正文统一附"本次恢复未写入任何数据"）→ 驱动层唯一约束冲突（预校验拦不住的最后防线）→ 弹通用"本次恢复未写入任何数据"对话框（`formatters.isUniqueConstraintError` 文本识别是 ADR 0009 明文的驱动层兜底口径）→ 其他 → toast。
@@ -435,13 +435,13 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 **位置**：`lib/features/shell/reminders/notification_sync_controller.dart → NotificationSyncController`（AppShell 的 initState 创建并 `start()`，dispose 关闭；build 只渲染，无同步副作用）。
 
-**触发**：`start()` 对 3 个数据源（通知设置 / **应用车辆数据束** `appliedCarBoardProvider`（providers.dart，车/项目/记录/生效今天四件套一次拿齐）/ 停车倒计时）`ref.listenManual(..., fireImmediately: true)`——任何一个变化（含首拍）都调 `syncFromProviders`。
+**触发**：`start()` 对同步数据源清单 `notificationSyncSources`（模块内单一声明：通知设置 / **应用车辆数据束** `appliedCarBoardProvider`（providers.dart，车/项目/记录/生效今天四件套一次拿齐）/ 停车倒计时——恢复备份屏障的等待名单 `waitForNotificationSyncSources` 与它同源推导，2026-10-01 收编）逐个 `ref.listenManual(..., fireImmediately: true)`——任何一个变化（含首拍）都调 `syncFromProviders`。
 
 ```
 provider 变化 / 首拍 / 回前台（onAppResumed）
   → syncFromProviders：写库中间态旗为真直接丢弃（守卫模块
     isDataResetInFlight，见第 3 节）；否则读
-    3 个数据源当前值（数据束未就绪或无车即 return，数据齐才继续）
+    同步数据源清单当前值（数据束未就绪或无车即 return，数据齐才继续）
   → 拼"系统通知签名" = 重复频率 + 停车倒计时摘要 + 全量数据签名
       （reminder_notifications.dart → reminderNotificationDataSignature：
        车辆/项目/记录全部相关字段 + today 拼成一个大字符串）
