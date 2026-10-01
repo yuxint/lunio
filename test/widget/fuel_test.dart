@@ -784,11 +784,15 @@ void main() {
       tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
       isNot(true),
     );
-    // 全部行都在树里（ earliest 05-01 只是滚出窗口下方）。
-    expect(find.textContaining('2026-05-01'), findsOneWidget);
+    // 最早一条滚出窗口下方：行列表自 2026-10-01 收编进
+    // LunioSnapScrollWindow 后是懒构建（ListView.builder），滚出窗口的
+    // 行落在视口 cache 区、不绘制（offstage），默认 finder 跳过——
+    // 用 skipOffstage: false 确认它在树里且位置在窗口下方。
+    final earliest = find.textContaining('2026-05-01', skipOffstage: false);
+    expect(earliest, findsOneWidget);
     final viewport = tester.getRect(find.byType(Scrollbar));
     expect(
-      tester.getRect(find.textContaining('2026-05-01')).top,
+      tester.getRect(earliest).top,
       greaterThan(viewport.bottom),
     );
 
@@ -805,9 +809,11 @@ void main() {
 
     // 停稳吸附整行（2026-09-24 复验反馈，与加满预估同一套
     // RowSnapScrollPhysics，纯手势对齐不记录）：惯性甩动停稳后偏移必
-    // 须落在 60 的整数倍（行槽高）上。
+    // 须落在 60 的整数倍（行槽高）上。甩动起点取拖到底后仍在窗口内的
+    // 中部行（05-06 已滚出窗口上方，懒构建下不在台上、无法当 fling
+    // 坐标）。
     await tester.fling(
-      find.textContaining('2026-05-06'),
+      find.textContaining('2026-05-04'),
       const Offset(0, -300),
       800,
     );

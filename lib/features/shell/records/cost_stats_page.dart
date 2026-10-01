@@ -933,6 +933,14 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
                   final columnWidth =
                       constraints.maxWidth / visibleColumns;
                   _scheduleJumpToEnd();
+                  // 滚动条样式（3dp/圆角 2/滑动时拇指淡入淡出）与垂直
+                  // 两处（档位列表/加油记录卡）的共享组件
+                  // LunioSnapScrollWindow 同款，但本图未接入该组件：
+                  // 横向滚动拇指画在底边、吸附步长是运行时取整校准的
+                  // 动态列宽（非"定行高"前提）、让位是底边 6dp 而非右
+                  // 缩进 12dp、还有初始停最右的编排——塞进组件要加五个
+                  // 参数，组件会变成参数管道而三明治没少。全局调滚动条
+                  // 手感时记得与 scroll_window.dart 同步这两行样式。
                   return Scrollbar(
                     controller: _scroll,
                     thickness: 3,

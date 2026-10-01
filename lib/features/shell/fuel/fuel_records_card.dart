@@ -150,32 +150,17 @@ class _FuelRecordsCardState extends ConsumerState<FuelRecordsCard> {
         ),
         const SizedBox(height: 2),
         if (records.length > _visibleCount)
-          // 超量：固定 [_visibleCount] 行高的卡内滚动窗口，右侧 3dp 细
-          // 滚动条，滑动时淡入、停稳淡出（2026-09-26 起拇指不再常显；
-          // 每行套固定槽高，窗口高度才恒等于整数行）。滚动停稳吸附整行
-          // （2026-09-24 复验反馈，与加满预估同一套
-          // [RowSnapScrollPhysics]——只对齐不记录，无写库）；内容右缩进
-          // 12dp 给拇指让位——否则右对齐的金额与滚动条拇指重叠。
-          Scrollbar(
+          // 超量：固定 [_visibleCount] 行高的卡内滚动窗口（2026-10-01 起
+          // 三明治收编为共享组件 LunioSnapScrollWindow：右侧 3dp 细滚动
+          // 条滑动时淡入停稳淡出、内容右缩进给拇指让位——右对齐金额不与
+          // 拇指重叠、停稳吸附整行——只对齐不记录，无写库；每行走组件
+          // itemExtent 定槽，窗口高度恒等于整数行）。
+          LunioSnapScrollWindow(
             controller: _listScroll,
-            thickness: 3,
-            radius: const Radius.circular(2),
-            child: SizedBox(
-              height: _visibleCount * _rowExtent,
-              child: SingleChildScrollView(
-                controller: _listScroll,
-                physics: const RowSnapScrollPhysics(rowExtent: _rowExtent),
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Column(
-                    children: [
-                      for (final record in newestFirst)
-                        SizedBox(height: _rowExtent, child: row(record)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            rowExtent: _rowExtent,
+            visibleRows: _visibleCount,
+            itemCount: newestFirst.length,
+            itemBuilder: (context, index) => row(newestFirst[index]),
           )
         else
           for (final record in newestFirst) row(record),

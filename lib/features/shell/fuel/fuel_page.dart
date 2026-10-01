@@ -46,7 +46,7 @@ import 'fuel_prices.dart';
 import 'fuel_tier_list_controller.dart';
 import 'fuel_records_card.dart';
 import '../shared/modal_feedback.dart';
-import '../shared/scroll_snap.dart';
+import '../shared/scroll_window.dart';
 import '../shared/shell_actions.dart';
 import '../shared/shared_widgets.dart';
 
@@ -827,9 +827,6 @@ class _TierListCard extends ConsumerStatefulWidget {
 }
 
 class _TierListCardState extends ConsumerState<_TierListCard> {
-  /// 每档一行的固定行高（布局基准；偏移换算的步长由控制器收同值参数）。
-  static const double _rowExtent = _kTierRowExtent;
-
   /// 窗口内可见档位数（产品确认：只显示 5 档）。
   static const int _visibleRows = 5;
 
@@ -930,67 +927,58 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     );
   }
 
-  /// 滚动列表：表头（档位/当前油量/可加油量/加满价格/调价后价格）+ 定高窗口
-  /// + 每档定行高；滚动停稳吸附整行并落库。右侧细滚动条，滑动时淡入、
-  /// 停稳淡出（2026-09-24 五轮复验反馈补齐同款样式，2026-09-26 起拇指
-  /// 不再常显，与加油记录卡/费用统计图表一致），表头与行内容同步右缩
-  /// 进 12dp 给拇指让位（金额列右对齐，不缩滚动时会与拇指重叠）。
+  /// 滚动列表：表头（档位/当前油量/可加油量/加满价格/调价后价格）+
+  /// 定高吸附滚动窗口（2026-10-01 收编为共享组件 LunioSnapScrollWindow：
+  /// 定 5 行高视口、3dp 细滚动条滑动时淡入停稳淡出、整行吸附、内容右
+  /// 缩进给拇指让位都收在组件内部；本处只多传底部让位，让 0% 那档滚到
+  /// 第一行）。表头不滚动，右缩进引用组件同一份 [LunioSnapScrollWindow.thumbInset]
+  /// 与行内容右缘对齐（金额列右对齐，不缩会与拇指重叠）。
   Widget _buildTierList(BuildContext context, double price) {
     final capacity = widget.capacity!;
     final predictedPrice = ref.watch(predictedFuelPriceProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(right: 12),
-          child: _TierHeaderRow(),
+        Padding(
+          padding: const EdgeInsets.only(
+            right: LunioSnapScrollWindow.thumbInset,
+          ),
+          child: const _TierHeaderRow(),
         ),
         const SizedBox(height: 4),
         NotificationListener<ScrollNotification>(
           onNotification: _onScrollNotification,
-          child: Scrollbar(
+          child: LunioSnapScrollWindow(
             controller: _controller,
-            thickness: 3,
-            radius: const Radius.circular(2),
-            child: SizedBox(
-              height: _visibleRows * _rowExtent,
-              child: ListView.builder(
-                controller: _controller,
-                physics:
-                    const RowSnapScrollPhysics(rowExtent: _kTierRowExtent),
-                itemExtent: _rowExtent,
-                // 底部留出"窗口高度 - 一行"的空白：否则滚到底时 0% 那档
-                // 只能出现在窗口底部，永远到不了第一行。
-                padding: EdgeInsets.only(
-                  right: 12,
-                  bottom: (_visibleRows - 1) * _rowExtent,
-                ),
-                itemCount: _tiers.length,
-                itemBuilder: (context, index) => _TierRow(
-                  percent: _tiers[index],
-                  litersInTank: FuelRules.litersInTank(
-                    fuelPercent: _tiers[index],
-                    tankCapacityLiters: capacity,
-                  ),
-                  litersToFill: FuelRules.litersToFill(
-                    fuelPercent: _tiers[index],
-                    tankCapacityLiters: capacity,
-                  ),
-                  costCents: FuelRules.fullTankCostCents(
-                    fuelPercent: _tiers[index],
-                    tankCapacityLiters: capacity,
-                    pricePerLiter: price,
-                  ),
-                  costAfterCents: predictedPrice == null
-                      ? null
-                      : FuelRules.fullTankCostCents(
-                          fuelPercent: _tiers[index],
-                          tankCapacityLiters: capacity,
-                          pricePerLiter: predictedPrice,
-                        ),
-                  isCurrent: index == _tierController.firstIndex,
-                ),
+            rowExtent: _kTierRowExtent,
+            visibleRows: _visibleRows,
+            // 底部留出"窗口高度 - 一行"的空白：否则滚到底时 0% 那档
+            // 只能出现在窗口底部，永远到不了第一行。
+            tailRows: _visibleRows - 1,
+            itemCount: _tiers.length,
+            itemBuilder: (context, index) => _TierRow(
+              percent: _tiers[index],
+              litersInTank: FuelRules.litersInTank(
+                fuelPercent: _tiers[index],
+                tankCapacityLiters: capacity,
               ),
+              litersToFill: FuelRules.litersToFill(
+                fuelPercent: _tiers[index],
+                tankCapacityLiters: capacity,
+              ),
+              costCents: FuelRules.fullTankCostCents(
+                fuelPercent: _tiers[index],
+                tankCapacityLiters: capacity,
+                pricePerLiter: price,
+              ),
+              costAfterCents: predictedPrice == null
+                  ? null
+                  : FuelRules.fullTankCostCents(
+                      fuelPercent: _tiers[index],
+                      tankCapacityLiters: capacity,
+                      pricePerLiter: predictedPrice,
+                    ),
+              isCurrent: index == _tierController.firstIndex,
             ),
           ),
         ),

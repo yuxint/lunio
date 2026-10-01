@@ -8,5 +8,6 @@ export 'form_sheet.dart';
 export 'formatters.dart';
 export 'modal_feedback.dart';
 export 'scroll_snap.dart';
+export 'scroll_window.dart';
 export 'shared_widgets.dart';
 export 'shell_actions.dart';
