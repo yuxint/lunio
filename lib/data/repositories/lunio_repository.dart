@@ -36,6 +36,7 @@ import '../database/app_database.dart';
 import '../preferences/app_preferences.dart';
 import 'entity_row_codec.dart';
 import 'fuel_repository.dart';
+import 'unique_constraint.dart';
 
 class LunioRepository {
   /// 构造时注入数据库连接；偏好门面与加油仓库可选注入（测试可不传，
@@ -79,7 +80,9 @@ class LunioRepository {
       item.validate();
     }
     FuelRules.validateTankCapacity(car.tankCapacityLiters);
-    return database.transaction(() async {
+    // 边界包装：品牌+型号+上路日期或项目同名撞表级唯一约束时翻译成
+    // typed uniqueConstraint（无业务前置查重的最后防线）。
+    return guardUniqueConstraint(() => database.transaction(() async {
       final carId = SnowflakeIdGenerator.instance.next();
       await database.into(database.cars).insert(carCompanion(car, carId));
 
@@ -100,7 +103,7 @@ class LunioRepository {
         await preferences.setAppliedCarId(carId);
       }
       return carId;
-    });
+    }));
   }
 
   /// 全部车辆列表（无排序约束，全表扫描）。
@@ -117,16 +120,20 @@ class LunioRepository {
       throw ArgumentError('Car id is required');
     }
     FuelRules.validateTankCapacity(car.tankCapacityLiters);
-    return (database.update(
-      database.cars,
-    )..where((row) => row.id.equals(carId))).write(
-      CarsCompanion(
-        currentMileageKm: Value(car.currentMileageKm),
-        roadDate: Value(car.roadDate.toString()),
-        tankCapacityLiters: Value(car.tankCapacityLiters),
-        syncStatus: Value(car.sync.status.name),
-        updatedAt: Value(car.sync.updatedAt.toIso8601String()),
-        version: Value(car.sync.version),
+    // 边界包装：改上路日期撞上另一辆同品牌型号同日期的车（cars 表
+    // {brand,model,roadDate} 唯一约束）时翻译成 typed uniqueConstraint。
+    return guardUniqueConstraint(
+      () => (database.update(
+        database.cars,
+      )..where((row) => row.id.equals(carId))).write(
+        CarsCompanion(
+          currentMileageKm: Value(car.currentMileageKm),
+          roadDate: Value(car.roadDate.toString()),
+          tankCapacityLiters: Value(car.tankCapacityLiters),
+          syncStatus: Value(car.sync.status.name),
+          updatedAt: Value(car.sync.updatedAt.toIso8601String()),
+          version: Value(car.sync.version),
+        ),
       ),
     );
   }
@@ -202,12 +209,16 @@ class LunioRepository {
 
   /// 新增保养项目（先过实体 validate；无事务——单条插入）。
   /// 记录表单里"行内新增项目"和项目 sheet 的新建都走这里。
+  /// 同车同名项目撞 {carsId,name} 唯一约束时经边界包装翻译成 typed
+  /// uniqueConstraint（无业务前置查重）。
   Future<int> saveMaintenanceItem(domain.MaintenanceItem item) async {
     item.validate();
     final itemId = SnowflakeIdGenerator.instance.next();
-    await database
-        .into(database.maintenanceItems)
-        .insert(maintenanceItemCompanion(item, itemId));
+    await guardUniqueConstraint(
+      () => database
+          .into(database.maintenanceItems)
+          .insert(maintenanceItemCompanion(item, itemId)),
+    );
     return itemId;
   }
 
@@ -237,23 +248,28 @@ class LunioRepository {
         itemId: itemId,
       );
     }
-    await (database.update(
-      database.maintenanceItems,
-    )..where((row) => row.id.equals(itemId))).write(
-      MaintenanceItemsCompanion(
-        name: Value(item.name),
-        enabled: Value(item.enabled),
-        remindByMileage: Value(item.remindByMileage),
-        remindByTime: Value(item.remindByTime),
-        mileageIntervalKm: Value(item.mileageIntervalKm),
-        timeIntervalMonths: Value(item.timeIntervalMonths),
-        notOverdueUpperLimit: Value(item.notOverdueUpperLimit),
-        overdueUpperLimit: Value(item.overdueUpperLimit),
-        sortOrder: Value(item.sortOrder),
-        syncStatus: Value(item.sync.status.name),
-        updatedAt: Value(item.sync.updatedAt.toIso8601String()),
-        version: Value(item.sync.version),
-      ),
+    // 边界包装：改名撞上同车另一个同名项目（{carsId,name} 唯一约束）
+    // 时翻译成 typed uniqueConstraint（无业务前置查重）。
+    await guardUniqueConstraint(
+      () => (database.update(
+            database.maintenanceItems,
+          )..where((row) => row.id.equals(itemId)))
+          .write(
+            MaintenanceItemsCompanion(
+              name: Value(item.name),
+              enabled: Value(item.enabled),
+              remindByMileage: Value(item.remindByMileage),
+              remindByTime: Value(item.remindByTime),
+              mileageIntervalKm: Value(item.mileageIntervalKm),
+              timeIntervalMonths: Value(item.timeIntervalMonths),
+              notOverdueUpperLimit: Value(item.notOverdueUpperLimit),
+              overdueUpperLimit: Value(item.overdueUpperLimit),
+              sortOrder: Value(item.sortOrder),
+              syncStatus: Value(item.sync.status.name),
+              updatedAt: Value(item.sync.updatedAt.toIso8601String()),
+              version: Value(item.sync.version),
+            ),
+          ),
     );
   }
 
@@ -362,6 +378,9 @@ class LunioRepository {
   /// 为假：编辑，[MaintenanceRecord.id] 必须有值（缺省抛 ArgumentError），
   /// 同日唯一校验按它排除记录自身。返回记录 id（新增为新 id，编辑为已有 id）。
   /// [itemUpdates] 非空时在记录写完后更新项目提醒间隔，为空即基础版语义。
+  /// 事务边界包 guardUniqueConstraint：事务内同日唯一校验（check-then-act）
+  /// 之外仍可能撞表级约束（理论窗口），撞上时翻译成 typed
+  /// uniqueConstraint 而不是裸驱动异常。
   Future<int> _writeRecord({
     required domain.MaintenanceRecord record,
     required bool isInsert,
@@ -374,7 +393,7 @@ class LunioRepository {
     RecordRules.validateRecord(record);
     final uniqueItemIds = RecordRules.uniqueItemIds(record.itemIds);
 
-    return database.transaction(() async {
+    return guardUniqueConstraint(() => database.transaction(() async {
       await _validateRecordItems(carId: record.carId, itemIds: uniqueItemIds);
       await _ensureRecordIsUnique(
         carId: record.carId,
@@ -404,7 +423,7 @@ class LunioRepository {
         );
       }
       return persistedId;
-    });
+    }));
   }
 
   /// 某车辆全部记录（日期倒序）。两次查询组装：主表 + 关联表按

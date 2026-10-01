@@ -383,7 +383,8 @@ Future<bool> exportBackup(WidgetRef ref) async {
 /// 保养/里程提醒族旧数据残留通知（空备份时同步引擎不会重排，显式
 /// 取消；停车族不动——倒计时偏好保留且仍有效）→ 模板强制补判一轮
 /// （重排系统通知 + 应用内弹窗检查用最终数据）。
-/// 唯一约束冲突的"未写入任何数据"对话框属 UI 反馈决策，由调用方分类。
+/// 唯一约束冲突的"未写入任何数据"对话框属 UI 反馈决策，由调用方按
+/// typed kind（uniqueConstraint，恢复事务边界包装）分类。
 Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,

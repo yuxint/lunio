@@ -24,6 +24,7 @@ import '../backup/backup_codec.dart';
 import '../database/app_database.dart';
 import '../preferences/app_preferences.dart';
 import 'entity_row_codec.dart';
+import 'unique_constraint.dart';
 
 class BackupRepository {
   /// 构造时注入数据库连接与偏好门面（加油设置回写、抑制键清理的通道）。
@@ -116,7 +117,12 @@ class BackupRepository {
   }
 
   /// 恢复备份（导入）。流程见文件头。任何一行违反约束抛错则整体回滚
-  /// （UI 提示"未写入任何数据"）。
+  /// （UI 提示"未写入任何数据"）。事务边界包 guardUniqueConstraint：
+  /// 预校验只覆盖保养记录的同车同日查重，payload 内部的重复车辆
+  /// （cars {brand,model,roadDate}）/同名项目（{carsId,name}）等仍靠
+  /// 表级唯一约束拦，撞上时翻译成 typed uniqueConstraint（预校验拦不住
+  /// 的最后防线，恢复 UI 按 kind 弹"未写入任何数据"对话框，ADR 0009
+  /// 2026-10-01 修订节）。
   /// 版本检查与 codec 一致：接受 v1/v2/v3（ADR 0010/0014 的纯增量兼容）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
     if (!BackupCodec.supportedSchemaVersions.contains(payload.schemaVersion)) {
@@ -127,7 +133,7 @@ class BackupRepository {
     _validateBackupReferences(payload);
     _validateBackupBusinessRules(payload);
 
-    return database.transaction(() async {
+    return guardUniqueConstraint(() => database.transaction(() async {
       await _clearRestorableDataInTransaction();
       final carIdMap = <int, int>{};
       final itemIdMap = <int, int>{};
@@ -259,7 +265,7 @@ class BackupRepository {
               ),
             );
       }
-    });
+    }));
   }
 
   /// 清空数据（"我的"页入口）：事务内删 7 张表（4 张业务表

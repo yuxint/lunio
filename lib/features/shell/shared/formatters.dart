@@ -2,8 +2,8 @@
 //
 // 两类内容：
 //  1. 纯格式化：数字千分位、里程、车龄、剩余天数、时刻 HH:mm:ss 等；
-//  2. 业务文案：错误翻译 friendlyError（把 Repository 抛的英文异常
-//     翻成中文）、唯一约束识别。
+//  2. 业务文案：错误翻译 friendlyError（把 Repository 抛的异常翻成
+//     中文）。
 //
 // 只保留"多文件复用"的函数（§5.2 回收口径）：单文件消费的格式化
 // （项目规则文案、提醒详情文案、项目名归一化等）已移回各自的
@@ -161,24 +161,13 @@ String formatMoneyCents(int costCents) {
   return '¥${(costCents / 100).toStringAsFixed(2)}';
 }
 
-/// 识别 SQLite 唯一约束冲突（消息文本匹配 2067），
-/// 备份恢复冲突弹窗靠它区分文案。
-bool isUniqueConstraintError(Object error) {
-  final message = error.toString();
-  return message.contains('UNIQUE constraint') ||
-      message.contains('SqliteException(2067)');
-}
-
-/// 统一错误翻译（≈ ExceptionHandler 的消息转换）：业务规则失败认
-/// [LunioErrorException] 类型，直接透出 throw 点书写的中文文案；
-/// 数据库驱动层的唯一约束冲突（无法在 throw 点包装）按文本识别兜底；
-/// 其余异常兜底"操作失败，请稍后重试"。全部表单的 catch 分支都走它。
+/// 统一错误翻译（≈ ExceptionHandler 的消息转换）：只认
+/// [LunioErrorException] 类型，直接透出 throw 点（业务规则或仓库边界
+/// 的驱动异常包装，ADR 0009 2026-10-01 修订节）书写的中文文案；其余
+/// 异常兜底"操作失败，请稍后重试"。全部表单的 catch 分支都走它。
 String friendlyError(Object error) {
   if (error is LunioErrorException) {
     return error.message;
-  }
-  if (isUniqueConstraintError(error)) {
-    return '这条数据已经保存过了';
   }
   return '操作失败，请稍后重试';
 }

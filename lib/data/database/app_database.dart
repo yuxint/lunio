@@ -325,6 +325,12 @@ class AppDatabase extends _$AppDatabase {
   /// 也就触发不了 onUpgrade）。生产代码不要用。
   AppDatabase.forFile(File file) : super(NativeDatabase(file));
 
+  /// 测试构造：注入任意执行器（后台 isolate 连接等"生产执行器形态"的
+  /// 机制测试用——异常经 drift 远程协议回传会包 DriftRemoteException，
+  /// 与进程内连接不同型，见 data/repositories/unique_constraint.dart）。
+  /// 生产代码不要用。
+  AppDatabase.forExecutor(super.executor);
+
   /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion，两者独立演进）。
   /// 改表结构必须 +1，并在 onUpgrade 补对应增量分支（ADR 0005 及其
   /// 2026-09-20 修订）。改完跑 build_runner。

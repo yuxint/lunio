@@ -233,11 +233,12 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   }
 
   /// 恢复备份反馈薄壳：确认框/选文件在动作层，取消静默返回 false。
-  /// 失败反馈三级（ADR 0009 修订节）：恢复预校验拒绝（typed
-  /// backupInvalidData——实体校验失败/同车同日重复）弹对话框给 throw 点
-  /// 的具体原因；驱动层唯一约束冲突（预校验拦不住的最后防线，文本识别
-  /// 兜底，事务已回滚）弹通用对话框；其余失败 toast。错误分类属 UI
-  /// 反馈决策留页面。
+  /// 失败反馈三级（ADR 0009 修订节，2026-10-01 起全按类型分支）：
+  /// 恢复预校验拒绝（typed backupInvalidData——实体校验失败/同车同日
+  /// 重复）弹对话框给 throw 点的具体原因；驱动层唯一约束冲突（预校验
+  /// 拦不住的最后防线，恢复事务边界已包装成 typed uniqueConstraint，
+  /// 事务已回滚）按 kind 弹恢复场景的通用对话框；其余失败 toast。
+  /// 错误分类属 UI 反馈决策留页面。
   Future<void> _restoreBackup(BuildContext context) async {
     try {
       final restored = await restoreBackupFromFile(context, ref);
@@ -252,14 +253,9 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
         await showMessageDialog(
           context: context,
           title: '恢复失败',
-          message: '${error.message}\n本次恢复未写入任何数据。',
-          tone: StatusOverlayTone.error,
-        );
-      } else if (isUniqueConstraintError(error)) {
-        await showMessageDialog(
-          context: context,
-          title: '恢复失败',
-          message: '恢复文件中的部分数据重复或冲突，本次恢复未写入任何数据。',
+          message: error.kind == LunioErrorKind.uniqueConstraint
+              ? '恢复文件中的部分数据重复或冲突，本次恢复未写入任何数据。'
+              : '${error.message}\n本次恢复未写入任何数据。',
           tone: StatusOverlayTone.error,
         );
       } else {
