@@ -29,7 +29,10 @@
 // 作用域永远是当前应用车辆（2026-09-20 拍板：不提供"全部"/多车切换，
 // 想看别的车先去切换应用车辆），当前车辆名在标题副字展示。
 // 图表语言：柱形为 Widget 组装、网格线为自绘虚线 painter（无图表库），
-// 颜色派生自 LunioTokens；动效只做一次性入场（条形生长/堆叠条长出），
+// 颜色派生自 LunioTokens；标尺计算（刻度三档步进、柱高按峰刻度归一、
+// 滚动模式列宽取整校准）2026-10-01 收编为 chart_scale.dart 纯函数
+//（直接单测 test/features/chart_scale_test.dart），本文件只渲染。
+// 动效只做一次性入场（条形生长/堆叠条长出），
 // 进页面播一次，不做持续循环。所有随入场动画变宽/变高的条形必须包在
 // 监听 [_entrance] 的 AnimatedBuilder 里——历史上按年条漏包导致"有时
 // 不渲染、点开才出来"的 bug（动画只重建 AnimatedBuilder 子树）。
@@ -54,6 +57,7 @@ import '../../../domain/entities/fuel_record.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../shared/shell_shared.dart';
+import 'chart_scale.dart';
 import 'cost_item_history_sheet.dart';
 import 'cost_stats.dart';
 import 'fuel_cost_stats.dart';
@@ -830,31 +834,6 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
     });
   }
 
-  /// 刻度三档（0 / 半峰 / 峰）：步进取整到常见金额档（¥50 → ¥1 万），
-  /// 取第一个 ≥ 最大柱值一半的步进，峰刻度 = 步进 × 2 ≥ 最大柱值——
-  /// 最高柱顶不会顶穿网格线。返回 [0, 半峰, 峰]，单位分。
-  List<int> _ticks(int maxValueCents) {
-    const steps = [
-      5000,
-      10000,
-      20000,
-      25000,
-      50000,
-      100000,
-      200000,
-      250000,
-      500000,
-      1000000,
-    ];
-    for (final step in steps) {
-      if (step >= maxValueCents / 2) {
-        return [0, step, step * 2];
-      }
-    }
-    final top = (maxValueCents / 1000000).ceil() * 1000000;
-    return [0, top ~/ 2, top];
-  }
-
   /// 刻度金额文案（整数元，不带小数——轴上两位小数太挤）。
   String _tickLabel(int cents) => '¥${(cents / 100).round()}';
 
@@ -869,13 +848,14 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
           0,
           (max, item) => item.valueCents > max ? item.valueCents : max,
         );
-        final ticks = _ticks(maxCents);
-        final topTick = ticks[2];
+        // 同一把尺（2026-10-01 收编为 chart_scale.dart 纯函数，直接单
+        // 测）：刻度三档 + 柱高归一比例，年度柱与月度柱共用。
+        final scale = chartScaleFor(maxCents);
         // 柱区底部（基线）在列内的 y 坐标；柱高按峰刻度归一（而非按最
         // 大柱值），柱顶不会越过峰刻度线。
         final baseY = _plotHeight - _labelSlot;
-        double yFor(int cents) => baseY -
-            (topTick == 0 ? 0.0 : (cents / topTick) * _barMaxHeight);
+        double yFor(int cents) =>
+            baseY - scale.fractionOf(cents) * _barMaxHeight;
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -886,7 +866,7 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  for (final tick in ticks)
+                  for (final tick in scale.ticks)
                     Positioned(
                       top: yFor(tick) - 6,
                       right: 0,
@@ -917,21 +897,21 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
                   // 统一行为（第五轮）：内容宽（列数 × 列宽）放得下视口
                   // 就等分铺满、无滚动条；放不下才定宽横向滚动 + 底部细
                   // 滚动条（2026-09-26 起滑动时才显示拇指）。保养年度柱
-                  // 与加油月度柱走同一套逻辑。
-                  final needsScroll =
-                      widget.items.length * _columnWidth >
-                          constraints.maxWidth;
-                  if (!needsScroll) {
-                    return _plot(context, ticks, yFor, tokens);
+                  // 与加油月度柱走同一套逻辑；取整校准收编在
+                  // chart_scale.dart 的 calibrateColumnWidth（直接单测），
+                  // 返回 null 即放得下。
+                  final columnWidth = calibrateColumnWidth(
+                    columnCount: widget.items.length,
+                    baseColumnWidth: _columnWidth,
+                    viewportWidth: constraints.maxWidth,
+                  );
+                  if (columnWidth == null) {
+                    return _plot(context, scale, yFor, tokens);
                   }
-                  // 视口取整放下整数根柱：柱宽在 64 基础上微调放大（≤+
-                  // 一柱的分摊），滚动范围因此必然是柱宽整数倍——初始停
-                  // 最右时左右两缘都是完整的月/年，不露半根（2026-09-24
-                  // 五轮复验反馈）。
-                  final visibleColumns =
-                      (constraints.maxWidth / _columnWidth).floor();
-                  final columnWidth =
-                      constraints.maxWidth / visibleColumns;
+                  // 校准列宽：视口取整放下整数根柱——柱宽在 64 基础上微
+                  // 调放大（≤ 一柱的分摊），滚动范围因此必然是柱宽整数倍
+                  // ——初始停最右时左右两缘都是完整的月/年，不露半根
+                  //（2026-09-24 五轮复验反馈）。
                   _scheduleJumpToEnd();
                   // 滚动条样式（3dp/圆角 2/滑动时拇指淡入淡出）与垂直
                   // 两处（档位列表/加油记录卡）的共享组件
@@ -959,7 +939,7 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
                         physics: RowSnapScrollPhysics(rowExtent: columnWidth),
                         child: _plot(
                           context,
-                          ticks,
+                          scale,
                           yFor,
                           tokens,
                           columnWidth: columnWidth,
@@ -978,10 +958,11 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
 
   /// 绘图区：虚线网格线（三条，含基线）铺满全宽 + 柱列。[columnWidth]
   /// 为 null（放得下）宽 = 视口宽、柱列等分；否则（滚动模式）宽 = 列数
-  /// × [columnWidth]（随内容一起滚，列宽由调用方取整校准过）。
+  /// × [columnWidth]（随内容一起滚，列宽由 chart_scale.dart 的
+  /// calibrateColumnWidth 取整校准过）。
   Widget _plot(
     BuildContext context,
-    List<int> ticks,
+    ChartScale scale,
     double Function(int) yFor,
     LunioTokens tokens, {
     double? columnWidth,
@@ -993,7 +974,7 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          for (final tick in ticks)
+          for (final tick in scale.ticks)
             Positioned(
               left: 0,
               right: 0,
@@ -1014,7 +995,7 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
                   _column(
                     context,
                     item,
-                    ticks[2],
+                    scale,
                     widget.entrance.value,
                     columnWidth: columnWidth,
                   ),
@@ -1026,19 +1007,19 @@ class _AxesColumnChartState extends State<_AxesColumnChart> {
     );
   }
 
-  /// 柱状一列：金额槽（0 元留空）+ 柱体（高按峰刻度归一、随入场动画
-  /// 长高；0 元画 2dp 灰桩，有花费统一主色）+ 轴标签。铺满模式等分视
-  /// 口、滚动模式定宽（[columnWidth]）。
+  /// 柱状一列：金额槽（0 元留空）+ 柱体（高按峰刻度归一
+  /// （[scale.fractionOf]）、随入场动画长高；0 元画 2dp 灰桩，有花费统
+  /// 一主色）+ 轴标签。铺满模式等分视口、滚动模式定宽（[columnWidth]）。
   Widget _column(
     BuildContext context,
     _ColumnItem item,
-    int topTick,
+    ChartScale scale,
     double progress, {
     double? columnWidth,
   }) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final hasCost = item.valueCents > 0;
-    final fraction = topTick == 0 ? 0.0 : item.valueCents / topTick;
+    final fraction = scale.fractionOf(item.valueCents);
     final barHeight = hasCost
         ? (fraction * _barMaxHeight * progress).clamp(3.0, _barMaxHeight)
         : 2.0;
