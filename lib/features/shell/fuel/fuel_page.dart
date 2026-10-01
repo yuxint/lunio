@@ -43,6 +43,7 @@ import '../../../domain/rules/fuel_rules.dart';
 import '../shared/form_sheet.dart';
 import '../shared/formatters.dart';
 import 'fuel_prices.dart';
+import 'fuel_tier_list_controller.dart';
 import 'fuel_records_card.dart';
 import '../shared/modal_feedback.dart';
 import '../shared/scroll_snap.dart';
@@ -795,7 +796,8 @@ const double _kTierRowExtent = 44;
 
 /// 档位列表卡：全量档位（100%→0%）滚动选择，第一行 = 剩余油量。
 ///
-/// 交互规则（ADR 0002）：
+/// 交互规则（ADR 0002，决策体在 fuel_tier_list_controller.dart 的
+/// [FuelTierListController]，本 State 只转发滚动事件并渲染）：
 ///  - 窗口内可见 [_TierListCardState.visibleRows] 档，整表上下滚动
 ///    （第一行也跟着滚）；
 ///  - 滚动停稳自动吸附到整行，第一行所在的档位经动作层 saveFuelBaseline
@@ -825,58 +827,57 @@ class _TierListCard extends ConsumerStatefulWidget {
 }
 
 class _TierListCardState extends ConsumerState<_TierListCard> {
-  /// 每档一行的固定行高（滚动偏移量按它换算）。
+  /// 每档一行的固定行高（布局基准；偏移换算的步长由控制器收同值参数）。
   static const double _rowExtent = _kTierRowExtent;
 
   /// 窗口内可见档位数（产品确认：只显示 5 档）。
   static const int _visibleRows = 5;
 
-  /// 默认档位 50% 在全量档位表里的下标。
-  static final int _defaultIndex =
-      (100 - 50) ~/ FuelRules.percentStep;
-
   late final ScrollController _controller;
-  late int _firstIndex;
 
-  /// 全量档位表（下标 0 = 100%，往后每档 -2%）。
+  /// 档位交互决策体（2026-10-01 收编，接法同表单控制器先例）：本 State
+  /// 只把滚动事件与外部档位变化转发给它、按返回值 setState 并渲染。
+  late final FuelTierListController _tierController;
+
+  /// 全量档位表（下标 0 = 100%，往后每档 -2%；渲染行用，换算在控制器）。
   static final List<int> _tiers = FuelRules.allTierPercents;
-
-  /// 已存档位 → 列表下标（奇数等非档位值就近取整，容错老数据）。
-  static int _indexForPercent(int? percent) {
-    final value = percent ?? 50;
-    return ((100 - value) / FuelRules.percentStep)
-        .round()
-        .clamp(0, _tiers.length - 1);
-  }
 
   @override
   void initState() {
     super.initState();
-    _firstIndex = _indexForPercent(widget.savedPercent);
+    _tierController = FuelTierListController(
+      rowExtent: _kTierRowExtent,
+      savedPercent: widget.savedPercent,
+      // 滚动真值注入：转发给本 State 持有的 ScrollController。视口未
+      // 挂载（hasClients 为 false）时 isScrolling 返回 true——读不了
+      // 也跳不了，外部档位变化静默放过等下一拍。
+      viewport: FuelTierListViewport(
+        offset: () => _controller.offset,
+        isScrolling: () =>
+            !_controller.hasClients ||
+            _controller.position.isScrollingNotifier.value,
+        jumpTo: (offset) => _controller.jumpTo(offset),
+      ),
+      // 落库动作注入（ADR 0007）：写库接线与失败 toast 都在闭包里，
+      // 决策体不见 ref、不碰 BuildContext。
+      saveBaseline: _persistBaseline,
+    );
     _controller = ScrollController(
-      initialScrollOffset: _firstIndex * _rowExtent,
+      initialScrollOffset: _tierController.initialOffset,
     );
   }
 
   @override
   void didUpdateWidget(covariant _TierListCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 已存档位变化（换车后旧值→真值、恢复备份、error→data）且与当前
-    // 第一行不一致时静默重定位；正在拖动/惯性滑行时不抢位置——本轮
-    // 手势停稳后会写库覆盖。自己停稳写库的回读与当前档位相同，直接
-    // 返回：State 与 ScrollController 保持存活，连续滚动手势不再被
+    // 已存档位变化（换车后旧值→真值、恢复备份、error→data）的重定位
+    // 决策在控制器：与当前第一行相同（自己停稳写库的回读）不动作，
+    // 拖动/惯性滑行中不抢位置（本轮手势停稳后会写库覆盖），其余静默
+    // jumpTo——State 与 ScrollController 保持存活，连续滚动手势不被
     // key 变化的销毁重建打断（2026-10-01 修复）。
-    if (widget.savedPercent == oldWidget.savedPercent) {
-      return;
+    if (_tierController.onSavedPercentChanged(widget.savedPercent)) {
+      setState(() {});
     }
-    final target = _indexForPercent(widget.savedPercent);
-    if (target == _firstIndex ||
-        !_controller.hasClients ||
-        _controller.position.isScrollingNotifier.value) {
-      return;
-    }
-    _controller.jumpTo(target * _rowExtent);
-    setState(() => _firstIndex = target);
   }
 
   @override
@@ -884,9 +885,6 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     _controller.dispose();
     super.dispose();
   }
-
-  /// 当前第一行对应的档位百分比。
-  int get _currentPercent => _tiers[_firstIndex];
 
   @override
   Widget build(BuildContext context) {
@@ -909,7 +907,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
                 message: '回到 50%',
                 child: IconButton(
                   icon: const Icon(Icons.settings_backup_restore, size: 20),
-                  onPressed: _currentPercent == 50
+                  onPressed: _tierController.isAtDefault
                       ? null
                       : _scrollBackToDefault,
                 ),
@@ -990,7 +988,7 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
                           tankCapacityLiters: capacity,
                           pricePerLiter: predictedPrice,
                         ),
-                  isCurrent: index == _firstIndex,
+                  isCurrent: index == _tierController.firstIndex,
                 ),
               ),
             ),
@@ -1000,37 +998,32 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     );
   }
 
-  /// 滚动通知：跟随更新第一行下标（高亮 + 返回按钮状态）。
-  /// 停稳（ScrollEnd）时吸附物理已把偏移对齐到整行边界，直接写库。
+  /// 滚动通知：转发给控制器（跟随第一行下标 = 高亮 + 返回按钮状态；
+  /// 停稳 ScrollEnd 时吸附物理已把偏移对齐到整行边界，直接写库）。
+  /// 返回 true = 第一行变化，本 State 重绘。
   bool _onScrollNotification(ScrollNotification notification) {
-    if (notification is ScrollUpdateNotification ||
-        notification is ScrollEndNotification) {
-      final index = _indexFromOffset();
-      if (index != _firstIndex) {
-        setState(() => _firstIndex = index);
+    if (notification is ScrollUpdateNotification) {
+      if (_tierController.onScrollUpdate()) {
+        setState(() {});
       }
-      if (notification is ScrollEndNotification) {
-        _persistBaseline();
+    } else if (notification is ScrollEndNotification) {
+      if (_tierController.onScrollEnd()) {
+        setState(() {});
       }
     }
     return false;
   }
 
-  /// 当前滚动偏移 → 第一行下标。
-  int _indexFromOffset() {
-    return (_controller.offset / _rowExtent).round().clamp(0, _tiers.length - 1);
-  }
-
-  /// 滚动停稳后落库（偏移已被吸附物理对齐）。写库与失效收在动作层
+  /// 控制器的落库注入闭包（停稳定档后调用）。写库与失效收在动作层
   /// saveFuelBaseline（ADR 0007）：仓库同值 no-op，重复停稳零开销，
   /// widget 不再自记游标、不再自己失效 provider。失败 toast 留本
-  /// widget（异常穿透惯例，反馈归调用方）。
-  Future<void> _persistBaseline() async {
+  /// 闭包（异常穿透惯例，反馈归调用方），异常不进决策体。
+  Future<void> _persistBaseline(int percent) async {
     try {
       await saveFuelBaseline(
         ref,
         carId: widget.carId,
-        percent: _currentPercent,
+        percent: percent,
       );
     } catch (error) {
       if (mounted) {
@@ -1039,10 +1032,11 @@ class _TierListCardState extends ConsumerState<_TierListCard> {
     }
   }
 
-  /// 返回图标：滚回默认 50% 在第一行（停稳后由滚动通知写库）。
+  /// 返回图标：滚回默认 50% 在第一行（停稳后由滚动通知写库）。目标
+  /// 偏移是决策（控制器），动画时长/曲线是 UI 决策（本 State）。
   void _scrollBackToDefault() {
     _controller.animateTo(
-      _defaultIndex * _rowExtent,
+      _tierController.backToDefaultOffset,
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
