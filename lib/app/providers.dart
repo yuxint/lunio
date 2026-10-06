@@ -12,14 +12,16 @@
 //
 // ## 本 App 的状态管理约定（重要）
 // Repository 的写方法（增删改）**不会**主动刷新任何缓存。写库后的缓存
-// 逐出由"写库 → 失效 → 通知收尾"的编排统一收在保存动作层
+// 逐出由"写库 → bump 数据纪元 → 通知收尾"的编排统一收在保存动作层
 // shell_actions.dart（每个业务变更一个具名函数，见 docs/adr/0007）。
-// 缓存逐出有两种模型：
-// - 车辆/记录类 provider（carsProvider 家族）：手动失效——动作层与少数
-//   既有调用方（备份恢复、清空数据、通知协调器）调 invalidateVehicleProviders；
-//   新增保存路径进动作层加函数，不要在 UI 里手排失效序列；
-// - 偏好表派生 provider：偏好纪元（preferencesEpochProvider，ADR 0017）——
-//   写点 bump 一次，所有 watch 纪元的 provider 自动重算，无名单可漏。
+// 缓存逐出走两个"数据纪元"（与通知同步代数同构的版本号模型）：
+// - 偏好纪元（preferencesEpochProvider，ADR 0017）：偏好表数据的
+//   版本号，偏好写点 bump；
+// - 车辆数据纪元（vehicleDataEpochProvider，ADR 0017 修订节）：车辆/
+//   项目/记录/加油四张业务表数据的版本号，动作层写库函数 bump——
+//   2026-10-06 起取代手工失效名单 invalidateVehicleProviders。
+// 读对应表的 provider 在自己 build 首行 watch 纪元，纪元一变自动重查，
+// 无名单可漏；新增保存路径进动作层加函数，不要在 UI 里手排失效序列。
 //
 // ## 依赖关系图
 // ```text
@@ -96,6 +98,37 @@ class PreferencesEpoch extends Notifier<int> {
   int build() => 0;
 
   /// 纪元 +1（作废全部偏好派生 provider 的缓存值）。
+  void bump() => state = state + 1;
+}
+
+/// 车辆数据纪元：车辆/保养项目/保养记录/加油记录四张业务表数据的
+/// 版本号，与偏好纪元（[preferencesEpochProvider]）同构（ADR 0017
+/// 2026-10-06 修订节）。任何写这四张表的点写完库后 bump 一次；读这些
+/// 表的 provider（cars、appliedCar、三个按车 family 及其 applied 派生、
+/// vehicleModels）在 build 首行 watch 本 provider，纪元一变自动重算。
+/// 2026-10-06 起取代手工失效名单（原 invalidateVehicleProviders 已
+/// 删除）：新增按车派生缓存时在 build 首行加
+/// ref.watch(vehicleDataEpochProvider)，漏加只会让该 provider 自己
+/// 陈旧，不再殃及名单其他成员。不 watch 纪元的三个边界：
+/// - defaultMaintenanceBootstrapProvider：做的是目录对账（幂等重灌），
+///   恢复备份/清空数据后的重灌由 invalidateAllAppDataProviders 显式
+///   失效触发——只 bump 车辆纪元不会重灌目录（vehicleModelsProvider
+///   重查时 bootstrap 幂等 no-op）；
+/// - parkingCountdownProvider：读偏好表，"写点直失效自己"模型（见
+///   偏好纪元注释），车辆写库不牵动停车卡；
+/// - appliedCarFuelPredictionProvider：读加油预测设置表，其真实写点
+///   （档位落库）保留精准单点失效（ADR 0017 决定 5 边界）。
+final vehicleDataEpochProvider = NotifierProvider<VehicleDataEpoch, int>(
+  VehicleDataEpoch.new,
+);
+
+/// 车辆数据纪元 Notifier：state 从 0 起，bump() 自增（写点在动作层
+/// 车辆/记录/项目/加油分节的保存函数与全量失效入口）。
+class VehicleDataEpoch extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// 纪元 +1（作废全部车辆数据派生 provider 的缓存值）。
   void bump() => state = state + 1;
 }
 
@@ -181,19 +214,22 @@ final appliedCarFuelPredictionProvider =
     });
 
 /// 某辆车的加油记录全量列表（按日期、里程、id 升序——满箱段油耗口径的
-/// 锚定顺序，ADR 0014），按车 id 缓存的 family。加载、竞态、缓存、逐出
-/// 由 Riverpod 接管，写库后经 [invalidateVehicleProviders] 整族失效
-/// （同项目 family 的约定）。
+/// 锚定顺序，ADR 0014），按车 id 缓存的 family。加载、竞态、缓存由
+/// Riverpod 接管，写库后随车辆数据纪元 bump 整族重查（家族实例无人监听
+/// 即销毁，下次 watch 重查；ADR 0017 修订节，同项目 family 的约定）。
 final fuelRecordsForCarProvider =
     FutureProvider.family<List<FuelRecord>, int>((ref, carId) {
-      return ref.watch(fuelRepositoryProvider).listFuelRecordsForCar(carId);
-    });
+  ref.watch(vehicleDataEpochProvider);
+  return ref.watch(fuelRepositoryProvider).listFuelRecordsForCar(carId);
+});
 
 /// 应用车辆的加油记录全量列表。仿 [appliedCarFuelPredictionProvider] 的
 /// 派生模式：只承载"当前应用车辆解析 + 无车返回空列表"两条规则，
-/// 数据拉取统一走 [fuelRecordsForCarProvider]。
+/// 数据拉取统一走 [fuelRecordsForCarProvider]。build 首行 watch 车辆
+/// 数据纪元（显式声明失效来源，不依赖上游 family 换新实例的隐式不等性）。
 final appliedCarFuelRecordsProvider =
     FutureProvider<List<FuelRecord>>((ref) async {
+      ref.watch(vehicleDataEpochProvider);
       final car = await ref.watch(appliedCarProvider.future);
       if (car?.id == null) {
         return const [];
@@ -268,8 +304,10 @@ final defaultMaintenanceBootstrapProvider = FutureProvider<void>((ref) {
 });
 
 /// 车型库（约 190 个车型），供添加车辆向导的品牌/车型选择器使用。
-/// 注意这里显式 await bootstrap 完成，保证车型目录已入库。
+/// 注意这里显式 await bootstrap 完成，保证车型目录已入库；build 首行
+/// watch 车辆数据纪元（写库后的重查随纪元 bump，ADR 0017 修订节）。
 final vehicleModelsProvider = FutureProvider<List<VehicleModel>>((ref) async {
+  ref.watch(vehicleDataEpochProvider);
   await ref.watch(defaultMaintenanceBootstrapProvider.future);
   return ref.watch(builtInCatalogRepositoryProvider).listVehicleModels();
 });
@@ -295,7 +333,10 @@ final defaultItemsTemplateProvider = FutureProvider.family<
 /// 当前用户所有车辆列表。显式 await bootstrap 完成（依赖显式化，R29）：
 /// bootstrap 只写车型目录/默认模板两张内置表、不写 cars 表，
 /// 行为与原先"只借用失效信号"等价，但依赖关系在代码里一目了然。
+/// build 首行 watch 车辆数据纪元（写库后的重查随纪元 bump，ADR 0017
+/// 修订节）。
 final carsProvider = FutureProvider<List<Car>>((ref) async {
+  ref.watch(vehicleDataEpochProvider);
   await ref.watch(defaultMaintenanceBootstrapProvider.future);
   return ref.watch(lunioRepositoryProvider).listCars();
 });
@@ -304,26 +345,31 @@ final carsProvider = FutureProvider<List<Car>>((ref) async {
 /// 显式 await carsProvider（依赖显式化，R29）；实际取值走
 /// repository.getAppliedCar()，其内部按 AppliedCarRules 回退：
 /// 偏好里的 appliedCarId 存在且有效则用它，否则回退第一辆车，无车返回 null。
+/// build 首行 watch 车辆数据纪元（切换应用车辆/删车等写点 bump 后重算）。
 final appliedCarProvider = FutureProvider<Car?>((ref) async {
+  ref.watch(vehicleDataEpochProvider);
   await ref.watch(carsProvider.future);
   return ref.watch(lunioRepositoryProvider).getAppliedCar();
 });
 
 /// 某辆车的保养项目列表（含启用/停用状态），按车 id 缓存的 family。
 /// 项目管理 sheet（可管任意一辆车，不限当前应用车辆）与记录表单行内
-/// 新增共用这一份拉取逻辑；加载、竞态、缓存、逐出由 Riverpod 接管，
-/// 写库后经 [invalidateVehicleProviders] 整族失效（家族实例无人监听
-/// 即销毁，下次 watch 重查）。
+/// 新增共用这一份拉取逻辑；加载、竞态、缓存由 Riverpod 接管，写库后
+/// 随车辆数据纪元 bump 整族重查（家族实例无人监听即销毁，下次 watch
+/// 重查；ADR 0017 修订节）。
 final maintenanceItemsForCarProvider =
     FutureProvider.family<List<MaintenanceItem>, int>((ref, carId) {
+  ref.watch(vehicleDataEpochProvider);
   return ref.watch(lunioRepositoryProvider).listMaintenanceItemsForCar(carId);
 });
 
 /// 应用车辆的保养项目列表（含启用/停用状态）。只承载"当前应用车辆
 /// 解析 + 无车返回空列表"两条规则，数据拉取统一走
-/// [maintenanceItemsForCarProvider]。
+/// [maintenanceItemsForCarProvider]；build 首行 watch 车辆数据纪元
+/// （失效来源显式声明，与记录/加油派生同款）。
 final appliedCarMaintenanceItemsProvider =
     FutureProvider<List<MaintenanceItem>>((ref) async {
+      ref.watch(vehicleDataEpochProvider);
       final car = await ref.watch(appliedCarProvider.future);
       if (car?.id == null) {
         return const [];
@@ -334,10 +380,11 @@ final appliedCarMaintenanceItemsProvider =
 /// 某辆车的保养记录全量列表，按车 id 缓存的 family（无分页）。
 /// 应用车辆记录派生（[appliedCarRecordsProvider]，数据束与费用统计页
 /// 经它消费）等按车消费者共用；
-/// 加载、竞态、缓存、逐出由 Riverpod 接管，写库后经
-/// [invalidateVehicleProviders] 整族失效（同项目 family 的约定）。
+/// 加载、竞态、缓存由 Riverpod 接管，写库后随车辆数据纪元 bump 整族
+/// 重查（同项目 family 的约定；ADR 0017 修订节）。
 final recordsForCarProvider =
     FutureProvider.family<List<MaintenanceRecord>, int>((ref, carId) {
+  ref.watch(vehicleDataEpochProvider);
   return ref
       .watch(lunioRepositoryProvider)
       .listMaintenanceRecordsForCar(carId);
@@ -348,9 +395,11 @@ final recordsForCarProvider =
 /// 车辆解析 + 无车返回空列表"两条规则，数据拉取统一走
 /// [recordsForCarProvider]（与项目/加油派生同构——此前这里直查仓库、
 /// 不 watch 按车 family，是三个 applied 派生里的例外写法，2026-10-01
-/// 随数据束收编统一）。
+/// 随数据束收编统一）；build 首行 watch 车辆数据纪元（失效来源显式
+/// 声明，与项目/加油派生同款）。
 final appliedCarRecordsProvider =
     FutureProvider<List<MaintenanceRecord>>((ref) async {
+      ref.watch(vehicleDataEpochProvider);
       final car = await ref.watch(appliedCarProvider.future);
       if (car?.id == null) {
         return const [];
@@ -374,10 +423,10 @@ final appliedCarRecordsProvider =
 /// 域内的偏好 provider，控制器自己监听）；加油记录（加油域，ADR 0015，
 /// 消费方按域单独 watch）。
 ///
-/// 边界（与 arch-0928 票正交）：数据束是读侧接缝（watch 哪些上游），
-/// 车辆数据纪元是写侧失效机制（bump 代替名单）——纪元落地时本 provider
-/// 无需改（它不直接读库，上游失效会传导）；偏好纪元边界不动（today
-/// 上游自己 watch 纪元，属既有行为）。
+/// 边界（与车辆数据纪元的分工）：数据束是读侧接缝（watch 哪些上游），
+/// 纪元是写侧失效机制（写库点 bump）——本 provider 不直接读库、不
+/// watch 纪元，bump 后经上游（四个上游各自的 watch 行）传导重算；偏好
+/// 纪元边界不动（today 上游自己 watch 偏好纪元，属既有行为）。
 class AppliedCarBoard {
   const AppliedCarBoard({
     required this.car,
@@ -400,8 +449,10 @@ class AppliedCarBoard {
 }
 
 /// 数据束 provider：顺序 await 四个上游（车辆/项目/记录/生效今天），
-/// 全部落定才算就绪。写库后的刷新随 [invalidateVehicleProviders] 失效
-/// 上游传导（名单里也显式列出了数据束，防上游 watch 行被改时陈旧）。
+/// 全部落定才算就绪。写库后的刷新随车辆数据纪元 bump 传导：上游
+/// （appliedCar / applied 派生及其按车 family）各自 build 首行 watch
+/// 纪元，重算沿依赖链传导到数据束；数据束自身不 watch 纪元（不读库，
+/// 机制测试锁住上游的 watch 行不许删）。
 final appliedCarBoardProvider = FutureProvider<AppliedCarBoard>((ref) async {
   final car = await ref.watch(appliedCarProvider.future);
   final items = await ref.watch(appliedCarMaintenanceItemsProvider.future);
@@ -446,8 +497,8 @@ class CostStatsPageData {
 /// 只有那一份）。就绪语义随上游传导：数据束任一上游 loading/error →
 /// 本 provider 同态 loading/error——费用统计页 watch 这一个 provider
 /// 单门卫收口即可（2026-10-01 并轨，此前页面文件里双层门卫 + 手抄
-/// 无车分支）。失效随家族走——写库后 [invalidateVehicleProviders] 整族
-/// 逐出，这里 watch 上游自动重算。
+/// 无车分支）。失效随家族走——写库后车辆数据纪元 bump，上游各自 watch
+/// 纪元重算并传导到这里（本 provider 不读库、不 watch 纪元）。
 final costStatsDataProvider = FutureProvider<CostStatsPageData>((ref) async {
   final board = await ref.watch(appliedCarBoardProvider.future);
   final fuelRecords = await ref.watch(appliedCarFuelRecordsProvider.future);
@@ -481,40 +532,14 @@ final nativeWidgetsProvider = Provider<NativeWidgets>((ref) {
   return NativeWidgets();
 });
 
-/// 车辆/项目/记录相关缓存整体失效（写库后由 UI 调用）。
-/// 逐出的顺序无关紧要，Riverpod 会在下一帧统一重算被 watch 的 provider。
-void invalidateVehicleProviders(WidgetRef ref) {
-  ref.invalidate(carsProvider);
-  ref.invalidate(vehicleModelsProvider);
-  ref.invalidate(appliedCarProvider);
-  ref.invalidate(appliedCarMaintenanceItemsProvider);
-  // 保养记录 applied 派生（数据束与记录页在用）：取数口径与项目派生
-  // 同构，watch 按车 family。
-  ref.invalidate(appliedCarRecordsProvider);
-  // 应用车辆数据束：上游失效会传导（它 watch 四上游），这里显式列出
-  // 与 applied 派生写法对齐，防将来 watch 行被改时数据束陈旧。
-  ref.invalidate(appliedCarBoardProvider);
-  // 费用统计页数据接缝：纯派生（watch 数据束与加油 applied 派生），上游
-  // 失效会传导；显式列出与数据束的防御写法对齐（防 watch 行被改时陈旧）。
-  ref.invalidate(costStatsDataProvider);
-  // family 整体逐出：项目 sheet 可能正看着非当前应用车辆（车辆卡入口），
-  // 写库/删车/恢复备份后所有按车实例都要重查。
-  ref.invalidate(maintenanceItemsForCarProvider);
-  // 保养记录按车 family（费用统计页在用）同口径整族逐出，避免统计页
-  // 缓存住已删除/已修改的旧记录。
-  ref.invalidate(recordsForCarProvider);
-  // 加油记录按车 family 同口径整族逐出（ADR 0014）；applied 派生 provider
-  // 依赖 family 与 appliedCar，家族失效时会传导，这里显式列出与项目
-  // family 的既有写法对齐。
-  ref.invalidate(appliedCarFuelRecordsProvider);
-  ref.invalidate(fuelRecordsForCarProvider);
-}
-
 /// 全量失效：恢复备份 / 清空数据后调用，让所有 FutureProvider 重新查库。
-/// parkingCountdown 单独逐出（它不走偏好纪元，写点直失效模型）。
+/// bootstrap 单独逐出（它不 watch 车辆数据纪元——目录对账的幂等重灌
+/// 只有这一个触发点，恢复/清空后必须显式失效才重灌）；parkingCountdown
+/// 单独逐出（它不走任何纪元，写点直失效模型）；两个数据纪元各 bump
+/// 一次（车辆/项目/记录/加油四张业务表 + 偏好表的派生缓存全体作废）。
 void invalidateAllAppDataProviders(WidgetRef ref) {
   ref.invalidate(defaultMaintenanceBootstrapProvider);
   ref.invalidate(parkingCountdownProvider);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
   ref.read(preferencesEpochProvider.notifier).bump();
 }

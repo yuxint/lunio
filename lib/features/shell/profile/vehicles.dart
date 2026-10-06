@@ -251,7 +251,7 @@ class EmptyVehicleCard extends StatelessWidget {
 /// 目录为空 toast 拦截 → 弹两步向导。
 /// 两步换 sheet 标题经 handle.setFrame（onMaintenanceStepChanged 接线）；
 /// 向导提交 → createCarWithMaintenanceItems（事务：车+项目+首车设应用
-/// 车辆）→ invalidateVehicleProviders（动作层）。
+/// 车辆）→ bump 车辆数据纪元（动作层）。
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
   List<VehicleModel> vehicleModels = const [];
   LocalDate today = LocalDate.fromDateTime(DateTime.now());

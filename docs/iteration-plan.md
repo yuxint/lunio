@@ -53,7 +53,7 @@
 
 ### P4 架构卫生三票（arch-0928 剩余）
 
-- [ ] 01 车辆数据纪元：动作层车辆域失效名单 `invalidateVehicleProviders` 换成数据纪元 bump（`vehicleDataEpochProvider`，与偏好纪元 `preferencesEpochProvider` 同构），新增按车派生缓存只需 watch 纪元一行。
+- [x] 01 车辆数据纪元：动作层车辆域失效名单 `invalidateVehicleProviders` 换成数据纪元 bump（`vehicleDataEpochProvider`，与偏好纪元 `preferencesEpochProvider` 同构），新增按车派生缓存只需 watch 纪元一行（完成于 2026-10-06，ADR 0017 修订节）。
 - [ ] 03 同步信号接缝：恢复备份后的强制补判改为显式同步信号，协调器不再拿数据 provider 失效当信号用。
 - [ ] 05 重入防护共享模块：通知同步控制器与小组件快照控制器的 busy/pending 重入协议收成一份小模块。
 

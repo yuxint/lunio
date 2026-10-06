@@ -134,9 +134,10 @@ void main() {
       final first = await container.read(costStatsDataProvider.future);
       expect(first.fuelRecords, hasLength(1));
 
-      // 再写一条加油记录 → 只失效按车 family（与动作层
-      // invalidateVehicleProviders 的家族整族逐出同口径）：watch 在位则
-      // 失效沿 family → applied 派生 → 本 provider 传导，重算带出新值。
+      // 再写一条加油记录 → 只失效按车 family（生产口径已换成动作层
+      // bump 车辆数据纪元，本用例直击 family 层验证同一条传导链）：
+      // watch 在位则失效沿 family → applied 派生 → 本 provider 传导，
+      // 重算带出新值。
       await container.read(fuelRepositoryProvider).saveFuelRecord(
         defaultFuelRecord(carId, date: const LocalDate(2026, 9, 10)),
       );

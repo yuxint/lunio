@@ -8,7 +8,7 @@
 >
 > **读法提示**（Java 背景）：`Repository` ≈ Service+DAO；`Provider` ≈ Spring Bean；`ref.invalidate` ≈ 缓存逐出。多数写操作的固定模式是：**UI 事件 → 动作层（shell_actions）写库 + invalidate → FutureProvider 重新查库 → UI 自动刷新**。少数旁路不走动作层：停车倒计时保存是 `parking_countdown.dart` 本地函数（1.4）。
 
-数据层按域拆成仓库家族（ADR 0008）：**主仓库** `LunioRepository`（车辆/项目/记录核心域）、`BuiltInCatalogRepository`（车型目录+bootstrap）、`FuelRepository`（加油域）、`BackupRepository`（备份/恢复/清空）、`LunioPreferences`（偏好门面，全部偏好 key 与编解码的唯一出口）。各域在 providers.dart 装配（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `lib/features/shell/fuel/fuel_prices.dart`，依赖单向：providers.dart 不再 import 它）；偏好写入后的缓存逐出走偏好纪元（ADR 0017，见下文"缓存失效入口"）；表插入路径共享 `entity_row_codec.dart` 的 Companion 构造。
+数据层按域拆成仓库家族（ADR 0008）：**主仓库** `LunioRepository`（车辆/项目/记录核心域）、`BuiltInCatalogRepository`（车型目录+bootstrap）、`FuelRepository`（加油域）、`BackupRepository`（备份/恢复/清空）、`LunioPreferences`（偏好门面，全部偏好 key 与编解码的唯一出口）。各域在 providers.dart 装配（例外：油价域 provider——省份/油品/手填价/数据源/油价控制器/生效链——在 `lib/features/shell/fuel/fuel_prices.dart`，依赖单向：providers.dart 不再 import 它）；写库后的缓存逐出走两个数据纪元——车辆/项目/记录/加油四张业务表走车辆数据纪元、偏好表走偏好纪元（ADR 0017 及其修订节，见下文"缓存失效入口"）；表插入路径共享 `entity_row_codec.dart` 的 Companion 构造。
 
 ---
 
@@ -36,7 +36,7 @@
   → onSubmit 闭包（showMaintenanceRecordFormSheet 内）
   → shell_actions.dart → saveMaintenanceRecord(ref, ...)         # 动作层（ADR 0007）
       ├→ repository.saveMaintenanceRecordWithItemUpdates()       # 事务：校验+写库
-      └→ invalidateVehicleProviders(ref)                         # 逐出缓存
+      └→ bump 车辆数据纪元（vehicleDataEpochProvider）          # 缓存作废重查
   → appliedCarRecordsProvider 等重算 → AppShell build → UI 刷新
 ```
 
@@ -54,14 +54,14 @@
 
 **sheet 键盘抬升**：键盘高度（`bottomInset`）垫在 sheet 容器**外侧**（`PrototypeSheetFrame` 返回 `Padding(bottom: bottomInset)`）：键盘弹出时 sheet 底边整体抬到键盘顶边、表面悬在键盘上方，滚动视口完整可见，点击底部输入框由 Flutter 焦点滚动滚入可见区；无键盘时外侧垫 0，sheet 照旧贴住屏幕底边不悬空。底部安全区（Home 横条）补在内容内侧、只补键盘没盖住的差额，总预留恒为 max(安全区, 键盘高度) 不叠加。配套约束：`bottomInset` 必须取 sheet 自己的 builder context（`MediaQuery.of(sheetContext)`，随键盘实时更新）；误用外层页面 context 会在 sheet 构建时定格为 0。**编辑表单 sheet 的 bottomInset 由表单运行时 `showLunioFormSheet` 统一读取（ADR 0016），调用方不再裸写 MediaQuery。**
 
-**缓存失效入口**（`lib/app/providers.dart`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不手排。偏好类缓存失效走**偏好纪元**模型（ADR 0017）——`preferencesEpochProvider` 是偏好表数据的版本号（与通知同步代数同构），写完库 bump 一次，所有 watch 纪元的 provider 自动重查，无名单可漏：
+**缓存失效入口**（`lib/app/providers.dart`）。ADR 0007 后主要调用方是保存动作层（shell_actions.dart）与通知协调器，UI 不手排。缓存失效全部走**数据纪元**模型（ADR 0017 及其 2026-10-06 修订节）——纪元是与通知同步代数同构的表数据版本号，写完库 bump 一次，所有 watch 纪元的 provider 自动重查，无名单可漏：
 
 | 入口 | 失效内容 | 谁在调 |
 |---|---|---|
 | 偏好纪元 bump（ADR 0017） | 全部偏好表派生 provider（开发者模式/手动日期/生效日期/主题/通知设置/加油开关/当前车加油预测设置/省份/油品/手填价/油价控制器，共 11 个，分布在 providers.dart 与 fuel_prices.dart，各自 build 里 watch 纪元） | 动作层偏好类函数与加油省份/油品/手填价函数、通知协调器（权限回写与通知设置） |
-| `invalidateVehicleProviders` | 车辆/车型/项目/记录（含按车记录 family）/加油记录/应用车辆数据束共 10 个 provider（车辆类家族维持手动失效） | 动作层车辆/项目/记录类函数 |
-| `parkingCountdownProvider` 直失效 | 停车倒计时缓存（不走纪元——写点直失效自己模型，偏好写入不牵动停车卡） | 动作层 saveParkingCountdown / clearParkingCountdown |
-| `invalidateAllAppDataProviders` | bootstrap + 停车倒计时直失效 + 车辆家族 + 偏好纪元 bump | 恢复备份 / 清空数据 |
+| 车辆数据纪元 bump（ADR 0017 修订节） | 全部读车辆/项目/记录/加油四张业务表的 provider（cars/appliedCar/按车项目与记录与加油三个 family 及其 applied 派生/vehicleModels，共 9 个，各自 build 里 watch 纪元；数据束与费用统计接缝纯派生不 watch、刷新经上游传导） | 动作层车辆/项目/记录/加油类函数（createCar/saveMaintenanceRecord/saveFuelRecord 等 12 个） |
+| `parkingCountdownProvider` 直失效 | 停车倒计时缓存（不走任何纪元——写点直失效自己模型，偏好写入与车辆写库都不牵动停车卡） | 动作层 saveParkingCountdown / clearParkingCountdown |
+| `invalidateAllAppDataProviders` | bootstrap 显式失效（目录对账重灌的唯一触发点）+ 停车倒计时直失效 + 车辆数据纪元 bump + 偏好纪元 bump | 恢复备份 / 清空数据 |
 
 **Provider 依赖图**（`lib/app/providers.dart`，文件头有注释版；仓库按域拆分后：目录/加油/备份/主仓库各自独立挂数据库，偏好类 provider 统一挂偏好门面；**油价域 provider 定义在 `lib/features/shell/fuel/fuel_prices.dart`**，这里只画在本文件的锚点）：
 
@@ -75,7 +75,10 @@ appDatabaseProvider(:215)
   │     └─ 加油开关(:159)/当前车加油设置(:169)                              │
   │        （省份/油品/手填价在 fuel_prices.dart，watch 偏好门面 + 偏好纪元）│
   │     上述偏好类 provider（停车除外）均 watch preferencesEpochProvider(:86)
-  │     ——写完库 bump 一次全体自动重查（ADR 0017）
+  │     ——偏好写完库 bump 一次全体自动重查（ADR 0017）；车辆数据派生
+  │     provider（vehicleModels/cars/appliedCar/三个按车 family 及其
+  │     applied 派生，共 9 个）同理 watch vehicleDataEpochProvider，
+  │     车辆/项目/记录/加油写库后 bump 一次全体自动重查（ADR 0017 修订节）
   ├─→ builtInCatalogRepositoryProvider(:228)
   │     └─→ defaultMaintenanceBootstrapProvider(:262)
   │           ├─→ vehicleModelsProvider(:270)（另挂目录仓库）

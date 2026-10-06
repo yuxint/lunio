@@ -1,8 +1,10 @@
 // shell 层保存动作层（≈ Spring 里一组薄 Service 方法）：每个业务变更
-// 一个具名函数，内部固定编排"写库 → 缓存逐出 →（需要时）通知域收尾"。
-// providers.dart 顶部的缓存逐出约定由此收口：车辆类家族手动失效
-// （invalidateVehicleProviders）、偏好类走偏好纪元 bump（ADR 0017），
-// UI 不再手排失效序列，新保存路径进这里，不会漏调。
+// 一个具名函数，内部固定编排"写库 → bump 数据纪元 →（需要时）通知域
+// 收尾"。providers.dart 顶部的缓存逐出约定由此收口：车辆/项目/记录/
+// 加油写点 bump 车辆数据纪元（vehicleDataEpochProvider，ADR 0017
+// 2026-10-06 修订节，原 invalidateVehicleProviders 名单已删除）、偏好类
+// 写点 bump 偏好纪元（ADR 0017），UI 不再手排失效序列，新保存路径进
+// 这里，不会漏调。
 //
 // 与调用方的分工（ADR 0007，破坏性操作的例外见下段）：
 //  - 本层只收 WidgetRef（纯 Dart 编排，不碰 BuildContext、不弹 UI）；
@@ -39,14 +41,15 @@ import 'modal_feedback.dart';
 
 // ---- 车辆 ----
 
-/// 切换当前应用车辆：写 appliedCarId 偏好 + 失效车辆类 provider。
+/// 切换当前应用车辆：写 appliedCarId 偏好 + bump 车辆数据纪元
+/// （appliedCar 重做回退解析、按车派生链全体重算）。
 Future<void> applyCar(WidgetRef ref, int carId) async {
   await ref.read(lunioPreferencesProvider).setAppliedCarId(carId);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 新增车辆（含向导整组保养项目）：走 Repository 的建车事务 →
-/// 失效车辆家族（车辆列表、目录对账、当前应用车辆一起刷新）。
+/// bump 车辆数据纪元（车辆列表、车型目录查询、当前应用车辆一起刷新）。
 Future<void> createCar(
   WidgetRef ref,
   Car car,
@@ -55,19 +58,19 @@ Future<void> createCar(
   await ref
       .read(lunioRepositoryProvider)
       .createCarWithMaintenanceItems(car, items);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
-/// 编辑车辆（里程/上路日期/油箱容积）：写库 → 失效车辆家族。
+/// 编辑车辆（里程/上路日期/油箱容积）：写库 → bump 车辆数据纪元。
 Future<void> updateCar(WidgetRef ref, Car car) async {
   await ref.read(lunioRepositoryProvider).updateCar(car);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 删除车辆：先弹确认对话框，确认后走协调器的删车清扫模板
 /// （内部先升同步代数作废在途任务（R8），删库后取消保养/里程提醒族
 /// 系统通知（R1：删最后一辆车后同步控制器无车短路不重排，必须显式
-/// 取消）），再失效车辆类 provider（appliedCar 回退逻辑在 Repository
+/// 取消）），再 bump 车辆数据纪元（appliedCar 回退逻辑在 Repository
 /// 内处理）。
 Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   final confirmed = await showConfirmDialog(
@@ -84,14 +87,14 @@ Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
       .runCarDeletion(
         () => ref.read(lunioRepositoryProvider).deleteCar(car.id!),
       );
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 // ---- 保养记录 ----
 
 /// 保存保养记录（含项目同步更新）：内部按 id 判断新增/编辑，都走
-/// Repository 的"记录+项目"事务 → 失效车辆家族（记录列表与提醒页的
-/// 进度环都挂在车辆家族上）。
+/// Repository 的"记录+项目"事务 → bump 车辆数据纪元（记录列表与提醒页
+/// 的进度环都挂在按车记录 family 上，随纪元重算）。
 Future<void> saveMaintenanceRecord(
   WidgetRef ref,
   MaintenanceRecord record,
@@ -109,13 +112,13 @@ Future<void> saveMaintenanceRecord(
       itemUpdates: itemUpdates,
     );
   }
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 删除整条保养记录（确认框由调用方负责弹）。
 Future<void> removeMaintenanceRecord(WidgetRef ref, int recordId) async {
   await ref.read(lunioRepositoryProvider).deleteMaintenanceRecord(recordId);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 从记录移除单个项目（只剩一项时 Repository 会连记录一起删；
@@ -128,12 +131,12 @@ Future<void> removeMaintenanceRecordItem(
   await ref
       .read(lunioRepositoryProvider)
       .removeMaintenanceRecordItem(recordId: recordId, itemId: itemId);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 // ---- 保养项目 ----
 
-/// 保存保养项目：内部按 id 判断新增/编辑 → 失效车辆家族。
+/// 保存保养项目：内部按 id 判断新增/编辑 → bump 车辆数据纪元。
 Future<void> saveMaintenanceItem(WidgetRef ref, MaintenanceItem item) async {
   final repository = ref.read(lunioRepositoryProvider);
   if (item.id == null) {
@@ -141,7 +144,7 @@ Future<void> saveMaintenanceItem(WidgetRef ref, MaintenanceItem item) async {
   } else {
     await repository.updateMaintenanceItem(item);
   }
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 启停保养项目（停用最后一个启用项会抛错，由调用方翻译展示）。
@@ -158,13 +161,13 @@ Future<void> setMaintenanceItemEnabled(
           updatedAt: DateTime.now(),
         ),
       );
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 删除保养项目（有历史记录会抛错，由调用方翻译展示）。
 Future<void> removeMaintenanceItem(WidgetRef ref, int itemId) async {
   await ref.read(lunioRepositoryProvider).deleteMaintenanceItem(itemId);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 // ---- 偏好 ----
@@ -244,8 +247,8 @@ Future<void> notifyParkingCountdownExpired(WidgetRef ref) async {
 
 // ---- 加油 ----
 
-/// 保存加油记录（按 id 分新增/编辑）：写库 → 失效车辆家族。加油记录
-/// 不联动车辆当前里程（保养记录是唯一写源，ADR 0014）。
+/// 保存加油记录（按 id 分新增/编辑）：写库 → bump 车辆数据纪元。加油
+/// 记录不联动车辆当前里程（保养记录是唯一写源，ADR 0014）。
 /// 确认框/关 sheet/toast 留调用方。
 Future<void> saveFuelRecord(WidgetRef ref, FuelRecord record) async {
   final repository = ref.read(fuelRepositoryProvider);
@@ -254,13 +257,13 @@ Future<void> saveFuelRecord(WidgetRef ref, FuelRecord record) async {
   } else {
     await repository.updateFuelRecord(record);
   }
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
-/// 删除加油记录：写库 → 失效车辆家族（确认框由调用方负责弹）。
+/// 删除加油记录：写库 → bump 车辆数据纪元（确认框由调用方负责弹）。
 Future<void> removeFuelRecord(WidgetRef ref, int recordId) async {
   await ref.read(fuelRepositoryProvider).deleteFuelRecord(recordId);
-  invalidateVehicleProviders(ref);
+  ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
 /// 保存档位基准（加油页滚轮停稳后第一行档位落库，ADR 0002）：写库 →

@@ -103,6 +103,10 @@ wiring bug 在历次审查中反复出现（R1/R8/R13 都涉及编排顺序）�
   都是本地单行读，无行为回归面）。
 - 车辆类家族（`invalidateVehicleProviders`）维持手动失效模型不变；
   `invalidateAllAppDataProviders` 内含纪元 bump。
+  **（2026-10-06 更新：本条前半句已失效**——车辆类家族也改走车辆数据
+  纪元 bump（`vehicleDataEpochProvider`，ADR 0017 修订节），名单函数
+  删除；`invalidateAllAppDataProviders` 改为 bootstrap 显式失效 +
+  停车直失效 + 双纪元 bump。）
 
 ## 更新（2026-09-26：恢复备份屏障重算）
 

@@ -212,8 +212,9 @@ void main() {
           sync: car.sync,
         ),
       );
-      // 失效按生产口径打在整族 family 上（invalidateVehicleProviders 同
-      // 款）：applied 记录派生 watch family，单失效派生会读到 family 的
+      // 失效按生产口径打在整族 family 上（生产写点 bump 车辆数据纪元，
+      // family 的 watch 行随纪元整族重算，本处直击 family 等价）：
+      // applied 记录派生 watch family，单失效派生会读到 family 的
       // 旧缓存（2026-10-01 数据束收编后的传导语义）。
       container.invalidate(recordsForCarProvider);
       for (var i = 0; i < 30 && notificationCalls.isEmpty; i++) {
