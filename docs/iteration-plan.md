@@ -57,7 +57,7 @@
 - [x] 02 坐标系柱状图命名模块：渲染体（柱数据项/纵轴刻度/虚线网格 painter/滚动与初始停最右编排）收编为 `lib/features/shell/records/axes_column_chart.dart`（`AxesColumnChart`/`AxesColumnItem`，保养年度柱与加油月度柱经同一接口消费），统计页文件只剩页面组装（完成于 2026-10-06；刻度纯函数部分先由 arch-1001/07 覆盖，此前本节误记整票已覆盖）。
 - [ ] 03 同步信号接缝：恢复备份后的强制补判改为显式同步信号，协调器不再拿数据 provider 失效当信号用。
 - [x] 04 吸附滚动视口共享模块：档位列表/加油记录卡垂直两处三明治收编为 `lib/features/shell/shared/scroll_window.dart`（`LunioSnapScrollWindow`，完成于 2026-10-06：垂直两处 2026-10-01 先行收编，本次补齐滚动条样式常量 `scrollbarThickness`/`scrollbarRadius` 单一出处、统计图表横向经论证不接入组件——参数管道，见票据决策日志；此前本节误记整票已覆盖不再立项）。
-- [ ] 05 重入防护共享模块：通知同步控制器与小组件快照控制器的 busy/pending 重入协议收成一份小模块。
+- [x] 05 重入防护共享模块：通知同步控制器与小组件快照控制器的 busy/pending 重入协议收成一份小模块（完成于 2026-10-06：`lib/features/shell/reminders/guarded_op.dart`（`GuardedOp`，enter/exit 配对 + 重跑回调注入），快照控制器手抄 `_writing`/`_pending` 标志位一并换用，机制测试 `test/features/guarded_op_test.dart`）。
 
 票据：`.scratch/arch-0928/issues/`（本机未跟踪文件，换机即丢）。
 跑法：arch-pipeline 续跑（resumeDir=.scratch/arch-0928）或逐票 implement。

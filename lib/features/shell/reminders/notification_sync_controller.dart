@@ -23,9 +23,10 @@
 //    R13）收进守卫模块 notification_sync_guard.dart：各异步方法开工时
 //    领一张 SyncRun，每个不可逆副作用（排通知/弹弹窗）之前问一次
 //    run.isValid——检查点不再手抄协议，语义单一事实来源在守卫模块；
-//  - 重入与 pending 重跑（R3 丢更新修复）是本文件自己的事：两组
-//    "执行中标志 + pending" 收成私有 _GuardedOp，重跑时各自清自己的
-//    签名；
+//  - 重入与 pending 重跑（R3 丢更新修复）是本文件自己的事：两组防护
+//    用 reminders 域共享模块 guarded_op.dart 的 GuardedOp（2026-10-06
+//    起从本文件私有 _GuardedOp 收编，与小组件快照控制器同一份实现），
+//    重跑时各自清自己的签名；
 //  - 权限协议与破坏性写库清扫的执行体在协调器（见 AGENTS.md 提醒目录
 //    说明）。
 import 'package:flutter/material.dart';
@@ -39,6 +40,7 @@ import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
+import 'guarded_op.dart';
 import 'notification_coordinator.dart';
 import 'notification_sync_guard.dart';
 import 'reminder_dialogs.dart' as bridge;
@@ -122,7 +124,7 @@ class NotificationSyncController {
 
   /// 系统通知重排的重入保护（R3）：执行中来了新签名不丢弃，置 pending
   /// 在 finally 里清系统签名并强制重跑一轮。
-  late final _GuardedOp _systemReschedule = _GuardedOp(
+  late final GuardedOp _systemReschedule = GuardedOp(
     isDisposed: () => _disposed,
     onRerun: () {
       _systemNotificationSignature = null;
@@ -133,7 +135,7 @@ class NotificationSyncController {
   /// 应用内提醒检查的重入保护（R3 同款，弹窗路径此前没有，2026-09-24
   /// 补齐——否则"弹窗开着时数据变化"的那一拍检查被永久丢掉）：重跑时
   /// 清应用内签名。
-  late final _GuardedOp _inAppCheck = _GuardedOp(
+  late final GuardedOp _inAppCheck = GuardedOp(
     isDisposed: () => _disposed,
     onRerun: () {
       _inAppNotificationSignature = null;
@@ -570,41 +572,6 @@ class NotificationSyncController {
       // 强制重跑一轮，用最新数据补判（含入口中间态守卫的时序，由它
       // 自行把关）。
       _inAppCheck.exit();
-    }
-  }
-}
-
-/// 重入保护（R3）：一组"执行中标志 + pending 重跑"。执行中又来新请求时
-/// 不丢弃，记 pending；本轮 finally 里用最新数据强制重跑一轮（重跑动作
-/// 由实例的 [onRerun] 定义——系统通知重排清系统签名、应用内检查清应用内
-/// 签名）。disposed 后不再记 pending、不再重跑。协议语义见守卫模块
-/// （notification_sync_guard.dart）文件头的第 4 层说明。
-class _GuardedOp {
-  _GuardedOp({required this.isDisposed, required this.onRerun});
-
-  final bool Function() isDisposed;
-  final void Function() onRerun;
-
-  bool _busy = false;
-  bool _pending = false;
-
-  /// 开始一轮：已在执行中则记 pending 并返回 false（调用方直接返回）。
-  bool enter() {
-    if (_busy) {
-      _pending = !isDisposed();
-      return false;
-    }
-    _busy = true;
-    return true;
-  }
-
-  /// 结束一轮（配对 finally 调用）：执行中标志复位；期间来过新请求则
-  /// 强制重跑一轮。
-  void exit() {
-    _busy = false;
-    if (_pending && !isDisposed()) {
-      _pending = false;
-      onRerun();
     }
   }
 }

@@ -470,7 +470,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
       否 → 什么都不做
 ```
 
-**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，协调器是唯一写者，同步控制器与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，定义在守卫模块而非 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃、弹窗展示前再复查，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有，控制器私有 `_GuardedOp`）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（CONTEXT.md 词汇：**同步守卫**）。
+**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，协调器是唯一写者，同步控制器与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，定义在守卫模块而非 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃、弹窗展示前再复查，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有，reminders 域共享模块 `guarded_op.dart → GuardedOp`——小组件快照控制器同款，2026-10-06 从控制器私有 `_GuardedOp` 收编）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（CONTEXT.md 词汇：**同步守卫**）。
 
 > 通知域协议（权限真值对账、删车/恢复/清空的通知清扫、"稍后提醒/知道了"静默读写）的执行体集中在 `reminders/notification_coordinator.dart → LunioNotificationCoordinator`（CONTEXT.md 词汇：**通知协调器**）；控制器保留被动监听外壳，停车倒计时的通知尾巴由协调器 `onParkingCountdownSaved/Cleared` 承接。
 

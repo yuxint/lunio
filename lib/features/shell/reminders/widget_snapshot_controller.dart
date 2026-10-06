@@ -15,11 +15,14 @@
 //
 // 防重复/防竞态（比通知同步简单——快照写入幂等、无弹窗无权限链）：
 //  - 相同 JSON 不重写（跨零点失效等触发不产生重复 I/O）；
-//  - 执行中又有新触发 → 置 pending，本轮结束后用最新数据重跑一轮；
+//  - 执行中又有新触发不丢弃：置 pending，本轮结束后用最新数据重跑
+//    一轮——重入防护经 reminders 域共享模块 guarded_op.dart 的 GuardedOp
+//    （2026-10-06 起与通知同步控制器同一份实现，不再手抄标志位）；
 //  - _disposed 检查：await 之后确认控制器还活着才继续。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import 'guarded_op.dart';
 import 'widget_snapshot.dart';
 
 /// 快照同步控制器。由 AppShell 的 State 创建/销毁（同
@@ -39,11 +42,14 @@ class WidgetSnapshotController {
   /// 上次写入的快照 JSON（相同内容不重写）。
   String? _lastJson;
 
-  /// 快照写入是否在执行中（防并发重入）。
-  bool _writing = false;
-
-  /// 执行中又有新触发时置 true：本轮结束后用最新数据重跑一轮。
-  bool _pending = false;
+  /// 快照写入的重入防护（R3 同款）：执行中来了新触发不丢弃，本轮
+  /// finally 里重跑一轮 [syncSnapshot]——重新读数据束重组件比对，内容
+  /// 没变自然不写；重跑动作即"用最新数据重同步快照"。disposed 后不记
+  /// pending、不重跑（协议语义见 guarded_op.dart 文件头）。
+  late final GuardedOp _write = GuardedOp(
+    isDisposed: () => _disposed,
+    onRerun: () => syncSnapshot(),
+  );
 
   /// 控制器是否已销毁。
   bool _disposed = false;
@@ -73,30 +79,31 @@ class WidgetSnapshotController {
 
   /// 同步入口：数据束（车/项目/记录/生效今天四件套）未就绪就跳过
   /// （等就绪那一拍的 listenManual 再补）；数据就绪后组装快照，
-  /// 内容有变化才经原生桥写入。
+  /// 内容有变化才经原生桥写入。入口先拦 disposed 再领重入票（GuardedOp
+  /// 的 isDisposed 只管 pending 记账与重跑决策，不 busy 时销毁与否都
+  /// 放行——是否继续由本方法自定），整个执行体包 try/finally 保证
+  /// 早退路径也配对 exit。
   Future<void> syncSnapshot() async {
-    if (_writing || _disposed) {
-      _pending = !_disposed;
+    if (_disposed || !_write.enter()) {
       return;
     }
-    final board = ref
-        .read(appliedCarBoardProvider)
-        .maybeWhen(data: (value) => value, orElse: () => null);
-    if (board == null) {
-      return;
-    }
-    // 车辆为 null（还没建车）是合法输入：快照按 noCar 空态组装。
-    final json = buildWidgetSnapshotJson(
-      car: board.car,
-      items: board.items,
-      records: board.records,
-      today: board.today,
-    );
-    if (json == _lastJson) {
-      return;
-    }
-    _writing = true;
     try {
+      final board = ref
+          .read(appliedCarBoardProvider)
+          .maybeWhen(data: (value) => value, orElse: () => null);
+      if (board == null) {
+        return;
+      }
+      // 车辆为 null（还没建车）是合法输入：快照按 noCar 空态组装。
+      final json = buildWidgetSnapshotJson(
+        car: board.car,
+        items: board.items,
+        records: board.records,
+        today: board.today,
+      );
+      if (json == _lastJson) {
+        return;
+      }
       final delivered = await ref
           .read(nativeWidgetsProvider)
           .updateSnapshot(json);
@@ -108,11 +115,9 @@ class WidgetSnapshotController {
         _lastJson = json;
       }
     } finally {
-      _writing = false;
-      if (_pending && !_disposed) {
-        _pending = false;
-        await syncSnapshot();
-      }
+      // 执行中来过新触发（被置 pending）时，这里用最新数据重跑一轮
+      // （重跑轮自身的重入仍由同一实例把守）。
+      _write.exit();
     }
   }
 }
