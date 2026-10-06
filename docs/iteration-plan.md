@@ -51,13 +51,14 @@
 来源：ADR 0006；AGENTS.md「Android 通知行为与 iOS 不完全相同」；README 发布前清单。
 验收：真机实测记录归档（截图或笔记）。
 
-### P4 架构卫生三票（arch-0928 剩余）
+### P4 架构卫生四票（arch-0928 剩余）
 
 - [x] 01 车辆数据纪元：动作层车辆域失效名单 `invalidateVehicleProviders` 换成数据纪元 bump（`vehicleDataEpochProvider`，与偏好纪元 `preferencesEpochProvider` 同构），新增按车派生缓存只需 watch 纪元一行（完成于 2026-10-06，ADR 0017 修订节）。
+- [x] 02 坐标系柱状图命名模块：渲染体（柱数据项/纵轴刻度/虚线网格 painter/滚动与初始停最右编排）收编为 `lib/features/shell/records/axes_column_chart.dart`（`AxesColumnChart`/`AxesColumnItem`，保养年度柱与加油月度柱经同一接口消费），统计页文件只剩页面组装（完成于 2026-10-06；刻度纯函数部分先由 arch-1001/07 覆盖，此前本节误记整票已覆盖）。
 - [ ] 03 同步信号接缝：恢复备份后的强制补判改为显式同步信号，协调器不再拿数据 provider 失效当信号用。
 - [ ] 05 重入防护共享模块：通知同步控制器与小组件快照控制器的 busy/pending 重入协议收成一份小模块。
 
-票据：`.scratch/arch-0928/issues/`（本机未跟踪文件，换机即丢）；02/04 两票的目标已由现存共享模块覆盖（`lib/features/shell/records/chart_scale.dart`、`lib/features/shell/shared/scroll_window.dart`），不再立项。
+票据：`.scratch/arch-0928/issues/`（本机未跟踪文件，换机即丢）；04 票的目标已由现存共享模块覆盖（`lib/features/shell/shared/scroll_window.dart`），不再立项。
 跑法：arch-pipeline 续跑（resumeDir=.scratch/arch-0928）或逐票 implement。
 验收：各票自带验收清单；`flutter analyze` + 全量测试绿。
 

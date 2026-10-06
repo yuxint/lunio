@@ -11,8 +11,8 @@
 // 层，不做任何持久化——「停在哪行要不要记账」是调用方自己的事（档位
 // 列表在 ScrollEnd 通知里写库，加油记录卡不记）。
 //
-// 费用统计柱状图（横向滚动）未接入本组件，原因见 cost_stats_page.dart
-// 现场注释。
+// 费用统计柱状图（横向滚动，axes_column_chart.dart）未接入本组件，原
+// 因见该文件现场注释。
 // Java 类比：一个定高定步长的复合滚动控件（JScrollPane 的固定行高
 // 变体），行渲染交给调用方的 cell renderer。
 // ignore_for_file: library_private_types_in_public_api
