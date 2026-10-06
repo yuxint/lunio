@@ -12,7 +12,8 @@
 // 列表在 ScrollEnd 通知里写库，加油记录卡不记）。
 //
 // 费用统计柱状图（横向滚动，axes_column_chart.dart）未接入本组件，原
-// 因见该文件现场注释。
+// 因见该文件现场注释；但其滚动条样式常量（scrollbarThickness /
+// scrollbarRadius）引用本文件同一份——全局调滚动条手感只改这里。
 // Java 类比：一个定高定步长的复合滚动控件（JScrollPane 的固定行高
 // 变体），行渲染交给调用方的 cell renderer。
 // ignore_for_file: library_private_types_in_public_api
@@ -78,13 +79,23 @@ class LunioSnapScrollWindow extends StatelessWidget {
   /// 表头要右缘对齐时引用同一常量，「12」全库只在这一处取值。
   static const double thumbInset = 12;
 
+  /// 细滚动条粗细（3dp）：滚动条手感的全局唯一定义点之一，横向图表
+  /// （axes_column_chart.dart，未接入本组件、原因见其现场注释）引用同一
+  /// 份——全局调滚动条粗细只改本常量，两个方向一起变。
+  static const double scrollbarThickness = 3;
+
+  /// 细滚动条拇指圆角（2dp）：同 [scrollbarThickness]，粗细/圆角成对
+  /// 定义在这里，横向图表引用同一份。
+  static const Radius scrollbarRadius = Radius.circular(2);
+
   @override
   Widget build(BuildContext context) {
     return Scrollbar(
       controller: controller,
-      // 细滚动条样式收在这里：全局调滚动条手感只改本文件。
-      thickness: 3,
-      radius: const Radius.circular(2),
+      // 细滚动条样式收在这里：全局调滚动条手感只改本文件（横向图表
+      // 引用同一对常量，见 scrollbarThickness/scrollbarRadius）。
+      thickness: scrollbarThickness,
+      radius: scrollbarRadius,
       child: SizedBox(
         height: visibleRows * rowExtent,
         child: ListView.builder(

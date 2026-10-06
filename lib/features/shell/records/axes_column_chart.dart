@@ -196,18 +196,18 @@ class _AxesColumnChartState extends State<AxesColumnChart> {
                   // ——初始停最右时左右两缘都是完整的月/年，不露半根
                   //（2026-09-24 五轮复验反馈）。
                   _scheduleJumpToEnd();
-                  // 滚动条样式（3dp/圆角 2/滑动时拇指淡入淡出）与垂直
-                  // 两处（档位列表/加油记录卡）的共享组件
-                  // LunioSnapScrollWindow 同款，但本图未接入该组件：
-                  // 横向滚动拇指画在底边、吸附步长是运行时取整校准的
-                  // 动态列宽（非"定行高"前提）、让位是底边 6dp 而非右
-                  // 缩进 12dp、还有初始停最右的编排——塞进组件要加五个
-                  // 参数，组件会变成参数管道而三明治没少。全局调滚动条
-                  // 手感时记得与 scroll_window.dart 同步这两行样式。
+                  // 滚动条样式与垂直两处（档位列表/加油记录卡）的共享
+                  // 组件 LunioSnapScrollWindow 同源（2026-10-06 起引
+                  // 用其 scrollbarThickness/scrollbarRadius 常量，全局
+                  // 调滚动条手感只改 scroll_window.dart 一处），但本图
+                  // 未接入该组件：横向滚动拇指画在底边、吸附步长是运行
+                  // 时取整校准的动态列宽（非"定行高"前提）、让位是底边
+                  // 6dp 而非右缩进 12dp、还有初始停最右的编排——塞进
+                  // 组件要加五个参数，组件会变成参数管道而三明治没少。
                   return Scrollbar(
                     controller: _scroll,
-                    thickness: 3,
-                    radius: const Radius.circular(2),
+                    thickness: LunioSnapScrollWindow.scrollbarThickness,
+                    radius: LunioSnapScrollWindow.scrollbarRadius,
                     // 底边留 6dp 给滚动条：拇指画在留白条上，与轴标签
                     // 拉开间距（五轮复验反馈：3dp 太贴）。
                     child: Padding(
