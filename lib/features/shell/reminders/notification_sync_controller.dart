@@ -9,6 +9,9 @@
 // 模式。这份清单同时是恢复备份屏障重算的等待名单来源
 // （waitForNotificationSyncSources，动作层恢复编排经注入 read 调用），
 // "同步引擎监听哪些数据源"只有这一份声明，两侧不会再各抄一份。
+// 清单之外还有两条控制面订阅（原因各自见 start() 内注释）：停车实时
+// 活动对账，与显式同步信号（恢复备份屏障重算后的强制补判轮，协调器
+// bump 守卫模块的 notificationSyncSignalProvider、此处订阅重跑）。
 //
 // 同步策略（沿用签名比对）：
 //  - 系统通知签名 = 提醒频率 + 停车倒计时摘要 + 全量数据签名；
@@ -167,6 +170,20 @@ class NotificationSyncController {
         parkingCountdownProvider,
         (_, _) => syncParkingLiveActivity(),
         fireImmediately: true,
+      ),
+    );
+    // 显式同步信号（守卫模块的 notificationSyncSignalProvider，2026-10-06）：
+    // 恢复备份屏障重算后协调器经 bump 强制补判一轮——屏障窗口内 provider
+    // 重算触发的同步轮全被入口早退丢弃、签名不动，settle 后没有任何自然
+    // 监听触发，靠这一拍用收敛后的最终数据补跑。它同样不是清单成员：信号
+    // 是控制面触发不是数据源（清单类型擦到 FutureProvider<Object?>，屏障
+    // 侧要逐个 await .future，Notifier 形态进不去也是防呆）；不发首拍——
+    // 启动初始同步已由数据源清单的 fireImmediately 覆盖，信号首拍是无
+    // 意义空轮。
+    _subscriptions.add(
+      ref.listenManual(
+        notificationSyncSignalProvider,
+        (_, _) => syncFromProviders(),
       ),
     );
   }

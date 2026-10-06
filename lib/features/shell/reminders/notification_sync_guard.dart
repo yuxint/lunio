@@ -1,11 +1,14 @@
-// 通知同步守卫：通知域防竞态协议的"状态与票"唯一拥有者。
-// ≈ Spring 里一个极小的并发工具 Bean：只回答一个问题——"手里这轮同步
-// 还作数吗"，不编排任何业务动作。
+// 通知同步守卫：通知域同步协议"共享状态"的唯一拥有者——防竞态的
+// "状态与票"（代数 + 写库中间态旗），以及协调器 → 同步控制器的显式
+// 同步信号。≈ Spring 里一个极小的并发工具 Bean：只持有状态与发信号，
+// 不编排任何业务动作。
 //
-// 在 App 中的位置：notification_sync_controller.dart（读票方）与
-// notification_coordinator.dart（写状态方）共用；代数 provider 原在
+// 在 App 中的位置：notification_sync_controller.dart（读票方/信号订阅方）与
+// notification_coordinator.dart（写状态方/信号发送方）共用；代数 provider 原在
 // app/providers.dart，2026-09-25 随守卫收编迁入本文件（与油价域 provider
-// 收进 fuel_prices.dart 同款先例）。
+// 收进 fuel_prices.dart 同款先例）；同步信号 provider 2026-10-06 落地时直接
+// 定义在此——放控制器模块会让协调器反向 import 控制器成环，本文件是两侧
+// 已共同依赖的唯一落点。
 //
 // 四层防竞态协议的语义单一事实来源（调用方不再各自手抄）：
 //  1. 同步代数（CONTEXT.md「同步代数」）：破坏性写库（恢复备份/清空数据/
@@ -42,6 +45,27 @@ class NotificationSyncGeneration extends Notifier<int> {
   int build() => 0;
 
   /// 代数 +1（作废全部在途通知同步任务）。
+  void bump() => state = state + 1;
+}
+
+/// 通知同步信号（CONTEXT.md「同步信号」）：恢复备份屏障重算后的强制
+/// 补判通道，与代数同构的小 Notifier——协调器（runBackupRestore 收尾）
+/// bump、同步控制器（start 订阅）收到即重跑一轮同步。2026-10-06 落地，
+/// 取代"协调器 invalidate 一个恰好在监听清单里的数据 provider 当信号"
+/// 的隐式手法：将来调整同步数据源清单不会再顺手踢断补判，恢复备份后
+/// 假到期弹窗的暗雷从结构上拆除。
+///
+/// 与代数的差别：代数要比对快照（"这轮还作数吗"），信号只发事件——
+/// int 值本身无人读，纯变更通知通道。
+final notificationSyncSignalProvider =
+    NotifierProvider<NotificationSyncSignal, int>(NotificationSyncSignal.new);
+
+/// 同步信号 Notifier：state 从 0 起，bump() 自增。
+class NotificationSyncSignal extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// 发一次信号（订阅方重跑一轮同步）。
   void bump() => state = state + 1;
 }
 

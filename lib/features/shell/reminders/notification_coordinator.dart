@@ -250,11 +250,13 @@ class LunioNotificationCoordinator {
 
   /// 数据重置屏障重算后的强制补判：窗口内 provider 重算触发的同步轮都被
   /// 入口早退丢弃（签名不动），settle 后没有任何自然的监听触发了，这里
-  /// 失效一个通知同步控制器监听的 provider（通知设置：一条偏好查询，重算
-  /// 无副作用）让它重发一拍，用已收敛的最终数据补跑完整同步（重排系统
-  /// 通知 + 应用内弹窗检查）。
+  /// bump 守卫模块的显式同步信号（notificationSyncSignalProvider）让同步
+  /// 控制器重跑一轮，用已收敛的最终数据补跑完整同步（重排系统通知 +
+  /// 应用内弹窗检查）。2026-10-06 起不再"失效一个恰好在监听清单里的数据
+  /// provider 当信号"——补判通道与数据源清单解耦，调整清单不会再顺手把
+  /// 补判踢断。
   void _forceSyncRoundAfterDataReset() {
-    ref.invalidate(notificationSettingsProvider);
+    ref.read(notificationSyncSignalProvider.notifier).bump();
   }
 
   /// 清空数据的收尾模板：升代数 → 置写库中间态旗 → 执行清库（偏好表

@@ -19,6 +19,11 @@
 //    恢复备份屏障的等待名单都遍历 notificationSyncSources 一份声明——
 //    订阅侧=计数替身逐源失效重算断言触发，屏障侧=假 read 断言咨询序列
 //    恰好等于清单且吞失败继续（任一侧退回手抄名单即红）。
+//  - 显式同步信号（2026-10-06）：恢复备份屏障重算后的强制补判通道与
+//    数据源清单解耦——协调器 bump 守卫模块的 notificationSyncSignalProvider、
+//    start() 订阅收到即重跑一轮；计数替身锁"单纯 bump 信号（不做任何
+//    provider 失效）也触发同步"，信号订阅被删或补判退回 invalidate 数据
+//    provider 当信号（在清单被调整后踢断）即红。
 //  说明：弹窗路径中间态守卫分两道——方法内旗检查（与 syncFromProviders
 //  入口早退之间无 await，公开 API 单独不可达，靠评审保障）与展示前复查
 //  （保养/里程两处展示调用各一道）。本文件锁定里程位点（已变异验证）：
@@ -50,6 +55,7 @@ import 'package:lunio/domain/entities/parking_countdown.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/features/shell/reminders/notification_coordinator.dart';
 import 'package:lunio/features/shell/reminders/notification_sync_controller.dart';
+import 'package:lunio/features/shell/reminders/notification_sync_guard.dart';
 
 import '../helpers/built_in_catalog_loader.dart' show loadBuiltInVehicleCatalogForTest;
 import '../helpers/widget_app.dart';
@@ -533,6 +539,36 @@ void main() {
         return Future<Object?>.value();
       });
       expect(consulted, notificationSyncSources);
+    });
+  });
+
+  // 显式同步信号（2026-10-06）：恢复备份屏障重算后的强制补判通道——
+  // 协调器 bump 守卫模块的 notificationSyncSignalProvider、start() 订阅
+  // 收到即重跑一轮。机制用计数替身锁"信号与数据源清单解耦"：不做任何
+  // provider 失效、单纯 bump 信号，同步轮必须增加——将来把通知设置等
+  // 成员从同步数据源清单里换掉，补判通道不受影响（此前"invalidate 恰好
+  // 在监听清单里的数据 provider 当信号"的暗雷即在此拆除）。信号订阅被删
+  // （start() 少这一条 listenManual）时本用例红。
+  group('explicit sync kick signal（显式同步信号）', () {
+    testWidgets('信号 bump → 同步控制器重跑一轮，不依赖任何 provider 失效',
+        timeout: const Timeout(Duration(seconds: 30)), (tester) async {
+      mockAndroidNotifications();
+      final controller = await pumpHost(
+        tester,
+        create: (ref, shellContext) =>
+            _CountingSyncController(ref: ref, shellContext: shellContext),
+      ) as _CountingSyncController;
+      await tester.pumpAndSettle();
+
+      final before = controller.syncCalls;
+      container.read(notificationSyncSignalProvider.notifier).bump();
+      await tester.pump();
+
+      expect(
+        controller.syncCalls,
+        greaterThan(before),
+        reason: '显式同步信号 bump 必须经 start() 的订阅触发一轮同步',
+      );
     });
   });
 }
