@@ -58,7 +58,7 @@ struct LunioWidgetSnapshot: Codable {
     /// entries 必为空，小组件据此渲染引导文案。
     let emptyState: String?
 
-    /// 预生成窗口内的逐日条目（见 CONTEXT.md"预生成窗口"）。
+    /// 预生成窗口内的逐日条目（见 GLOSSARY.md"预生成窗口"）。
     let entries: [DayEntry]
 
     struct DayEntry: Codable {

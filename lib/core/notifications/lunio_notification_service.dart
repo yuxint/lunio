@@ -27,7 +27,7 @@ import '../../domain/entities/parking_countdown.dart';
 // 与停车倒计时卡片共用，不再反向依赖 features 层。
 import '../format/clock.dart' show formatClock;
 
-/// 通知槽位台账（CONTEXT.md 词汇：通知槽位）：App 内每一条系统通知的
+/// 通知槽位台账（GLOSSARY.md 词汇：通知槽位）：App 内每一条系统通知的
 /// 身份登记——基础 id、重复次数、Android 渠道、payload、错峰偏移。
 ///
 /// 它是通知 id 的唯一事实源：排通知（rescheduleNotifications /
@@ -391,7 +391,7 @@ class LunioNotificationService {
   ///     闹钟（parkingAlarm 槽位，alarm 类 channel，精确调度）；
   ///  4. 预警通知（parkingWarning15 / parkingWarning5 槽位）：按 [evaluatedAt]
   ///     （保存时刻，缺省用当前时刻）算剩余时长，≥ 30 分钟才成对调度，
-  ///     剩余不足 30 分钟只有到点闹钟（CONTEXT.md 词汇：停车预警通知）。
+  ///     剩余不足 30 分钟只有到点闹钟（GLOSSARY.md 词汇：停车预警通知）。
   ///
   /// [evaluatedAt] 由调用方在保存动作入口先取好再走权限弹窗等异步链，
   /// 弹窗停留时间不挤占临界倒计时的剩余时长。

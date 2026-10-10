@@ -124,7 +124,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 改动 UI 流程、数据写点、通知行为或 Provider 依赖关系时，必须同步维护 `docs/operations-manual.md` 对应章节（维护规则见该手册第 8 节）。
 - 修复 `docs/code-review-report.md` 中记录的问题后，把对应条目标记为已修复并注明日期。
 - 完成或新增 `docs/iteration-plan.md` 中的迭代事项时，同步更新该文档的状态与分组（勾选注明日期，规则见其第 2 节）。
-- 视觉/token 改动同步 `DESIGN.md`；数据库结构改动同步 `docs/migration/current-database-schema.md`；新业务词汇或架构决定同步 `CONTEXT.md`（词汇表）与 `docs/adr/`（决定记录）。
+- 视觉/token 改动同步 `DESIGN.md`；数据库结构改动同步 `docs/migration/current-database-schema.md`；新业务词汇或架构决定同步 `GLOSSARY.md`（词汇表）与 `docs/adr/`（决定记录）。
 
 ## 常用命令
 
@@ -173,4 +173,4 @@ Issues live as local markdown under `.scratch/<feature-slug>/`（本地 markdown
 
 ### Domain docs
 
-Single-context：根目录 `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+Single-context：根目录 `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.

@@ -19,4 +19,4 @@
 
 - 2026-09-17 实现：`RecordRules.conflictingMileageRecord`（domain 纯函数）+ 表单 `_goToIntervalStep` 改 async 接软提示（`_findMileageConflict` / `_showMileageConflictDialog`，进第二步逻辑抽成 `_enterIntervalStep` 共用出口）。变异验证 5 处（日期边界 ×2、里程边界 ×2、删自身排除）全部被测试抓住。
 - 测试：领域 3 个新用例（双向命中 / 同日·等里程·单调不命中 / 编辑排除自身）；widget 4 个（三态 + 编辑态也弹，编辑态夹具播两条记录改里程触发）。全量 398 绿。
-- 文档已同步：operations-manual §4.2 步骤 2a + 入口段、CONTEXT.md 新增「记录合法性软提示」词条组。
+- 文档已同步：operations-manual §4.2 步骤 2a + 入口段、GLOSSARY.md 新增「记录合法性软提示」词条组。

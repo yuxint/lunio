@@ -557,7 +557,7 @@ void main() {
     );
 
     // 差值为负（补录乱序：基线在参照点之后 / 基线里程更大）→ null，
-    // 负值不参与提醒计算（CONTEXT.md「距上次」）。
+    // 负值不参与提醒计算（GLOSSARY.md「距上次」）。
     expect(
       RecordRules.daysSinceLast(
         baselineRecord: baseline,

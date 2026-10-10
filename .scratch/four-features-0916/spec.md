@@ -82,7 +82,7 @@ Status: ready-for-agent
 
 - iOS Info.plist 注册 URL scheme `lunio`；Swift 小组件根视图加一处 `widgetURL`，URL 形态必须是 `lunio:///reminders`（go_router 只匹配 path，`lunio://reminders` 的 path 为空会匹配失败）。
 - Dart 路由零改动：`/reminders` 本就是 initialLocation；热启由 Flutter scene delegate 自动转发 URL 给 go_router 完成。
-- 这是 ADR 0013「第一版不接深链」决定的推翻：修订 ADR 0013 追加修订记录，同步小组件 Swift 注释、AGENTS.md、CONTEXT.md 共 4 处表述。
+- 这是 ADR 0013「第一版不接深链」决定的推翻：修订 ADR 0013 追加修订记录，同步小组件 Swift 注释、AGENTS.md、GLOSSARY.md 共 4 处表述。
 
 ### 记录合法性软提示
 
@@ -112,7 +112,7 @@ Status: ready-for-agent
 
 ### 文档同步义务（随票执行）
 
-AGENTS.md（DB/备份版本号、加油域描述、路由清单）、operations-manual（新交互章节）、CONTEXT.md（加油记录/加满/满箱段/油耗等词条）、migration 文档（新表+版本）、ADR 0013 修订、ADR 0014 新增、DESIGN.md（若统计页引入新视觉模式）。
+AGENTS.md（DB/备份版本号、加油域描述、路由清单）、operations-manual（新交互章节）、GLOSSARY.md（加油记录/加满/满箱段/油耗等词条）、migration 文档（新表+版本）、ADR 0013 修订、ADR 0014 新增、DESIGN.md（若统计页引入新视觉模式）。
 
 ## Testing Decisions
 

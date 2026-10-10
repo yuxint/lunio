@@ -408,7 +408,7 @@ final appliedCarRecordsProvider =
     });
 
 /// 应用车辆数据束：当前应用车辆 + 项目清单 + 保养记录 + 生效今天
-/// 四件套一次拿齐（CONTEXT.md 词条「应用车辆数据束」）。
+/// 四件套一次拿齐（GLOSSARY.md 词条「应用车辆数据束」）。
 ///
 /// 就绪语义只有这一份实现：
 ///  - 任一上游未就绪（loading/error）→ 数据束整体未就绪（AsyncValue

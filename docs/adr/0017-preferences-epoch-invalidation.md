@@ -18,7 +18,7 @@ Bean，providers.dart 一边为名单引用油价域 provider）；`WidgetRef` �
 模式藏在被影响代码之外，review 不可见。
 
 仓库已有同构先例：通知同步代数（`notification_sync_guard.dart` 的
-`NotifierProvider<int>`，CONTEXT.md「同步代数」）——偏好表缺的只是同一
+`NotifierProvider<int>`，GLOSSARY.md「同步代数」）——偏好表缺的只是同一
 个"数据版本号"。
 
 ## 决定

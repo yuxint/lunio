@@ -12,7 +12,7 @@
 - [x] 小组件根视图一处 `widgetURL` 覆盖两档尺寸与空态；URL 必须是 `lunio:///reminders` 形态（go_router 只匹配 path，`lunio://reminders` 的 path 为空会匹配失败）
 - [x] Dart 路由零改动；现有 widget 测试全绿（它们隐式覆盖冷启落提醒页）；另新增 2 个深链用例（三斜杠热启跳回提醒页 / 双斜杠匹配失败变异锁定），391 全绿
 - [ ] 模拟器 `xcrun simctl openurl booted "lunio:///reminders"` 热启验证跳到提醒页 —— **被本机环境挡住**：SDK 26.2 vs 运行时 26.3.1 错配复发（9-16 上午"已修复"状态失效），xcodebuild 拒绝配置模拟器构建请求；替代验证 = swiftc 类型检查扩展源码零错误 + 导航通道级 widget 测试覆盖同一链路
-- [x] ADR 0013 追加修订记录；小组件 Swift 文件头注释、AGENTS.md、CONTEXT.md、operations-manual 共 4 处「不接深链」表述同步
+- [x] ADR 0013 追加修订记录；小组件 Swift 文件头注释、AGENTS.md、GLOSSARY.md、operations-manual 共 4 处「不接深链」表述同步
 - [x] `flutter analyze` 通过
 
 ## Comments

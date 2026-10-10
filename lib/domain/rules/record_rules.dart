@@ -211,7 +211,7 @@ class RecordRules {
     return records.where((record) => record.itemIds.contains(itemId));
   }
 
-  /// 距上次时间（天）：基线记录 → 参照日。CONTEXT.md「距上次（时间）」：
+  /// 距上次时间（天）：基线记录 → 参照日。GLOSSARY.md「距上次（时间）」：
   /// 无基线（该项目首条）或差值为负（补录乱序，负值不参与提醒计算）
   /// 一律折叠成 null——"可算不可算"的判定只在这里做一次，
   /// 调用方与格式化层只需处理 null 与非负值。

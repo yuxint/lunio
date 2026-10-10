@@ -24,7 +24,7 @@
 - 折叠行内的行默认不可见——通知（系统通知/应用内弹窗/桌面小组件）仍覆盖全部项目状态，折叠只影响提醒页内布局，不产生信息盲区。
 - `ReminderProgressRingPainter` 保留：停车倒计时卡仍用进度环；提醒行不再用它。
 - 测试面：`test/features/reminder_rows_test.dart` 增 splitReminderRows 四用例；widget 测试（reminders_test.dart）锁 折叠/平铺/展开后详情 sheet/数据重算双向四行为。**坑**：折叠区内的行文本（如「机油」）默认不在树上，旧断言需先展开折叠行。
-- 词汇表（CONTEXT.md「提醒页分层清单」节）与操作手册 2.4 节同步。
+- 词汇表（GLOSSARY.md「提醒页分层清单」节）与操作手册 2.4 节同步。
 
 ## 备选方案
 

@@ -117,7 +117,7 @@ wiring bug 在历次审查中反复出现（R1/R8/R13 都涉及编排顺序）�
   全部落定"作为 `refreshProviders` 闭包传入模板，在写库中间态旗还举着的
   窗口内执行（**屏障重算**）——settle 与重算落定之间"部分 provider 新、
   部分旧"的混合快照在结构上读不到（2026-09-26 真机复现残余漏洞的修复，
-  机理见 CONTEXT.md「写库中间态」）。闭包对逐个 await 吞异常，失效阶段
+  机理见 GLOSSARY.md「写库中间态」）。闭包对逐个 await 吞异常，失效阶段
   之外的异常实际不可达。
 - **模板强制补判轮**：屏障把窗口内全部重算触发吞掉了，settle 后没有任何
   自然监听触发，`runBackupRestore` 在收尾后失效 `notificationSettingsProvider`
