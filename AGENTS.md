@@ -101,15 +101,6 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 - 停车倒计时位于提醒页当前车辆卡片和保养提醒列表之间；倒计时进行中入口禁用，状态颜色复用保养提醒的 normal/warning/danger 语义。
 - Android 通知行为与 iOS 不完全相同：停车倒计时有 ongoing chronometer 通知和到点 alarm 通知，回归时要分别验证调度和取消。
 
-## 修改原则
-
-- 先读现有代码，再改。
-- 只改当前任务直接相关内容，不做顺手重构。
-- 保持现有目录结构、命名、文案语言和交互方式。
-- 不随意重命名文件、类型、方法、字段。
-- 不覆盖、回退、删除用户未明确要求处理的改动。
-- 搜索优先使用 `rg`。
-
 ## 注释约定
 
 - 本仓库注释面向 Java Web 背景读者，使用中文详细注释（用户明确要求，优先级高于"少写注释"的通用习惯）。
@@ -150,16 +141,6 @@ dart run build_runner build
 - 本仓项目版工作流 `.zcode/workflows/arch-pipeline.dwf.ts` 已同步为全局通用版（8 参数），默认参数即本仓口径：flutter analyze + 全量 flutter test 两层门禁、逐候选提交推送，一般无需传参；在本仓按名字运行命中本仓版（同名遮蔽全局版）。
 - 全局版（`~/.zcode/workflows/arch-pipeline.dwf.ts`）是通用模板：更新后需同步本仓项目版（TypeScript 代码保持逐字节一致，仅元数据与头注释按本仓定制）。
 - 运行：对话里说「用 arch-pipeline 跑一轮架构改进（试跑）」；断点续跑传 resumeDir=.scratch/arch-<MMDD>（现存 .scratch/arch-0928 五张真票可直接续）；图文运行手册在 `.scratch/arch-pipeline-workflow.html`。
-
-## 汇报格式
-
-最终汇报优先说明：
-
-- 改了什么
-- 风险是什么
-- 验证了什么
-
-如果有假设、未验证项或因为环境原因没法验证，要直接写明。
 
 ## Agent skills
 
