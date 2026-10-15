@@ -9,11 +9,13 @@
 // 成功文案"五件事；表单 State 的宿主接法（widget 实现接口 + State 混入
 // 零状态转发 mixin）也归本模块（2026-09-26 收编，见 FormSheetHandleHost）。
 //
-// 固定时序（2026-09-25 拷问定稿）：
+// 固定时序（2026-09-25 拷问定稿；装载结果 2026-10-15 类型化）：
 //   1. [load] 预装载（打开 sheet 前执行；失败 → friendlyError toast，
-//      sheet 不出现）。装载结果靠入口函数的局部闭包捕获变量在
-//      load/guard/builder 之间共享；需要按装载结果改头部（如车辆品牌
-//      车型副标题）时经 handle.setFrame 更新；
+//      sheet 不出现）。load 返回 typed 装载结果 D，guard 与 builder 直接收
+//      这个值——"装载了什么"是编译期契约，入口函数不再需要"可空闭包
+//      捕获变量 + 装载赋值 + builder 非空断言"的三步舞；需要按装载结果
+//      改头部（如车辆品牌车型副标题）时经 handle.setSubtitle 更新；
+//      没有预装载步骤的表单走 showLunioFormSheetNoLoad 薄皮入口。
 //   2. [guard] 领域前置守卫（返回非空文案 → info toast，sheet 不出现）；
 //   3. showLunioModalSheet(barrierDismissible: false) 包
 //      PrototypeSheetFrame——键盘 inset 由本模块经 sheet 自己的 context
@@ -38,37 +40,52 @@ import 'formatters.dart';
 import 'modal_feedback.dart';
 import 'shared_widgets.dart';
 
-/// 编辑表单 sheet 的统一入口（ADR 0016）。
+/// 编辑表单 sheet 的统一入口（ADR 0016；装载结果类型化 2026-10-15）。
 ///
 /// [R]：sheet 的返回值类型。提交成功后 [resultOnSubmit] 透传给返回的
 /// Future（如项目表单的 `true` = 已保存，调用方据此刷新）；R 为 void
 /// 时不传。
 ///
-/// [load]：预装载（打开 sheet 前执行）。失败 → friendlyError toast、
-/// sheet 不出现。装载 Provider 的结果写入入口函数声明的局部变量即可在
-/// guard/builder 闭包间共享；需要按装载结果改头部时（如车辆品牌车型
-/// 副标题）调 [FormSheetHandle.setFrame]。
+/// [D]：预装载结果类型。在调用点的显式类型实参里写出（如
+/// `showLunioFormSheet<void, AppliedCarBoard>`），"这个表单装载什么"在
+/// 入口行即编译期契约。
 ///
-/// [guard]：领域前置守卫（装载完成后、开 sheet 前执行）。返回非空文案
-/// → info toast 并中止（如"请先新增车辆"），sheet 不出现。
+/// [load]：预装载（打开 sheet 前执行），返回装载结果交给 [guard] 与
+/// [builder]。失败 → friendlyError toast、sheet 不出现。需要按装载结果
+/// 改头部时（如车辆品牌车型副标题）在 load 内调
+/// [FormSheetHandle.setSubtitle]。
 ///
-/// [builder]：表单内容。接收 sheet 自己的 context 与 [FormSheetHandle]；
-/// 表单只画字段、校验与动作行，pop/toast/键盘 inset 都归本模块。
+/// [guard]：领域前置守卫（装载完成后、开 sheet 前执行），收装载结果。
+/// 返回非空文案 → info toast 并中止（如"请先新增车辆"），sheet 不出现。
+/// 可省略。
+///
+/// [builder]：表单内容。接收 sheet 自己的 context、[FormSheetHandle] 与
+/// 装载结果；表单只画字段、校验与动作行，pop/toast/键盘 inset 都归本
+/// 模块。builder 拿到的装载结果非空——若某个成员仍需 `!`（如数据束里
+/// `car` 是 `Car?`），那是 guard 拦截后的业务不变量（守卫返回 null 即
+/// 非空），不再是"装载变量可能没赋值"的信仰之跃。
 ///
 /// [successMessage]：提交成功 toast 文案。null = 不提示（停车倒计时、
 /// 草稿项目表单等产品约定无 toast 的入口）。
+///
+/// 没有预装载步骤的表单走 [showLunioFormSheetNoLoad]，不要在这里写空
+/// 装载闭包。
 ///
 /// barrierDismissible 固定 false：编辑表单有未保存输入，点遮罩/下滑/
 /// 系统返回键都不可关，只能走取消/保存按钮（modal_feedback 里"编辑表单
 /// 类"口径的结构化版本；2026-09-25 拍板把通知设置 sheet 的漂移一并
 /// 归一）。
-Future<R?> showLunioFormSheet<R>({
+Future<R?> showLunioFormSheet<R, D>({
   required BuildContext context,
   required String title,
   String? subtitle,
-  Future<void> Function(FormSheetHandle<R> handle)? load,
-  String? Function()? guard,
-  required Widget Function(BuildContext sheetContext, FormSheetHandle<R> handle)
+  required Future<D> Function(FormSheetHandle<R> handle) load,
+  String? Function(D loaded)? guard,
+  required Widget Function(
+    BuildContext sheetContext,
+    FormSheetHandle<R> handle,
+    D loaded,
+  )
   builder,
   R? resultOnSubmit,
   String? successMessage,
@@ -79,20 +96,19 @@ Future<R?> showLunioFormSheet<R>({
     resultOnSubmit,
     successMessage,
   );
-  if (load != null) {
-    try {
-      await load(handle);
-    } catch (error) {
-      if (context.mounted) {
-        showStatusOverlay(context, friendlyError(error), StatusOverlayTone.error);
-      }
-      return null;
+  D loaded;
+  try {
+    loaded = await load(handle);
+  } catch (error) {
+    if (context.mounted) {
+      showStatusOverlay(context, friendlyError(error), StatusOverlayTone.error);
     }
+    return null;
   }
   if (!context.mounted) {
     return null;
   }
-  final guardMessage = guard?.call();
+  final guardMessage = guard?.call(loaded);
   if (guardMessage != null) {
     if (context.mounted) {
       showStatusOverlay(context, guardMessage, StatusOverlayTone.info);
@@ -106,9 +122,45 @@ Future<R?> showLunioFormSheet<R>({
       return _FormSheetHost<R>(
         handle: handle,
         outerContext: context,
-        builder: builder,
+        // 装载结果在这里闭包收口：宿主与把手都不需要知道装载类型 D，
+        // 类型参数只活在 showLunioFormSheet 的作用域里。
+        builder: (hostSheetContext, hostHandle) =>
+            builder(hostSheetContext, hostHandle, loaded),
       );
     },
+  );
+}
+
+/// 无装载形态的编辑表单 sheet 入口（ADR 0016 修订 2026-10-15）：表单
+/// 所需的值都是打开前同步可得的局部量、没有 await 装载步骤时走这里，
+/// builder 只收 context 与把手、不收装载结果。它是 [showLunioFormSheet]
+/// 的薄皮（D=void 空装载委托，[load] 恒为空操作），固定时序与全部反馈
+/// 契约同一份。两种形态各管一种场景：有预装载的入口走
+/// [showLunioFormSheet]、无预装载的入口走这里，不要混用（有装载的入口
+/// 不要写空装载闭包，无装载的入口不要为此收 `void` 装载参数）。
+Future<R?> showLunioFormSheetNoLoad<R>({
+  required BuildContext context,
+  required String title,
+  String? subtitle,
+  String? Function()? guard,
+  required Widget Function(BuildContext sheetContext, FormSheetHandle<R> handle)
+  builder,
+  R? resultOnSubmit,
+  String? successMessage,
+}) {
+  return showLunioFormSheet<R, void>(
+    context: context,
+    title: title,
+    subtitle: subtitle,
+    // 空装载委托：无 await 步骤的表单也走同一条时序（装载恒成功，
+    // guard/builder 收到的装载值是 void 占位）。
+    load: (handle) async {},
+    // Dart 不允许少位置参数的函数直接赋给多参数函数类型，这里显式
+    // 适配（guard 收到 void 装载值，原样转发文案）。
+    guard: guard == null ? null : (_) => guard(),
+    builder: (sheetContext, handle, _) => builder(sheetContext, handle),
+    resultOnSubmit: resultOnSubmit,
+    successMessage: successMessage,
   );
 }
 

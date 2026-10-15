@@ -928,32 +928,26 @@ Future<void> showMaintenanceRecordFormSheet(
   WidgetRef ref, {
   MaintenanceRecord? record,
 }) {
-  // 装载结果写入闭包捕获变量，在 load/guard/builder 之间共享（ADR 0016）。
-  Car? car;
-  List<MaintenanceItem> items = const [];
-  LocalDate today = LocalDate.fromDateTime(DateTime.now());
-  return showLunioFormSheet<void>(
+  return showLunioFormSheet<void, AppliedCarBoard>(
     context: context,
     title: record == null ? '新增保养记录' : '编辑保养记录',
     load: (handle) async {
       // 表单是"按当前应用车辆消费数据"的典型形态：车/项目/今天经数据束
-      // 一次 read 拿齐（appliedCarBoardProvider），不再逐个 read 上游。
+      // 一次 read 拿齐（appliedCarBoardProvider），不再逐个 read 上游；
+      // 装载结果直接返回给 guard/builder（类型化，ADR 0016 修订），
+      // 不再经入口闭包捕获变量中转。
       final board = await ref.read(appliedCarBoardProvider.future);
-      car = board.car;
-      items = board.items;
-      today = board.today;
-      // 闭包捕获变量不做类型提升（装载数据跨闭包共享的标准写法），
-      // 先落本地再判空。
-      final loadedCar = car;
-      if (loadedCar != null) {
-        handle.setSubtitle('${loadedCar.brand} ${loadedCar.model}');
+      final car = board.car;
+      if (car != null) {
+        handle.setSubtitle('${car.brand} ${car.model}');
       }
+      return board;
     },
-    guard: () {
-      if (car?.id == null) {
+    guard: (board) {
+      if (board.car?.id == null) {
         return '请先新增车辆';
       }
-      final usable = items.where(
+      final usable = board.items.where(
         (item) => item.enabled || record?.itemIds.contains(item.id) == true,
       );
       if (usable.isEmpty) {
@@ -961,12 +955,15 @@ Future<void> showMaintenanceRecordFormSheet(
       }
       return null;
     },
-    builder: (sheetContext, handle) {
+    builder: (sheetContext, handle, board) {
+      // guard 已拦"无车/车辆无 id"（请先新增车辆），这里的 ! 是守卫后
+      // 业务不变量，不是"装载变量可能没赋值"的信仰之跃（ADR 0016 修订）。
+      final car = board.car!;
       return MaintenanceRecordForm(
-        car: car!,
-        items: items,
-        initialDate: today,
-        today: today,
+        car: car,
+        items: board.items,
+        initialDate: board.today,
+        today: board.today,
         record: record,
         handle: handle,
         // 新增模式同日查重弹窗选「去编辑」：先关当前新增 sheet（pop 归
@@ -980,7 +977,7 @@ Future<void> showMaintenanceRecordFormSheet(
           showMaintenanceRecordFormSheet(context, ref, record: existing);
         },
         reloadItems: () =>
-            ref.read(maintenanceItemsForCarProvider(car!.id!).future),
+            ref.read(maintenanceItemsForCarProvider(car.id!).future),
         // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归表单
         // 运行时（ADR 0016）。
         onSubmit: (value, itemUpdates) =>

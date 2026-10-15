@@ -619,7 +619,9 @@ Future<void> showParkingCountdownSheet(
   BuildContext context,
   WidgetRef ref,
 ) {
-  return showLunioFormSheet<void>(
+  // 无装载形态（ADR 0016 修订）：builder 里的 readSystemNow 是"点按钮
+  // 此刻取系统时间"的实时语义，不是 await 预装载。
+  return showLunioFormSheetNoLoad<void>(
     context: context,
     title: '停车计时',
     subtitle: '设置入场时间和免费停车时长。',

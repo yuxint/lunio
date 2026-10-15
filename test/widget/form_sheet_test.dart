@@ -56,11 +56,11 @@ void main() {
   testWidgets('load 失败：friendlyError toast 且 sheet 不出现', (tester) async {
     await pumpHost(
       tester,
-      onOpen: (context) => showLunioFormSheet<void>(
+      onOpen: (context) => showLunioFormSheet<void, String>(
         context: context,
         title: '测试表单',
         load: (handle) async => throw Exception('boom'),
-        builder: (sheetContext, handle) => const Text('表单内容'),
+        builder: (sheetContext, handle, loaded) => const Text('表单内容'),
         successMessage: '已保存',
       ),
     );
@@ -74,7 +74,7 @@ void main() {
   testWidgets('guard 拦截：info toast 且 sheet 不出现', (tester) async {
     await pumpHost(
       tester,
-      onOpen: (context) => showLunioFormSheet<void>(
+      onOpen: (context) => showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         guard: () => '请先新增车辆',
@@ -92,7 +92,7 @@ void main() {
   testWidgets('提交失败：行内错误且 sheet 留场', (tester) async {
     await pumpHost(
       tester,
-      onOpen: (context) => showLunioFormSheet<void>(
+      onOpen: (context) => showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         // 错误行渲染归表单侧（ADR 0016 共识：module 只写 errorText），
@@ -122,7 +122,7 @@ void main() {
   testWidgets('提交成功：关 sheet 并显示成功 toast', (tester) async {
     await pumpHost(
       tester,
-      onOpen: (context) => showLunioFormSheet<void>(
+      onOpen: (context) => showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         builder: (sheetContext, handle) => TextButton(
@@ -146,7 +146,7 @@ void main() {
   testWidgets('提交成功透传 resultOnSubmit 给入口 Future', (tester) async {
     bool? entryResult;
     await pumpHost(tester, onOpen: (context) async {
-      entryResult = await showLunioFormSheet<bool>(
+      entryResult = await showLunioFormSheetNoLoad<bool>(
         context: context,
         title: '测试表单',
         builder: (sheetContext, handle) => TextButton(
@@ -170,7 +170,7 @@ void main() {
   testWidgets('barrierDismissible 固定 false：点遮罩不关 sheet', (tester) async {
     await pumpHost(
       tester,
-      onOpen: (context) => showLunioFormSheet<void>(
+      onOpen: (context) => showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         builder: (sheetContext, handle) => const Text('表单内容'),
@@ -188,7 +188,7 @@ void main() {
   testWidgets('setFrame / setSubtitle 换头部', (tester) async {
     FormSheetHandle<void>? captured;
     await pumpHost(tester, onOpen: (context) {
-      return showLunioFormSheet<void>(
+      return showLunioFormSheetNoLoad<void>(
         context: context,
         title: '添加车辆',
         builder: (sheetContext, handle) {
@@ -230,7 +230,7 @@ void main() {
   testWidgets('close 带 toast：非提交出口', (tester) async {
     FormSheetHandle<void>? captured;
     await pumpHost(tester, onOpen: (context) {
-      return showLunioFormSheet<void>(
+      return showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         builder: (sheetContext, handle) {
@@ -256,7 +256,7 @@ void main() {
   testWidgets('pop 过一次后再来的 submit/close 一律忽略', (tester) async {
     FormSheetHandle<void>? captured;
     await pumpHost(tester, onOpen: (context) {
-      return showLunioFormSheet<void>(
+      return showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         builder: (sheetContext, handle) {
@@ -290,7 +290,7 @@ void main() {
     var secondActionRan = false;
     FormSheetHandle<void>? captured;
     await pumpHost(tester, onOpen: (context) {
-      return showLunioFormSheet<void>(
+      return showLunioFormSheetNoLoad<void>(
         context: context,
         title: '测试表单',
         builder: (sheetContext, handle) {
@@ -315,5 +315,64 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('测试表单'), findsNothing);
     await drainToastTimer(tester);
+  });
+
+  // ---- 装载结果类型化（ADR 0016 修订 2026-10-15）：load 返回值直达
+  // ---- guard 与 builder，入口不需要闭包捕获变量中转。
+
+  testWidgets('装载结果直达 builder：渲染 load 的返回值，零闭包变量', (
+    tester,
+  ) async {
+    await pumpHost(tester, onOpen: (context) {
+      return showLunioFormSheet<void, String>(
+        context: context,
+        title: '测试表单',
+        load: (handle) async => '装载数据',
+        builder: (sheetContext, handle, loaded) => Text('收到：$loaded'),
+        successMessage: '已保存',
+      );
+    });
+    await openSheet(tester);
+
+    expect(find.text('收到：装载数据'), findsOneWidget);
+  });
+
+  testWidgets('装载结果直达 guard：装载值不合格 → info toast 拦截', (tester) async {
+    await pumpHost(tester, onOpen: (context) {
+      return showLunioFormSheet<void, int>(
+        context: context,
+        title: '测试表单',
+        load: (handle) async => 0,
+        guard: (loaded) => loaded <= 0 ? '请先新增车辆' : null,
+        builder: (sheetContext, handle, loaded) => Text('收到：$loaded'),
+        successMessage: '已保存',
+      );
+    });
+    await openSheet(tester);
+
+    expect(find.text('收到：0'), findsNothing);
+    expect(find.text('请先新增车辆'), findsOneWidget);
+    await drainToastTimer(tester);
+  });
+
+  testWidgets('同一份装载结果流经 guard 与 builder', (tester) async {
+    String? guardSaw;
+    await pumpHost(tester, onOpen: (context) {
+      return showLunioFormSheet<void, String>(
+        context: context,
+        title: '测试表单',
+        load: (handle) async => '同一份数据',
+        guard: (loaded) {
+          guardSaw = loaded;
+          return null;
+        },
+        builder: (sheetContext, handle, loaded) => Text('收到：$loaded'),
+        successMessage: '已保存',
+      );
+    });
+    await openSheet(tester);
+
+    expect(guardSaw, '同一份数据');
+    expect(find.text('收到：同一份数据'), findsOneWidget);
   });
 }

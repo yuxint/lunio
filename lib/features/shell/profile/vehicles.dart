@@ -253,20 +253,22 @@ class EmptyVehicleCard extends StatelessWidget {
 /// 向导提交 → createCarWithMaintenanceItems（事务：车+项目+首车设应用
 /// 车辆）→ bump 车辆数据纪元（动作层）。
 void showAddCarSheet(BuildContext context, WidgetRef ref) {
-  List<VehicleModel> vehicleModels = const [];
-  LocalDate today = LocalDate.fromDateTime(DateTime.now());
-  showLunioFormSheet<void>(
+  showLunioFormSheet<void,
+      ({List<VehicleModel> vehicleModels, LocalDate today})>(
     context: context,
     title: '添加车辆',
     load: (handle) async {
-      vehicleModels = await ref.read(vehicleModelsProvider.future);
-      today = await ref.read(effectiveTodayProvider.future);
+      // 装载车型目录与生效今天；装载结果直接返回给 guard/builder
+      // （类型化，ADR 0016 修订）。
+      final vehicleModels = await ref.read(vehicleModelsProvider.future);
+      final today = await ref.read(effectiveTodayProvider.future);
+      return (vehicleModels: vehicleModels, today: today);
     },
-    guard: () => vehicleModels.isEmpty ? '暂无可选车型' : null,
-    builder: (sheetContext, handle) {
+    guard: (loaded) => loaded.vehicleModels.isEmpty ? '暂无可选车型' : null,
+    builder: (sheetContext, handle, loaded) {
       return AddCarWizard(
-        vehicleModels: vehicleModels,
-        today: today,
+        vehicleModels: loaded.vehicleModels,
+        today: loaded.today,
         handle: handle,
         // 两步换 sheet 标题：离开第一步显示"保养项目"（ADR 0016 的
         // setFrame，替代原先 StatefulBuilder 手搓的标题切换）。
@@ -291,19 +293,20 @@ void showAddCarSheet(BuildContext context, WidgetRef ref) {
 /// updateCar（写里程/日期/容积）→ invalidate（动作层）。
 /// 车型目录为空时兜底用当前车拼一个假选项（只是为了让表单不炸）。
 void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
-  List<VehicleModel> vehicleModels = const [];
-  LocalDate today = LocalDate.fromDateTime(DateTime.now());
-  showLunioFormSheet<void>(
+  showLunioFormSheet<void,
+      ({List<VehicleModel> vehicleModels, LocalDate today})>(
     context: context,
     title: '编辑车辆',
     subtitle: '品牌车型保持稳定，可更新当前里程、上路日期和油箱容积',
     load: (handle) async {
-      vehicleModels = await ref.read(vehicleModelsProvider.future);
-      today = await ref.read(effectiveTodayProvider.future);
+      // 装载结果直接返回给 builder（类型化，ADR 0016 修订）。
+      final vehicleModels = await ref.read(vehicleModelsProvider.future);
+      final today = await ref.read(effectiveTodayProvider.future);
+      return (vehicleModels: vehicleModels, today: today);
     },
-    builder: (sheetContext, handle) {
+    builder: (sheetContext, handle, loaded) {
       return AddCarForm(
-        vehicleModels: vehicleModels.isEmpty
+        vehicleModels: loaded.vehicleModels.isEmpty
             ? [
                 // 目录为空时兜底用当前车拼一个假选项（表单不炸）；
                 // 推荐动力类型用当前车自己的。
@@ -318,8 +321,8 @@ void showEditCarSheet(BuildContext context, WidgetRef ref, Car car) {
                   ),
                 ),
               ]
-            : vehicleModels,
-        today: today,
+            : loaded.vehicleModels,
+        today: loaded.today,
         initialCar: car,
         handle: handle,
         closeOnSubmit: true,

@@ -27,12 +27,7 @@ Future<void> showNotificationSettingsSheet(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  LunioNotificationSettings initialSettings = const LunioNotificationSettings(
-    systemNotificationsEnabled: false,
-    inAppNotificationsEnabled: false,
-    dueRepeatFrequency: ReminderRepeatFrequency.weekly,
-  );
-  return showLunioFormSheet<void>(
+  return showLunioFormSheet<void, LunioNotificationSettings>(
     context: context,
     title: '通知提醒',
     load: (handle) async {
@@ -40,11 +35,13 @@ Future<void> showNotificationSettingsSheet(
       final systemNotificationsEnabled = await ref
           .read(notificationCoordinatorProvider)
           .reconcileSystemEnabled();
-      initialSettings = loadedSettings.copyWith(
+      // 装载结果直接返回给 builder（类型化，ADR 0016 修订），不再经
+      // 入口闭包捕获变量中转。
+      return loadedSettings.copyWith(
         systemNotificationsEnabled: systemNotificationsEnabled,
       );
     },
-    builder: (sheetContext, handle) {
+    builder: (sheetContext, handle, initialSettings) {
       return NotificationSettingsForm(
         initialSettings: initialSettings,
         handle: handle,

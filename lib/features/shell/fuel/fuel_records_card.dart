@@ -256,39 +256,39 @@ Future<void> showFuelRecordFormSheet(
   WidgetRef ref, {
   FuelRecord? record,
 }) {
-  // 装载结果写入闭包捕获变量，在 load/guard/builder 之间共享（ADR 0016）。
-  Car? car;
-  LocalDate today = LocalDate.fromDateTime(DateTime.now());
-  double? prefillUnitPrice;
-  return showLunioFormSheet<void>(
+  return showLunioFormSheet<void,
+      ({Car? car, LocalDate today, double? prefillUnitPrice})>(
     context: context,
     title: record == null ? '记一笔加油' : '编辑加油记录',
     load: (handle) async {
-      car = await ref.read(appliedCarProvider.future);
-      today = await ref.read(effectiveTodayProvider.future);
+      final car = await ref.read(appliedCarProvider.future);
+      final today = await ref.read(effectiveTodayProvider.future);
       // 新增态的单价预填：油价卡当前油品恰是表单默认的 92# 时，把生效价
       // （手填价 > 数据源价）填进输入框；油品不一致不预填（价格张冠李戴
       // 比空着更糟）。编辑态用记录自己的单价，不读生效价。
+      double? prefillUnitPrice;
       if (record == null) {
         final globalGrade = ref.read(fuelGradeProvider).value;
         if (globalGrade == FuelGrade.gasoline92) {
           prefillUnitPrice = ref.read(effectiveFuelPriceProvider);
         }
       }
-      // 闭包捕获变量不做类型提升（装载数据跨闭包共享的标准写法），
-      // 先落本地再判空。
-      final loadedCar = car;
-      if (loadedCar != null) {
-        handle.setSubtitle('${loadedCar.brand} ${loadedCar.model}');
+      if (car != null) {
+        handle.setSubtitle('${car.brand} ${car.model}');
       }
+      // 装载结果直接返回给 guard/builder（类型化，ADR 0016 修订），
+      // 不再经入口闭包捕获变量中转。
+      return (car: car, today: today, prefillUnitPrice: prefillUnitPrice);
     },
-    guard: () => car?.id == null ? '请先新增车辆' : null,
-    builder: (sheetContext, handle) {
+    guard: (loaded) => loaded.car?.id == null ? '请先新增车辆' : null,
+    builder: (sheetContext, handle, loaded) {
+      // guard 已拦"无车"（请先新增车辆），这里的 ! 是守卫后业务不变量，
+      // 不是"装载变量可能没赋值"的信仰之跃（ADR 0016 修订）。
       return FuelRecordForm(
-        car: car!,
-        today: today,
+        car: loaded.car!,
+        today: loaded.today,
         record: record,
-        prefillUnitPrice: prefillUnitPrice,
+        prefillUnitPrice: loaded.prefillUnitPrice,
         handle: handle,
         // 写库+失效收进动作层（ADR 0007）；关 sheet 与成功 toast 归表单
         // 运行时（ADR 0016）。

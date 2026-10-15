@@ -27,7 +27,9 @@ void showManualDateSheet(BuildContext context, WidgetRef ref) {
         data: (value) => value,
         orElse: () => LocalDate.fromDateTime(DateTime.now()),
       );
-  showLunioFormSheet<void>(
+  // 表单所需的初值打开前同步可读（无 await 装载步骤），走无装载形态
+  // （ADR 0016 修订）。
+  showLunioFormSheetNoLoad<void>(
     context: context,
     title: '手动日期',
     subtitle: '开启后，保养提醒里的“今天”会使用该日期。',

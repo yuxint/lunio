@@ -87,3 +87,22 @@ context)"。这条隐式接口的坑已多次显形：
   `FormSheetHandle`。低频动作（`submit`/`run`/`close`/`setFrame`/
   `setSubtitle`）不进 mixin，调用点保留显式 `widget.handle.` 直呼。
   行为零变化（analyze 零问题、533 测试全绿）。
+
+- **2026-10-15 装载结果类型化**：`showLunioFormSheet` 升级为
+  `<R, D>` 双类型参数——`load` 从"把 Provider 结果写进入口函数声明的
+  局部闭包捕获变量"改为**返回装载结果 D**，`guard(D)` 与
+  `builder(sheetContext, handle, D)` 直接收这个值，"装载了什么"从接口
+  文档的口头约定变成编译期契约：新表单入口不可能"漏赋值一个装载变量"
+  或"builder 断言一个没赋值的可空值"，入口里"声明期先兜底一个系统
+  今天"的写法随之消失。无装载需求的表单走薄皮便捷形态
+  `showLunioFormSheetNoLoad<R>`（D=void 空装载委托本函数，时序与反馈
+  契约同一份，builder 不收装载参数）——两种形态各管一种场景（有装载/
+  无装载），不存在同一件事两种写法。11 处入口全部迁移（装载类型逐
+  入口就地拍：记录表单用数据束 `AppliedCarBoard`、通知设置用
+  `LunioNotificationSettings`、加油记录与车辆两入口用 Dart 3 命名
+  record，不新增私有装载类）。宿主 `_FormSheetHost` 与把手
+  `FormSheetHandle` 不认识装载类型 D（装载结果在入口函数里闭包收口
+  进 builder），提交/关场/头部（`setSubtitle`/`setFrame`）契约不动。
+  行为零变化；builder 里 guard 保证的实体级非空（如数据束 `board.car!`
+  ——守卫拦"请先新增车辆"）是守卫后业务不变量，不是装载序信仰之跃，
+  保留并注释。

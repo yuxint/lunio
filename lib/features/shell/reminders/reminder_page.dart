@@ -198,7 +198,7 @@ class ReminderActionRow extends StatelessWidget {
 /// 规则不冲突（宽松规则是否收敛见审查台账 R36，本次只给快捷入口加摩擦）。
 void showQuickMileageUpdateSheet(BuildContext context, WidgetRef ref, Car car) {
   final controller = TextEditingController();
-  showLunioFormSheet<void>(
+  showLunioFormSheetNoLoad<void>(
     context: context,
     title: '更新里程',
     subtitle: '当前 ${formatMileageKm(car.currentMileageKm)}，输入新的当前里程',

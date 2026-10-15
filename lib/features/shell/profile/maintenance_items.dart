@@ -740,7 +740,7 @@ Future<bool?> showMaintenanceItemFormSheet(
   required int carId,
   MaintenanceItem? item,
 }) {
-  return showLunioFormSheet<bool>(
+  return showLunioFormSheetNoLoad<bool>(
     context: context,
     title: item == null ? '新增保养项目' : '编辑保养项目',
     builder: (sheetContext, handle) {
@@ -766,7 +766,7 @@ Future<bool?> showDraftMaintenanceItemFormSheet(
   required MaintenanceItem item,
   required ValueChanged<MaintenanceItem> onSubmit,
 }) {
-  return showLunioFormSheet<bool>(
+  return showLunioFormSheetNoLoad<bool>(
     context: context,
     title: item.name.isEmpty ? '新增保养项目' : '编辑保养项目',
     builder: (sheetContext, handle) {

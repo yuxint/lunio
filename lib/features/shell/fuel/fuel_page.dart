@@ -445,7 +445,7 @@ class _PriceCard extends ConsumerWidget {
     final province = ref.read(fuelProvinceProvider).value ?? '';
     final grade = ref.read(fuelGradeProvider).value;
     final controller = TextEditingController();
-    await showLunioFormSheet<void>(
+    await showLunioFormSheetNoLoad<void>(
       context: context,
       title: '编辑油价',
       subtitle: '$province · ${grade?.label ?? ''}，单位元/升。',
