@@ -28,7 +28,12 @@
 //    起从本文件私有 _GuardedOp 收编，与小组件快照控制器同一份实现），
 //    重跑时各自清自己的签名；
 //  - 权限协议与破坏性写库清扫的执行体在协调器（见 AGENTS.md 提醒目录
-//    说明）。
+//    说明）；
+//  - 应用内弹窗检查链的决策（静默过滤/弹窗动作分支/检查点/动作后重排
+//    判定）2026-10-15 收编进决策体模块 reminder_dialog_flow.dart
+//    （plain-Dart + 注入接缝，可无 widget 单测），本类保留被动监听外壳
+//    与生产接缝组装（静默读/抑制写绑定协调器、弹窗呈现绑定
+//    reminder_dialogs、领票绑定守卫、重排绑定签名清空）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -43,11 +48,12 @@ import '../../../domain/entities/parking_countdown.dart';
 import 'guarded_op.dart';
 import 'notification_coordinator.dart';
 import 'notification_sync_guard.dart';
+import 'reminder_dialog_flow.dart';
 import 'reminder_dialogs.dart' as bridge;
-// ReminderViewData 类型已随 UI 半边拆到 reminder_rows.dart（内容组装
-// 函数仍在 reminder_notifications.dart）；两个 import 共用 bridge 别名。
+// 内容组装（签名/通知清单）仍从 reminder_notifications.dart 来；
+// ReminderViewData 类型引用已随弹窗检查链收编移入决策体模块
+// reminder_dialog_flow.dart，本文件不再直接引用它。
 import 'reminder_notifications.dart' as bridge;
-import 'reminder_rows.dart' as bridge;
 
 /// 通知同步数据源清单：同步引擎"监听哪些数据源"的唯一声明（2026-10-01
 /// 收编）。两个消费面都从这一份推导，增删/换数据源只改这里：
@@ -138,6 +144,65 @@ class NotificationSyncController {
   late final GuardedOp _inAppCheck = GuardedOp(
     isDisposed: () => _disposed,
     onRerun: () {
+      _inAppNotificationSignature = null;
+      syncFromProviders();
+    },
+  );
+
+  /// 应用内弹窗链路的决策体（reminder_dialog_flow.dart，2026-10-15 收编）：
+  /// 检查链的静默过滤/弹窗动作分支/检查点/重排判定都在它里面，这里只
+  /// 组装生产接缝——静默读与"知道了"抑制写绑定通知协调器（每次 read，
+  /// 与控制器其余协调器用法一致）、弹窗可展示性与呈现绑定主壳层
+  /// context 与 reminder_dialogs、领票绑定守卫（带 disposed）、重排绑定
+  /// 签名清空 + 立即重跑。
+  late final InAppReminderDialogFlow _inAppDialogFlow = InAppReminderDialogFlow(
+    acquireRun: () => _guard.acquire(isDisposed: () => _disposed),
+    isSilencedForInAppDialog: (target, today) => ref
+        .read(notificationCoordinatorProvider)
+        .isSilencedForInAppDialog(target, today),
+    canPresentDialog: () {
+      final context = shellContext();
+      return context != null && context.mounted;
+    },
+    showMaintenanceDialog:
+        ({required car, required maintenanceNotices, required today}) {
+      final context = shellContext();
+      if (context == null || !context.mounted) {
+        // 理论不可达：决策体恰在展示前经 canPresentDialog 同步检查过；
+        // 防御返回 null（= 无动作，等价用户关闭，下一轮再查）。
+        return Future<ReminderDialogAction?>.value(null);
+      }
+      return bridge.showMaintenanceReminderDialog(
+        context: context,
+        coordinator: ref.read(notificationCoordinatorProvider),
+        car: car,
+        maintenanceNotices: maintenanceNotices,
+        today: today,
+      );
+    },
+    showMileageDialog: ({required car, required today}) {
+      final context = shellContext();
+      if (context == null || !context.mounted) {
+        return Future<ReminderDialogAction?>.value(null);
+      }
+      return bridge.showMileageUpdateReminderDialog(
+        context: context,
+        coordinator: ref.read(notificationCoordinatorProvider),
+        car: car,
+        today: today,
+      );
+    },
+    acknowledgeMaintenanceItem: (itemId, today) => ref
+        .read(notificationCoordinatorProvider)
+        .acknowledgeMaintenanceItem(itemId, today),
+    acknowledgeMileageUpdate: (carId, today) => ref
+        .read(notificationCoordinatorProvider)
+        .acknowledgeMileageUpdate(carId, today),
+    onForceReschedule: () {
+      if (_disposed) {
+        return;
+      }
+      _systemNotificationSignature = null;
       _inAppNotificationSignature = null;
       syncFromProviders();
     },
@@ -427,17 +492,10 @@ class NotificationSyncController {
 
   /// ★ 应用内提醒弹窗（应用内签名变化时被调用）。
   ///
-  /// 收集两类到期提醒：保养项目（经协调器静默判定过滤）+ 里程更新
-  /// （按推断频率判断是否到期）。有到期项则依次弹窗：
-  ///  - "知道了" → 协调器写当日 ack 偏好（今天不再弹）；
-  ///  - "15 天内不再提醒" → 协调器写 snooze 偏好（系统通知也一并静默）。
-  /// 弹窗有动作 → 清空两个签名并立即重跑同步（snooze 影响通知内容）。
-  ///
-  /// 中间态守卫（2026-09-24）：开工领票，两处展示弹窗前（与展示调用之间
-  /// 无 await，无竞态窗口）问一次 run.isValid——旗真说明写库仍在进行、
-  /// 手里的清单是半成品；代数变了说明写库在本次运行期间已开始并结束、
-  /// 数据过期；disposed 说明壳层已拆。都放弃，等最终一轮补判。检查点
-  /// 协议的语义单一事实来源在守卫模块文件头。
+  /// 检查链的全部决策（到期清单静默过滤、弹窗动作分支、各检查点、动作
+  /// 后强制重排）在决策体 [_inAppDialogFlow]（reminder_dialog_flow.dart，
+  /// 2026-10-15 收编）里，可无 widget 单测；本方法只保留 GuardedOp 防重
+  /// 入外壳（R3：执行中来了新检查请求不丢弃，本轮结束用最新数据重跑）。
   Future<void> _showDueInAppNotifications({
     required LunioNotificationSettings settings,
     required Car car,
@@ -445,128 +503,17 @@ class NotificationSyncController {
     required List<MaintenanceRecord> records,
     required LocalDate today,
   }) async {
-    final run = _guard.acquire(isDisposed: () => _disposed);
     if (!_inAppCheck.enter()) {
       return;
     }
     try {
-      final coordinator = ref.read(notificationCoordinatorProvider);
-      // 入口复查：写库进行中读到的 items/records 是未提交的半成品，算都
-      // 不要算（syncFromProviders 入口早退只挡"检查开始时写库已在跑"的
-      // 那一半，这里挡"检查开始后写库才开始"的另一半）。
-      if (!run.isValid) {
-        return;
-      }
-      if (!settings.inAppNotificationsEnabled) {
-        return;
-      }
-      final dueNotices = <bridge.ReminderViewData>[];
-      for (final notice in bridge.maintenanceNotices(
+      await _inAppDialogFlow.checkAndPresent(
+        settings: settings,
         car: car,
         items: items,
         records: records,
         today: today,
-      )) {
-        final itemId = notice.item.id;
-        if (itemId == null) {
-          continue;
-        }
-        if (!await coordinator.isSilencedForInAppDialog(
-          MaintenanceItemTarget(itemId),
-          today,
-        )) {
-          dueNotices.add(notice);
-        }
-        if (!run.isValid) {
-          return;
-        }
-      }
-      final showMileageReminder =
-          car.id != null &&
-          bridge.mileageUpdateReminderDue(car: car, records: records, today: today) &&
-          !await coordinator.isSilencedForInAppDialog(
-            MileageUpdateTarget(car.id!),
-            today,
-          );
-      if (dueNotices.isEmpty && !showMileageReminder) {
-        return;
-      }
-      // 展示前复查第一道（保养弹窗，与下方展示调用之间无 await，无竞态
-      // 窗口）：旗真 = 写库仍在进行，清单是半成品；代数变了 = 写库在本次
-      // 检查期间已开始并结束，数据过期；disposed = 壳层已拆。都放弃，
-      // 等最终一轮补判。
-      if (!run.isValid) {
-        return;
-      }
-      var changedSystemSchedule = false;
-      if (dueNotices.isNotEmpty) {
-        final context = shellContext();
-        if (context == null || !context.mounted) {
-          return;
-        }
-        final action = await bridge.showMaintenanceReminderDialog(
-          context: context,
-          coordinator: coordinator,
-          car: car,
-          maintenanceNotices: dueNotices,
-          today: today,
-        );
-        if (!run.isValid) {
-          return;
-        }
-        if (action == bridge.ReminderDialogAction.snoozed) {
-          changedSystemSchedule = true;
-        }
-        if (action != null) {
-          changedSystemSchedule = true;
-          if (action == bridge.ReminderDialogAction.acknowledged) {
-            for (final notice in dueNotices) {
-              final itemId = notice.item.id;
-              if (itemId != null) {
-                await coordinator.acknowledgeMaintenanceItem(itemId, today);
-              }
-            }
-          }
-        }
-      }
-      if (showMileageReminder) {
-        final context = shellContext();
-        if (context == null || !context.mounted) {
-          return;
-        }
-        // 展示前复查第二道（里程弹窗，与下方展示调用之间无 await）：保养
-        // 弹窗挂起与 ack 写偏好都是 await，破坏性写库可能在期间开始并
-        // 结束，showMileageReminder 是旧快照算出来的，弹前必须再问一次票
-        // （2026-09-25 补齐，审查：此前只有保养弹窗前一道）。
-        if (!run.isValid) {
-          return;
-        }
-        final action = await bridge.showMileageUpdateReminderDialog(
-          context: context,
-          coordinator: coordinator,
-          car: car,
-          today: today,
-        );
-        if (!run.isValid) {
-          return;
-        }
-        if (action == bridge.ReminderDialogAction.snoozed) {
-          changedSystemSchedule = true;
-        }
-        if (action != null) {
-          changedSystemSchedule = true;
-          final carId = car.id;
-          if (action == bridge.ReminderDialogAction.acknowledged &&
-              carId != null) {
-            await coordinator.acknowledgeMileageUpdate(carId, today);
-          }
-        }
-      }
-      if (changedSystemSchedule && !_disposed) {
-        _systemNotificationSignature = null;
-        _inAppNotificationSignature = null;
-        syncFromProviders();
-      }
+      );
     } finally {
       // R3 同款：执行期间来过新检查请求（被置 pending），这里清空签名
       // 强制重跑一轮，用最新数据补判（含入口中间态守卫的时序，由它

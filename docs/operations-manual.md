@@ -218,18 +218,18 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ## 3. 应用内提醒弹窗（snooze / ack）
 
-**触发时机**：通知同步控制器检测"应用内通知开 + 到期项变化/回到前台"（`reminders/notification_sync_controller.dart → _showDueInAppNotifications`）。
+**触发时机**：通知同步控制器检测"应用内通知开 + 到期项变化/回到前台"（`reminders/notification_sync_controller.dart → _showDueInAppNotifications`，只保留 GuardedOp 防重入外壳）；检查链的全部决策——到期清单静默过滤（GLOSSARY.md 词汇：**生效到期清单**）、弹窗动作分支、各检查点、动作后强制重排——收在决策体 `reminders/reminder_dialog_flow.dart → InAppReminderDialogFlow.checkAndPresent`（plain-Dart，不碰 BuildContext，静默读/弹窗呈现/抑制偏好写/重排全部经注入接缝，2026-10-15 收编；单测 `test/features/reminder_dialog_flow_test.dart`，检查点位点已变异验证）。
 
-**中间态守卫**：破坏性写库（恢复备份/清空数据/删除车辆，经协调器三个 run* 模板驱动守卫）的写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃（写库逐行插入会经 Drift 同连接流查询暴露未提交的半成品数据，拿它算提醒会得出"全部到期"的假结论）；弹窗展示前（保养/里程两处，与各自展示调用之间无 await）各问一次同步票 `run.isValid`（= 未销毁 && 无中间态旗 && 代数未变，见 6.3），封掉"检查开始后写库才开始/恰好结束"的窄窗。检查执行中来新请求由重入 harness 记 pending，本轮 finally 强制重跑，消除"弹窗开着时数据变化的那一拍被丢"整类问题。
+**中间态守卫**：破坏性写库（恢复备份/清空数据/删除车辆，经协调器三个 run* 模板驱动守卫）的写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃（写库逐行插入会经 Drift 同连接流查询暴露未提交的半成品数据，拿它算提醒会得出"全部到期"的假结论）；决策体在静默判定每轮循环后与弹窗展示前（保养弹窗返回后、里程弹窗展示前，与各自展示调用之间无 await）各问一次同步票 `run.isValid`（= 未销毁 && 无中间态旗 && 代数未变，见 6.3），封掉"检查开始后写库才开始/恰好结束"的窄窗。检查执行中来新请求由重入 harness 记 pending，本轮 finally 强制重跑，消除"弹窗开着时数据变化的那一拍被丢"整类问题。
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
-| 1 | `reminder_notifications.dart → maintenanceNotices` | 到期项收集（无记录直接空）；静默过滤走协调器 `isSilencedForInAppDialog`（"稍后提醒"期内或今天已"知道了"即跳过） | — |
-| 2 | `reminder_dialogs.dart:56 → showMaintenanceReminderDialog` | 弹保养提醒框（逐项列出；与里程弹窗共用 `_ReminderDialog` 骨架 + `LunioDialogCard` 卡片外壳） | — |
-| 3a | 点"知道了" | 返回 acknowledged，控制器经协调器 `acknowledgeMaintenanceItem` 逐项写当日 ack | `maintenanceInAppReminderAcknowledgedOn:<itemId>` = 今天（当天不再弹，系统通知照发） |
-| 3b | 点"15 天内不再提醒" | 弹窗内 `onSnooze` 经协调器 `snoozeMaintenanceItems` 写 snooze | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（系统+应用内一起静默） |
-| 4 | 有动作后 | 控制器清空两个签名并立即重跑 `syncFromProviders` | 系统通知按新 snooze 状态重排 |
-| 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:97 → showMileageUpdateReminderDialog`；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>`（经协调器 `snoozeMileageUpdate` / `acknowledgeMileageUpdate` 写入） |
+| 1 | `reminder_notifications.dart → maintenanceNotices` + 决策体 `checkAndPresent` 静默过滤 | 到期项收集（无记录直接空）；静默过滤走注入接缝（生产绑定协调器 `isSilencedForInAppDialog`，"稍后提醒"期内或今天已"知道了"即跳过），每轮循环后问同步票 | — |
+| 2 | `reminder_dialogs.dart:61 → showMaintenanceReminderDialog`（决策体经 `showMaintenanceDialog` 接缝呈现） | 弹保养提醒框（逐项列出；与里程弹窗共用 `_ReminderDialog` 骨架 + `LunioDialogCard` 卡片外壳） | — |
+| 3a | 点"知道了" | 返回 acknowledged，决策体经 ack 写接缝（生产绑定协调器 `acknowledgeMaintenanceItem`）逐项写当日 ack | `maintenanceInAppReminderAcknowledgedOn:<itemId>` = 今天（当天不再弹，系统通知照发） |
+| 3b | 点"15 天内不再提醒" | 弹窗内 `onSnooze` 经协调器 `snoozeMaintenanceItems` 写 snooze（snooze 写在弹窗呈现闭包内完成，不经决策体） | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（系统+应用内一起静默） |
+| 4 | 有动作后 | 决策体判 `changedSystemSchedule` → 经 `onForceReschedule` 接缝（控制器生产闭包）清空两个签名并立即重跑 `syncFromProviders` | 系统通知按新抑制状态重排 |
+| 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:102 → showMileageUpdateReminderDialog`（决策体经 `showMileageDialog` 接缝呈现）；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>`（经协调器 `snoozeMileageUpdate` / `acknowledgeMileageUpdate` 写入） |
 | 6 | 回到前台 | `app_shell.dart → didChangeAppLifecycleState` 转交 `controller.onAppResumed()` 清空应用内签名并重跑同步 | 强制重查（处理完离开再回来，到期会再弹） |
 
 ---
@@ -438,7 +438,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 6.3 系统通知同步引擎（核心机制）
 
-**位置**：`lib/features/shell/reminders/notification_sync_controller.dart → NotificationSyncController`（AppShell 的 initState 创建并 `start()`，dispose 关闭；build 只渲染，无同步副作用）。
+**位置**：`lib/features/shell/reminders/notification_sync_controller.dart → NotificationSyncController`（AppShell 的 initState 创建并 `start()`，dispose 关闭；build 只渲染，无同步副作用）。应用内弹窗检查链的决策收在 `reminders/reminder_dialog_flow.dart → InAppReminderDialogFlow`（plain-Dart 决策体，接缝注入，2026-10-15 收编，见第 3 节）。
 
 **触发**：`start()` 对同步数据源清单 `notificationSyncSources`（模块内单一声明：通知设置 / **应用车辆数据束** `appliedCarBoardProvider`（providers.dart，车/项目/记录/生效今天四件套一次拿齐）/ 停车倒计时——恢复备份屏障的等待名单 `waitForNotificationSyncSources` 与它同源推导，2026-10-01 收编）逐个 `ref.listenManual(..., fireImmediately: true)`——任何一个变化（含首拍）都调 `syncFromProviders`。清单之外另有两条控制面订阅：停车实时活动对账（`parkingCountdownProvider`，ADR 0012），与**显式同步信号** `notificationSyncSignalProvider`（守卫模块，2026-10-06）——协调器恢复备份屏障重算后 bump 它强制补判一轮（见 5.4 第 7 步），信号是控制面触发不是数据源、不进清单（清单类型擦到 `FutureProvider<Object?>`，屏障侧要逐个 await `.future`，Notifier 形态进不去也是防呆）。
 
@@ -470,7 +470,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
       否 → 什么都不做
 ```
 
-**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，协调器是唯一写者，同步控制器与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，定义在守卫模块而非 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃、弹窗展示前再复查，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有，reminders 域共享模块 `guarded_op.dart → GuardedOp`——小组件快照控制器同款，2026-10-06 从控制器私有 `_GuardedOp` 收编）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（GLOSSARY.md 词汇：**同步守卫**）。
+**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，协调器是唯一写者，同步控制器与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，定义在守卫模块而非 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃、应用内弹窗检查链在静默循环与弹窗展示前再复查——检查点在决策体 `reminder_dialog_flow.dart`，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有，reminders 域共享模块 `guarded_op.dart → GuardedOp`——小组件快照控制器同款，2026-10-06 从控制器私有 `_GuardedOp` 收编）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（GLOSSARY.md 词汇：**同步守卫**）。
 
 > 通知域协议（权限真值对账、删车/恢复/清空的通知清扫、"稍后提醒/知道了"静默读写）的执行体集中在 `reminders/notification_coordinator.dart → LunioNotificationCoordinator`（GLOSSARY.md 词汇：**通知协调器**）；控制器保留被动监听外壳，停车倒计时的通知尾巴由协调器 `onParkingCountdownSaved/Cleared` 承接。
 

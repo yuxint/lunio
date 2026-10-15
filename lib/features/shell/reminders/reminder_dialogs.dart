@@ -1,6 +1,9 @@
-// 应用内提醒弹窗（AppShell 检测到到期项时弹出）：保养提醒 + 里程更新两类。
+// 应用内提醒弹窗（通知同步检查链检测到到期项时弹出）：保养提醒 +
+// 里程更新两类。
 //
-// 两个动作的语义（返回值由通知同步控制器处理副作用）：
+// 两个动作的语义（返回值由决策体 reminder_dialog_flow.dart 处理副作用
+// ——acknowledged 的当日 ack 写与动作后强制重排；snoozed 的偏好写在
+// 下方各 show 入口的 onSnooze 闭包内完成）：
 //  - acknowledged（"知道了"）：当天不再弹（控制器经协调器写当日 ack 偏好）；
 //  - snoozed（"15 天内不再提醒"）：这里经协调器写 snooze 偏好
 //    （系统通知和应用内弹窗一起静默 15 天）。
@@ -17,11 +20,13 @@ import '../../../core/theme/lunio_tokens.dart';
 import '../../../domain/entities/car.dart';
 import '../shared/shell_shared.dart';
 import 'notification_coordinator.dart';
+import 'reminder_dialog_flow.dart' show ReminderDialogAction;
 import 'reminder_notifications.dart';
 import 'reminder_rows.dart';
 
-/// 弹窗动作结果枚举。
-enum ReminderDialogAction { acknowledged, snoozed }
+// 弹窗动作结果枚举 ReminderDialogAction 已随决策体收编迁入
+// reminder_dialog_flow.dart（2026-10-15）：它是决策体的输出词汇，本文件
+// 只消费（show 入口的返回类型与骨架的 pop 值）。
 
 /// 到期详情长文案（应用内弹窗用，含超期量；兜底复用通知侧的
 /// 到期原因短文案）。
