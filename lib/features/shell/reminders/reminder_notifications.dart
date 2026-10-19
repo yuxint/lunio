@@ -1,17 +1,21 @@
-// 提醒通知域的内容组装：系统通知清单、应用内到期清单、全量数据签名。
+// 提醒通知域的内容组装：系统通知清单、到期/生效清单、全量数据签名。
 //
 // 在 App 中的位置：提醒的 UI 半边（视图模型/行组装/空态分类/英雄卡
-// 概览）已拆到 reminder_rows.dart，本文件只保留通知同步控制器消费的
-// 三块：
+// 概览）已拆到 reminder_rows.dart，本文件保留通知域消费的四块：
 //  1. 系统通知清单组装（buildScheduledNotifications，控制器重排时调用）；
-//  2. 应用内提醒弹窗的到期清单（maintenanceNotices，控制器过滤静默后
-//     传给 reminder_dialogs）；
-//  3. 全量数据签名（reminderNotificationDataSignature + 停车倒计时
+//  2. 应用内提醒弹窗的到期清单（maintenanceNotices，"没记录不产生
+//     提醒"产品约定的单一实现）；
+//  3. 生效到期清单单一出口（buildActiveDueList，GLOSSARY 词条）：到期
+//     清单减去静默后的生效部分 + 里程更新提醒生效性，系统通知与应用
+//     内弹窗两通道经它取同一份（2026-10-19 收编，此前两处各手抄一份
+//     同形循环）；
+//  4. 全量数据签名（reminderNotificationDataSignature + 停车倒计时
 //     摘要），签名变化才重排系统通知/弹应用内弹窗。
 // 行组装与 UI 复用同一个 buildReminderRows（reminder_rows.dart），
 // "界面看到的"和"通知里发的"来自同一次组装规则。
 // snooze/ack 抑制协议（"稍后提醒"/"知道了"）已收编进通知协调器
-// notification_coordinator.dart，本文件只经它的两个静默读方法过滤。
+// notification_coordinator.dart，本文件只经它的两个静默读方法过滤
+// （两通道静默语义的差异归协调器单一拥有，出口只收"用哪个判定"）。
 
 import '../../../core/date/local_date.dart';
 import '../../../core/notifications/lunio_notification_service.dart';
@@ -41,42 +45,35 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
   required LocalDate today,
 }) async {
   final notifications = <LunioScheduledNotification>[];
-  final activeMaintenanceNotices = <ReminderViewData>[];
-  for (final notice in maintenanceNotices(
+  // 生效到期清单（单一出口 buildActiveDueList）：系统通知通道的静默
+  // 语义 = 只认"稍后提醒"（"知道了"不影响系统通知），绑定协调器
+  // isSilencedForSystemNotification。本通道不传 shouldAbort——检查点
+  // 在调用方（控制器 await 本函数返回后问同步票）。
+  final active = await buildActiveDueList(
     car: car,
     items: items,
     records: records,
     today: today,
-  )) {
-    final itemId = notice.item.id;
-    if (itemId == null) {
-      continue;
-    }
-    if (!await coordinator.isSilencedForSystemNotification(
-      MaintenanceItemTarget(itemId),
-      today,
-    )) {
-      activeMaintenanceNotices.add(notice);
-    }
+    isSilenced: coordinator.isSilencedForSystemNotification,
+  );
+  if (active == null) {
+    // 理论不可达：本通道不传 shouldAbort，出口不会中止；防御按"无生效
+    // 提醒"处理（返回空清单 = 重排等于全部取消，与无到期同语义）。
+    return notifications;
   }
-  if (activeMaintenanceNotices.isNotEmpty) {
+  if (active.maintenanceNotices.isNotEmpty) {
     notifications.add(
       LunioScheduledNotification(
         slot: LunioNotificationSlot.maintenanceSummary,
         title: '保养提醒',
-        body: maintenanceNoticeSummaryForRows(car, activeMaintenanceNotices),
+        body: maintenanceNoticeSummaryForRows(car, active.maintenanceNotices),
         // 重复频率直接取用户设置（原经 maintenanceRepeatFrequency 转发，
         // 该函数四个参数全未用，R30 死代码已删）。
         repeatFrequency: settings.dueRepeatFrequency,
       ),
     );
   }
-  if (car.id != null &&
-      mileageUpdateReminderDue(car: car, records: records, today: today) &&
-      !await coordinator.isSilencedForSystemNotification(
-        MileageUpdateTarget(car.id!),
-        today,
-      )) {
+  if (active.mileageUpdate) {
     notifications.add(
       LunioScheduledNotification(
         slot: LunioNotificationSlot.mileageUpdate,
@@ -89,6 +86,91 @@ Future<List<LunioScheduledNotification>> buildScheduledNotifications({
     );
   }
   return notifications;
+}
+
+/// 静默判定读取接缝：`(目标, 今天) → 是否静默`。生产只有两个绑定，
+/// 都在通知协调器上（语义差异归协调器单一拥有，GLOSSARY「通知协调器」）：
+///  - isSilencedForSystemNotification：系统通知，只认"稍后提醒"；
+///  - isSilencedForInAppDialog：应用内弹窗，"稍后提醒"期内或今天已
+///    点过"知道了"。
+/// 生效到期清单出口（buildActiveDueList）按传入的判定过滤、不重复拥有
+/// 规则；决策体 reminder_dialog_flow 的静默读接缝同用本类型（注入假
+/// 实现即可在测试里控制 await 边界）。
+typedef ReminderSilenceRead
+    = Future<bool> Function(ReminderTarget target, LocalDate today);
+
+/// 生效到期清单（GLOSSARY 词条）：到期清单减去静默后的生效部分，
+/// 外加里程更新提醒的生效性——"哪些提醒真正要发/要弹"的一份快照。
+class ActiveDueList {
+  const ActiveDueList({
+    required this.maintenanceNotices,
+    required this.mileageUpdate,
+  });
+
+  /// 生效的保养到期提醒行（已过滤静默、已跳过无 id 项目；顺序保持
+  /// maintenanceNotices 的紧迫度排序）。
+  final List<ReminderViewData> maintenanceNotices;
+
+  /// 里程更新提醒是否生效（carId 存在 && 到期 && 未静默）。
+  final bool mileageUpdate;
+
+  /// 两类生效提醒都为空（消费方"无生效提醒"的短路口径）。
+  bool get isEmpty => maintenanceNotices.isEmpty && !mileageUpdate;
+}
+
+/// ★ 生效到期清单单一出口（2026-10-19 收编）：到期清单
+/// （maintenanceNotices，"没记录不产生提醒"产品约定在其中）逐项过
+/// 静默判定、跳过无 id 项目，再判里程更新提醒的到期与静默——循环
+/// 形状、无 id 跳过规则、里程处理只此一份。系统通知
+/// （buildScheduledNotifications）与应用内弹窗（reminder_dialog_flow）
+/// 两个通道都经本函数取生效清单，静默语义按通道由 [isSilenced] 参数化
+/// （生产绑定见 [ReminderSilenceRead]）；将来第三个消费方（如小组件
+/// 到期摘要）出现时取同一份，不再手抄第三遍。
+///
+/// [shouldAbort]（可选）：每次静默读的 await 之后问一次，true = 整轮
+/// 作废、返回 null。应用内弹窗通道传"同步票已作废"谓词——静默读是
+/// await，期间可能发生破坏性写库，这是检查点协议在循环内的位点（协议
+/// 归守卫模块、谓词由调用方注入，本函数不拥有守卫状态）；系统通知通道
+/// 不传（检查点在调用方控制器 await 本函数的消费方返回之后）。
+Future<ActiveDueList?> buildActiveDueList({
+  required Car car,
+  required List<MaintenanceItem> items,
+  required List<MaintenanceRecord> records,
+  required LocalDate today,
+  required ReminderSilenceRead isSilenced,
+  bool Function()? shouldAbort,
+}) async {
+  final active = <ReminderViewData>[];
+  for (final notice in maintenanceNotices(
+    car: car,
+    items: items,
+    records: records,
+    today: today,
+  )) {
+    final itemId = notice.item.id;
+    if (itemId == null) {
+      // 无 id 项目（尚未落库的瞬态对象）跳过：静默判定与后续呈现都
+      // 需要稳定的持久 id。
+      continue;
+    }
+    if (!await isSilenced(MaintenanceItemTarget(itemId), today)) {
+      active.add(notice);
+    }
+    if (shouldAbort != null && shouldAbort()) {
+      return null;
+    }
+  }
+  final carId = car.id;
+  final mileageUpdate = carId != null &&
+      mileageUpdateReminderDue(car: car, records: records, today: today) &&
+      !await isSilenced(MileageUpdateTarget(carId), today);
+  if (shouldAbort != null && shouldAbort()) {
+    return null;
+  }
+  return ActiveDueList(
+    maintenanceNotices: active,
+    mileageUpdate: mileageUpdate,
+  );
 }
 
 /// 停车到点时刻（保养/里程通知调度时要避让的时间槽）。

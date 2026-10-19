@@ -11,8 +11,12 @@
 // 边界 + 真守卫插旗演练中间态）。这是 reminders 域最后一个收编的 UI
 // 融合决策体，接法同 RecordFormController/CarFormController/
 // FuelTierListController 先例（plain-Dart 控制器 + 注入 UI 实现）。
-// ≈ Java Web 里从 Controller 抽出来的应用服务：输入是快照数据，副作用
-// 全部走接口，测试注入假实现即可在确定性时序下演练每个 await 边界。
+// 生效到期清单（到期 − 静默）的组装不归本类：经单一出口
+// reminder_notifications.dart 的 buildActiveDueList 取（系统通知通道
+// 同源，2026-10-19 收编），本类只注入应用内通道的静默判定与循环内
+// 检查点谓词。≈ Java Web 里从 Controller 抽出来的应用服务：输入是
+// 快照数据，副作用全部走接口，测试注入假实现即可在确定性时序下演练
+// 每个 await 边界。
 //
 // 与守卫的边界：同步守卫（同步代数 + 写库中间态旗）的领票与检查点语义
 // 仍归 notification_sync_guard.dart，本类只在不可逆副作用（弹窗、写
@@ -23,7 +27,6 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
-import 'notification_coordinator.dart';
 import 'notification_sync_guard.dart';
 import 'reminder_notifications.dart';
 import 'reminder_rows.dart';
@@ -71,9 +74,10 @@ class InAppReminderDialogFlow {
 
   /// 静默判定读取（"稍后提醒"期内，或今天已点过"知道了"）：生产绑定
   /// 通知协调器 isSilencedForInAppDialog；测试经 completer 控制 await
-  /// 边界（在静默读挂起期间插入写库中间态，演练循环内检查点）。
-  final Future<bool> Function(ReminderTarget target, LocalDate today)
-      isSilencedForInAppDialog;
+  /// 边界（在静默读挂起期间插入写库中间态，演练循环内检查点）。经
+  /// 单一出口 buildActiveDueList 消费（类型 = reminder_notifications
+  /// 的 ReminderSilenceRead）。
+  final ReminderSilenceRead isSilencedForInAppDialog;
 
   /// 弹窗能否立即展示（生产 = 主壳层 context 的 null/mounted 检查）。
   /// false = 壳层已拆，放弃整轮（等下一轮补判）——与控制器原实现的
@@ -124,37 +128,24 @@ class InAppReminderDialogFlow {
     if (!settings.inAppNotificationsEnabled) {
       return;
     }
-    // 生效到期清单（GLOSSARY 词条）：到期项目经静默判定逐个过滤（判定
-    // 是 await——期间可能发生破坏性写库，每轮循环后问一次票，假了整轮
-    // 放弃）。
-    final dueNotices = <ReminderViewData>[];
-    for (final notice in maintenanceNotices(
+    // 生效到期清单（GLOSSARY 词条）经单一出口组装（reminder_notifications
+    // 的 buildActiveDueList，系统通知通道同取一份）：静默语义按通道绑定
+    // 注入的 isSilencedForInAppDialog；静默读是 await——期间可能发生破坏
+    // 性写库，经 shouldAbort 接缝每轮循环后问一次票，票作废出口返回 null、
+    // 整轮放弃。
+    final active = await buildActiveDueList(
       car: car,
       items: items,
       records: records,
       today: today,
-    )) {
-      final itemId = notice.item.id;
-      if (itemId == null) {
-        continue;
-      }
-      if (!await isSilencedForInAppDialog(
-        MaintenanceItemTarget(itemId),
-        today,
-      )) {
-        dueNotices.add(notice);
-      }
-      if (!run.isValid) {
-        return;
-      }
+      isSilenced: isSilencedForInAppDialog,
+      shouldAbort: () => !run.isValid,
+    );
+    if (active == null) {
+      return;
     }
-    final showMileageReminder =
-        car.id != null &&
-        mileageUpdateReminderDue(car: car, records: records, today: today) &&
-        !await isSilencedForInAppDialog(
-          MileageUpdateTarget(car.id!),
-          today,
-        );
+    final dueNotices = active.maintenanceNotices;
+    final showMileageReminder = active.mileageUpdate;
     if (dueNotices.isEmpty && !showMileageReminder) {
       return;
     }
