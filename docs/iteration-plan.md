@@ -79,6 +79,21 @@
 来源：PRD 与现状比对（偏好 key 权威清单见 AGENTS.md「数据与契约注意点」）。
 验收：文档自洽、无断链（`git diff --check` + rg 引用检查）。
 
+### P7 车辆诊断（OBD 油量水温读取，开发者模式工具页）
+
+- [x] 01 检测点数据层：`diagnostics_probes` 全局表（不挂 carId）、仓库 CRUD（内置只读可启停、自定义可增改删）、内置三条种子幂等对账并入 bootstrap 总入口、DB v4 增量迁移、列表 provider 写点直失效（完成于 2026-11-12，ADR 0021）。
+- [ ] 02 备份 v4：`diagnosticsProbes` 段只导自定义项、版本白名单 [1,2,3,4]、恢复事务内重插（id 重新生成）；过渡期（票 01 已落、票 02 未落）恢复 v3 备份会丢自定义检测点。
+- [ ] 03 开关与入口：开发者模式区块两行（开关行 + 入口行）、关开发者模式连带清理诊断开关。
+- [ ] 04 ELM327 会话决策体：分帧缓冲、AT 序列状态机、串行轮询编排（plain-Dart 控制器 + fake transport 单测）。
+- [ ] 05 诊断页：三区布局（状态条/核心值卡/检测点行列表）+ Mock transport 页面测试。
+- [ ] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体。
+- [ ] 07 BLE 真链路：flutter_blue_plus + OBDTransport 传输层抽象（BLE/Mock 两实现）。
+- [ ] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档。
+
+票据：`.scratch/car-obd-diagnostics/issues/`（本机未跟踪文件）。
+来源：2026-11-12 grill 三轮 spec（`.scratch/car-obd-diagnostics/spec.md`）+ ADR 0020/0021 + 硬件实车验收语料 `docs/car_obd_link/`。
+验收：各票自带验收清单；BLE 真链路不进自动化，走 spec 的真机验收清单。
+
 ## 4. 未排期产品方向（想法池，按当前价值排序）
 
 1. **备份自动化**：定期导出提醒或启动时温和提示。单机应用最大的实际风险是用户忘了备份，价值高于任何新功能。

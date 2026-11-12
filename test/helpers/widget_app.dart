@@ -27,6 +27,7 @@ import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
+import 'package:lunio/data/repositories/diagnostics_repository.dart';
 import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
@@ -183,16 +184,18 @@ VoidCallback mockAndroidNotifications(
 /// 用一份引用完成播种与断言（≈ 测试夹具里的 ServiceLocator）。生产代码
 /// 不要用——那是测试专用的一揽子引用，不是模块边界。
 class TestRepositories {
-  TestRepositories(this.database)
-      : preferences = LunioPreferences(database),
-        // 目录加载器必须注入测试版（纯 async 闭包，微任务即完成）：默认
-        // 加载器走 rootBundle 资产通道，在第二个用例的假异步区里等不到
-        // 通道回包会把用例挂到 10 分钟超时。注入的加载器读的也是同一份
-        // assets/data/catalog/ 真实分片（见 built_in_catalog_loader.dart）。
-        catalogRepository = BuiltInCatalogRepository(
-          database,
-          loadBuiltInVehicleCatalog: () async => loadBuiltInVehicleCatalogForTest(),
-        ) {
+  TestRepositories(this.database) : preferences = LunioPreferences(database) {
+    // 目录加载器必须注入测试版（纯 async 闭包，微任务即完成）：默认
+    // 加载器走 rootBundle 资产通道，在第二个用例的假异步区里等不到
+    // 通道回包会把用例挂到 10 分钟超时。注入的加载器读的也是同一份
+    // assets/data/catalog/ 真实分片（见 built_in_catalog_loader.dart）。
+    // 检测点种子对账并入 bootstrap 总入口（ADR 0021），与生产装配同构。
+    diagnosticsRepository = DiagnosticsRepository(database);
+    catalogRepository = BuiltInCatalogRepository(
+      database,
+      loadBuiltInVehicleCatalog: () async => loadBuiltInVehicleCatalogForTest(),
+      ensureProbes: () => diagnosticsRepository.ensureBuiltInProbes(),
+    );
     // 同一份 preferences 门面贯穿全部仓库（FuelRepository 曾私造第二个
     // 门面，是装配漂移点，2026-09-26 夹具收编时修复）。
     fuelRepository = FuelRepository(database, preferences);
@@ -206,7 +209,8 @@ class TestRepositories {
 
   final AppDatabase database;
   final LunioPreferences preferences;
-  final BuiltInCatalogRepository catalogRepository;
+  late final BuiltInCatalogRepository catalogRepository;
+  late final DiagnosticsRepository diagnosticsRepository;
   late final FuelRepository fuelRepository;
   late final BackupRepository backupRepository;
   late final LunioRepository repository;
@@ -389,9 +393,12 @@ Future<AppDatabase> pumpApp(
     addTearDown(appDatabase.close);
   }
   final preferences = LunioPreferences(appDatabase);
+  final diagnosticsRepository = DiagnosticsRepository(appDatabase);
   final catalogRepository = BuiltInCatalogRepository(
     appDatabase,
     loadBuiltInVehicleCatalog: () async => loadBuiltInVehicleCatalogForTest(),
+    // 检测点种子对账并入 bootstrap 总入口（ADR 0021），与生产装配同构。
+    ensureProbes: () => diagnosticsRepository.ensureBuiltInProbes(),
   );
   await catalogRepository.ensureBootstrapData();
   await preferences.setSystemNotificationsEnabled(systemNotificationsEnabled);

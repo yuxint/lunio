@@ -5374,6 +5374,567 @@ class FuelRecordsCompanion extends UpdateCompanion<FuelRecordRow> {
   }
 }
 
+class $DiagnosticsProbesTable extends DiagnosticsProbes
+    with TableInfo<$DiagnosticsProbesTable, DiagnosticsProbeRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DiagnosticsProbesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _commandMeta = const VerificationMeta(
+    'command',
+  );
+  @override
+  late final GeneratedColumn<String> command = GeneratedColumn<String>(
+    'command',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _parseTypeMeta = const VerificationMeta(
+    'parseType',
+  );
+  @override
+  late final GeneratedColumn<String> parseType = GeneratedColumn<String>(
+    'parse_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _enabledMeta = const VerificationMeta(
+    'enabled',
+  );
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+    'enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _catalogKeyMeta = const VerificationMeta(
+    'catalogKey',
+  );
+  @override
+  late final GeneratedColumn<String> catalogKey = GeneratedColumn<String>(
+    'catalog_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<String> updatedAt = GeneratedColumn<String>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    command,
+    parseType,
+    enabled,
+    catalogKey,
+    syncStatus,
+    updatedAt,
+    version,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'diagnostics_probes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DiagnosticsProbeRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('command')) {
+      context.handle(
+        _commandMeta,
+        command.isAcceptableOrUnknown(data['command']!, _commandMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_commandMeta);
+    }
+    if (data.containsKey('parse_type')) {
+      context.handle(
+        _parseTypeMeta,
+        parseType.isAcceptableOrUnknown(data['parse_type']!, _parseTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_parseTypeMeta);
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(
+        _enabledMeta,
+        enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta),
+      );
+    }
+    if (data.containsKey('catalog_key')) {
+      context.handle(
+        _catalogKeyMeta,
+        catalogKey.isAcceptableOrUnknown(data['catalog_key']!, _catalogKeyMeta),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {catalogKey},
+  ];
+  @override
+  DiagnosticsProbeRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DiagnosticsProbeRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      command: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}command'],
+      )!,
+      parseType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parse_type'],
+      )!,
+      enabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}enabled'],
+      )!,
+      catalogKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}catalog_key'],
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+    );
+  }
+
+  @override
+  $DiagnosticsProbesTable createAlias(String alias) {
+    return $DiagnosticsProbesTable(attachedDatabase, alias);
+  }
+}
+
+class DiagnosticsProbeRow extends DataClass
+    implements Insertable<DiagnosticsProbeRow> {
+  final int id;
+
+  /// 展示名（如"油量"）。
+  final String name;
+
+  /// 指令原文（如 `012F`、`ATRV`），发送前由会话决策体规整。
+  final String command;
+
+  /// 解析类型（DiagnosticsParseType 的稳定 wire 值）。
+  final String parseType;
+
+  /// 启停。内置行也允许启停（唯一可变的内置字段）。
+  final bool enabled;
+
+  /// 内置标识（稳定 catalogKey）：非 null = 内置行，null = 自定义行。
+  final String? catalogKey;
+  final String syncStatus;
+  final String updatedAt;
+  final int version;
+  const DiagnosticsProbeRow({
+    required this.id,
+    required this.name,
+    required this.command,
+    required this.parseType,
+    required this.enabled,
+    this.catalogKey,
+    required this.syncStatus,
+    required this.updatedAt,
+    required this.version,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['command'] = Variable<String>(command);
+    map['parse_type'] = Variable<String>(parseType);
+    map['enabled'] = Variable<bool>(enabled);
+    if (!nullToAbsent || catalogKey != null) {
+      map['catalog_key'] = Variable<String>(catalogKey);
+    }
+    map['sync_status'] = Variable<String>(syncStatus);
+    map['updated_at'] = Variable<String>(updatedAt);
+    map['version'] = Variable<int>(version);
+    return map;
+  }
+
+  DiagnosticsProbesCompanion toCompanion(bool nullToAbsent) {
+    return DiagnosticsProbesCompanion(
+      id: Value(id),
+      name: Value(name),
+      command: Value(command),
+      parseType: Value(parseType),
+      enabled: Value(enabled),
+      catalogKey: catalogKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(catalogKey),
+      syncStatus: Value(syncStatus),
+      updatedAt: Value(updatedAt),
+      version: Value(version),
+    );
+  }
+
+  factory DiagnosticsProbeRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DiagnosticsProbeRow(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      command: serializer.fromJson<String>(json['command']),
+      parseType: serializer.fromJson<String>(json['parseType']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      catalogKey: serializer.fromJson<String?>(json['catalogKey']),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+      updatedAt: serializer.fromJson<String>(json['updatedAt']),
+      version: serializer.fromJson<int>(json['version']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'command': serializer.toJson<String>(command),
+      'parseType': serializer.toJson<String>(parseType),
+      'enabled': serializer.toJson<bool>(enabled),
+      'catalogKey': serializer.toJson<String?>(catalogKey),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+      'updatedAt': serializer.toJson<String>(updatedAt),
+      'version': serializer.toJson<int>(version),
+    };
+  }
+
+  DiagnosticsProbeRow copyWith({
+    int? id,
+    String? name,
+    String? command,
+    String? parseType,
+    bool? enabled,
+    Value<String?> catalogKey = const Value.absent(),
+    String? syncStatus,
+    String? updatedAt,
+    int? version,
+  }) => DiagnosticsProbeRow(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    command: command ?? this.command,
+    parseType: parseType ?? this.parseType,
+    enabled: enabled ?? this.enabled,
+    catalogKey: catalogKey.present ? catalogKey.value : this.catalogKey,
+    syncStatus: syncStatus ?? this.syncStatus,
+    updatedAt: updatedAt ?? this.updatedAt,
+    version: version ?? this.version,
+  );
+  DiagnosticsProbeRow copyWithCompanion(DiagnosticsProbesCompanion data) {
+    return DiagnosticsProbeRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      command: data.command.present ? data.command.value : this.command,
+      parseType: data.parseType.present ? data.parseType.value : this.parseType,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      catalogKey: data.catalogKey.present
+          ? data.catalogKey.value
+          : this.catalogKey,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      version: data.version.present ? data.version.value : this.version,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DiagnosticsProbeRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('command: $command, ')
+          ..write('parseType: $parseType, ')
+          ..write('enabled: $enabled, ')
+          ..write('catalogKey: $catalogKey, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    command,
+    parseType,
+    enabled,
+    catalogKey,
+    syncStatus,
+    updatedAt,
+    version,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DiagnosticsProbeRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.command == this.command &&
+          other.parseType == this.parseType &&
+          other.enabled == this.enabled &&
+          other.catalogKey == this.catalogKey &&
+          other.syncStatus == this.syncStatus &&
+          other.updatedAt == this.updatedAt &&
+          other.version == this.version);
+}
+
+class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<String> command;
+  final Value<String> parseType;
+  final Value<bool> enabled;
+  final Value<String?> catalogKey;
+  final Value<String> syncStatus;
+  final Value<String> updatedAt;
+  final Value<int> version;
+  const DiagnosticsProbesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.command = const Value.absent(),
+    this.parseType = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.catalogKey = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.version = const Value.absent(),
+  });
+  DiagnosticsProbesCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    required String command,
+    required String parseType,
+    this.enabled = const Value.absent(),
+    this.catalogKey = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    required String updatedAt,
+    this.version = const Value.absent(),
+  }) : name = Value(name),
+       command = Value(command),
+       parseType = Value(parseType),
+       updatedAt = Value(updatedAt);
+  static Insertable<DiagnosticsProbeRow> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<String>? command,
+    Expression<String>? parseType,
+    Expression<bool>? enabled,
+    Expression<String>? catalogKey,
+    Expression<String>? syncStatus,
+    Expression<String>? updatedAt,
+    Expression<int>? version,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (command != null) 'command': command,
+      if (parseType != null) 'parse_type': parseType,
+      if (enabled != null) 'enabled': enabled,
+      if (catalogKey != null) 'catalog_key': catalogKey,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (version != null) 'version': version,
+    });
+  }
+
+  DiagnosticsProbesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<String>? command,
+    Value<String>? parseType,
+    Value<bool>? enabled,
+    Value<String?>? catalogKey,
+    Value<String>? syncStatus,
+    Value<String>? updatedAt,
+    Value<int>? version,
+  }) {
+    return DiagnosticsProbesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      command: command ?? this.command,
+      parseType: parseType ?? this.parseType,
+      enabled: enabled ?? this.enabled,
+      catalogKey: catalogKey ?? this.catalogKey,
+      syncStatus: syncStatus ?? this.syncStatus,
+      updatedAt: updatedAt ?? this.updatedAt,
+      version: version ?? this.version,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (command.present) {
+      map['command'] = Variable<String>(command.value);
+    }
+    if (parseType.present) {
+      map['parse_type'] = Variable<String>(parseType.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (catalogKey.present) {
+      map['catalog_key'] = Variable<String>(catalogKey.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(updatedAt.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DiagnosticsProbesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('command: $command, ')
+          ..write('parseType: $parseType, ')
+          ..write('enabled: $enabled, ')
+          ..write('catalogKey: $catalogKey, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('version: $version')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -5393,6 +5954,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $FuelRecordsTable fuelRecords = $FuelRecordsTable(this);
+  late final $DiagnosticsProbesTable diagnosticsProbes =
+      $DiagnosticsProbesTable(this);
   late final Index idxMaintenanceItemsCarsId = Index(
     'idx_maintenance_items_cars_id',
     'CREATE INDEX idx_maintenance_items_cars_id ON maintenance_items (cars_id)',
@@ -5423,6 +5986,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     appPreferences,
     fuelPredictions,
     fuelRecords,
+    diagnosticsProbes,
     idxMaintenanceItemsCarsId,
     idxMaintenanceRecordsCarId,
     idxMaintenanceRecordItemsRecordId,
@@ -8103,6 +8667,293 @@ typedef $$FuelRecordsTableProcessedTableManager =
       FuelRecordRow,
       PrefetchHooks Function()
     >;
+typedef $$DiagnosticsProbesTableCreateCompanionBuilder =
+    DiagnosticsProbesCompanion Function({
+      Value<int> id,
+      required String name,
+      required String command,
+      required String parseType,
+      Value<bool> enabled,
+      Value<String?> catalogKey,
+      Value<String> syncStatus,
+      required String updatedAt,
+      Value<int> version,
+    });
+typedef $$DiagnosticsProbesTableUpdateCompanionBuilder =
+    DiagnosticsProbesCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<String> command,
+      Value<String> parseType,
+      Value<bool> enabled,
+      Value<String?> catalogKey,
+      Value<String> syncStatus,
+      Value<String> updatedAt,
+      Value<int> version,
+    });
+
+class $$DiagnosticsProbesTableFilterComposer
+    extends Composer<_$AppDatabase, $DiagnosticsProbesTable> {
+  $$DiagnosticsProbesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get command => $composableBuilder(
+    column: $table.command,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parseType => $composableBuilder(
+    column: $table.parseType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get catalogKey => $composableBuilder(
+    column: $table.catalogKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DiagnosticsProbesTableOrderingComposer
+    extends Composer<_$AppDatabase, $DiagnosticsProbesTable> {
+  $$DiagnosticsProbesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get command => $composableBuilder(
+    column: $table.command,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parseType => $composableBuilder(
+    column: $table.parseType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+    column: $table.enabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get catalogKey => $composableBuilder(
+    column: $table.catalogKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DiagnosticsProbesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DiagnosticsProbesTable> {
+  $$DiagnosticsProbesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get command =>
+      $composableBuilder(column: $table.command, builder: (column) => column);
+
+  GeneratedColumn<String> get parseType =>
+      $composableBuilder(column: $table.parseType, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<String> get catalogKey => $composableBuilder(
+    column: $table.catalogKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+}
+
+class $$DiagnosticsProbesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DiagnosticsProbesTable,
+          DiagnosticsProbeRow,
+          $$DiagnosticsProbesTableFilterComposer,
+          $$DiagnosticsProbesTableOrderingComposer,
+          $$DiagnosticsProbesTableAnnotationComposer,
+          $$DiagnosticsProbesTableCreateCompanionBuilder,
+          $$DiagnosticsProbesTableUpdateCompanionBuilder,
+          (
+            DiagnosticsProbeRow,
+            BaseReferences<
+              _$AppDatabase,
+              $DiagnosticsProbesTable,
+              DiagnosticsProbeRow
+            >,
+          ),
+          DiagnosticsProbeRow,
+          PrefetchHooks Function()
+        > {
+  $$DiagnosticsProbesTableTableManager(
+    _$AppDatabase db,
+    $DiagnosticsProbesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DiagnosticsProbesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DiagnosticsProbesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DiagnosticsProbesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> command = const Value.absent(),
+                Value<String> parseType = const Value.absent(),
+                Value<bool> enabled = const Value.absent(),
+                Value<String?> catalogKey = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<String> updatedAt = const Value.absent(),
+                Value<int> version = const Value.absent(),
+              }) => DiagnosticsProbesCompanion(
+                id: id,
+                name: name,
+                command: command,
+                parseType: parseType,
+                enabled: enabled,
+                catalogKey: catalogKey,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                required String command,
+                required String parseType,
+                Value<bool> enabled = const Value.absent(),
+                Value<String?> catalogKey = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                required String updatedAt,
+                Value<int> version = const Value.absent(),
+              }) => DiagnosticsProbesCompanion.insert(
+                id: id,
+                name: name,
+                command: command,
+                parseType: parseType,
+                enabled: enabled,
+                catalogKey: catalogKey,
+                syncStatus: syncStatus,
+                updatedAt: updatedAt,
+                version: version,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DiagnosticsProbesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DiagnosticsProbesTable,
+      DiagnosticsProbeRow,
+      $$DiagnosticsProbesTableFilterComposer,
+      $$DiagnosticsProbesTableOrderingComposer,
+      $$DiagnosticsProbesTableAnnotationComposer,
+      $$DiagnosticsProbesTableCreateCompanionBuilder,
+      $$DiagnosticsProbesTableUpdateCompanionBuilder,
+      (
+        DiagnosticsProbeRow,
+        BaseReferences<
+          _$AppDatabase,
+          $DiagnosticsProbesTable,
+          DiagnosticsProbeRow
+        >,
+      ),
+      DiagnosticsProbeRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8131,4 +8982,6 @@ class $AppDatabaseManager {
       $$FuelPredictionsTableTableManager(_db, _db.fuelPredictions);
   $$FuelRecordsTableTableManager get fuelRecords =>
       $$FuelRecordsTableTableManager(_db, _db.fuelRecords);
+  $$DiagnosticsProbesTableTableManager get diagnosticsProbes =>
+      $$DiagnosticsProbesTableTableManager(_db, _db.diagnosticsProbes);
 }

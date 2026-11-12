@@ -268,14 +268,15 @@ class BackupRepository {
     }));
   }
 
-  /// 清空数据（"我的"页入口）：事务内删 7 张表（4 张业务表
-  /// + 加油预测设置表 + 加油记录表 + 偏好表）。
+  /// 清空数据（"我的"页入口）：事务内删 8 张表（4 张业务表
+  /// + 加油预测设置表 + 加油记录表 + 检测点表 + 偏好表）。
   /// 语义（用户确认过的口径）：清空车辆、保养项目、保养记录、加油预测
-  /// 设置、加油记录和全部偏好设置（主题、通知、手动日期、开发者模式、
+  /// 设置、加油记录、检测点（自定义+内置行一并删，内置随 bootstrap
+  /// 重灌重建）和全部偏好设置（主题、通知、手动日期、开发者模式、
   /// 停车倒计时、油价缓存、手填油价、snooze/ack）；
   /// 默认车辆模型与默认保养项目两张目录表不动。
-  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录；
-  /// 系统通知的取消由调用方（通知协调器 runAllDataClear）负责。
+  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录与检测点
+  /// 种子；系统通知的取消由调用方（通知协调器 runAllDataClear）负责。
   Future<void> clearAllData() {
     return database.transaction(() async {
       await _preferences.deleteAll();
@@ -284,23 +285,29 @@ class BackupRepository {
       await database.delete(database.maintenanceItems).go();
       await database.delete(database.fuelPredictions).go();
       await database.delete(database.fuelRecords).go();
+      await database.delete(database.diagnosticsProbes).go();
       await database.delete(database.cars).go();
     });
   }
 
-  /// 恢复备份专用的清库实现（须在事务内调用）：只删 6 张业务表
-  /// （4 张主业务表 + 加油预测设置 + 加油记录），偏好表整体保留（主题、
-  /// 通知设置、手动日期、停车倒计时等不受影响，R2 修复口径："恢复只替换
-  /// 业务数据，偏好保留"）；但按前缀删掉提醒抑制键——恢复出来的车/项目
-  /// 拿的是全新雪花 id，旧 snooze/ack 与新数据在语义上已无关联，不该
-  /// 继续生效。加油记录清表是备份 v3 补上的：不删会把恢复前残留的旧
-  /// 加油记录留在库里，变成指向已删车辆的孤儿行（ADR 0014）。
+  /// 恢复备份专用的清库实现（须在事务内调用）：只删 7 张业务表
+  /// （4 张主业务表 + 加油预测设置 + 加油记录 + 检测点），偏好表整体
+  /// 保留（主题、通知设置、手动日期、停车倒计时等不受影响，R2 修复
+  /// 口径："恢复只替换业务数据，偏好保留"）；但按前缀删掉提醒抑制键
+  /// ——恢复出来的车/项目拿的是全新雪花 id，旧 snooze/ack 与新数据在
+  /// 语义上已无关联，不该继续生效。加油记录清表是备份 v3 补上的：不删
+  /// 会把恢复前残留的旧加油记录留在库里，变成指向已删车辆的孤儿行
+  /// （ADR 0014）。检测点清表是备份 v4 前置：清掉的内置行随 bootstrap
+  /// 重灌重建、自定义行由备份 diagnosticsProbes 段重插（票 02），过渡
+  /// 期（本票落地、票 02 未落地）恢复 v3 备份会丢自定义检测点——新
+  /// 功能尚无真实用户数据，可接受。
   Future<void> _clearRestorableDataInTransaction() async {
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();
     await database.delete(database.maintenanceItems).go();
     await database.delete(database.fuelPredictions).go();
     await database.delete(database.fuelRecords).go();
+    await database.delete(database.diagnosticsProbes).go();
     await database.delete(database.cars).go();
     await _preferences.clearReminderSuppressionKeys();
   }

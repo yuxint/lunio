@@ -22,6 +22,8 @@
 //  - appPreferences:      {key}
 //  - fuelPredictions:     {carId}                ← 一辆车一份加油预测设置
 //  - fuelRecords:         （故意不设唯一约束——同车同日多箱合法，ADR 0014）
+//  - diagnosticsProbes:   {catalogKey}           ← 内置 key 唯一（自定义行该列 NULL，
+//                                                  SQLite UNIQUE 多 NULL 合法，ADR 0021）
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -297,6 +299,48 @@ class FuelRecords extends Table {
   // 故意不声明 uniqueKeys：同车同日多条加油合法（ADR 0014）。
 }
 
+/// 车辆诊断检测点表（ADR 0021，2026-11-12）：全局指令库，不挂 carId
+/// ——指令语义与车无关（`012F` 在任何支持的车上都是油量液位百分比），
+/// 每车一套是为"不同车用不同指令"付复杂度，该场景不存在。
+///  - 名称/指令原文/解析类型/启停：检测点四要素（GLOSSARY「检测点」），
+///    删除车辆不级联、与车辆数据纪元无关（写点不 bump 车辆纪元）；
+///  - catalogKey：内置标识——非 null = 内置行（bootstrap 按 key 幂等
+///    对账，只读 + 可启停），null = 自定义行（可增改删）。唯一约束
+///    {catalogKey}：内置 key 全库唯一，自定义行该列为 NULL（SQLite
+///    UNIQUE 允许多个 NULL，互不冲突，与 vehicleDefaultMaintenanceItems
+///    的 {catalogId} 同款）。
+@DataClassName('DiagnosticsProbeRow')
+class DiagnosticsProbes extends Table {
+  IntColumn get id => integer()();
+
+  /// 展示名（如"油量"）。
+  TextColumn get name => text()();
+
+  /// 指令原文（如 `012F`、`ATRV`），发送前由会话决策体规整。
+  TextColumn get command => text()();
+
+  /// 解析类型（DiagnosticsParseType 的稳定 wire 值）。
+  TextColumn get parseType => text()();
+
+  /// 启停。内置行也允许启停（唯一可变的内置字段）。
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+
+  /// 内置标识（稳定 catalogKey）：非 null = 内置行，null = 自定义行。
+  TextColumn get catalogKey => text().nullable()();
+
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+  TextColumn get updatedAt => text()();
+  IntColumn get version => integer().withDefault(const Constant(1))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+
+  @override
+  List<Set<Column<Object>>> get uniqueKeys => [
+    {catalogKey},
+  ];
+}
+
 // ---------------------------- 数据库与迁移 ----------------------------
 
 /// App 数据库。列出全部表后由 Drift 生成类型安全的 API
@@ -312,6 +356,7 @@ class FuelRecords extends Table {
     AppPreferences,
     FuelPredictions,
     FuelRecords,
+    DiagnosticsProbes,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -332,10 +377,10 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forExecutor(super.executor);
 
   /// ⚠ 数据库结构版本（≠ 备份 JSON 的 schemaVersion，两者独立演进）。
-  /// 改表结构必须 +1，并在 onUpgrade 补对应增量分支（ADR 0005 及其
+  /// 改表结构必须 +1，并在 onUpgrade 补增量分支（ADR 0005 及其
   /// 2026-09-20 修订）。改完跑 build_runner。
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   /// 迁移策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写
   /// onUpgrade 增量迁移，老库原地升级、存量数据保留——用户拍板"升级
@@ -349,9 +394,16 @@ class AppDatabase extends _$AppDatabase {
           // v2 → v3：新增加油记录表，纯增量——只建新表，不碰任何旧表，
           // 车辆/项目/记录等存量数据原样保留。表结构以 ADR 0015
           // （2026-09-22 就地重定义）为准：老 v3 库（旧五字段结构）不跑
-          // 本分支、也不兼容新代码，必须卸载重装（见 ADR 0015）。
+          // 本分支、也不兼容新代码，本分支只服务"v2 真老库"。
           if (from < 3) {
             await m.createTable(fuelRecords);
+          }
+          // v3 → v4：新增车辆诊断检测点表（ADR 0021），纯增量——只建
+          // 新表，不碰任何旧表，存量数据原样保留。种子三条内置检测点
+          // 不在迁移里插（迁移只管结构）：首启种子由 bootstrap 总入口
+          // （ensureBootstrapData → ensureBuiltInProbes）幂等对账写入。
+          if (from < 4) {
+            await m.createTable(diagnosticsProbes);
           }
         },
       );

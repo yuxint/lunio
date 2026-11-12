@@ -27,7 +27,9 @@
 // ```text
 // appDatabaseProvider（惰性建库/连库）
 //   ├─ lunioPreferencesProvider（偏好 typed 门面）
-//   ├─ builtInCatalogRepositoryProvider（车型目录/默认模板 + bootstrap）
+//   ├─ builtInCatalogRepositoryProvider（车型目录/默认模板 + bootstrap，
+//   │    含检测点种子对账回调 → diagnosticsRepositoryProvider）
+//   ├─ diagnosticsRepositoryProvider（车辆诊断检测点仓库）
 //   ├─ fuelRepositoryProvider（加油域，另挂偏好门面）
 //   ├─ backupRepositoryProvider（备份导出/恢复/清空，另挂偏好门面）
 //   ├─ lunioRepositoryProvider（主仓库：车辆/项目/记录，组合偏好门面与加油仓库）
@@ -50,6 +52,7 @@
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
+//   ├─ diagnosticsProbesProvider（检测点列表，写点直失效模型）
 //   └─ 加油域 provider：开关/当前车设置/加油记录（family + applied 派生）
 //      在本文件；省份/油品/手填价/数据源/油价控制器/生效链在
 //      features/shell/fuel/fuel_prices.dart
@@ -66,9 +69,11 @@ import '../data/database/app_database.dart';
 import '../data/preferences/app_preferences.dart';
 import '../data/repositories/backup_repository.dart';
 import '../data/repositories/built_in_catalog_repository.dart';
+import '../data/repositories/diagnostics_repository.dart';
 import '../data/repositories/fuel_repository.dart';
 import '../data/repositories/lunio_repository.dart';
 import '../domain/entities/car.dart';
+import '../domain/entities/diagnostics_probe.dart';
 import '../domain/entities/fuel_prediction.dart';
 import '../domain/entities/fuel_record.dart';
 import '../domain/entities/maintenance_item.dart';
@@ -185,6 +190,22 @@ final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
   return ref.watch(lunioPreferencesProvider).getParkingCountdown();
 });
 
+// ---------------- 车辆诊断 ----------------
+
+/// 检测点列表（全局指令库，不挂车，ADR 0021）。内置三条种子由 bootstrap
+/// 总入口幂等对账写入，读侧显式 await bootstrap 再查表（与 cars/
+/// vehicleModels 同款）——首启第一帧就能读到种子。
+/// 失效走"写点直失效"模型（同 [parkingCountdownProvider] 先例）：本
+/// provider 不 watch 任何纪元；检测点写点（增/删/改/启停/恢复备份/
+/// 清空数据）完成后直接逐出本 provider（动作层诊断分节收编排，后续
+/// UI 票接入）。不 bump 车辆数据纪元、不进通知同步数据源清单（表不挂
+/// 车，ADR 0021）。
+final diagnosticsProbesProvider =
+    FutureProvider<List<DiagnosticsProbe>>((ref) async {
+      await ref.watch(defaultMaintenanceBootstrapProvider.future);
+      return ref.watch(diagnosticsRepositoryProvider).listProbes();
+    });
+
 // ---------------- 加油预测 ----------------
 
 /// 加油预测功能开关。只在开发者模式里提供开关入口（入口见
@@ -266,7 +287,19 @@ final lunioPreferencesProvider = Provider<LunioPreferences>((ref) {
 final builtInCatalogRepositoryProvider = Provider<BuiltInCatalogRepository>((
   ref,
 ) {
-  return BuiltInCatalogRepository(ref.watch(appDatabaseProvider));
+  // 检测点种子对账并入 bootstrap 总入口（ADR 0021）：ensureBootstrapData
+  // 末步调诊断仓库的种子对账（诊断仓库与目录仓库同库）。回调惰性执行，
+  // 按 providers.dart 文件头约定用 ref.read（仓库 provider 常驻，读等价）。
+  return BuiltInCatalogRepository(
+    ref.watch(appDatabaseProvider),
+    ensureProbes: () =>
+        ref.read(diagnosticsRepositoryProvider).ensureBuiltInProbes(),
+  );
+});
+
+/// 车辆诊断仓库：检测点 CRUD + 内置种子对账（ADR 0021）。
+final diagnosticsRepositoryProvider = Provider<DiagnosticsRepository>((ref) {
+  return DiagnosticsRepository(ref.watch(appDatabaseProvider));
 });
 
 /// 加油仓库：加油预测设置、油价缓存、手填油价。
@@ -535,11 +568,16 @@ final nativeWidgetsProvider = Provider<NativeWidgets>((ref) {
 /// 全量失效：恢复备份 / 清空数据后调用，让所有 FutureProvider 重新查库。
 /// bootstrap 单独逐出（它不 watch 车辆数据纪元——目录对账的幂等重灌
 /// 只有这一个触发点，恢复/清空后必须显式失效才重灌）；parkingCountdown
-/// 单独逐出（它不走任何纪元，写点直失效模型）；两个数据纪元各 bump
-/// 一次（车辆/项目/记录/加油四张业务表 + 偏好表的派生缓存全体作废）。
+/// 与 diagnosticsProbes 单独逐出（两者都不走任何纪元，写点直失效模型）；
+/// 两个数据纪元各 bump 一次（车辆/项目/记录/加油四张业务表 + 偏好表
+/// 的派生缓存全体作废）。
 void invalidateAllAppDataProviders(WidgetRef ref) {
   ref.invalidate(defaultMaintenanceBootstrapProvider);
   ref.invalidate(parkingCountdownProvider);
+  // 检测点列表同"写点直失效"模型：恢复备份/清空数据清了检测点表
+  // （内置随 bootstrap 重灌重建、自定义由备份段重插——票 02），读侧
+  // 必须显式逐出，否则缓存住旧列表。
+  ref.invalidate(diagnosticsProbesProvider);
   ref.read(vehicleDataEpochProvider.notifier).bump();
   ref.read(preferencesEpochProvider.notifier).bump();
 }

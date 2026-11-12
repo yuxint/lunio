@@ -1,23 +1,26 @@
 # 当前数据库表结构
 
 本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、车型目录
-asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
-（ADR 0014）；备份 JSON `schemaVersion` 为 `3`（解码兼容读 v1/v2，见下文
-"备份契约边界"）。
+asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
+（ADR 0021）；备份 JSON `schemaVersion` 仍为 `3`（解码兼容读 v1/v2，
+诊断检测点段随票 02 升 v4，见下文"备份契约边界"）。
 
 本文只记录当前代码事实，不记录历史版本演变。事实源是
 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
 ## 版本和升级策略（ADR 0005）
 
-- 当前数据库：`schemaVersion = 3`。
+- 当前数据库：`schemaVersion = 4`。
 - 全新安装走 `createAll` 建全部表，然后 bootstrap 从 asset
-  目录灌入车型目录与默认保养模板。
+  目录灌入车型目录与默认保养模板，并幂等对账写入内置三条检测点
+  种子（ADR 0021）。
 - 纯增量变更（新增表/列）走 `onUpgrade` 增量迁移，老库原地升级、
-  存量数据保留：v2→v3 只建 `fuel_records` 表（见
-  `app_database.dart` 的 `migration`）。⚠ 例外（docs/adr/0015）：
-  `fuel_records` 表结构在 v3 内按应付/实付模型定义；装载旧里程/加满
-  模型数据的 v3 库与新代码不兼容，必须卸载重装，不提供升级路径。
+  存量数据保留：v2→v3 只建 `fuel_records` 表；v3→v4 只建
+  `diagnostics_probes` 表（见 `app_database.dart` 的 `migration`；
+  检测点种子不在迁移里插，由 bootstrap 总入口幂等对账写入）。
+  ⚠ 例外（docs/adr/0015）：`fuel_records` 表结构在 v3 内按应付/实付
+  模型定义；装载旧里程/加满模型数据的 v3 库与新代码不兼容，必须
+  卸载重装，不提供升级路径。
 - 破坏性变更（改列类型/删表/改字段语义）仍走
   `destructiveFallback`：删光全部表再重建。
 - 改表纪律：改 Drift 表结构必须把 `schemaVersion` +1 并在 `onUpgrade`
@@ -261,6 +264,39 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 - 费用统计口径：实付金额优先、没填取应付（实体 `effectiveCostCents`，
   docs/adr/0015）。
 
+### `diagnostics_probes`
+
+车辆诊断检测点表（docs/adr/0021，GLOSSARY「车辆诊断」节）：全局指令
+库，不挂车——指令语义与车无关，删车不级联、与车辆数据纪元无关。
+
+字段：
+
+- `id`：主键（雪花 id）。
+- `name`：展示名（如"油量"）。
+- `command`：指令原文（如 `012F`、`ATRV`）。
+- `parse_type`：解析类型（`DiagnosticsParseType` 稳定 wire 值：
+  `fuelLevel`/`coolantTemp`/`voltageText`/`rawHex`）。
+- `enabled`：启停，默认 `true`。内置行也允许启停（唯一可变的内置字段）。
+- `catalog_key`：内置标识，可空；非空 = 内置行（只读 + 可启停），
+  空 = 自定义行（可增改删）。
+- `sync_status`：同步状态，默认 `synced`。
+- `updated_at`：最后更新时间。
+- `version`：同步/冲突预留版本号，默认 `1`。
+
+约束：
+
+- 主键：`id`。
+- 唯一键：`catalog_key`，允许多条空值（自定义行恒为空）。
+
+业务注意：
+
+- 内置三条种子（油量 `012F`/水温 `0105`/电压 `ATRV`）由 bootstrap
+  总入口幂等对账写入：首启插入、重复运行零写库、内置行漂移纠偏
+  （名称/指令/解析类型三列纠回，启停是用户数据不重置）、种子集合外
+  内置 key 清理、自定义行不碰。
+- 内置行不可改删（仓库守卫拒绝）；启停允许。
+- 检测点写点不 bump 车辆数据纪元；列表 provider 走"写点直失效"模型。
+
 ### `app_preferences`
 
 应用偏好表。用于当前应用车辆、手动日期、主题、通知设置、提醒抑制和停车倒计时等本地状态。
@@ -303,10 +339,10 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `3`
 
 ## 删除和恢复边界
 
-- 删除车辆时，Repository 在事务内删除该车的保养项目、保养记录、记录项目关联、加油预测设置、加油记录，并清理指向该车的 `appliedCarId`。
-- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录和车辆。
+- 删除车辆不碰检测点表（不挂 carId，ADR 0021）。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录、检测点（含内置行，随 bootstrap 重灌重建）和车辆。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
-- 恢复备份是 replace-import：先清空当前业务数据（含加油记录），再恢复备份内容，失败整体回滚。
+- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点自定义项的备份段重插随票 02（备份 v4）落地；过渡期恢复 v3 备份会丢自定义检测点（新功能尚无真实用户数据，可接受）。
 
 ## 备份契约边界
 

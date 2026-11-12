@@ -22,15 +22,22 @@ import '../database/app_database.dart';
 import 'entity_row_codec.dart';
 
 class BuiltInCatalogRepository {
-  /// 构造时注入数据库连接；目录加载器可选注入（测试可换成内存版本）。
+  /// 构造时注入数据库连接；目录加载器可选注入（测试可换成内存版本）；
+  /// 检测点种子对账可选注入（ADR 0021：诊断域种子并入 bootstrap 总入口，
+  /// 生产装配见 providers.dart，测试不关心检测点时可省略）。
   BuiltInCatalogRepository(
     this.database, {
     BuiltInVehicleCatalogLoader? loadBuiltInVehicleCatalog,
+    this.ensureProbes,
   }) : _loadBuiltInVehicleCatalog =
            loadBuiltInVehicleCatalog ?? loadBuiltInVehicleCatalogAsset;
 
   final AppDatabase database;
   final BuiltInVehicleCatalogLoader _loadBuiltInVehicleCatalog;
+
+  /// 检测点种子对账回调（ADR 0021）：ensureBootstrapData 末步调用；
+  /// null = 跳过（测试不关心检测点时可省略）。
+  final Future<void> Function()? ensureProbes;
 
   /// 目录解析 Future 的 memoize（R28）：实例内 asset 只解析一次，
   /// ensureBootstrapData / ensureVehicleModels / ensureDefaultMaintenanceItems
@@ -133,13 +140,15 @@ class BuiltInCatalogRepository {
     });
   }
 
-  /// 首启/升级引导总入口：车型目录 + 默认项目模板两张表各做一次幂等对账。
+  /// 首启/升级引导总入口：车型目录 + 默认项目模板两张表各做一次幂等对账；
+  /// 检测点种子对账经构造注入的 [_ensureProbes] 并入（ADR 0021）。
   /// 由 defaultMaintenanceBootstrapProvider（providers.dart）在 AppShell 触发。
   /// 目录 asset 经 _loadCatalog memoize，本方法与两个 ensure 共用一次解析。
   Future<void> ensureBootstrapData() async {
     final catalog = await _loadCatalog();
     await _ensureVehicleModels(catalog);
     await _ensureDefaultMaintenanceItems(catalog);
+    await ensureProbes?.call();
   }
 
   /// 单条插入默认项目模板（bootstrap 对账用；生成的 id 自增雪花）。

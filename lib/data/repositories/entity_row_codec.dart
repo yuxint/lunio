@@ -11,6 +11,8 @@ import 'package:drift/drift.dart';
 
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart' as domain;
+import '../../domain/entities/diagnostics_parse_type.dart' as domain;
+import '../../domain/entities/diagnostics_probe.dart' as domain;
 import '../../domain/entities/fuel_prediction.dart' as domain;
 import '../../domain/entities/fuel_price.dart' as domain;
 import '../../domain/entities/fuel_record.dart' as domain;
@@ -340,5 +342,45 @@ VehicleDefaultMaintenanceItemsCompanion defaultItemCompanion(
     syncStatus: Value(item.sync.status.name),
     updatedAt: item.sync.updatedAt.toIso8601String(),
     version: Value(item.sync.version),
+  );
+}
+
+// ---------------- diagnostics_probes ----------------
+
+/// 检测点表行 → 实体。解析类型 wire 值未知时 fail-fast 抛 ArgumentError
+/// （与 PowertrainType.byWire 同款：坏数据不静默降级——检测点表是
+///  bootstrap 对账 + 仓库守卫写入的，出现未知 wire 即数据库被外部改动）。
+domain.DiagnosticsProbe diagnosticsProbeFromRow(DiagnosticsProbeRow row) {
+  return domain.DiagnosticsProbe(
+    id: row.id,
+    name: row.name,
+    command: row.command,
+    parseType: domain.DiagnosticsParseType.byWire(row.parseType),
+    enabled: row.enabled,
+    catalogKey: row.catalogKey,
+    sync: SyncMetadata(
+      status: SyncStatus.values.byName(row.syncStatus),
+      updatedAt: DateTime.parse(row.updatedAt),
+      version: row.version,
+    ),
+  );
+}
+
+/// 检测点实体 + 指定 id → 插入用 Companion（bootstrap 种子插入与恢复
+/// 备份段重插（票 02）共用，字段清单全库只有这一份）。
+DiagnosticsProbesCompanion diagnosticsProbeCompanion(
+  domain.DiagnosticsProbe probe,
+  int id,
+) {
+  return DiagnosticsProbesCompanion.insert(
+    id: Value(id),
+    name: probe.name,
+    command: probe.command,
+    parseType: probe.parseType.wire,
+    enabled: Value(probe.enabled),
+    catalogKey: Value(probe.catalogKey),
+    syncStatus: Value(probe.sync.status.name),
+    updatedAt: probe.sync.updatedAt.toIso8601String(),
+    version: Value(probe.sync.version),
   );
 }
