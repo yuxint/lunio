@@ -1,8 +1,8 @@
 // 备份 JSON 的编解码器（≈ Java 里的 Jackson 手写 Serializer/Deserializer）。
 //
-// 备份契约（schemaVersion = 3，与数据库 schemaVersion 是两套独立版本号）：
+// 备份契约（schemaVersion = 4，与数据库 schemaVersion 是两套独立版本号）：
 // {
-//   "schemaVersion": 3,
+//   "schemaVersion": 4,
 //   "cars": [ { id, brand, model, powertrainType, currentMileageKm, roadDate,
 //               tankCapacityLiters, sync } ],
 //   "maintenanceItems": [ { id, carsId, name, ..., sync } ],
@@ -11,19 +11,25 @@
 //   "fuelPrediction": { "province": "湖北", "gradeCode": "92" },
 //   "fuelPredictions": [ { carId, fuelPercent, sync } ],
 //   "fuelRecords": [ { carId, date, grade, unitPriceCents, payableCents,
-//                      actualCents, volumeLiters, sync } ]
+//                      actualCents, volumeLiters, sync } ],
+//   "diagnosticsProbes": [ { name, command, parseType, enabled, sync } ]
 // }
 // itemCosts 条目：{ itemId, materialCents, laborCents, costCents }，
 // 三个金额都可空（null = 未填），只写有内容的项目（ADR 0010）。
 // fuelRecords 条目不带 id：行 id 恢复时重新生成雪花，备份里没有引用
 // 它的地方（与 fuelPredictions 同先例；ADR 0014）。volumeLiters 导出
 // 仅为镜像库内预留列，恢复时由实体按 应付÷单价 重算（ADR 0015）。
+// diagnosticsProbes 条目同样不带 id / catalogKey：行 id 恢复时重新生成
+// 雪花（沿 fuelRecords 先例）；catalogKey 是内置标识，段只导自定义项
+// ——内置三条不进备份、恢复后由 bootstrap 幂等重建（ADR 0021，对齐
+// 车型目录先例）。enabled 是用户数据，随段导出往返保留。
 //
-// 版本兼容（ADR 0010 确立先例：纯增量缺失按空读入）：解码接受 v1/v2/v3
+// 版本兼容（ADR 0010 确立先例：纯增量缺失按空读入）：解码接受 v1–v4
 // ——v2 只比 v1 多 itemCosts 字段，v1 条目没有它就等于"全部项目费用未
-// 填"；v3 只比 v2 多 fuelRecords 字段，v1/v2 没有它就等于"没有加油记录"。
-// 这不是 ADR 0005 禁止的"旧字段语义变化回退"。除此之外的版本直接拒绝，
-// 不做字段回退。油价缓存与手填油价是临时数据，不进备份。
+// 填"；v3 只比 v2 多 fuelRecords 字段，v1/v2 没有它就等于"没有加油记录"；
+// v4 只比 v3 多 diagnosticsProbes 字段，v1–v3 没有它就等于"没有自定义
+// 检测点"。这不是 ADR 0005 禁止的"旧字段语义变化回退"。除此之外的版本
+// 直接拒绝，不做字段回退。油价缓存与手填油价是临时数据，不进备份。
 //
 // ⚠ v3 例外（ADR 0015，2026-09-22）：fuelRecords 的条目结构在版本号
 // 不变的前提下就地重定义过一次（旧五字段 日期/里程/金额/升数/加满 →
@@ -35,12 +41,15 @@
 //  - 不包含偏好（主题/应用车辆/通知设置/snooze 等）；
 //  - 不包含停车倒计时（临时状态）；
 //  - 不包含油价缓存/手填油价（临时状态）；
-//  - 不包含车型目录/默认项目模板（恢复后由 bootstrap 幂等重建）。
+//  - 不包含车型目录/默认项目模板/内置检测点（恢复后由 bootstrap 幂等
+//    重建）。
 // 导出在 Repository.exportBackupPayload，导入在 restoreBackupPayload。
 import 'dart:convert';
 
 import '../../core/date/local_date.dart';
 import '../../domain/entities/car.dart';
+import '../../domain/entities/diagnostics_parse_type.dart';
+import '../../domain/entities/diagnostics_probe.dart';
 import '../../domain/entities/fuel_prediction.dart';
 import '../../domain/entities/fuel_price.dart';
 import '../../domain/entities/fuel_record.dart';
@@ -58,10 +67,11 @@ class BackupPayload {
     this.fuelPrediction,
     this.fuelPredictions = const [],
     this.fuelRecords = const [],
+    this.diagnosticsProbes = const [],
   });
 
   /// 备份契约版本（v1 = 无项目费用；v2 = 增项目费用，ADR 0010；
-  /// v3 = 当前，增加油记录，ADR 0014）。
+  /// v3 = 增加油记录，ADR 0014；v4 = 增自定义检测点，ADR 0021）。
   final int schemaVersion;
   final List<Car> cars;
   final List<MaintenanceItem> maintenanceItems;
@@ -75,6 +85,11 @@ class BackupPayload {
 
   /// 加油流水（ADR 0014）。v1/v2 备份没有该字段，解码按空读入。
   final List<FuelRecord> fuelRecords;
+
+  /// 自定义检测点（ADR 0021）：段只导自定义项，内置不进备份
+  /// （恢复后 bootstrap 重建）。条目不带 id / catalogKey，解码产物
+  /// 永远 catalogKey = null。v1–v3 备份没有该字段，解码按空读入。
+  final List<DiagnosticsProbe> diagnosticsProbes;
 }
 
 /// 备份里的全局加油设置（省份 + 油品编号）。
@@ -90,11 +105,12 @@ final class BackupCodec {
   const BackupCodec();
 
   /// 当前写入的备份契约版本。
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 4;
 
-  /// 解码接受的版本：当前版本 + 纯增量兼容的 v1/v2（缺 itemCosts =
-  /// 费用全空；缺 fuelRecords = 无加油记录，ADR 0010/0014）。
-  static const List<int> supportedSchemaVersions = [1, 2, 3];
+  /// 解码接受的版本：当前版本 + 纯增量兼容的 v1/v2/v3（缺 itemCosts =
+  /// 费用全空；缺 fuelRecords = 无加油记录；缺 diagnosticsProbes = 无
+  /// 自定义检测点，ADR 0010/0014/0021）。
+  static const List<int> supportedSchemaVersions = [1, 2, 3, 4];
 
   /// 编码为 JSON 字符串（导出文件内容）。
   String encode(BackupPayload payload) {
@@ -113,16 +129,21 @@ final class BackupCodec {
           .map(_fuelPredictionToJson)
           .toList(),
       'fuelRecords': payload.fuelRecords.map(_fuelRecordToJson).toList(),
+      // v4 新增段（ADR 0021）：条目为自定义检测点，字段清单见
+      // _diagnosticsProbeToJson。追加在契约末尾，保持前面各段字节不变。
+      'diagnosticsProbes': payload.diagnosticsProbes
+          .map(_diagnosticsProbeToJson)
+          .toList(),
     });
   }
 
   /// 从 JSON 字符串解码（导入文件内容）。
   ///
-  /// 接受 v1/v2/v3（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
-  /// UI 提示"不支持的备份文件"（ADR 0005：不做版本分支兼容；ADR 0010/0014：
-  /// v1/v2 是纯增量缺失，项目费用全空、加油记录为空读入）。引用完整性
-  /// 与业务规则（金额/里程非负等）由 Repository 的两层预校验在事务外
-  /// 负责（审查报告 R35），codec 只做结构解码。
+  /// 接受 v1/v2/v3/v4（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
+  /// UI 提示"不支持的备份文件"（ADR 0005：不做版本分支兼容；ADR 0010/0014/0021：
+  /// 纯增量缺失按空读入——v1/v2 项目费用全空、加油记录为空，v1–v3 无自定义
+  /// 检测点）。引用完整性与业务规则（金额/里程非负等）由 Repository 的两层
+  /// 预校验在事务外负责（审查报告 R35），codec 只做结构解码。
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;
@@ -159,6 +180,13 @@ final class BackupCodec {
       fuelRecords: ((map['fuelRecords'] as List?) ?? const [])
           .cast<Map<String, Object?>>()
           .map(_fuelRecordFromJson)
+          .toList(),
+      // v1–v3 备份没有 diagnosticsProbes 字段 = 没有自定义检测点，按空
+      // 列表读入（ADR 0021 的纯增量兼容，沿 fuelRecords 先例）。条目
+      // 不读 id / catalogKey——解码产物永远是无 id 的自定义检测点。
+      diagnosticsProbes: ((map['diagnosticsProbes'] as List?) ?? const [])
+          .cast<Map<String, Object?>>()
+          .map(_diagnosticsProbeFromJson)
           .toList(),
     );
   }
@@ -322,6 +350,31 @@ final class BackupCodec {
       unitPriceCents: json['unitPriceCents'] as int,
       payableCents: json['payableCents'] as int,
       actualCents: json['actualCents'] as int?,
+      sync: SyncMetadata.fromJson(
+        (json['sync'] as Map).cast<String, Object?>(),
+      ),
+    );
+  }
+
+  Map<String, Object?> _diagnosticsProbeToJson(DiagnosticsProbe probe) {
+    return {
+      'name': probe.name,
+      'command': probe.command,
+      'parseType': probe.parseType.wire,
+      'enabled': probe.enabled,
+      'sync': probe.sync.toJson(),
+    };
+  }
+
+  /// 条目不读 id / catalogKey（备份里没有这两个字段，ADR 0021）——
+  /// 解码产物永远是待重插的自定义检测点（id 由恢复循环重新生成雪花，
+  /// catalogKey 恒 null）。
+  DiagnosticsProbe _diagnosticsProbeFromJson(Map<String, Object?> json) {
+    return DiagnosticsProbe(
+      name: json['name'] as String,
+      command: json['command'] as String,
+      parseType: DiagnosticsParseType.byWire(json['parseType'] as String),
+      enabled: json['enabled'] as bool,
       sync: SyncMetadata.fromJson(
         (json['sync'] as Map).cast<String, Object?>(),
       ),

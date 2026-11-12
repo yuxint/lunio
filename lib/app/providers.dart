@@ -575,8 +575,8 @@ void invalidateAllAppDataProviders(WidgetRef ref) {
   ref.invalidate(defaultMaintenanceBootstrapProvider);
   ref.invalidate(parkingCountdownProvider);
   // 检测点列表同"写点直失效"模型：恢复备份/清空数据清了检测点表
-  // （内置随 bootstrap 重灌重建、自定义由备份段重插——票 02），读侧
-  // 必须显式逐出，否则缓存住旧列表。
+  // （内置随 bootstrap 重灌重建、自定义由备份 diagnosticsProbes 段重插，
+  // ADR 0021），读侧必须显式逐出，否则缓存住旧列表。
   ref.invalidate(diagnosticsProbesProvider);
   ref.read(vehicleDataEpochProvider.notifier).bump();
   ref.read(preferencesEpochProvider.notifier).bump();

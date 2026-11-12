@@ -2,8 +2,8 @@
 
 本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、车型目录
 asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
-（ADR 0021）；备份 JSON `schemaVersion` 仍为 `3`（解码兼容读 v1/v2，
-诊断检测点段随票 02 升 v4，见下文"备份契约边界"）。
+（ADR 0021）；备份 JSON `schemaVersion` 为 `4`（解码兼容读 v1–v3，
+见下文"备份契约边界"）。
 
 本文只记录当前代码事实，不记录历史版本演变。事实源是
 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
@@ -342,17 +342,18 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
 - 删除车辆不碰检测点表（不挂 carId，ADR 0021）。
 - 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录、检测点（含内置行，随 bootstrap 重灌重建）和车辆。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
-- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点自定义项的备份段重插随票 02（备份 v4）落地；过渡期恢复 v3 备份会丢自定义检测点（新功能尚无真实用户数据，可接受）。
+- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点内置三条由 bootstrap 幂等重建，自定义项由备份 `diagnosticsProbes` 段重插（ADR 0021，行 id 重新生成）。
 
 ## 备份契约边界
 
-当前 JSON 备份契约版本为 `schemaVersion = 3`，由
-`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1/v2/v3——
+当前 JSON 备份契约版本为 `schemaVersion = 4`，由
+`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1/v2/v3/v4——
 v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没有它就
 等于"项目费用全部未填"；v3 只比 v2 多了 `fuelRecords` 数组，v1/v2
-文件没有它就等于"没有加油记录"，均按空读入（docs/adr/0010 修订、
-docs/adr/0014）；除此之外的版本直接拒绝，不做旧版本字段回退
-（docs/adr/0005）。
+文件没有它就等于"没有加油记录"；v4 只比 v3 多了 `diagnosticsProbes`
+数组，v1–v3 文件没有它就等于"没有自定义检测点"，均按空读入
+（docs/adr/0010 修订、docs/adr/0014、docs/adr/0021）；除此之外的版本
+直接拒绝，不做旧版本字段回退（docs/adr/0005）。
 
 备份导出包含：
 
@@ -363,6 +364,9 @@ docs/adr/0014）；除此之外的版本直接拒绝，不做旧版本字段回�
 - `fuelPrediction`（全局加油设置：省份 + 油品编号，用户改过才有值）
 - `fuelPredictions`（每车加油预测设置：剩余油量）
 - `fuelRecords`（加油流水：条目不带 id，恢复时重新生成雪花 ID）
+- `diagnosticsProbes`（v4，自定义检测点：条目 { name, command, parseType, enabled, sync }，
+  不带 id / catalogKey——内置三条不进备份、恢复后由 bootstrap 重建；
+  启停是用户数据，随段导出）
 
 备份不包含：
 

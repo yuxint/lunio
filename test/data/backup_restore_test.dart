@@ -10,11 +10,14 @@ import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/data/repositories/backup_repository.dart';
 import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
+import 'package:lunio/data/repositories/diagnostics_repository.dart';
 import 'package:lunio/data/repositories/entity_row_codec.dart'
     show maintenanceRecordCompanion;
 import 'package:lunio/data/repositories/fuel_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
+import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
@@ -353,6 +356,75 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  test('backup restore re-inserts custom probes and bootstrap rebuilds built-ins',
+      () async {
+    // 车辆本身与本用例断言无关，播种只为库里有常规业务数据（贴近真实）。
+    await repos.seedCarAndItem();
+    final diagnostics = repos.diagnosticsRepository;
+    // 基准态：bootstrap 已灌内置三条 + 用户加了一个停用的自定义项
+    // （启停是用户数据，备份往返应保留）。
+    await repos.catalogRepository.ensureBootstrapData();
+    final customId = await diagnostics.saveProbe(
+      DiagnosticsProbe(
+        name: '进气温度',
+        command: '010F',
+        parseType: DiagnosticsParseType.coolantTemp,
+        enabled: false,
+      ),
+    );
+
+    // 导出只带自定义项：payload 与 JSON 双重确认（内置不进备份，ADR 0021）。
+    final backup = await backupRepository.exportBackupPayload();
+    expect(backup.diagnosticsProbes, hasLength(1));
+    expect(backup.diagnosticsProbes.single.name, '进气温度');
+    expect(const BackupCodec().encode(backup), isNot(contains('catalogKey')));
+
+    // 换新内存库恢复（模拟换机重装：检测点表全空）。
+    await database.close();
+    database = AppDatabase.inMemory();
+    preferences = LunioPreferences(database);
+    backupRepository = BackupRepository(database, preferences);
+    fuelRepository = FuelRepository(database, preferences);
+    repository = LunioRepository(
+      database,
+      preferences: preferences,
+      fuel: fuelRepository,
+    );
+    final restoredDiagnostics = DiagnosticsRepository(database);
+    catalogRepository = BuiltInCatalogRepository(
+      database,
+      loadBuiltInVehicleCatalog: () async => builtInCatalog,
+      // 生产装配（providers.dart）把检测点种子对账并入 bootstrap 总入口；
+      // 测试镜像同一接线，恢复后的种子重建经同一条路径发生。
+      ensureProbes: () => restoredDiagnostics.ensureBuiltInProbes(),
+    );
+    await backupRepository.restoreBackupPayload(backup);
+
+    // 恢复事务内：只重插自定义段（条目不带 id，行 id 重新生成雪花；
+    // 内置三条此刻不出现）。
+    final restoredRows = await database.select(database.diagnosticsProbes).get();
+    expect(restoredRows, hasLength(1));
+    expect(restoredRows.single.catalogKey, isNull);
+    expect(restoredRows.single.name, '进气温度');
+    expect(restoredRows.single.command, '010F');
+    expect(restoredRows.single.enabled, isFalse);
+    expect(restoredRows.single.id, isNot(customId));
+
+    // 恢复完成后种子重建（生产路径：恢复动作失效全量 provider，bootstrap
+    // 重跑 ensureBootstrapData → ensureBuiltInProbes）且自定义项存活：
+    // 3 内置回到库 + 自定义项业务字段原样保留。
+    await catalogRepository.ensureBootstrapData();
+    final probes = await restoredDiagnostics.listProbes();
+    expect(probes, hasLength(4), reason: '3 内置 + 1 自定义');
+    expect(probes.where((probe) => probe.isBuiltIn), hasLength(3));
+    final custom = probes.last;
+    expect(custom.name, '进气温度');
+    expect(custom.command, '010F');
+    expect(custom.parseType, DiagnosticsParseType.coolantTemp);
+    expect(custom.enabled, isFalse);
+    expect(custom.catalogKey, isNull);
   });
 
   test('backup restore rejects fuel record referencing missing car', () async {

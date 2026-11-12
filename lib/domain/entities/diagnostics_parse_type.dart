@@ -30,7 +30,7 @@ enum DiagnosticsParseType {
   const DiagnosticsParseType(this.wire, this.label);
 
   /// 存储/序列化值（数据库 parseType 列、备份 JSON、表单选项）。
-  /// 备份 v4（票 02）起该值进 JSON 契约，改值=破坏备份兼容，须慎之又慎。
+  /// 备份 v4 起该值进 JSON 契约，改值=破坏备份兼容，须慎之又慎。
   final String wire;
 
   /// UI 展示文案（检测点表单的解析类型选项）。

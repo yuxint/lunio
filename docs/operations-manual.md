@@ -1,6 +1,6 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-25 · 基于 schemaVersion 3 / 备份 schemaVersion 3 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 接缝见 5.10，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分；备份/清空走动作层见 docs/adr/0007 修订节）
+> 版本：2026-09-25 · 基于数据库 schemaVersion 4 / 备份 schemaVersion 4 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 接缝见 5.10，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分；备份/清空走动作层见 docs/adr/0007 修订节）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
@@ -359,7 +359,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 我的页"备份数据" → `profile_page.dart → _exportBackup`（反馈薄壳）→ `shell_actions.dart → exportBackup`（动作层"备份与数据重置"分节）：
 
-1. `backupRepository.exportBackupJson`——仓库内先 `exportBackupPayload`（4 张业务表 + 加油设置 + 加油记录全量读（不含偏好/停车倒计时/油价缓存/目录），schemaVersion 固定 3（v2 条目含记录的项目费用 `itemCosts`，ADR 0010；v3 增加油记录数组 `fuelRecords`——条目为 ADR 0015 应付/实付结构 {carId, date, grade, unitPriceCents, payableCents, actualCents, volumeLiters, sync}，容积恢复时由实体按应付÷单价重算）再 `BackupCodec().encode` 手写 JSON 序列化（编码收在 data 层，codec 不再出 data 层）；
+1. `backupRepository.exportBackupJson`——仓库内先 `exportBackupPayload`（4 张业务表 + 加油设置 + 加油记录 + 自定义检测点全量读（不含偏好/停车倒计时/油价缓存/目录/内置检测点），schemaVersion 固定 4（v2 条目含记录的项目费用 `itemCosts`，ADR 0010；v3 增加油记录数组 `fuelRecords`——条目为 ADR 0015 应付/实付结构 {carId, date, grade, unitPriceCents, payableCents, actualCents, volumeLiters, sync}，容积恢复时由实体按应付÷单价重算；v4 增自定义检测点数组 `diagnosticsProbes`——条目 {name, command, parseType, enabled, sync}、不带 id/catalogKey，段只导自定义项、内置三条不进备份（ADR 0021））再 `BackupCodec().encode` 手写 JSON 序列化（编码收在 data 层，codec 不再出 data 层）；
 2. `NativeFiles.exportJsonFile`（lib/core/platform/native_files.dart）——MethodChannel `lunio/native_files` → Android `MainActivity.kt`（ACTION_CREATE_DOCUMENT）/ iOS `SceneDelegate.swift`（临时文件+UIExporter）弹系统保存框，文件名 `lunio-backup-yyyyMMdd-HHmmss.json`（生成在动作层私有 `_backupFilename`）；
 3. 返回值语义（动作层三函数统一）：`Future<bool>`——true=已保存 / false=用户取消保存框（静默，无 overlay）/ 失败异常穿透；成功"备份完成"与失败 toast 在页面薄壳。
 
@@ -368,9 +368,9 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 我的页"恢复数据" → `profile_page.dart → _restoreBackup`（反馈薄壳）→ `shell_actions.dart → restoreBackupFromFile`（动作层；**确认框在动作层内弹**——deleteCar 同款破坏性例外）：
 
 1. 确认框（明示"先清空本地车辆、保养项目、保养记录，再写入备份数据。**主题、通知等偏好设置会保留**"）；取消确认框/取消选文件静默返回 false、无 overlay；
-2. `NativeFiles.pickJsonFile` 选文件 → `backupRepository.decodeBackupJson`（解码收在 data 层；版本∉{1,2,3} 抛 UnsupportedError；**v1/v2 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015）；
+2. `NativeFiles.pickJsonFile` 选文件 → `backupRepository.decodeBackupJson`（解码收在 data 层；版本∉{1,2,3,4} 抛 UnsupportedError；**v1/v2/v3 备份兼容导入**——缺 `itemCosts` 字段等于项目费用全空（ADR 0010）、缺 `fuelRecords` 字段等于无加油记录（ADR 0014）、缺 `diagnosticsProbes` 字段等于无自定义检测点（ADR 0021），纯增量缺失按空读入；**含旧结构加油条目的 v3 备份解码即拒**（ADR 0015）；
 3. 协调器 `runBackupRestore`（`notification_coordinator.dart`）**guard.beginDataReset()**——先 bump() 通知同步代数（守卫模块 `notification_sync_guard.dart` 的 `notificationSyncGenerationProvider`，作废同步控制器在途任务）并**置写库中间态旗**（`isDataResetInFlight`，同步入口在此期间丢弃一切触发，见第 3 节）再执行恢复；
-4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内；**末段做保养记录的同车同日查重**——跨行检查，表级唯一约束 {carId,date} 的业务前置检查、与手工录入 `_ensureRecordIsUnique` 同一条规则，真实导出的备份不可能触发（源库约束挡着），触发即文件被手工编辑过/外来，整文件拒绝；只查保养记录，加油记录无 {carId,date} 约束是 ADR 0014 有意设计；变异验证锁定）；**校验失败统一抛 typed `LunioErrorException(backupInvalidData)`**（ADR 0009 修订节），篡改备份直接拒绝且不碰库 → 单一大事务：`_clearRestorableDataInTransaction` **只清 7 张业务表（4 张主业务表 + 加油预测设置 + 加油记录 + 检测点，检测点随 bootstrap 重灌重建、自定义项备份段重插随票 02）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords 逐行插入（id 全换新雪花 id，旧→新映射；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的旧备份条目由关联行 companion 内置 `RecordRules.normalizeItemCost` 按材料+工时补齐（写 seam 单点），恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚（**事务边界经 `data/repositories/unique_constraint.dart` 的 `guardUniqueConstraint` 包裹**：撞唯一约束的驱动异常 `SqliteException(2067)` 翻译成 typed `uniqueConstraint`——进程内连接异常直接到达、生产后台 isolate 连接经 drift 远程协议包成 `DriftRemoteException`（remoteCause 才是 SqliteException）两种形态都认，ADR 0009 2026-10-01 修订节）；
+4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内；**末段做保养记录的同车同日查重**——跨行检查，表级唯一约束 {carId,date} 的业务前置检查、与手工录入 `_ensureRecordIsUnique` 同一条规则，真实导出的备份不可能触发（源库约束挡着），触发即文件被手工编辑过/外来，整文件拒绝；只查保养记录，加油记录无 {carId,date} 约束是 ADR 0014 有意设计；变异验证锁定）；**校验失败统一抛 typed `LunioErrorException(backupInvalidData)`**（ADR 0009 修订节），篡改备份直接拒绝且不碰库 → 单一大事务：`_clearRestorableDataInTransaction` **只清 7 张业务表（4 张主业务表 + 加油预测设置 + 加油记录 + 检测点，检测点内置三条随 bootstrap 重灌重建、自定义项由备份 diagnosticsProbes 段重插，ADR 0021）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords→diagnosticsProbes 逐行插入（id 全换新雪花 id，旧→新映射；检测点段不挂车、无重映射，行 id 重新生成雪花；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的旧备份条目由关联行 companion 内置 `RecordRules.normalizeItemCost` 按材料+工时补齐（写 seam 单点），恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚（**事务边界经 `data/repositories/unique_constraint.dart` 的 `guardUniqueConstraint` 包裹**：撞唯一约束的驱动异常 `SqliteException(2067)` 翻译成 typed `uniqueConstraint`——进程内连接异常直接到达、生产后台 isolate 连接经 drift 远程协议包成 `DriftRemoteException`（remoteCause 才是 SqliteException）两种形态都认，ADR 0009 2026-10-01 修订节）；
 5. 恢复成功后模板在**旗还举着时执行屏障重算**（`refreshProviders` 闭包）：`invalidateAllAppDataProviders` 全量失效 + 逐个 await 同步数据源清单（`notificationSyncSources`，与 `start()` 订阅同一份单一声明，2026-10-01 收编）内各数据源的新 future 全部落定（`notificationSettings` / 应用车辆数据束 `appliedCarBoard` / `parkingCountdown`——数据束落定即车/项目/记录/生效今天四上游全落定；单读失败不拦收尾）——屏障期间一切同步触发被入口早退丢弃，settle 时数据必然已收敛，"部分 provider 新、部分旧"的混合快照在结构上读不到；
 6. 模板收尾：**guard.settleDataReset()**（finally：**再 bump 一次代数**作废写库期间启动的同步 + 关中间态旗；失败回滚同样执行）→ 取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
 7. 成功结局模板**强制补判一轮**（bump 守卫模块的显式同步信号 `notificationSyncSignalProvider`，同步控制器 `start()` 订阅它、收到即重跑一轮；2026-10-06 起取代"失效 `notificationSettingsProvider` 当信号"——补判通道与同步数据源清单解耦，调整清单不会顺手踢断补判）：屏障吞掉了窗口内全部重算触发，settle 后没有自然触发，系统通知重排与应用内弹窗检查由这一轮用收敛后的最终数据补跑；失败结局数据已回滚、签名与数据仍一致，不会出假弹窗也无需补判；
@@ -522,7 +522,7 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 
 ## 7. 数据与偏好速查表
 
-### 7.1 数据库表（schemaVersion = 3，`lib/data/database/app_database.dart`）
+### 7.1 数据库表（schemaVersion = 4，`lib/data/database/app_database.dart`）
 
 | 表 | 内容 | 关键唯一约束 |
 |---|---|---|

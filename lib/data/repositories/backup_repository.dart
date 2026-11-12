@@ -6,8 +6,8 @@
 // 手工录入路径用同一份字段清单（R35 的不变量"恢复的数据过和手工
 // 录入同样的规则"在插入层也成立），给表加字段不再需要改恢复循环。
 //
-// 恢复流程（接受 v1/v2/v3——v1 缺项目费用、v1/v2 缺加油记录，纯增量
-// 缺失按空读入，ADR 0010/0014；其余版本拒收）：
+// 恢复流程（接受 v1–v4——v1 缺项目费用、v1/v2 缺加油记录、v1–v3 缺
+// 自定义检测点，纯增量缺失按空读入，ADR 0010/0014/0021；其余版本拒收）：
 //  1. 版本校验；2. 事务外两层预校验（引用完整性 + 业务规则）；3. 单一
 //  大事务清业务表 → 逐行插入（id 全换新雪花，旧→新映射）；4. 应用车辆
 //  指向恢复出的第一辆车；5. 备份带全局加油设置时覆盖省份/油品偏好。
@@ -33,9 +33,10 @@ class BackupRepository {
   final AppDatabase database;
   final LunioPreferences _preferences;
 
-  /// 导出备份：4 张业务表 + 加油预测设置 + 加油记录全量读取（顺序查询
-  /// 拼 itemIds，无 N+1），组装 BackupPayload。
-  /// 不含偏好/停车倒计时/油价缓存与手填价/目录。
+  /// 导出备份：4 张业务表 + 加油预测设置 + 加油记录 + 自定义检测点
+  /// 全量读取（顺序查询拼 itemIds，无 N+1），组装 BackupPayload。
+  /// 不含偏好/停车倒计时/油价缓存与手填价/目录/内置检测点（内置三条
+  /// 恢复后由 bootstrap 幂等重建，ADR 0021）。
   Future<BackupPayload> exportBackupPayload() async {
     final cars = (await database.select(database.cars).get())
         .map(carFromRow)
@@ -74,6 +75,14 @@ class BackupRepository {
         .toList();
     final fuelRecordRows = await database.select(database.fuelRecords).get();
     final fuelRecords = fuelRecordRows.map(fuelRecordFromRow).toList();
+    // 检测点：段只导自定义项（catalogKey 为 null 的行），内置三条不进
+    // 备份——恢复后由 bootstrap 幂等重建，对齐车型目录先例（ADR 0021）。
+    // 启停是用户数据，自定义项停用态也导出。
+    final probeRows = await database.select(database.diagnosticsProbes).get();
+    final diagnosticsProbes = probeRows
+        .where((row) => row.catalogKey == null)
+        .map(diagnosticsProbeFromRow)
+        .toList();
     // 全局加油设置（省份/油品）：用户改过才有值，没改过不带进备份。
     // 这里故意用原始读而不是 getFuelProvince()/getFuelGrade()——两个
     // getter 都会兜底产品默认值，会把"没改过"读成"改成了默认值"。
@@ -96,6 +105,8 @@ class BackupRepository {
             ),
       fuelPredictions: fuelPredictions,
       fuelRecords: fuelRecords,
+      // 检测点段：只含上面筛出的自定义项，内置不进备份（ADR 0021）。
+      diagnosticsProbes: diagnosticsProbes,
     );
   }
 
@@ -108,10 +119,10 @@ class BackupRepository {
     return const BackupCodec().encode(payload);
   }
 
-  /// 解码备份 JSON 字符串为 [BackupPayload]：版本 ∉ {1,2,3} 抛
-  /// UnsupportedError；v1/v2 兼容读（纯增量缺失按空，ADR 0010/0014），
-  /// 含旧结构加油条目的 v3 条目解码即拒（ADR 0015）。恢复编排从这取
-  /// payload，再交 [restoreBackupPayload] 落库。
+  /// 解码备份 JSON 字符串为 [BackupPayload]：版本 ∉ {1,2,3,4} 抛
+  /// UnsupportedError；v1/v2/v3 兼容读（纯增量缺失按空，ADR
+  /// 0010/0014/0021），含旧结构加油条目的 v3 条目解码即拒（ADR 0015）。
+  /// 恢复编排从这取 payload，再交 [restoreBackupPayload] 落库。
   BackupPayload decodeBackupJson(String json) {
     return const BackupCodec().decode(json);
   }
@@ -123,7 +134,12 @@ class BackupRepository {
   /// 表级唯一约束拦，撞上时翻译成 typed uniqueConstraint（预校验拦不住
   /// 的最后防线，恢复 UI 按 kind 弹"未写入任何数据"对话框，ADR 0009
   /// 2026-10-01 修订节）。
-  /// 版本检查与 codec 一致：接受 v1/v2/v3（ADR 0010/0014 的纯增量兼容）。
+  /// 检测点段重插说明：全局表不挂车、无引用重映射负担，行 id 重新
+  /// 生成雪花（条目不带 id，沿 fuelRecords 先例，ADR 0021）；恢复完成
+  /// 后内置三条由 bootstrap 幂等重建、自定义项随段存活（恢复/清空后
+  /// 的失效与 bootstrap 重灌触发见 providers.dart 的
+  /// invalidateAllAppDataProviders）。
+  /// 版本检查与 codec 一致：接受 v1–v4（ADR 0010/0014/0021 的纯增量兼容）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
     if (!BackupCodec.supportedSchemaVersions.contains(payload.schemaVersion)) {
       throw UnsupportedError(
@@ -265,6 +281,21 @@ class BackupRepository {
               ),
             );
       }
+
+      // 自定义检测点（备份 v4 新增段，ADR 0021）：不挂车、无引用
+      // 重映射负担，行 id 重新生成雪花（条目不带 id，沿 fuelRecords
+      // 先例）。catalogKey 显式清一次：decode 产物恒为 null，这里兜住
+      // 手拼 payload，防止内置 key 走漏成"种子外内置行"被对账清掉。
+      for (final probe in payload.diagnosticsProbes) {
+        await database
+            .into(database.diagnosticsProbes)
+            .insert(
+              diagnosticsProbeCompanion(
+                probe.copyWith(catalogKey: null),
+                SnowflakeIdGenerator.instance.next(),
+              ),
+            );
+      }
     }));
   }
 
@@ -297,10 +328,8 @@ class BackupRepository {
   /// ——恢复出来的车/项目拿的是全新雪花 id，旧 snooze/ack 与新数据在
   /// 语义上已无关联，不该继续生效。加油记录清表是备份 v3 补上的：不删
   /// 会把恢复前残留的旧加油记录留在库里，变成指向已删车辆的孤儿行
-  /// （ADR 0014）。检测点清表是备份 v4 前置：清掉的内置行随 bootstrap
-  /// 重灌重建、自定义行由备份 diagnosticsProbes 段重插（票 02），过渡
-  /// 期（本票落地、票 02 未落地）恢复 v3 备份会丢自定义检测点——新
-  /// 功能尚无真实用户数据，可接受。
+  /// （ADR 0014）。检测点清表配合备份 v4：清掉的内置行随 bootstrap
+  /// 重灌重建、自定义行由备份 diagnosticsProbes 段重插（ADR 0021）。
   Future<void> _clearRestorableDataInTransaction() async {
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();
@@ -442,6 +471,18 @@ class BackupRepository {
         throw LunioErrorException(
           LunioErrorKind.backupInvalidData,
           '备份文件中存在无效数据（加油记录 ${fuelRecord.date}）：${error.message}',
+        );
+      }
+    }
+    // 检测点（备份 v4 新增段，ADR 0021）：实体构造即校验，此处兜手拼
+    // payload（与加油记录同先例）；文案点出条目名，方便定位坏条目。
+    for (final probe in payload.diagnosticsProbes) {
+      try {
+        probe.validate();
+      } on ArgumentError catch (error) {
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
+          '备份文件中存在无效数据（检测点「${probe.name}」）：${error.message}',
         );
       }
     }

@@ -367,7 +367,7 @@ domain.DiagnosticsProbe diagnosticsProbeFromRow(DiagnosticsProbeRow row) {
 }
 
 /// 检测点实体 + 指定 id → 插入用 Companion（bootstrap 种子插入与恢复
-/// 备份段重插（票 02）共用，字段清单全库只有这一份）。
+/// 备份段重插（ADR 0021）共用，字段清单全库只有这一份）。
 DiagnosticsProbesCompanion diagnosticsProbeCompanion(
   domain.DiagnosticsProbe probe,
   int id,

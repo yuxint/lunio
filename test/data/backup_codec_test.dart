@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/backup/backup_codec.dart';
 import 'package:lunio/domain/entities/car.dart';
+import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
+import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
 import 'package:lunio/domain/entities/fuel_record.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
@@ -293,5 +295,72 @@ void main() {
       '"payableCents":0',
     );
     expect(() => codec.decode(badPayableJson), throwsArgumentError);
+  });
+
+  test('backup round-trips custom probes and reads v3 files without them', () {
+    final sync = SyncMetadata(
+      status: SyncStatus.synced,
+      updatedAt: DateTime(2026),
+    );
+    const codec = BackupCodec();
+    final payload = BackupPayload(
+      schemaVersion: BackupCodec.currentSchemaVersion,
+      diagnosticsProbes: [
+        DiagnosticsProbe(
+          name: '进气温度',
+          command: '010F',
+          parseType: DiagnosticsParseType.coolantTemp,
+          sync: sync,
+        ),
+        // 停用态的自定义项也是用户劳动成果，随段导出并往返保留。
+        DiagnosticsProbe(
+          name: '发动机风速',
+          command: '0114',
+          parseType: DiagnosticsParseType.rawHex,
+          enabled: false,
+          sync: sync,
+        ),
+      ],
+    );
+
+    final encoded = codec.encode(payload);
+    expect(encoded, contains('"diagnosticsProbes"'));
+    // 条目不带 id、也不带 catalogKey：行 id 恢复时重新生成雪花
+    // （沿 fuelRecords 先例，ADR 0021）；段只导自定义项，内置不进备份。
+    expect(encoded, isNot(contains('"diagnosticsProbes":[{"id"')));
+    expect(encoded, isNot(contains('catalogKey')));
+
+    final decoded = codec.decode(encoded);
+    expect(decoded.diagnosticsProbes, hasLength(2));
+    final first = decoded.diagnosticsProbes.first;
+    expect(first.name, '进气温度');
+    expect(first.command, '010F');
+    expect(first.parseType, DiagnosticsParseType.coolantTemp);
+    expect(first.enabled, isTrue);
+    expect(first.id, isNull);
+    expect(first.catalogKey, isNull);
+    // 启停是用户数据，往返保留。
+    expect(decoded.diagnosticsProbes.last.enabled, isFalse);
+
+    // 未知解析类型 wire 值：fail-fast 拒绝（与 PowertrainType.byWire
+    // 同先例，坏数据不静默降级）。
+    final badParseJson = encoded.replaceFirst(
+      '"parseType":"coolantTemp"',
+      '"parseType":"bogus"',
+    );
+    expect(() => codec.decode(badParseJson), throwsArgumentError);
+
+    // v3 备份（没有 diagnosticsProbes 字段）可以导入：检测点按空读入
+    // （ADR 0021 的纯增量兼容，沿 fuelRecords v3 先例；diagnosticsProbes
+    // 是契约最后一个字段，剥字段时连前导逗号一起剥）。
+    final v3Json = encoded
+        .replaceFirst(
+          '"schemaVersion":${BackupCodec.currentSchemaVersion}',
+          '"schemaVersion":3',
+        )
+        .replaceFirst(RegExp(r',"diagnosticsProbes":\[[^\]]*\]'), '');
+    final v3 = codec.decode(v3Json);
+    expect(v3.schemaVersion, 3);
+    expect(v3.diagnosticsProbes, isEmpty);
   });
 }

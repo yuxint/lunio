@@ -56,7 +56,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
   - `diagnostics_repository.dart`：车辆诊断检测点表（全局，不挂 carId，ADR 0021）——CRUD（内置只读、可启停；自定义可增改删）+ 内置三条种子幂等对账（经构造回调并入 BuiltInCatalogRepository.ensureBootstrapData 总入口，providers.dart 装配）；列表 provider `diagnosticsProbesProvider` 走"写点直失效"模型（不 watch 任何纪元，同停车倒计时先例），机制测试 `test/features/diagnostics_probes_provider_test.dart`；
   - `backup_repository.dart`：备份导出/恢复/清空数据（恢复与手工录入共用同一份 Companion 字段清单）。
 - `lib/data/preferences/app_preferences.dart`：偏好门面（`LunioPreferences`）——全部偏好 key 常量、编解码与 typed 读写的唯一出口，新偏好进这里加 typed 方法，不要在调用方拼 key 字符串。停车倒计时偏好与提醒抑制 key 前缀也登记在此。
-- `lib/data/backup/backup_codec.dart`：`schemaVersion: 3` JSON 备份契约编码/解码（接受 v1/v2 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录，ADR 0010/0014；其余版本直接拒绝；v3 的 fuelRecords 条目按 ADR 0015 应付/实付模型解码，满箱段旧结构条目解码即拒）。
+- `lib/data/backup/backup_codec.dart`：`schemaVersion: 4` JSON 备份契约编码/解码（接受 v1/v2/v3 兼容读——缺 `itemCosts` 等于项目费用全空、缺 `fuelRecords` 等于无加油记录、缺 `diagnosticsProbes` 等于无自定义检测点，ADR 0010/0014/0021；其余版本直接拒绝；v3 的 fuelRecords 条目按 ADR 0015 应付/实付模型解码，满箱段旧结构条目解码即拒；v4 的 diagnosticsProbes 段只含自定义项、条目不带 id/catalogKey，内置三条不进备份、恢复后 bootstrap 重建）。
 - `lib/core/date/`：`LocalDate` 与可手动覆盖的应用日期上下文。
 - `lib/core/format/clock.dart`：HH:mm:ss 时刻格式化（通知服务与停车倒计时共用；core 不反向依赖 features）。
 - `lib/core/platform/native_channel.dart`：五个原生桥共用的通道降级守卫（`guardedChannelCall`）——PlatformException/MissingPluginException → 哨兵值（false/null）的翻译与 debugPrint 日志的唯一出口；各桥只声明通道与参数，不要手写 try/catch，新桥一律走它；四个桥的 Dart 侧契约测试在 `test/core/native_*_test.dart`（锁 method 名/参数键/异常翻译，新契约测试参照 native_live_activities_test）。
@@ -78,7 +78,7 @@ Lunio 是车辆保养记录 App 的 Flutter 单仓工程，当前可以按正式
 
 ## 数据与契约注意点
 
-- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 4、备份 JSON `schemaVersion` 为 3（诊断检测点段随票 02 升 v4），两者的加油记录结构按 ADR 0015 的应付/实付模型定义——含满箱段旧结构加油条目的 v3 库与新代码不兼容，必须卸载重装；含满箱段旧结构加油条目的 v3 备份恢复被拒（例外详情见 ADR 0015 与 `docs/migration/current-database-schema.md`）。数据库升级策略（ADR 0005）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2 兼容读（纯增量缺失按空处理）+ v3，其余版本直接拒绝。
+- 产品/文档版本、车型目录 asset `schemaVersion` 当前为 1；数据库 `schemaVersion` 为 4、备份 JSON `schemaVersion` 为 4，两者的加油记录结构按 ADR 0015 的应付/实付模型定义——含满箱段旧结构加油条目的 v3 库与新代码不兼容，必须卸载重装；含满箱段旧结构加油条目的 v3 备份恢复被拒（例外详情见 ADR 0015 与 `docs/migration/current-database-schema.md`）。数据库升级策略（ADR 0005）：纯增量变更（新增表/列）写 `onUpgrade` 增量迁移、存量数据保留，破坏性变更才删库重建；改 Drift 表结构必须把 `schemaVersion` +1 并补对应迁移分支。备份解码接受 v1/v2/v3 兼容读（纯增量缺失按空处理）+ v4，其余版本直接拒绝。
 - 加油记录（ADR 0015）：五项输入=日期（上限今天）/油品（默认 92#）/单价/应付金额/实付金额（选填），容积=应付÷单价由实体算好落库**预留**（页面不展示，与油箱容积无关）；统计口径=实付优先、没填取应付（`FuelRecord.effectiveCostCents` 唯一实现点）。`fuel_records` 表**故意不设** {carId, date} 唯一约束（同车同日多箱合法，没有"同日查重"），保存也不联动车辆当前里程——保养记录是车辆里程的唯一写源。这两条规则只属于加油记录，别套用保养记录的直觉。
 - 不要随意改 Drift 表字段、唯一约束、偏好 key 或备份 JSON 字段语义；如果必须改，要同步考虑版本号、测试和文档。
 - 保养记录项目费用（ADR 0010）：费用三列挂在记录-项目关联表行上（材料/工时/项目费用，单位分可空）；单个项目以项目费用为准、单条记录以总费用为准；不一致（项目费用≠材料+工时、总费用≠合计）是合法数据，红字黄三角纯提示、不拦截保存，读取方不做读时修正。**数据不变量**：材料/工时任一有值 ⇒ 项目费用必有值，由记录-项目关联行写入 seam（`entity_row_codec.dart` 的 `maintenanceRecordItemCompanion`，内置 `RecordRules.normalizeItemCost`）单点补齐，三条写路径（手工录入/编辑重建/恢复备份）天然继承，不要再在上游重复调用 normalize。
