@@ -1,0 +1,174 @@
+[19:25:12.985] Application: Writing value '4154 5A0D' to Electric Current Statistics Characteristic
+[19:25:13.068] Normal: Wrote 41545a0d to 2AF1 Characteristic
+[19:25:13.068] Application: Wrote '4154 5A0D' to Electric Current Statistics Characteristic
+[19:25:13.954] Normal: Updated Value of Characteristic 2AF0 to 0D0D 454C 4D33 3237 2076 322E 330D 0D3E.
+[19:25:13.954] Application: "0D0D 454C 4D33 3237 2076 322E 330D 0D3E" value received.
+[19:25:56.998] Application: Writing value '4154 4530 0D' to Electric Current Statistics Characteristic
+[19:25:57.063] Normal: Wrote 415445300d to 2AF1 Characteristic
+[19:25:57.063] Application: Wrote '4154 4530 0D' to Electric Current Statistics Characteristic
+[19:25:57.063] Normal: Updated Value of Characteristic 2AF0 to 4154 4530 0D.
+[19:25:57.064] Application: "4154 4530 0D" value received.
+[19:25:57.065] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D 3E.
+[19:25:57.065] Application: "4F4B 0D0D 3E" value received.
+[19:26:31.709] Application: Writing value '4154 4C30 0D' to Electric Current Statistics Characteristic
+[19:26:31.743] Normal: Wrote 41544c300d to 2AF1 Characteristic
+[19:26:31.743] Application: Wrote '4154 4C30 0D' to Electric Current Statistics Characteristic
+[19:26:58.187] Application: Writing value '4154 490D' to Electric Current Statistics Characteristic
+[19:26:58.233] Normal: Wrote 4154490d to 2AF1 Characteristic
+[19:26:58.233] Application: Wrote '4154 490D' to Electric Current Statistics Characteristic
+[19:26:58.234] Normal: Updated Value of Characteristic 2AF0 to 454C 4D33 3237 2076 322E 330D 0D3E.
+[19:26:58.234] Application: "454C 4D33 3237 2076 322E 330D 0D3E" value received.
+[19:27:18.672] Application: Writing value '3031 3030 0D' to Electric Current Statistics Characteristic
+[19:27:18.753] Normal: Wrote 303130300d to 2AF1 Characteristic
+[19:27:18.753] Application: Wrote '3031 3030 0D' to Electric Current Statistics Characteristic
+[19:27:18.844] Normal: Updated Value of Characteristic 2AF0 to 3431 2030 3020 3930 2031 3820 3830 2031 3120 0D34 3120 3030 2042 3620 3343 2041 3820 3133 200D 3431 2030 3020 3930 2031 3820 3830 2030 3320 0D.
+[19:27:18.844] Application: "3431 2030 3020 3930 2031 3820 3830 2031 3120 0D34 3120 3030 2042 3620 3343 2041 3820 3133 200D 3431 2030 3020 3930 2031 3820 3830 2030 3320 0D" value received.
+[19:27:18.948] Normal: Updated Value of Characteristic 2AF0 to 0D3E.
+[19:27:18.948] Application: "0D3E" value received.
+[19:27:54.400] Application: Writing value '4154 5350 2037 0D' to Electric Current Statistics Characteristic
+[19:27:54.437] Normal: Wrote 4154535020370d to 2AF1 Characteristic
+[19:27:54.437] Application: Wrote '4154 5350 2037 0D' to Electric Current Statistics Characteristic
+[19:27:54.438] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D 3E.
+[19:27:54.438] Application: "4F4B 0D0D 3E" value received.
+[19:28:22.715] Application: Writing value '3031 3246 0D' to Electric Current Statistics Characteristic
+[19:28:22.757] Normal: Wrote 303132460d to 2AF1 Characteristic
+[19:28:22.757] Application: Wrote '3031 3246 0D' to Electric Current Statistics Characteristic
+[19:28:22.758] Normal: Updated Value of Characteristic 2AF0 to 3431 2032 4620 3630 200D.
+[19:28:22.758] Application: "3431 2032 4620 3630 200D" value received.
+[19:28:22.967] Normal: Updated Value of Characteristic 2AF0 to 0D3E.
+[19:28:22.967] Application: "0D3E" value received.
+[19:28:45.559] Application: Writing value '4154 5256 0D' to Electric Current Statistics Characteristic
+[19:28:45.587] Normal: Wrote 415452560d to 2AF1 Characteristic
+[19:28:45.587] Application: Wrote '4154 5256 0D' to Electric Current Statistics Characteristic
+[19:28:45.632] Normal: Updated Value of Characteristic 2AF0 to 3131 2E32 560D 0D3E.
+[19:28:45.632] Application: "3131 2E32 560D 0D3E" value received.
+[19:29:01.211] Application: Writing value '3031 3043 0D' to Electric Current Statistics Characteristic
+[19:29:01.232] Normal: Wrote 303130430d to 2AF1 Characteristic
+[19:29:01.232] Application: Wrote '3031 3043 0D' to Electric Current Statistics Characteristic
+[19:29:01.248] Normal: Updated Value of Characteristic 2AF0 to 3431 2030 4320 3030 2030 3020 0D34 3120 3043 2030 3020 3030 200D 3431 2030 4320 3030 2030 3020 0D.
+[19:29:01.248] Application: "3431 2030 4320 3030 2030 3020 0D34 3120 3043 2030 3020 3030 200D 3431 2030 4320 3030 2030 3020 0D" value received.
+[19:29:01.292] Normal: Updated Value of Characteristic 2AF0 to 0D3E.
+[19:29:01.292] Application: "0D3E" value received.
+[19:29:40.622] Application: Writing value '3031 3230 0D' to Electric Current Statistics Characteristic
+[19:29:40.712] Normal: Wrote 303132300d to 2AF1 Characteristic
+[19:29:40.712] Application: Wrote '3031 3230 0D' to Electric Current Statistics Characteristic
+[19:29:51.090] Application: Writing value '3031 3944 0D' to Electric Current Statistics Characteristic
+[19:29:51.152] Normal: Wrote 303139440d to 2AF1 Characteristic
+[19:29:51.152] Application: Wrote '3031 3944 0D' to Electric Current Statistics Characteristic
+[19:29:51.332] Normal: Updated Value of Characteristic 2AF0 to 4E4F 2044 4154 410D 0D3E.
+[19:29:51.332] Application: "4E4F 2044 4154 410D 0D3E" value received.
+[19:29:59.836] Application: Writing value '3031 3545 0D' to Electric Current Statistics Characteristic
+[19:29:59.912] Normal: Wrote 303135450d to 2AF1 Characteristic
+[19:29:59.912] Application: Wrote '3031 3545 0D' to Electric Current Statistics Characteristic
+[19:30:11.263] Application: Writing value '3031 2032 4620 3043 2030 440D' to Electric Current Statistics Characteristic
+[19:30:11.343] Normal: Wrote 30312032462030432030440d to 2AF1 Characteristic
+[19:30:11.343] Application: Wrote '3031 2032 4620 3043 2030 440D' to Electric Current Statistics Characteristic
+[19:30:11.346] Normal: Updated Value of Characteristic 2AF0 to 3431 2030 4320 3030 2030 3020 3044 2030 3020 0D30 3038 200D 303A 2034 3120 3246 2036 3020 3043 2030 3020 3030 200D 313A 2030 4420 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D34 3120 3043 2030 3020 3030 2030 4420 3030 200D.
+[19:30:11.347] Application: "3431 2030 4320 3030 2030 3020 3044 2030 3020 0D30 3038 200D 303A 2034 3120 3246 2036 3020 3043 2030 3020 3030 200D 313A 2030 4420 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D34 3120 3043 2030 3020 3030 2030 4420 3030 200D" value received.
+[19:30:11.402] Normal: Updated Value of Characteristic 2AF0 to 0D3E.
+[19:30:11.402] Application: "0D3E" value received.
+[19:30:19.022] Application: Writing value '3032 3246 3030 0D' to Electric Current Statistics Characteristic
+[19:30:19.066] Normal: Wrote 3032324630300d to 2AF1 Characteristic
+[19:30:19.066] Application: Wrote '3032 3246 3030 0D' to Electric Current Statistics Characteristic
+[19:30:19.292] Normal: Updated Value of Characteristic 2AF0 to 4E4F 2044 4154 410D 0D3E.
+[19:30:19.292] Application: "4E4F 2044 4154 410D 0D3E" value received.
+[19:30:29.814] Application: Writing value '4154 5348 2044 4120 3630 2046 310D' to Electric Current Statistics Characteristic
+[19:30:29.837] Normal: Wrote 415453482044412036302046310d to 2AF1 Characteristic
+[19:30:29.837] Application: Wrote '4154 5348 2044 4120 3630 2046 310D' to Electric Current Statistics Characteristic
+[19:30:29.837] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D 3E.
+[19:30:29.837] Application: "4F4B 0D0D 3E" value received.
+[19:30:37.190] Application: Writing value '3232 3730 3239 0D' to Electric Current Statistics Characteristic
+[19:30:37.231] Normal: Wrote 3232373032390d to 2AF1 Characteristic
+[19:30:37.231] Application: Wrote '3232 3730 3239 0D' to Electric Current Statistics Characteristic
+[19:30:37.247] Normal: Updated Value of Characteristic 2AF0 to 3033 3920 0D30 3A20 3632 2037 3020 3239 2038 4620 4643 2030 3020 0D.
+[19:30:37.247] Application: "3033 3920 0D30 3A20 3632 2037 3020 3239 2038 4620 4643 2030 3020 0D" value received.
+[19:30:37.262] Normal: Updated Value of Characteristic 2AF0 to 313A 2030 3020 3030 2030 3020 3032 2030 3020 3030 2030 3020 0D.
+[19:30:37.262] Application: "313A 2030 3020 3030 2030 3020 3032 2030 3020 3030 2030 3020 0D" value received.
+[19:30:37.307] Normal: Updated Value of Characteristic 2AF0 to 323A 2030 3620 4346 2030 3720 3333 2030 3620 3946 2030 3620 0D.
+[19:30:37.307] Application: "323A 2030 3620 4346 2030 3720 3333 2030 3620 3946 2030 3620 0D" value received.
+[19:30:37.309] Normal: Updated Value of Characteristic 2AF0 to 333A 2043 4620 3030 2033 3220 3030 2030 3020 3030 2030 3020 0D.
+[19:30:37.309] Application: "333A 2043 4620 3030 2033 3220 3030 2030 3020 3030 2030 3020 0D" value received.
+[19:30:37.310] Normal: Updated Value of Characteristic 2AF0 to 343A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D.
+[19:30:37.310] Application: "343A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D" value received.
+[19:30:37.321] Normal: Updated Value of Characteristic 2AF0 to 353A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D.
+[19:30:37.321] Application: "353A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D" value received.
+[19:30:37.324] Normal: Updated Value of Characteristic 2AF0 to 363A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D.
+[19:30:37.324] Application: "363A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D" value received.
+[19:30:37.412] Normal: Updated Value of Characteristic 2AF0 to 373A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D.
+[19:30:37.412] Application: "373A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D" value received.
+[19:30:37.472] Normal: Updated Value of Characteristic 2AF0 to 383A 2030 3020 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D.
+[19:30:37.472] Application: "383A 2030 3020 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D" value received.
+[19:30:37.474] Normal: Updated Value of Characteristic 2AF0 to 0D3E.
+[19:30:37.474] Application: "0D3E" value received.
+[19:30:44.838] Application: Writing value '4154 5348 2044 4120 3130 2046 310D' to Electric Current Statistics Characteristic
+[19:30:44.912] Normal: Wrote 415453482044412031302046310d to 2AF1 Characteristic
+[19:30:44.912] Application: Wrote '4154 5348 2044 4120 3130 2046 310D' to Electric Current Statistics Characteristic
+[19:30:44.913] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D 3E.
+[19:30:44.913] Application: "4F4B 0D0D 3E" value received.
+[19:30:52.491] Application: Writing value '3232 3236 3233 0D' to Electric Current Statistics Characteristic
+[19:30:52.531] Normal: Wrote 3232323632330d to 2AF1 Characteristic
+[19:30:52.531] Application: Wrote '3232 3236 3233 0D' to Electric Current Statistics Characteristic
+[19:30:52.597] Normal: Updated Value of Characteristic 2AF0 to 3033 3920 0D30 3A20 3632 2032 3620 3233 2038 3420 3030 2030 3020 0D31 3A20 3030 2030 3020 4330 2030 3020 3030 2030 3020 3030 200D 323A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D33 3A20 3030 2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 343A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D35 3A20 3030 2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 363A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D37 3A20 3030.
+[19:30:52.598] Application: "3033 3920 0D30 3A20 3632 2032 3620 3233 2038 3420 3030 2030 3020 0D31 3A20 3030 2030 3020 4330 2030 3020 3030 2030 3020 3030 200D 323A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D33 3A20 3030 2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 343A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D35 3A20 3030 2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 363A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D37 3A20 3030" value received.
+[19:30:52.622] Normal: Updated Value of Characteristic 2AF0 to 2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 383A 2030 3020 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D0D 3E.
+[19:30:52.622] Application: "2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 383A 2030 3020 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D0D 3E" value received.
+[19:31:00.046] Application: Writing value '3232 3236 3738 0D' to Electric Current Statistics Characteristic
+[19:31:00.121] Normal: Wrote 3232323637380d to 2AF1 Characteristic
+[19:31:00.121] Application: Wrote '3232 3236 3738 0D' to Electric Current Statistics Characteristic
+[19:31:00.364] Normal: Updated Value of Characteristic 2AF0 to 3033 3920 0D30 3A20 3632 2032 3620 3738 2043 3320 3146 2045 3720 0D31 3A20 4646 2046 4320 3030 2030 3020 3030 2030 3020 3030 200D 323A 2030 3020 3030 2033 3020 3030 2030 3020 3030 2030 3020 0D33 3A20 3031 2037 4220 3030 2030 3020 3030 2030 3120 3030 200D 343A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D35 3A20 3031 2031 4420 3031 2032 3420 3030 2036 4620 3030 200D 363A 2035 3720 3030 2030 3020 4646 2046 4320 3033 2030 3020 0D37 3A20 3030.
+[19:31:00.365] Application: "3033 3920 0D30 3A20 3632 2032 3620 3738 2043 3320 3146 2045 3720 0D31 3A20 4646 2046 4320 3030 2030 3020 3030 2030 3020 3030 200D 323A 2030 3020 3030 2033 3020 3030 2030 3020 3030 2030 3020 0D33 3A20 3031 2037 4220 3030 2030 3020 3030 2030 3120 3030 200D 343A 2030 3020 3030 2030 3020 3030 2030 3020 3030 2030 3020 0D35 3A20 3031 2031 4420 3031 2032 3420 3030 2036 4620 3030 200D 363A 2035 3720 3030 2030 3020 4646 2046 4320 3033 2030 3020 0D37 3A20 3030" value received.
+[19:31:00.366] Normal: Updated Value of Characteristic 2AF0 to 2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 383A 2030 3020 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D0D 3E.
+[19:31:00.366] Application: "2030 3020 3030 2030 3020 3030 2030 3020 3030 200D 383A 2030 3020 3030 2035 3520 3535 2035 3520 3535 2035 3520 0D0D 3E" value received.
+[19:31:15.249] Application: Writing value '4154 4352 410D' to Electric Current Statistics Characteristic
+[19:31:15.316] Normal: Wrote 41544352410d to 2AF1 Characteristic
+[19:31:15.316] Application: Wrote '4154 4352 410D' to Electric Current Statistics Characteristic
+[19:31:15.317] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D 3E.
+[19:31:15.317] Application: "4F4B 0D0D 3E" value received.
+[19:31:22.210] Application: Writing value '4154 4831 0D' to Electric Current Statistics Characteristic
+[19:31:22.230] Normal: Wrote 415448310d to 2AF1 Characteristic
+[19:31:22.230] Application: Wrote '4154 4831 0D' to Electric Current Statistics Characteristic
+[19:31:29.104] Application: Writing value '4154 5350 2036 0D' to Electric Current Statistics Characteristic
+[19:31:29.146] Normal: Wrote 4154535020360d to 2AF1 Characteristic
+[19:31:29.146] Application: Wrote '4154 5350 2036 0D' to Electric Current Statistics Characteristic
+[19:31:29.146] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D.
+[19:31:29.146] Application: "4F4B 0D0D" value received.
+[19:31:29.206] Normal: Updated Value of Characteristic 2AF0 to 3E.
+[19:31:29.206] Application: "3E" value received.
+[19:31:36.342] Application: Writing value '4154 5350 2030 0D' to Electric Current Statistics Characteristic
+[19:31:36.376] Normal: Wrote 4154535020300d to 2AF1 Characteristic
+[19:31:36.376] Application: Wrote '4154 5350 2030 0D' to Electric Current Statistics Characteristic
+[19:31:36.376] Normal: Updated Value of Characteristic 2AF0 to 4F4B 0D0D 3E.
+[19:31:36.376] Application: "4F4B 0D0D 3E" value received.
+[19:31:43.317] Application: Writing value '4154 440D' to Electric Current Statistics Characteristic
+[19:31:43.366] Normal: Wrote 4154440d to 2AF1 Characteristic
+[19:31:43.366] Application: Wrote '4154 440D' to Electric Current Statistics Characteristic
+[19:31:43.366] Normal: Updated Value of Characteristic 2AF0 to 0D4F 4B0D 0D3E.
+[19:31:43.366] Application: "0D4F 4B0D 0D3E" value received.
+[19:31:53.018] Application: Writing value '3031 3033 0D' to Electric Current Statistics Characteristic
+[19:31:53.041] Normal: Wrote 303130330d to 2AF1 Characteristic
+[19:31:53.041] Application: Wrote '3031 3033 0D' to Electric Current Statistics Characteristic
+[19:31:53.041] Normal: Updated Value of Characteristic 2AF0 to 3031 3033 0D.
+[19:31:53.041] Application: "3031 3033 0D" value received.
+[19:31:53.161] Normal: Updated Value of Characteristic 2AF0 to 4E4F 2044 4154 410D 0D3E.
+[19:31:53.161] Application: "4E4F 2044 4154 410D 0D3E" value received.
+[19:31:59.465] Application: Writing value '3031 3531 0D' to Electric Current Statistics Characteristic
+[19:31:59.490] Normal: Wrote 303135310d to 2AF1 Characteristic
+[19:31:59.490] Application: Wrote '3031 3531 0D' to Electric Current Statistics Characteristic
+[19:31:59.491] Normal: Updated Value of Characteristic 2AF0 to 3031 3531 0D.
+[19:31:59.491] Application: "3031 3531 0D" value received.
+[19:31:59.596] Normal: Updated Value of Characteristic 2AF0 to 4E4F 2044 4154 410D 0D3E.
+[19:31:59.596] Application: "4E4F 2044 4154 410D 0D3E" value received.
+[19:32:06.303] Application: Writing value '3031 3532 0D' to Electric Current Statistics Characteristic
+[19:32:06.345] Normal: Wrote 303135320d to 2AF1 Characteristic
+[19:32:06.346] Application: Wrote '3031 3532 0D' to Electric Current Statistics Characteristic
+[19:32:06.346] Normal: Updated Value of Characteristic 2AF0 to 3031 3532 0D.
+[19:32:06.346] Application: "3031 3532 0D" value received.
+[19:32:06.450] Normal: Updated Value of Characteristic 2AF0 to 4E4F 2044 4154 410D 0D3E.
+[19:32:06.450] Application: "4E4F 2044 4154 410D 0D3E" value received.
+[19:32:13.787] Application: Writing value '3031 3233 0D' to Electric Current Statistics Characteristic
+[19:32:13.830] Normal: Wrote 303132330d to 2AF1 Characteristic
+[19:32:13.831] Application: Wrote '3031 3233 0D' to Electric Current Statistics Characteristic
+[19:32:13.831] Normal: Updated Value of Characteristic 2AF0 to 3031 3233 0D.
+[19:32:13.831] Application: "3031 3233 0D" value received.
+[19:32:13.951] Normal: Updated Value of Characteristic 2AF0 to 4E4F 2044 4154 410D 0D3E.
+[19:32:13.951] Application: "4E4F 2044 4154 410D 0D3E" value received.
