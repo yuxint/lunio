@@ -69,6 +69,14 @@ class LunioPreferences {
   /// 数据，归偏好门面兜底，不寄存在数据源适配器上）。
   static const String defaultFuelProvince = '湖北';
 
+  /// 车辆诊断开关（'true' 才算开，默认关）。开关入口在开发者模式区块；
+  /// 关开发者模式时由动作层连带置 false。
+  static const diagnosticsEnabledKey = 'diagnosticsEnabled';
+
+  /// 上次连接的 OBD 适配器设备标识（BLE 设备唯一标识）。诊断页"连接"
+  /// 直连它、连不上再走扫描列表（消费在连接管理票，本票只落偏好通道）。
+  static const lastObdDeviceIdKey = 'lastObdDeviceId';
+
   /// 停车倒计时（JSON，临时数据不进备份）。
   static const _parkingCountdownKey = 'parkingCountdown';
 
@@ -377,6 +385,29 @@ class LunioPreferences {
   /// fuelGradeProvider 由调用方负责。
   Future<void> setFuelGrade(domain.FuelGrade grade) {
     return _writeRaw(fuelGradeKey, grade.code);
+  }
+
+  // ---------------- 车辆诊断（开发者模式工具，ADR 0020）----------------
+
+  /// 车辆诊断开关（'true' 才算开，默认关）。
+  Future<bool> getDiagnosticsEnabled() async {
+    return await readRaw(diagnosticsEnabledKey) == 'true';
+  }
+
+  /// 写车辆诊断开关（'true'/'false'）。只写库，失效
+  /// diagnosticsEnabledProvider 由调用方负责。
+  Future<void> setDiagnosticsEnabled(bool enabled) {
+    return _writeRaw(diagnosticsEnabledKey, enabled ? 'true' : 'false');
+  }
+
+  /// 读上次连接的 OBD 适配器 device id（未设置返回 null）。
+  Future<String?> getLastObdDeviceId() async {
+    return readRaw(lastObdDeviceIdKey);
+  }
+
+  /// 写上次连接的 OBD 适配器 device id（null = 清除）。
+  Future<void> setLastObdDeviceId(String? deviceId) {
+    return _writeRaw(lastObdDeviceIdKey, deviceId);
   }
 
   // ---------------- 停车倒计时（临时偏好，不进备份）----------------

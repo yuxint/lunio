@@ -52,6 +52,7 @@
 //   │    └─ defaultMaintenanceBootstrapProvider（首启灌入车型库/默认项目）
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
+//   ├─ diagnosticsEnabledProvider（诊断开关，偏好纪元）
 //   ├─ diagnosticsProbesProvider（检测点列表，写点直失效模型）
 //   └─ 加油域 provider：开关/当前车设置/加油记录（family + applied 派生）
 //      在本文件；省份/油品/手填价/数据源/油价控制器/生效链在
@@ -191,6 +192,16 @@ final parkingCountdownProvider = FutureProvider<ParkingCountdown?>((ref) {
 });
 
 // ---------------- 车辆诊断 ----------------
+
+/// 车辆诊断功能开关（开发者模式工具页"车辆诊断"的显隐开关）。'true'
+/// 才算开、默认关；开关入口与入口行都在"我的"页开发者区块（见
+/// profile_page.dart），关开发者模式时动作层连带置 false（shell_actions
+/// 的 setDeveloperModeEnabled）。
+/// build 首行 watch 偏好纪元（ADR 0017）：写点 bump 后自动重算。
+final diagnosticsEnabledProvider = FutureProvider<bool>((ref) {
+  ref.watch(preferencesEpochProvider);
+  return ref.watch(lunioPreferencesProvider).getDiagnosticsEnabled();
+});
 
 /// 检测点列表（全局指令库，不挂车，ADR 0021）。内置三条种子由 bootstrap
 /// 总入口幂等对账写入，读侧显式 await bootstrap 再查表（与 cars/

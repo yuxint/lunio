@@ -1,6 +1,6 @@
 # Lunio UI 操作手册（操作 ↔ 代码对照）
 
-> 版本：2026-09-25 · 基于数据库 schemaVersion 4 / 备份 schemaVersion 4 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 接缝见 5.10，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分；备份/清空走动作层见 docs/adr/0007 修订节）
+> 版本：2026-09-25 · 基于数据库 schemaVersion 4 / 备份 schemaVersion 4 代码快照（项目费用见 docs/adr/0010，数据层按域拆分见 docs/adr/0008，油价域 provider 接缝见 5.11，加油记录应付/实付模型与 v3 就地重定义见 docs/adr/0015，取代 0014 的模型部分；备份/清空走动作层见 docs/adr/0007 修订节）
 >
 > **用途**：某个操作步骤出了问题，从本手册查到"这个操作经过哪些代码、改了哪些数据"，快速定位到文件和函数。
 >
@@ -404,7 +404,11 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 "手动日期"行下方的"加油预测"开关行 → `profile_page.dart → _FuelPredictionSettingRow`，切换写偏好 `fuelPredictionEnabled`（`profile_page.dart → _setFuelPredictionEnabled`）→ bump 偏好纪元 → **`fuelPredictionEnabledProvider`（providers.dart）重算**（ADR 0017） → `app_shell.dart` 底部导航实时插入/移除"加油"tab（无需重启 App）。关闭开发者模式时该偏好连带清掉（`_handleVersionTap`），加油 tab 随之消失；已填的加油数据保留。
 
-### 5.10 加油页（/fuel，开发者开关打开时可见）
+### 5.10 车辆诊断开关与入口（开发者模式专属，/diagnostics 占位）
+
+"加油预测"开关行下方的"车辆诊断"开关行（`profile_page.dart → _DiagnosticsSettingRow`，副标题固定"连接 OBD 读取油量水温等"）→ 切换经动作层 `shell_actions.dart → setDiagnosticsEnabled`（写偏好 `diagnosticsEnabled` + bump 偏好纪元，ADR 0017）。开关打开 → 下方出现"进入诊断页"入口行（显隐 watch `diagnosticsEnabledProvider`，providers.dart，build 首行 watch 偏好纪元）；点"进入" → `context.push('/diagnostics')` → `diagnostics/diagnostics_page.dart`（**当前是占位页**：三区实现见票 05）。pushed 子页形态对齐费用统计页：默认转场 builder、页面自供 Scaffold、返回键在 LunioTopBar leading 位；路由常驻，未开开关时没有入口能进入。关闭开发者模式时诊断开关连带置 false（`setDeveloperModeEnabled` 连带清理分支），入口行随之消失。
+
+### 5.11 加油页（/fuel，开发者开关打开时可见）
 
 页面：`fuel/fuel_page.dart → FuelPreviewPage`，**标题与底部导航同名"加油"**（开发者开关本身仍叫"加油预测"，加油记录流水见 ADR 0014）。当前可见**三张卡**：油价卡 → 加满预估卡 → 加油记录卡（**加油记录卡为 ADR 0015 应付/实付模型**）。数据规则（词汇表 GLOSSARY.md / ADR 0001 / ADR 0002 / ADR 0006 / ADR 0015）：
 
@@ -554,6 +558,8 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
 | `fuelGrade` | 加油预测油品 code（**进备份**） | 加油页油品分段 / 恢复备份 |
 | `fuelPriceCache` | 油价缓存 JSON（当前省价表 + 调价预告，**不进备份**；ADR 0011） | FuelPriceController 拉取成功 |
 | `fuelManualPrices` | 手填油价 JSON（**不进备份**） | 加油页手填/清除手填 |
+| `diagnosticsEnabled` | 车辆诊断开关（入口在开发者模式区块） | 动作层 setDiagnosticsEnabled / 关开发者模式连带清除 |
+| `lastObdDeviceId` | 上次连接的 OBD 适配器标识（连接管理票消费，当前仅落偏好通道） | （暂无写点；票 05/07 接入） |
 | `maintenanceReminderSnoozedUntil:<itemId>` | 保养项 snooze 截止日 | 通知协调器 snoozeMaintenanceItems（应用内弹窗调用） |
 | `maintenanceInAppReminderAcknowledgedOn:<itemId>` | 保养项当日 ack | 通知协调器 acknowledgeMaintenanceItem |
 | `mileageUpdateSnoozedUntil:<carId>` | 里程提醒 snooze | 通知协调器 snoozeMileageUpdate |

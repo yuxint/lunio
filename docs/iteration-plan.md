@@ -83,7 +83,7 @@
 
 - [x] 01 检测点数据层：`diagnostics_probes` 全局表（不挂 carId）、仓库 CRUD（内置只读可启停、自定义可增改删）、内置三条种子幂等对账并入 bootstrap 总入口、DB v4 增量迁移、列表 provider 写点直失效（完成于 2026-11-12，ADR 0021）。
 - [x] 02 备份 v4：`diagnosticsProbes` 段只导自定义项、版本白名单 [1,2,3,4]、恢复事务内重插（id 重新生成）（完成于 2026-11-12，ADR 0021；v1–v3 兼容读缺段=空，恢复后内置随 bootstrap 重建、自定义项存活）。
-- [ ] 03 开关与入口：开发者模式区块两行（开关行 + 入口行）、关开发者模式连带清理诊断开关。
+- [x] 03 开关与入口：开发者模式区块两行（开关行 + 入口行）、关开发者模式连带清理诊断开关（完成于 2026-11-13；偏好 `diagnosticsEnabled`/`lastObdDeviceId` 进门面 typed 方法，开关 provider watch 偏好纪元，动作层 `setDiagnosticsEnabled` + `setDeveloperModeEnabled` 连带分支，`/diagnostics` pushed 占位页）。
 - [ ] 04 ELM327 会话决策体：分帧缓冲、AT 序列状态机、串行轮询编排（plain-Dart 控制器 + fake transport 单测）。
 - [ ] 05 诊断页：三区布局（状态条/核心值卡/检测点行列表）+ Mock transport 页面测试。
 - [ ] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体。

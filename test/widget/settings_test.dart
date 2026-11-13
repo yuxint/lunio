@@ -486,6 +486,132 @@ void main() {
   });
 
 
+  testWidgets('profile gates diagnostics switch behind developer mode', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await createDefaultCar(tester);
+
+    // 开发者模式关闭：开关行与入口行整体不可见（与手动日期同区块门控）。
+    expect(find.text('车辆诊断'), findsNothing);
+    expect(find.text('进入诊断页'), findsNothing);
+
+    await enableDeveloperMode(tester);
+
+    // 开发者模式打开：开关行出现；开关默认关，入口行仍隐藏。
+    expect(find.text('车辆诊断'), findsOneWidget);
+    expect(find.text('连接 OBD 读取油量水温等'), findsOneWidget);
+    expect(find.text('进入诊断页'), findsNothing);
+    // 区块内两个开关行（加油预测 + 车辆诊断），诊断开关在后者。
+    expect(find.byType(Switch), findsNWidgets(2));
+  });
+
+
+  testWidgets('profile diagnostics switch toggles entry row and persists', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await pumpApp(tester, database: database);
+    await gotoTab(tester, '我的');
+
+    // 开关默认关：入口行隐藏；区块内两颗 Switch，诊断开关在最后一个
+    // （开发者区块行序固定：手动日期 → 加油预测 → 车辆诊断）。
+    expect(find.text('进入诊断页'), findsNothing);
+    final switches = find.byType(Switch);
+    expect(switches, findsNWidgets(2));
+
+    // 打开：偏好落库 'true'，入口行实时出现。
+    await tester.tap(switches.last);
+    await tester.pumpAndSettle();
+    expect(
+      await testRepository(database).getPreferenceValue('diagnosticsEnabled'),
+      'true',
+    );
+    expect(find.text('进入诊断页'), findsOneWidget);
+
+    // 关闭：偏好落库 'false'，入口行消失（页面状态与开关永远一致）。
+    await tester.tap(switches.last);
+    await tester.pumpAndSettle();
+    expect(
+      await testRepository(database).getPreferenceValue('diagnosticsEnabled'),
+      'false',
+    );
+    expect(find.text('进入诊断页'), findsNothing);
+  });
+
+
+  testWidgets('profile diagnostics entry pushes placeholder page', (
+    tester,
+  ) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await pumpApp(tester, database: database);
+    await gotoTab(tester, '我的');
+
+    // 打开诊断开关让入口行出现，点入口进占位页。
+    await tester.tap(find.byType(Switch).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('进入'));
+    await tester.pumpAndSettle();
+
+    // 占位页在栈顶：占位文案 + 标题可见（下层我的页路由 offstage，
+    // finder 默认跳过——'车辆诊断' 此刻只有占位页标题一个命中）。
+    expect(
+      find.text('诊断功能开发中，连接与读取将在后续版本提供。'),
+      findsOneWidget,
+    );
+    expect(find.text('车辆诊断'), findsOneWidget);
+
+    // 返回键（LunioTopBar leading 位）能回到我的页，路由稳定。
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(find.text('诊断功能开发中，连接与读取将在后续版本提供。'), findsNothing);
+    expect(find.text('进入诊断页'), findsOneWidget);
+  });
+
+
+  testWidgets('profile disables diagnostics when developer mode turns off', (
+    tester,
+  ) async {
+    // 种子：开发者模式与诊断开关都先开（经仓库直写偏好，fuel_test 同款
+    // 播种法），开发者区块应出现入口行。
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('developerModeEnabled', 'true');
+    await repository.setPreferenceValue('diagnosticsEnabled', 'true');
+    await pumpApp(tester, database: database);
+    await gotoTab(tester, '我的');
+    expect(find.text('进入诊断页'), findsOneWidget);
+
+    // 连点版本号 5 次关闭开发者模式：诊断开关连带置 false，入口行消失，
+    // 开关行本体仍在（区块还在，只是开关回到关闭态）。footer 在长页面
+    // 底部（视口外），先滚进视口再点（视口外 tap 落不到 hit test 上）。
+    await tester.ensureVisible(find.text('版本 1.0.0 · 开发者模式'));
+    await tester.pumpAndSettle();
+    for (var index = 0; index < 5; index++) {
+      await tester.tap(find.text('版本 1.0.0 · 开发者模式'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('进入诊断页'), findsNothing);
+    // 开关行随整个开发者区块一起收起（区块门控优先于开关状态）。
+    expect(find.text('车辆诊断'), findsNothing);
+    expect(
+      await testRepository(database).getPreferenceValue('diagnosticsEnabled'),
+      'false',
+    );
+  });
+
+
   testWidgets('profile can save maintenance notification settings', (
     tester,
   ) async {

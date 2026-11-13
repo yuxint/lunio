@@ -56,6 +56,12 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
 
   Widget _buildContent(BuildContext context, List<Car> cars) {
     final developerMode = ref.watch(developerModeProvider);
+    final diagnosticsEnabled = ref
+        .watch(diagnosticsEnabledProvider)
+        .maybeWhen(data: (value) => value, orElse: () => false);
+    final fuelPredictionEnabled = ref
+        .watch(fuelPredictionEnabledProvider)
+        .maybeWhen(data: (value) => value, orElse: () => false);
     final manualDate = ref.watch(manualDatePreferenceProvider);
     final notificationSettings = ref.watch(notificationSettingsProvider);
     final themeMode = ref.watch(themeModePreferenceProvider);
@@ -148,13 +154,30 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
                 trailingLabel: '设置',
                 onTap: () => showManualDateSheet(context, ref),
               ),
-              _FuelPredictionSettingRow(
-                enabled: ref
-                    .watch(fuelPredictionEnabledProvider)
-                    .maybeWhen(data: (value) => value, orElse: () => false),
+              _DeveloperSwitchRow(
+                title: '加油预测',
+                subtitle: fuelPredictionEnabled
+                    ? '开启 · 底部显示加油入口'
+                    : '关闭',
+                enabled: fuelPredictionEnabled,
                 onChanged: (value) =>
                     _setFuelPredictionEnabled(context, value),
               ),
+              _DeveloperSwitchRow(
+                title: '车辆诊断',
+                subtitle: '连接 OBD 读取油量水温等',
+                enabled: diagnosticsEnabled,
+                // 无 toast：入口行随开关即时显隐，本身就是可见反馈
+                // （加油预测开关的 toast 是因为效果在底部导航，离行远）。
+                onChanged: (value) => setDiagnosticsEnabled(ref, value),
+              ),
+              if (diagnosticsEnabled)
+                ProfileSettingRow(
+                  title: '进入诊断页',
+                  subtitle: '连接适配器、读取油量水温',
+                  trailingLabel: '进入',
+                  onTap: () => context.push('/diagnostics'),
+                ),
             ],
             ThemeModeSettingRow(
               mode: themeMode.maybeWhen(
@@ -279,14 +302,20 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   }
 }
 
-/// 加油预测开关行（开发者模式专属）：标题 + 副标题 + 右侧 Switch。
-/// 与 ProfileSettingRow 同款容器样式，但整行动作用开关而非按钮。
-class _FuelPredictionSettingRow extends StatelessWidget {
-  const _FuelPredictionSettingRow({
+/// 开发者区块通用开关行（加油预测 / 车辆诊断共用）：标题 + 副标题 +
+/// 右侧 Switch。与 ProfileSettingRow 同款容器样式，但整行动作为开关
+/// 而非按钮；副标题形态由调用方给（前者随开关状态变化，后者固定用途
+/// 文案）。第三颗开发者开关出现时继续在这里收拢，不要再复刻第三个类。
+class _DeveloperSwitchRow extends StatelessWidget {
+  const _DeveloperSwitchRow({
+    required this.title,
+    required this.subtitle,
     required this.enabled,
     required this.onChanged,
   });
 
+  final String title;
+  final String subtitle;
   final bool enabled;
   final ValueChanged<bool> onChanged;
 
@@ -308,15 +337,9 @@ class _FuelPredictionSettingRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                  '加油预测',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: 5),
-                  Text(
-                    enabled ? '开启 · 底部显示加油入口' : '关闭',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
             ),

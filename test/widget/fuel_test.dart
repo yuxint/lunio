@@ -31,17 +31,19 @@ void main() {
     await gotoTab(tester, '我的');
 
     // 开发者模式打开后出现"加油预测"开关行；默认关闭，底部没有加油 tab。
+    // 区块内两颗 Switch（加油预测 + 车辆诊断，2026-11-13 票 03），加油
+    // 预测在第一颗。
     expect(find.text('加油预测'), findsOneWidget);
-    expect(find.byType(Switch), findsOneWidget);
+    expect(find.byType(Switch), findsNWidgets(2));
     expect(find.text('加油'), findsNothing);
 
     // 打开开关：底部导航实时出现加油 tab（无需重启 App）。
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
     expect(find.text('加油'), findsOneWidget);
 
     // 再次关闭：加油 tab 消失，数据入口同步隐藏。
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
     expect(find.text('加油'), findsNothing);
   });

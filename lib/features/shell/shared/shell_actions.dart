@@ -188,9 +188,10 @@ Future<void> saveManualDate(WidgetRef ref, LocalDate? date) async {
   ref.read(preferencesEpochProvider.notifier).bump();
 }
 
-/// 开关开发者模式。关闭时连带关闭手动日期与加油预测——加油预测的
-/// 开关入口只在开发者模式里可见，留着偏好会让底部"加油"tab 无法
-/// 关闭。这条连带规则收在本函数，UI 不再各自记得写哪些 key。
+/// 开关开发者模式。关闭时连带关闭手动日期、加油预测与车辆诊断——后
+/// 三者的开关入口都只在开发者模式里可见，留着偏好就是"无入口的孤儿
+/// 开关"（加油预测还压着底部"加油"tab，诊断开关压着入口行）。这条
+/// 连带规则收在本函数，UI 不再各自记得写哪些 key。
 Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
   final preferences = ref.read(lunioPreferencesProvider);
   if (enabled) {
@@ -199,7 +200,16 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
     await preferences.setDeveloperModeEnabled(false);
     await preferences.saveManualDateOverride(null);
     await preferences.setFuelPredictionEnabled(false);
+    await preferences.setDiagnosticsEnabled(false);
   }
+  ref.read(preferencesEpochProvider.notifier).bump();
+}
+
+/// 开关车辆诊断（开发者模式工具页"车辆诊断"的显隐开关）：写偏好 +
+/// bump 偏好纪元（diagnosticsEnabledProvider 随纪元重算，入口行随它
+/// 显隐）。关开发者模式时的连带置 false 收在 [setDeveloperModeEnabled]。
+Future<void> setDiagnosticsEnabled(WidgetRef ref, bool value) async {
+  await ref.read(lunioPreferencesProvider).setDiagnosticsEnabled(value);
   ref.read(preferencesEpochProvider.notifier).bump();
 }
 
