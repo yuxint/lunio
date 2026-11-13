@@ -17,6 +17,7 @@ import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/notification_settings.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import '../helpers/builders.dart';
+import '../helpers/diagnostics_fixture.dart';
 import '../helpers/widget_app.dart';
 
 void main() {
@@ -544,7 +545,7 @@ void main() {
   });
 
 
-  testWidgets('profile diagnostics entry pushes placeholder page', (
+  testWidgets('profile diagnostics entry pushes real page', (
     tester,
   ) async {
     final database = AppDatabase.inMemory();
@@ -552,27 +553,34 @@ void main() {
     final repository = testRepository(database);
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
-    await pumpApp(tester, database: database);
+    final rig = DiagnosticsRig();
+    await pumpApp(tester, database: database, extraOverrides: rig.overrides);
     await gotoTab(tester, '我的');
 
-    // 打开诊断开关让入口行出现，点入口进占位页。
+    // 打开诊断开关让入口行出现，点入口进诊断页。
     await tester.tap(find.byType(Switch).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('进入'));
-    await tester.pumpAndSettle();
+    // 不用 pumpAndSettle：会话轮询持续出帧 settle 不了；一拍时长泵走完
+    // push 转场（零时长泵不动动画）。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-    // 占位页在栈顶：占位文案 + 标题可见（下层我的页路由 offstage，
-    // finder 默认跳过——'车辆诊断' 此刻只有占位页标题一个命中）。
-    expect(
-      find.text('诊断功能开发中，连接与读取将在后续版本提供。'),
-      findsOneWidget,
-    );
-    expect(find.text('车辆诊断'), findsOneWidget);
+    // 真页面在栈顶：三区渲染（状态条 + 核心值卡 + 检测点区）。标题文
+    // 本"车辆诊断"与下层我的页开关行标题同名，树上共 2 命中（下层未
+    // 判 offstage）；页面本体用"检测点"区标题钉住（唯一）。
+    expect(find.text('车辆诊断'), findsNWidgets(2));
+    expect(find.text('检测点'), findsOneWidget);
+    expect(find.text('油量'), findsNWidgets(2));
+    expect(find.text('水温'), findsNWidgets(2));
+    expect(find.text('电压'), findsOneWidget);
 
     // 返回键（LunioTopBar leading 位）能回到我的页，路由稳定。
     await tester.tap(find.byTooltip('返回'));
-    await tester.pumpAndSettle();
-    expect(find.text('诊断功能开发中，连接与读取将在后续版本提供。'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('检测点'), findsNothing);
     expect(find.text('进入诊断页'), findsOneWidget);
   });
 

@@ -302,12 +302,6 @@ class Elm327Session {
   /// 帧——多余帧留给下一条指令，独立提示符帧不丢不粘）。
   void _onBytes(List<int> bytes) {
     // 空白帧（纯提示符残留，如超时清缓冲后迟到的 `\r>`）不入队——
-    // 入队会被下一条指令当响应消费，读数在行间错位一格（story 15 行
-    // 归属被破坏）。合法响应帧必有内容（OK/banner/数据行）。
-    // 空白帧（纯提示符残留，如超时清缓冲后迟到的 `\r>`）不入队——
-    // 在途请求会被它打断、把空帧当响应消费，读数错位（story 15）。
-    // 合法响应帧必有内容（OK/banner/数据行）。
-    // 空白帧（纯提示符残留，如超时清缓冲后迟到的 `\r>`）不入队——
     // 在途请求会被它打断、把空帧当响应消费，读数错位（story 15）。
     // 合法响应帧必有内容（OK/banner/数据行）。
     _frames.addAll(
@@ -373,7 +367,13 @@ class Elm327Session {
   }
 
   /// 清尾：停轮旗 + 代数推进（迟到的超时任务失效）+ 清帧队列与缓冲
-  /// + 退订字节流 + transport 断开。幂等。
+  /// + transport 断开 + 退订字节流。幂等。
+  ///
+  /// 传输层断开在字节流退订之前且退订不等待完成——订阅 cancel 的完成
+  /// 时机在假异步环境（widget 测试 FakeAsync）里落在用例泵帧预算之外，
+  /// await 它会拖住整条 dispose 链（离开页断开的可观察出口）；真机语
+  /// 义不变：清尾状态先行、断开紧随、退订收尾（迟到字节对已清的帧队
+  /// 列与已失效的等待者无害）。
   Future<void> _teardown() async {
     _stopPolling = true;
     _generation++;
@@ -381,7 +381,7 @@ class Elm327Session {
     _assembler.clear();
     final sub = _byteSub;
     _byteSub = null;
-    await sub?.cancel();
     await _transport.disconnect();
+    unawaited(sub?.cancel());
   }
 }

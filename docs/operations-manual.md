@@ -404,9 +404,13 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 "手动日期"行下方的"加油预测"开关行 → `profile_page.dart → _FuelPredictionSettingRow`，切换写偏好 `fuelPredictionEnabled`（`profile_page.dart → _setFuelPredictionEnabled`）→ bump 偏好纪元 → **`fuelPredictionEnabledProvider`（providers.dart）重算**（ADR 0017） → `app_shell.dart` 底部导航实时插入/移除"加油"tab（无需重启 App）。关闭开发者模式时该偏好连带清掉（`_handleVersionTap`），加油 tab 随之消失；已填的加油数据保留。
 
-### 5.10 车辆诊断开关与入口（开发者模式专属，/diagnostics 占位）
+### 5.10 车辆诊断开关与入口（开发者模式专属，/diagnostics 三区页）
 
-"加油预测"开关行下方的"车辆诊断"开关行（`profile_page.dart → _DiagnosticsSettingRow`，副标题固定"连接 OBD 读取油量水温等"）→ 切换经动作层 `shell_actions.dart → setDiagnosticsEnabled`（写偏好 `diagnosticsEnabled` + bump 偏好纪元，ADR 0017）。开关打开 → 下方出现"进入诊断页"入口行（显隐 watch `diagnosticsEnabledProvider`，providers.dart，build 首行 watch 偏好纪元）；点"进入" → `context.push('/diagnostics')` → `diagnostics/diagnostics_page.dart`（**当前是占位页**：三区实现见票 05）。pushed 子页形态对齐费用统计页：默认转场 builder、页面自供 Scaffold、返回键在 LunioTopBar leading 位；路由常驻，未开开关时没有入口能进入。关闭开发者模式时诊断开关连带置 false（`setDeveloperModeEnabled` 连带清理分支），入口行随之消失。
+"加油预测"开关行下方的"车辆诊断"开关行（`profile_page.dart → _DiagnosticsSettingRow`，副标题固定"连接 OBD 读取油量水温等"）→ 切换经动作层 `shell_actions.dart → setDiagnosticsEnabled`（写偏好 `diagnosticsEnabled` + bump 偏好纪元，ADR 0017）。开关打开 → 下方出现"进入诊断页"入口行（显隐 watch `diagnosticsEnabledProvider`，providers.dart，build 首行 watch 偏好纪元）；点"进入" → `context.push('/diagnostics')` → `diagnostics/diagnostics_page.dart`（**三区实现，票 05**）。pushed 子页形态对齐费用统计页：默认转场 builder、页面自供 Scaffold、返回键在 LunioTopBar leading 位；路由常驻，未开开关时没有入口能进入。关闭开发者模式时诊断开关连带置 false（`setDeveloperModeEnabled` 连带清理分支），入口行随之消失。页面三区：
+1. **连接状态条**：阶段徽标（未连接=黄/连接中=黄/已连接=绿/已断开=红，`LunioStatusBadge` 语义三色）+ 说明文案；"已断开"追加错误文案与"重连"按钮（行尾紧凑 `TextButton`，ProfileSettingRow 同款；连接级失败只上状态条、不弹窗，story 16）。连接生命周期归页面持有：进页面建会话（首帧后自动连接）、离开断开（`dispose → _teardownSession`：先会话 dispose 停轮+断开传输层、事件订阅取消收尾）、断开重连 = 丢弃旧会话新建实例；会话经 `obd_runtime.dart` 的会话工厂 provider 新建（transport 当前装配 Mock 演示表 `mockObdCorpusDemoResponses`，模拟器可完整演示一轮读取；票 07 换 BLE），连接级状态经会话事件流（broadcast）传导到页面状态条。
+2. **核心值卡**（横排两张）：油量卡 = 百分比大字 + 估算升数小字（`DiagnosticsRules.estimateFuelLiters`，升数 = 百分比 × 当前应用车辆油箱容积；**容积未填只显百分比、不提示去填**）；水温卡 = 温度大字。两张卡无读取/无数据显"—"/"无数据"灰态（`tokens.subtle`）。
+3. **检测点行列表**：每行 = 名称 + 当前值 + 最后更新时间（`formatClock` HH:mm:ss）+ 启停开关；单条无数据 = 行级灰态"无数据"不连坐（其他行照常更新）；未读取显"—"与"未更新"。启停开关 → `shell_actions.dart → setDiagnosticsProbeEnabled`（写库 → 逐出 `diagnosticsProbesProvider` → 等重算落地再返回，ADR 0021 写点直失效模型）；轮询快照 getter（页面 build 捕获的检测点清单过滤启用项）每轮开头取最新——**启停下一轮生效、不打断当前轮**（会话契约，ADR 0020）。
+页面测试 `test/widget/diagnostics_test.dart`（6 用例：状态机可达/升数/未填容积/灰态不连坐/启停三面对账/离开断开无泄漏）与门闩夹具 `test/helpers/diagnostics_fixture.dart`（chunkGate/timeGate 双 completer 门闩控字节到达与会话定时，零真实定时器）。pushed 子页形态对齐费用统计页：默认转场 builder、页面自供 Scaffold、返回键在 LunioTopBar leading 位；路由常驻，未开开关时没有入口能进入。关闭开发者模式时诊断开关连带置 false（`setDeveloperModeEnabled` 连带清理分支），入口行随之消失。
 
 ### 5.11 加油页（/fuel，开发者开关打开时可见）
 

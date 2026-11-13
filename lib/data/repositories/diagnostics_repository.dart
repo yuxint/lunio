@@ -45,6 +45,13 @@ class DiagnosticsProbeSeed {
 }
 
 class DiagnosticsRepository {
+  /// 内置油量检测点 catalogKey：页面核心值卡（油量卡）定位内置行的
+  /// 稳定标识（种子对账标识复用同一份，单一事实源）。
+  static const builtInFuelLevelKey = 'probe:fuelLevel';
+
+  /// 内置水温检测点 catalogKey（水温值卡定位用）。
+  static const builtInCoolantKey = 'probe:coolantTemp';
+
   /// 构造时注入数据库连接。
   DiagnosticsRepository(this.database);
 
@@ -55,13 +62,13 @@ class DiagnosticsRepository {
   /// 变化，旧 key 行会被清理重建）。
   static const List<DiagnosticsProbeSeed> builtInProbeSeeds = [
     DiagnosticsProbeSeed(
-      catalogKey: 'probe:fuelLevel',
+      catalogKey: builtInFuelLevelKey,
       name: '油量',
       command: '012F',
       parseType: domain.DiagnosticsParseType.fuelLevel,
     ),
     DiagnosticsProbeSeed(
-      catalogKey: 'probe:coolantTemp',
+      catalogKey: builtInCoolantKey,
       name: '水温',
       command: '0105',
       parseType: domain.DiagnosticsParseType.coolantTemp,

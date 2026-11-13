@@ -237,6 +237,9 @@ class TestRepositories {
             syncStatus: Value(car.sync.status.name),
             updatedAt: car.sync.updatedAt.toIso8601String(),
             version: Value(car.sync.version),
+            tankCapacityLiters: car.tankCapacityLiters == null
+                ? const Value.absent()
+                : Value(car.tankCapacityLiters),
           ),
         );
     return carId;

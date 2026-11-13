@@ -27,6 +27,7 @@ import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
 import '../../../core/platform/native_files.dart';
 import '../../../domain/entities/car.dart';
+import '../../../domain/entities/diagnostics_probe.dart';
 import '../../../domain/entities/fuel_price.dart';
 import '../../../domain/entities/fuel_prediction.dart';
 import '../../../domain/entities/fuel_record.dart';
@@ -211,6 +212,24 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
 Future<void> setDiagnosticsEnabled(WidgetRef ref, bool value) async {
   await ref.read(lunioPreferencesProvider).setDiagnosticsEnabled(value);
   ref.read(preferencesEpochProvider.notifier).bump();
+}
+
+/// 启停检测点（诊断页行开关，票 05）：写库 → 逐出检测点列表 provider
+/// （写点直失效模型，同 parkingCountdown 先例，ADR 0021）。轮询快照
+/// getter（诊断页 `_enabledProbesSnapshot`）每轮开头读 provider 当前
+/// 值——启停下一轮生效、不打断当前轮（会话契约，ADR 0020）。
+Future<void> setDiagnosticsProbeEnabled(
+  WidgetRef ref,
+  DiagnosticsProbe probe,
+  bool enabled,
+) async {
+  await ref
+      .read(diagnosticsRepositoryProvider)
+      .setProbeEnabled(probe.id!, enabled);
+  ref.invalidate(diagnosticsProbesProvider);
+  // 等重算落地再返回：启停下一轮生效的快照时序窗口收窄到动作完成点
+  //（页面数据分支此刻已拿到 fresh 清单，轮询快照 getter 读它）。
+  await ref.read(diagnosticsProbesProvider.future);
 }
 
 /// 开关加油预测（底部"加油"tab 的显隐开关，AppShell watch 该 provider

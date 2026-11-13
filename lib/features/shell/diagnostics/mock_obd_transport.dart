@@ -54,9 +54,13 @@ class MockObdTransport implements OBDTransport {
   final _bytes = StreamController<Uint8List>.broadcast();
   bool _connected = false;
 
-  /// 已发送的规整指令记录（按序追加；测试断言 AT 序列与轮询编排用，
+  /// 已发送的规整指令记录（按序全加；测试断言 AT 序列与轮询编排用，
   /// 模拟器演示调试用）。
   final sentCommands = <String>[];
+
+  /// disconnect() 调用次数（测试断言"离开页面断开会话"用——页面
+  /// dispose 链路最终会调到这里，计数是可观察出口）。
+  int disconnectCalls = 0;
 
   @override
   Future<void> connect() async {
@@ -104,6 +108,7 @@ class MockObdTransport implements OBDTransport {
   @override
   Future<void> disconnect() async {
     _connected = false;
+    disconnectCalls++;
   }
 }
 
