@@ -1,8 +1,9 @@
-// diagnostics 域 widget 测试（票 05，共享夹具 test/helpers/widget_app.dart
-// 与 diagnostics_fixture.dart）：三区状态机全状态可达（未连接→连接中→
-// 已连接→已断开+错误+重连）、油量卡升数按容积估算/未填只显百分比、
-// 行级无数据灰态不连坐、启停下一轮生效且不打断当前轮、离开页面断开
-// 会话（无 pending timer 残留）。
+// diagnostics 域 widget 测试（票 05 三区状态机 + 票 06 表单增改删，共享
+// 夹具 test/helpers/widget_app.dart 与 diagnostics_fixture.dart）：三区
+// 状态机全状态可达（未连接→连接中→已连接→已断开+错误+重连）、油量卡
+// 升数按容积估算/未填只显百分比、行级无数据灰态不连坐、启停下一轮生
+// 效且不打断当前轮、离开页面断开会话（无 pending timer 残留）；表单
+// 增改删（添加行进新增/自定义行进编辑/内置行守卫/删确认/行内校验）。
 //
 // 时序全走门闩（夹具文件头的配方）：advanceUntil 逐拍放行字节至值出
 // 现；advanceRound 一拍时钟进下一轮。零真实定时器——用例收尾只泵帧
@@ -17,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/core/widgets/lunio_components.dart';
 
@@ -265,6 +267,175 @@ void main() {
       expect(rig.mock.disconnectCalls, 1);
       // 页面已退栈。
       expect(find.text('检测点'), findsNothing);
+    });
+  });
+
+  group('表单增改删（票 06）', () {
+    testWidgets('增：合法提交落库，列表即时可见（写点直失效传导）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+
+      // 列表尾添加行 → 新增表单（运行时统一出口：标题 + 副标题可见）。
+      await tester.tap(find.text('添加检测点'));
+      await tester.pumpAndSettle();
+      expect(find.text('新增检测点'), findsOneWidget);
+      expect(find.text('仅用于读取类指令（如标准 PID 查询）'), findsOneWidget);
+
+      // 填名称与指令，保存。
+      await tester.enterText(find.byType(TextField).at(0), '节气门');
+      await tester.enterText(find.byType(TextField).at(1), '01 2f');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      // 列表即时可见 + 库里第 4 行（3 内置 + 1 自定义）。
+      expect(find.text('节气门'), findsOneWidget);
+      final probes = await testRepository(database)
+          .diagnosticsRepository
+          .listProbes();
+      expect(probes, hasLength(4));
+      expect(
+        probes.last.command,
+        '012F',
+        reason: '保存前归一（大写 + 去空白），落库即发送文本',
+      );
+      expect(find.text('检测点已保存'), findsOneWidget);
+
+      await drainToastTimer(tester);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('改：点自定义行进编辑表单，保存后列表与库同步更新', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final repo = testRepository(database).diagnosticsRepository;
+      final rig = DiagnosticsRig();
+      await repo.saveProbe(
+        DiagnosticsProbe(name: '节气门', command: '0111'),
+      );
+      final seededId = (await repo.listProbes())
+          .firstWhere((p) => p.name == '节气门')
+          .id!;
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+
+      // 点自定义行 → 编辑表单（标题 + 三字段回填）。
+      await tester.tap(find.text('节气门'));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑检测点'), findsOneWidget);
+      expect(find.text('仅用于读取类指令（如标准 PID 查询）'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(
+          find.widgetWithText(TextField, '检测点名称'),
+        ).controller!.text,
+        '节气门',
+      );
+      expect(
+        tester.widget<TextField>(
+          find.widgetWithText(TextField, '指令原文'),
+        ).controller!.text,
+        '0111',
+      );
+
+      // 改名保存：列表与库同步更新。
+      await tester.enterText(find.widgetWithText(TextField, '检测点名称'), '进气压力');
+      await tester.tap(find.text('保存修改'));
+      await tester.pumpAndSettle();
+      expect(find.text('进气压力'), findsOneWidget);
+      expect(find.text('节气门'), findsNothing);
+      final updated = await repo.listProbes();
+      expect(updated.where((p) => p.name == '进气压力'), hasLength(1));
+      expect(
+        updated.firstWhere((p) => p.name == '进气压力').id,
+        seededId,
+        reason: '编辑保持原行 id',
+      );
+      expect(find.text('检测点已保存'), findsOneWidget);
+      await drainToastTimer(tester);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('内置行点按无编辑入口（story 23 只读守卫的 UI 呈现）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+
+      // 点内置"电压"行（文本唯一，油量行文本与核心值卡重名）→ 不出表单。
+      await tester.tap(find.text('电压'));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑检测点'), findsNothing);
+      expect(find.text('新增检测点'), findsNothing);
+
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('删：确认后删除，列表与库同步移除', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final repo = testRepository(database).diagnosticsRepository;
+      final rig = DiagnosticsRig();
+      await repo.saveProbe(
+        DiagnosticsProbe(name: '节气门', command: '0111'),
+      );
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+
+      // 编辑表单 → 删除 → 确认框。
+      await tester.tap(find.text('节气门'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      expect(find.text('删除检测点'), findsOneWidget);
+      expect(find.text('确定删除 节气门？'), findsOneWidget);
+
+      // 确认删除：行消失、库行消失、成功 toast。
+      await tester.tap(find.text('删除').last);
+      await tester.pumpAndSettle();
+      expect(find.text('节气门'), findsNothing);
+      final probes = await repo.listProbes();
+      expect(probes, hasLength(3));
+      expect(find.text('检测点已删除'), findsOneWidget);
+      await drainToastTimer(tester);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('校验失败行内错误文案，不弹窗', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+
+      await tester.tap(find.text('添加检测点'));
+      await tester.pumpAndSettle();
+      // 名称与指令全空：保存 → 行内错误、sheet 留场、无弹窗。
+      await tester.tap(find.text('保存'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('检测点名称不能为空'), findsOneWidget);
+      expect(find.text('新增检测点'), findsOneWidget);
+      expect(find.byType(Dialog), findsNothing);
+
+      // 补上名称只缺指令：行内错误换文案、仍不弹窗。
+      await tester.enterText(find.byType(TextField).at(0), '节气门');
+      await tester.tap(find.text('保存'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('指令不能为空'), findsOneWidget);
+      expect(find.byType(Dialog), findsNothing);
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await leavePageAndFlush(tester);
     });
   });
 }

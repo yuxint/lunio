@@ -39,6 +39,7 @@ import '../shared/shell_shared.dart';
 import 'elm327_parser.dart' show ObdReading, ObdNoData, ObdValue;
 import 'elm327_session.dart';
 import 'obd_runtime.dart';
+import 'probe_form.dart';
 
 /// 页面级连接状态机（状态条渲染依据）。idle = 进页面首帧的"未连接"
 /// （连接动作延到首帧之后启动，起点状态真实可达）；扫描中随票 07
@@ -263,8 +264,14 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                   snapshot: _readings[probe.id],
                   onToggle: (value) =>
                       setDiagnosticsProbeEnabled(ref, probe, value),
+                  onTap: probe.isBuiltIn
+                      ? null
+                      : () => showProbeFormSheet(context, ref, probe: probe),
                 ),
               ),
+            _AddProbeRow(
+              onTap: () => showProbeFormSheet(context, ref),
+            ),
           ],
         ),
       ],
@@ -432,6 +439,7 @@ class _ProbeRow extends StatelessWidget {
     required this.probe,
     required this.snapshot,
     required this.onToggle,
+    this.onTap,
   });
 
   final DiagnosticsProbe probe;
@@ -442,6 +450,10 @@ class _ProbeRow extends StatelessWidget {
   /// 启停开关回调（动作层编排：写库 → 逐出检测点 provider）。
   final ValueChanged<bool> onToggle;
 
+  /// 整行点按 → 编辑表单（仅自定义行非 null；内置行 null = 无编辑入口，
+  /// story 23"内置三件套只能启停、不可改删"的 UI 呈现）。
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
@@ -450,9 +462,8 @@ class _ProbeRow extends StatelessWidget {
     final isNoData = reading is ObdNoData;
     final valueText = reading?.display ?? '—';
     final timeText = snapshot == null ? '未更新' : formatClock(snapshot.at);
-    return LunioCard(
-      child: Row(
-        children: [
+    final row = Row(
+      children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -482,6 +493,42 @@ class _ProbeRow extends StatelessWidget {
           const SizedBox(width: 12),
           Switch(value: probe.enabled, onChanged: onToggle),
         ],
+    );
+    // 内置行 = 普通卡（点按无反应，story 23 只读守卫的 UI 呈现）；
+    // 自定义行 = 整卡可点进编辑表单（LunioTappableCard：卡圆角与水波
+    // 裁剪圆角组件内部对齐，不手写三明治）。
+    if (onTap == null) {
+      return LunioCard(child: row);
+    }
+    return LunioTappableCard(onTap: onTap!, child: row);
+  }
+}
+
+/// 列表尾"添加检测点"行（story 20 入口）：整卡可点，居中 ＋ 图标 + 文案。
+class _AddProbeRow extends StatelessWidget {
+  const _AddProbeRow({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    return LunioTappableCard(
+      onTap: onTap,
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add, size: 18, color: tokens.muted),
+            const SizedBox(width: 6),
+            Text(
+              '添加检测点',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: tokens.muted,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }

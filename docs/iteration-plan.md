@@ -86,7 +86,7 @@
 - [x] 03 开关与入口：开发者模式区块两行（开关行 + 入口行）、关开发者模式连带清理诊断开关（完成于 2026-11-13；偏好 `diagnosticsEnabled`/`lastObdDeviceId` 进门面 typed 方法，开关 provider watch 偏好纪元，动作层 `setDiagnosticsEnabled` + `setDeveloperModeEnabled` 连带分支，`/diagnostics` pushed 占位页）。
 - [x] 04 ELM327 会话决策体：分帧缓冲、AT 序列状态机、串行轮询编排（plain-Dart 控制器 + Mock transport 单测）（完成于 2026-11-13；`obd_transport.dart` + `mock_obd_transport.dart` + `elm327_parser.dart` + `elm327_session.dart` 四模块，语料摘自实车日志，变异 3 处击杀：ATSP 7 必发/PID 匹配/组帧缓冲）。
 - [x] 05 诊断页：三区布局（状态条/核心值卡/检测点行列表）+ Mock transport 页面测试（完成于 2026-11-13；`obd_runtime.dart` 域内接缝（transport=Mock 演示表+会话工厂，票 07 换 BLE）、`diagnostics_rules.dart` 升数估算、动作层 `setDiagnosticsProbeEnabled`、widget 测试 6 用例门闩夹具零真实定时器、变异 2/2 击杀，743 绿）。
-- [ ] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体。
+- [x] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体（完成于 2026-11-13；`probe_form_controller.dart` 9 单测变异 2/2、`probe_form.dart` 表单+入口（ADR 0016 统一出口、删除确认入口弹）、动作层 `saveDiagnosticsProbe`/`removeDiagnosticsProbe`、内置行点按无编辑入口（story 23）、widget 5 用例升到 11，757 绿）。
 - [ ] 07 BLE 真链路：flutter_blue_plus + OBDTransport 传输层抽象（BLE/Mock 两实现）。
 - [ ] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档。
 

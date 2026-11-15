@@ -29,8 +29,9 @@ class DiagnosticsProbe {
   /// 展示名（如"油量"）。内置行不可改、自定义行可改。
   final String name;
 
-  /// 指令原文（如 `012F`、`ATRV`）。内置行不可改、自定义行可改。原始
-  /// 字符串原样保存，发送前的大小写/空白规整是会话决策体的职责（后续票）。
+  /// 指令原文（如 `012F`、`ATRV`）。内置行不可改、自定义行可改。表单
+  /// 保存前归一（probe_form_controller：大写 + 去全部空白，落库即发送
+  /// 文本）；发送前会话再规整一次（幂等，票 06 之前存量未归一行兜底）。
   final String command;
 
   /// 解析类型（四种，见 [DiagnosticsParseType]）。

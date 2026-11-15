@@ -232,6 +232,30 @@ Future<void> setDiagnosticsProbeEnabled(
   await ref.read(diagnosticsProbesProvider.future);
 }
 
+/// 保存检测点（票 06 表单提交）：按 id 分派新增/编辑（saveMaintenanceItem
+/// 先例）→ 逐出检测点列表 provider（写点直失效）→ 等重算落地再返回
+/// （表单 sheet 在 fresh 清单落地后才 pop，列表即时可见的时序窗口收窄
+/// 到动作完成点，同 [setDiagnosticsProbeEnabled]）。
+Future<void> saveDiagnosticsProbe(WidgetRef ref, DiagnosticsProbe probe) async {
+  final repository = ref.read(diagnosticsRepositoryProvider);
+  if (probe.id == null) {
+    await repository.saveProbe(probe);
+  } else {
+    await repository.updateProbe(probe);
+  }
+  ref.invalidate(diagnosticsProbesProvider);
+  await ref.read(diagnosticsProbesProvider.future);
+}
+
+/// 删除自定义检测点（表单编辑态删除入口）：仓库拒绝内置行（ADR 0021
+/// "内置三件套永远在、永远正确"），UI 侧删除入口只挂自定义行。逐出 +
+/// 等重算落地同 [saveDiagnosticsProbe]。
+Future<void> removeDiagnosticsProbe(WidgetRef ref, int probeId) async {
+  await ref.read(diagnosticsRepositoryProvider).deleteProbe(probeId);
+  ref.invalidate(diagnosticsProbesProvider);
+  await ref.read(diagnosticsProbesProvider.future);
+}
+
 /// 开关加油预测（底部"加油"tab 的显隐开关，AppShell watch 该 provider
 /// 实时增删 tab）。
 Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {
