@@ -1,14 +1,14 @@
 // BLE 链路错误分类（2026-11-15 从 ble_obd_transport.dart 拆出）：可辨识
-// 异常 + 状态条文案单一出口 + 平台异常映射。扫描器 adapter、传输层
-// adapter、诊断连接编排与扫描 sheet 共用本模块；错误文案按 kind 唯一映
-// 射（throw 点不重复写字符串）。
+// 异常 + 状态条文案单一出口。扫描器 adapter、传输层 adapter、诊断连接
+// 编排与扫描 sheet 共用本模块；错误文案按 kind 唯一映射（throw 点不重
+// 复写字符串）。
+//
+// 平台异常识别（权限文本嗅探、fallback 包装）在 ble_obd_platform_errors.
+// dart——本文件保持零 flutter_blue_plus 依赖（ADR 0024），可被纯 Dart
+// 测试与状态机文件直接 import。
 //
 // ≈ Java 的自定义异常族 + 错误码表：kind ≈ ErrorCode，statusCopy ≈
-// 错误码对应的用户文案；平台异常（PlatformException /
-// FlutterBluePlusException）在此翻译成可辨识类别。
-import 'package:flutter/services.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
+// 错误码对应的用户文案。
 /// BLE 链路错误类别（异常的可辨识分类；状态条文案单一出口见
 /// [BleObdTransportException.statusCopy]）。
 enum BleObdLinkErrorKind {
@@ -69,47 +69,4 @@ class BleObdTransportException implements Exception {
   @override
   String toString() => 'BleObdTransportException: ${kind.name}'
       '${cause == null ? '' : ' ($cause)'}';
-}
-
-/// 平台异常是否表示 Android 运行时蓝牙权限被拒。Android 端
-/// flutter_blue_plus 的 adapterState 查询不申请权限（权限在 startScan/
-/// connect 时才请求），拒绝以 PlatformException 返回，消息形如
-/// "Permission android.permission.BLUETOOTH_SCAN required to scan
-/// devices"（API 30 及以下为 ACCESS_FINE_LOCATION）。这里按消息识别，
-/// 统一归 [BleObdLinkErrorKind.permissionDenied]。
-bool _hasPermissionDeniedText(Object error) {
-  final errorText = switch (error) {
-    PlatformException(:final message) => message ?? '',
-    FlutterBluePlusException(:final description) => description ?? '',
-    _ => error.toString(),
-  };
-  final text = errorText.toLowerCase();
-  return text.contains('permission') &&
-      (text.contains('bluetooth') ||
-          text.contains('access_fine_location') ||
-          text.contains('access_coarse_location'));
-}
-
-/// 权限拒绝的平台异常 → 可辨识的 permissionDenied；其他异常返回 null
-///（调用方按自己的兜底类别包装）。
-BleObdTransportException? bleObdPermissionDeniedError(Object error) {
-  if (error is BleObdTransportException) {
-    return error.kind == BleObdLinkErrorKind.permissionDenied ? error : null;
-  }
-  if (!_hasPermissionDeniedText(error)) {
-    return null;
-  }
-  return BleObdTransportException(BleObdLinkErrorKind.permissionDenied, error);
-}
-
-/// 建链/扫描异常 → 可辨识 BLE 链路错误（权限拒绝优先，其余归 fallback）。
-BleObdTransportException mapBleObdLinkFailure(
-  Object error, {
-  required BleObdLinkErrorKind fallback,
-}) {
-  if (error is BleObdTransportException) {
-    return error;
-  }
-  return bleObdPermissionDeniedError(error) ??
-      BleObdTransportException(fallback, error);
 }

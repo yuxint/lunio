@@ -1,28 +1,27 @@
-// OBD BLE 链路适配器（票 07，ADR 0020）：flutter_blue_plus 2.3.x 胶水层。
-// 把 BLE 会话六步（适配器门禁 → 定向扫描定位设备 → 建链 → 发现服务 →
-// 订阅通知 → 挂断连监视）翻译成 OBDTransport 的字节流契约，协议层与会
-// 话控制器零改动（传输层抽象的意义所在）。
+// OBD BLE 链路 adapter（票 07，ADR 0020 / 0024）：把 OBD 无线电面
+// （obd_radio.dart）翻译成两个上层契约——
+//   - BleObdScanner → ObdScanner（扫描清单数据源）；
+//   - BleObdTransport → OBDTransport（字节流收发）。
 //
-// 2026-11-15 按概念拆分后本文件只留 FBP 胶水：适配器门禁、扫描归属代
-// 数、扫描器 adapter 与传输层 adapter（两者共享门禁与扫描归属，同住一
-// 处）。错误分类在 ble_obd_errors.dart、扫描清单协议在
-// ble_scan_entries.dart、契约在 obd_scanner.dart / obd_transport.dart。
+// 2026-11-15 接缝重构（ADR 0024）：本文件不再 import flutter_blue_plus；
+// 插件面由 FlutterBluePlusObdRadio 承担（ble_obd_radio.dart）。所有业务
+// 决策留在这一侧，adapter 只做调用转发：
+//   - 适配器门禁（支持/授权/开关三查 + unknown 等待窗口）；
+//   - 扫描归属代数（进程级扫描资源的令牌收尾）；
+//   - 起始窗口停扫、半开清理、单次设备断开；
+//   - 定向扫描/建链窗口、UUID 匹配、先订阅后开通知；
+//   - 链路丢失监视与 _established 旗；
+//   - 错误兜底（能分类的类型化，未分类原样透传）。
 //
-// ≈ Java 的 JSch/serial 通信工具类：connect ≈ 六步建链（含握手前检
-// 查），send ≈ OutputStream.write，byteStream ≈ InputStream 事件流，
-// disconnect ≈ close；BLE 的通知分片细节对上层屏蔽（分片组装归解析模
-// 块的组帧缓冲）。
-//
-// flutter_blue_plus 2.x 许可口径：商业用途付费、个人/非营利用途免费，
-// connect 需显式传 License.nonprofit——本应用单人自用，落在免费档
-// （pubspec 注释同口径）。
+// ≈ Java 的有状态适配器层：本类 ≈ 协议适配器（含状态机与竞态收尾），
+// obd_radio.dart ≈ SPI 端口，ble_obd_radio.dart ≈ 厂商驱动。
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-
 import 'ble_obd_errors.dart';
+import 'ble_obd_platform_errors.dart';
 import 'ble_scan_entries.dart';
+import 'obd_radio.dart';
 import 'obd_scanner.dart';
 import 'obd_transport.dart';
 
@@ -42,22 +41,24 @@ class BleObdUuids {
   static const write = '00002af1-0000-1000-8000-00805f9b34fb';
 }
 
+/// 授权弹窗等待窗口（unknown 停留超时按不支持处理；构造可注入）。
+const _defaultAdapterStateWindow = Duration(seconds: 10);
+
 /// 适配器门禁：支持/授权/开关三查，通过才放行扫描与建链。蓝牙 API 首
 /// 次调用触发系统权限弹窗（iOS），授权态在弹窗期间停在 unknown——给
 /// 足弹窗窗口再判，超时按不支持处理（story 8 文案兜底）。
-Future<void> _ensureAdapterReady() async {
-  if (!await FlutterBluePlus.isSupported) {
+Future<void> _ensureAdapterReady(ObdRadio radio, Duration window) async {
+  if (!await radio.isSupported) {
     throw const BleObdTransportException(
       BleObdLinkErrorKind.adapterUnavailable,
     );
   }
   // 手订阅 + 超时竞速（不用 firstWhere.timeout）：超时后 firstWhere 的
   // 底层订阅仍挂在广播流上等一个永不消费的状态值，重复门禁会叠加残留。
-  final stateCompleter = Completer<BluetoothAdapterState>();
-  final stateSub = FlutterBluePlus.adapterState.listen(
+  final stateCompleter = Completer<RadioAdapterState>();
+  final stateSub = radio.adapterState.listen(
     (state) {
-      if (state != BluetoothAdapterState.unknown &&
-          !stateCompleter.isCompleted) {
+      if (state != RadioAdapterState.unknown && !stateCompleter.isCompleted) {
         stateCompleter.complete(state);
       }
     },
@@ -67,9 +68,9 @@ Future<void> _ensureAdapterReady() async {
       }
     },
   );
-  BluetoothAdapterState state;
+  RadioAdapterState state;
   try {
-    state = await stateCompleter.future.timeout(_adapterStateWindow);
+    state = await stateCompleter.future.timeout(window);
   } on TimeoutException {
     throw const BleObdTransportException(
       BleObdLinkErrorKind.adapterUnavailable,
@@ -80,68 +81,88 @@ Future<void> _ensureAdapterReady() async {
       fallback: BleObdLinkErrorKind.adapterUnavailable,
     );
   } finally {
-    await stateSub.cancel();
+    // 订阅取消的完成时机与假异步环境（fakeAsync）耦合，不等待；取消本身
+    // 同步生效，之后不再投递（会话 teardown 同手法）。
+    unawaited(stateSub.cancel());
   }
   switch (state) {
-    case BluetoothAdapterState.on:
+    case RadioAdapterState.on:
       return;
-    case BluetoothAdapterState.unauthorized:
+    case RadioAdapterState.unauthorized:
       throw const BleObdTransportException(
         BleObdLinkErrorKind.permissionDenied,
       );
-    case BluetoothAdapterState.unavailable:
+    case RadioAdapterState.unavailable:
       throw const BleObdTransportException(
         BleObdLinkErrorKind.adapterUnavailable,
       );
-    case BluetoothAdapterState.off:
-    case BluetoothAdapterState.turningOn:
-    case BluetoothAdapterState.turningOff:
+    case RadioAdapterState.off:
+    case RadioAdapterState.turningOn:
+    case RadioAdapterState.turningOff:
       throw const BleObdTransportException(BleObdLinkErrorKind.adapterOff);
-    case BluetoothAdapterState.unknown:
+    case RadioAdapterState.unknown:
       throw const BleObdTransportException(
         BleObdLinkErrorKind.adapterUnavailable,
       );
   }
 }
 
-/// 授权弹窗等待窗口（unknown 停留超时按不支持处理）。
-const _adapterStateWindow = Duration(seconds: 10);
-
 /// 停扫尽力而为（适配器可能已关；吞错不影响调用方语义）。
-Future<void> _stopScanBestEffort() async {
+Future<void> _stopScanBestEffort(ObdRadio radio) async {
   try {
-    await FlutterBluePlus.stopScan();
+    await radio.stopScan();
   } catch (_) {
     // 停扫失败不影响取消/收尾语义。
   }
 }
 
-/// 全局扫描归属代数：flutter_blue_plus 的扫描是进程级单例资源。每次
-/// 开始扫描领新令牌；收尾只在令牌仍是最新时停扫，避免旧流程的
-/// finally 停掉后来者（重试/重新扫描）启动的扫描。
+/// 全局扫描归属代数：底层扫描是进程级单例资源。每次开始扫描领新令牌；
+/// 收尾只在令牌仍是最新时停扫，避免旧流程的 finally 停掉后来者（重试/
+/// 重新扫描）启动的扫描。
 int _scanEpoch = 0;
 
 int _beginScan() => ++_scanEpoch;
 
 bool _ownsScan(int token) => token == _scanEpoch;
 
-Future<void> _stopScanIfOwned(int token) async {
+Future<void> _stopScanIfOwned(ObdRadio radio, int token) async {
   if (!_ownsScan(token)) {
     return;
   }
-  await _stopScanBestEffort();
+  await _stopScanBestEffort(radio);
 }
 
-/// 真扫描器（flutter_blue_plus 门面胶水）。
+/// BLE 扫描器 adapter（flutter_blue_plus 无线电面 → [ObdScanner]）。
 class BleObdScanner implements ObdScanner {
+  BleObdScanner({
+    required this.radio,
+    this.adapterStateWindow = _defaultAdapterStateWindow,
+    this.coalesceInterval = ScanEntryCoalescer.defaultInterval,
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
+
+  /// 无线电面（生产 = FlutterBluePlusObdRadio；测试 = 假 radio）。
+  final ObdRadio radio;
+
+  /// 门禁 unknown 等待窗口（默认 10 秒；测试可注入）。
+  final Duration adapterStateWindow;
+
+  /// 扫描清单合并窗口（默认 1 秒；测试可注入）。
+  final Duration coalesceInterval;
+
+  /// 合并器时钟（注入以便零真实时间测试）。
+  final DateTime Function() _now;
+
   final _entries = StreamController<List<BleObdScanEntry>>.broadcast();
-  StreamSubscription<List<ScanResult>>? _resultsSub;
+  StreamSubscription<List<RadioScanResult>>? _resultsSub;
   bool _scanning = false;
   bool _starting = false;
 
   /// 清单合并器（首见定序 + ≤1Hz 发射节奏，2026-11-15 拍板）。
   late final ScanEntryCoalescer _coalescer = ScanEntryCoalescer(
     emit: _entries.add,
+    interval: coalesceInterval,
+    now: _now,
   );
 
   /// 合并器的节拍器（1Hz 补发尾拍；扫描会话内存在，停扫即撤）。
@@ -155,7 +176,7 @@ class BleObdScanner implements ObdScanner {
   Stream<List<BleObdScanEntry>> get results => _entries.stream;
 
   @override
-  Future<void> ensureReady() => _ensureAdapterReady();
+  Future<void> ensureReady() => _ensureAdapterReady(radio, adapterStateWindow);
 
   @override
   Future<void> start() async {
@@ -166,7 +187,7 @@ class BleObdScanner implements ObdScanner {
     _stopRequested = false;
     int? scanToken;
     try {
-      await _ensureAdapterReady();
+      await _ensureAdapterReady(radio, adapterStateWindow);
       if (_stopRequested) {
         return;
       }
@@ -178,16 +199,16 @@ class BleObdScanner implements ObdScanner {
         _coalescer.interval,
         (_) => _coalescer.flushIfDue(),
       );
-      // 先订阅再 startScan（FBP 惯例：onScanResults 拿到的是全量清单，
+      // 先订阅再 startScan（无线电面惯例：结果流是全量快照、不回放，
       // 启动后才发；先听后启动不丢首拍）。清单整备走合并器（过滤空名
       // + 首见定序 + 节流，单一出口）。
-      _resultsSub = FlutterBluePlus.onScanResults.listen(
+      _resultsSub = radio.scanResults.listen(
         (results) {
           _coalescer.accept([
             for (final result in results)
               BleObdScanEntry(
-                id: result.device.remoteId.str,
-                name: result.advertisementData.advName,
+                id: result.id,
+                name: result.name,
                 rssi: result.rssi,
               ),
           ]);
@@ -198,12 +219,9 @@ class BleObdScanner implements ObdScanner {
         await _cancelScanResources();
         return;
       }
-      // continuousUpdates：默认节流只报新设备，开着才持续刷新 RSSI
-      //（列表排序依据）；removeIfGone 不开——离开范围的设备保留在列
-      // 表里，避免"扫到过又消失"闪烁。令牌在真正 startScan 前领取：
-      // 归属与实际扫描启动同一时刻。
+      // 令牌在真正 startScan 前领取：归属与实际扫描启动同一时刻。
       scanToken = _beginScan();
-      await FlutterBluePlus.startScan(continuousUpdates: true);
+      await radio.startScan();
       if (_stopRequested) {
         await _cancelScanResources(scanToken);
         return;
@@ -237,33 +255,62 @@ class BleObdScanner implements ObdScanner {
 
   /// 撤订阅 + 撤节拍器 + 停底层扫描（start 的失败/取消路径与 stop 共
   /// 用）；只在令牌仍是最新扫描持有者时停扫（全局扫描资源归属见
-  /// [_scanEpoch]）。
+  /// [_scanEpoch]）。订阅取消不等待完成（假异步环境耦合，取消同步生效）。
   Future<void> _cancelScanResources([int? scanToken]) async {
     _coalesceTimer?.cancel();
     _coalesceTimer = null;
-    await _resultsSub?.cancel();
+    unawaited(_resultsSub?.cancel());
     _resultsSub = null;
     if (scanToken != null) {
-      await _stopScanIfOwned(scanToken);
+      await _stopScanIfOwned(radio, scanToken);
     }
   }
 }
 
-/// BLE 传输层（[OBDTransport] 实现，票 07 真机链路）。一次会话一个实
-/// 例（会话是一次性对象）；构造收目标设备标识（设备记忆/扫描选中的平
-/// 台设备标识），connect 六步建链。
+/// BLE 传输层 adapter（[OBDTransport] 实现，票 07 真机链路）。一次会话
+/// 一个实例（会话是一次性对象）；构造收目标设备标识（设备记忆/扫描选
+/// 中的平台设备标识），connect 六步建链。
 class BleObdTransport implements OBDTransport {
-  BleObdTransport({required this._deviceId});
+  BleObdTransport({
+    required this.radio,
+    required this._deviceId,
+    this.adapterStateWindow = _defaultAdapterStateWindow,
+    this.directConnectScanWindow = defaultDirectConnectScanWindow,
+    this.connectWindow = defaultConnectWindow,
+  });
+
+  /// 无线电面（生产 = FlutterBluePlusObdRadio；测试 = 假 radio）。
+  final ObdRadio radio;
 
   final String _deviceId;
 
+  /// 门禁 unknown 等待窗口（默认 10 秒；测试可注入）。
+  final Duration adapterStateWindow;
+
+  /// 定向扫描窗口（直连第一步按设备标识过滤扫描定位设备；iOS 按标识
+  /// 直连要求设备在系统缓存里，先扫到再连最稳）。真机联调可再调。
+  final Duration directConnectScanWindow;
+
+  /// 建链窗口（传给插件的 connect 超时；收窄到 15 秒给状态条更快反馈，
+  /// FBP 默认 35 秒太久）。
+  final Duration connectWindow;
+
+  /// 默认定向扫描窗口。
+  static const defaultDirectConnectScanWindow = Duration(seconds: 8);
+
+  /// 默认建链窗口。
+  static const defaultConnectWindow = Duration(seconds: 15);
+
+  /// 断开指令的超时（尽力而为，不阻塞收尾）。
+  static const _disconnectTimeout = Duration(seconds: 5);
+
   /// 建链后的设备/通道引用（send 与 disconnect 都经它们）。
-  BluetoothDevice? _device;
-  BluetoothCharacteristic? _writeChar;
+  RadioDevice? _device;
+  RadioCharacteristic? _writeChar;
 
   /// 通知字节订阅 + 断连监视订阅（disconnect 时退订）。
   StreamSubscription<List<int>>? _notifySub;
-  StreamSubscription<BluetoothConnectionState>? _connSub;
+  StreamSubscription<RadioConnectionState>? _connSub;
 
   /// 已主动释放旗（防自己的 disconnect 触发断连监视误报链路丢失）。
   bool _released = false;
@@ -280,20 +327,12 @@ class BleObdTransport implements OBDTransport {
   /// 响应字节流（BLE 通知分片逐块到达；链路丢失经 error 上抛）。
   final _bytes = StreamController<Uint8List>.broadcast();
 
-  /// 定向扫描窗口（直连第一步按设备标识过滤扫描定位设备；iOS 按标识
-  /// 直连要求设备在系统缓存里，先扫到再连最稳）。真机联调可再调。
-  static const directConnectScanWindow = Duration(seconds: 8);
-
-  /// 建链窗口（FBP connect 的超时参数，收窄到 15 秒给状态条更快反馈；
-  /// FBP 默认 35 秒太久）。
-  static const connectWindow = Duration(seconds: 15);
-
   @override
   Stream<Uint8List> get byteStream => _bytes.stream;
 
   @override
   Future<void> connect() async {
-    await _ensureAdapterReady();
+    await _ensureAdapterReady(radio, adapterStateWindow);
     _throwIfReleased();
     final device = await _locateDevice();
     _throwIfReleased();
@@ -302,7 +341,7 @@ class BleObdTransport implements OBDTransport {
     // 流首值回放"已断开"由 _established 旗挡掉，建链前的真实断连（连
     // 接尝试中失败）走建链失败语义不误报链路丢失。
     _connSub = device.connectionState.listen((state) {
-      if (state == BluetoothConnectionState.disconnected &&
+      if (state == RadioConnectionState.disconnected &&
           _established &&
           !_released) {
         _bytes.addError(
@@ -342,22 +381,22 @@ class BleObdTransport implements OBDTransport {
   }
 
   /// 直连第一步：定向扫描定位目标设备。
-  Future<BluetoothDevice> _locateDevice() async {
+  Future<RadioDevice> _locateDevice() async {
     final scanToken = _beginScan();
-    StreamSubscription<List<ScanResult>>? resultsSub;
+    StreamSubscription<List<RadioScanResult>>? resultsSub;
     try {
-      await FlutterBluePlus.startScan(withRemoteIds: [_deviceId]);
+      await radio.startDirectedScan(_deviceId);
       // 手订阅 + 超时竞速（不用 firstWhere.timeout）：超时后 firstWhere
       // 的底层订阅仍挂在广播流上等一个永不消费的匹配结果，下次扫描会
       // 重复收到旧尝试的事件。订阅在 finally 统一取消。
-      final found = Completer<BluetoothDevice>();
-      resultsSub = FlutterBluePlus.onScanResults.listen(
+      final found = Completer<RadioDevice>();
+      resultsSub = radio.scanResults.listen(
         (results) {
           if (found.isCompleted) {
             return;
           }
           for (final result in results) {
-            if (result.device.remoteId.str == _deviceId) {
+            if (result.id == _deviceId) {
               found.complete(result.device);
               return;
             }
@@ -379,15 +418,16 @@ class BleObdTransport implements OBDTransport {
       }
     } catch (e) {
       // Android 权限拒绝在 startScan 时才出现（平台异常按消息识别，
-      // 见 ble_obd_errors.dart 的权限映射）。
+      // 见 ble_obd_platform_errors.dart 的权限映射）。
       throw mapBleObdLinkFailure(
         e,
         fallback: BleObdLinkErrorKind.connectFailed,
       );
     } finally {
-      await resultsSub?.cancel();
+      // 取消不等待完成（假异步环境耦合，取消同步生效）。
+      unawaited(resultsSub?.cancel());
       // 旧尝试只在仍持有扫描归属时停扫，不打断后来者（重试/重新扫描）。
-      await _stopScanIfOwned(scanToken);
+      await _stopScanIfOwned(radio, scanToken);
     }
   }
 
@@ -395,12 +435,9 @@ class BleObdTransport implements OBDTransport {
   /// serviceMissing，权限拒绝归 permissionDenied，其余失败归
   /// connectFailed。每个 await 后复检释放旗：中途 disconnect 时当场
   /// 退出，由 connect 的清理分支收掉半成品连接。
-  Future<void> _establish(BluetoothDevice device) async {
+  Future<void> _establish(RadioDevice device) async {
     try {
-      await device.connect(
-        license: License.nonprofit,
-        timeout: connectWindow,
-      );
+      await device.connect(timeout: connectWindow);
       _throwIfReleased();
       final services = await device.discoverServices();
       _throwIfReleased();
@@ -441,11 +478,11 @@ class BleObdTransport implements OBDTransport {
     }
   }
 
-  /// 服务按 UUID 定位（str128 全小写 128-bit 形态比较；找不到抛
+  /// 服务按 UUID 定位（全小写 128-bit 形态比较；找不到抛
   /// serviceMissing）。
-  BluetoothService _findService(List<BluetoothService> services) {
+  RadioService _findService(List<RadioService> services) {
     for (final service in services) {
-      if (service.uuid.str128 == BleObdUuids.service) {
+      if (service.uuid == BleObdUuids.service) {
         return service;
       }
     }
@@ -456,12 +493,9 @@ class BleObdTransport implements OBDTransport {
 
   /// characteristic 按 UUID 定位（找不到返回 null，调用方归类
   /// serviceMissing）。
-  BluetoothCharacteristic? _findChar(
-    BluetoothService service,
-    String uuid,
-  ) {
+  RadioCharacteristic? _findChar(RadioService service, String uuid) {
     for (final char in service.characteristics) {
-      if (char.uuid.str128 == uuid) {
+      if (char.uuid == uuid) {
         return char;
       }
     }
@@ -476,7 +510,7 @@ class BleObdTransport implements OBDTransport {
     }
     // 带响应写（ADR 0020 决定 2，实测成功形态）。链路死亡时写超时抛
     // 错 → 会话侧"发送失败" → 链路丢失语义。
-    await writeChar.write(bytes, withoutResponse: false);
+    await writeChar.write(bytes);
   }
 
   /// 断开并释放（幂等）：置释放旗 → 退订断连监视（防自己的断开误报
@@ -492,10 +526,10 @@ class BleObdTransport implements OBDTransport {
     final device = _device;
     if (device == null) {
       // 尚未定位到设备：只收已有订阅（建链途中的迟到资源由 connect
-      // 的释放复检清理）。
-      await _connSub?.cancel();
+      // 的释放复检清理）。取消不等待完成（假异步环境耦合，取消同步生效）。
+      unawaited(_connSub?.cancel());
       _connSub = null;
-      await _notifySub?.cancel();
+      unawaited(_notifySub?.cancel());
       _notifySub = null;
       return;
     }
@@ -504,11 +538,12 @@ class BleObdTransport implements OBDTransport {
 
   /// 释放一条（半成品或已建成的）链路：退订两个订阅、清写通道与设备
   /// 引用、断开设备（整个实例生命周期只发一次断开指令）。disconnect
-  /// 与 connect 的释放复检共用。
-  Future<void> _releaseLink(BluetoothDevice device) async {
-    await _connSub?.cancel();
+  /// 与 connect 的释放复检共用。取消不等待完成（假异步环境耦合，取消
+  /// 同步生效）。
+  Future<void> _releaseLink(RadioDevice device) async {
+    unawaited(_connSub?.cancel());
     _connSub = null;
-    await _notifySub?.cancel();
+    unawaited(_notifySub?.cancel());
     _notifySub = null;
     _writeChar = null;
     _established = false;
@@ -520,7 +555,7 @@ class BleObdTransport implements OBDTransport {
     }
     _disconnectIssued = true;
     try {
-      await device.disconnect(timeout: 5);
+      await device.disconnect(timeout: _disconnectTimeout);
     } catch (_) {
       // 断开尽力而为。
     }

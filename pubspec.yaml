@@ -67,6 +67,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.15.0
   drift_dev: ^2.33.0
+  # 诊断 BLE adapter 测试的确定性时间控制（ADR 0024）：扫描器节拍器与
+  # 门禁窗口零真实等待；已随 flutter_test 解析在锁文件里，显式声明只为
+  # analyzer 的 depend_on_referenced_packages。
+  fake_async: ^1.3.3
 
 hooks:
   user_defines:

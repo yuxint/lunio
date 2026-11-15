@@ -1,10 +1,12 @@
 // BLE 链路错误分类单测：statusCopy 单出口、门禁类分流、平台异常映射。
 // 2026-11-15 从 ble_obd_transport.dart 拆出 ble_obd_errors.dart 时补的直
 // 接测试（此前该路径只经 widget/controller 间接触达；Android 权限拒绝
-// 的消息嗅探在评审轮修过一次，这里第一次有回归守卫）。
+// 的消息嗅探在评审轮修过一次，这里第一次有回归守卫）。同日 ADR 0024 把
+// 平台异常映射拆到 ble_obd_platform_errors.dart，本文件同时覆盖两个模块。
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/features/shell/diagnostics/ble_obd_errors.dart';
+import 'package:lunio/features/shell/diagnostics/ble_obd_platform_errors.dart';
 
 void main() {
   group('statusCopy：每个 kind 都有用户文案', () {
