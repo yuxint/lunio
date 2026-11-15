@@ -50,6 +50,10 @@ dependencies:
   flutter_timezone: ^5.1.0
   # 油价数据源（m.qiyoujiage.com）的 HTTP 客户端（见 docs/adr/0006）。
   http: ^1.5.0
+  # 车辆诊断 BLE 链路（见 docs/adr/0020）：flutter_blue_plus 2.x 对商业
+  # 用途收费、个人/非营利用途免费（connect 需显式传 License.nonprofit），
+  # 本应用单人自用，落在免费档。
+  flutter_blue_plus: ^2.3.15
 
 dev_dependencies:
   flutter_test:

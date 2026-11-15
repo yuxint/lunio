@@ -256,6 +256,12 @@ Future<void> removeDiagnosticsProbe(WidgetRef ref, int probeId) async {
   await ref.read(diagnosticsProbesProvider.future);
 }
 
+/// 记住 OBD 适配器（票 07：扫描点选连接成功后写设备记忆）：偏好门面
+/// typed 写。无 provider 消费（连接时直读门面），无失效面。
+Future<void> rememberObdDevice(WidgetRef ref, String deviceId) async {
+  await ref.read(lunioPreferencesProvider).setLastObdDeviceId(deviceId);
+}
+
 /// 开关加油预测（底部"加油"tab 的显隐开关，AppShell watch 该 provider
 /// 实时增删 tab）。
 Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {

@@ -13,9 +13,12 @@
 // 连接生命周期归页面持有（spec「会话生命周期归页面持有」）：进页面
 // 建会话（首帧渲染"未连接"后自动连接）、离开断开（dispose 释放会话
 // 与传输层）、断开后手动重连 = 丢弃旧会话新建实例（会话是一次性对象，
-// 重连语义由会话契约给出）。启停开关走动作层（写库 → 逐出检测点
-// provider），轮询快照 getter 每轮开头取最新启用清单——下一轮生效、
-// 不打断当前轮（会话契约）。表单增改删（添加/编辑检测点）是票 06。
+// 重连语义由会话契约给出）。连接流程（票 07）：设备记忆命中直连、无
+// 记忆/直连失败自动落扫描选择 sheet（ble_scan_sheet.dart）、BLE 门禁
+// 类失败（蓝牙关/不支持/权限）状态条渲染明确文案；扫描点选连接成功
+// 即写记忆。启停开关走动作层（写库 → 逐出检测点 provider），轮询快
+// 照 getter 每轮开头取最新启用清单——下一轮生效、不打断当前轮（会话
+// 契约）。表单增改删（添加/编辑检测点）是票 06。
 //
 // ≈ Java 的有状态页面 + Spring 事件监听：State 持有会话引用（≈
 // Service 实例），会话事件经 broadcast Stream 推送（≈ ApplicationEvent），
@@ -36,15 +39,17 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/diagnostics_probe.dart';
 import '../../../domain/rules/diagnostics_rules.dart';
 import '../shared/shell_shared.dart';
+import 'ble_obd_transport.dart';
+import 'ble_scan_sheet.dart';
 import 'elm327_parser.dart' show ObdReading, ObdNoData, ObdValue;
 import 'elm327_session.dart';
 import 'obd_runtime.dart';
 import 'probe_form.dart';
 
 /// 页面级连接状态机（状态条渲染依据）。idle = 进页面首帧的"未连接"
-/// （连接动作延到首帧之后启动，起点状态真实可达）；扫描中随票 07
-/// BLE 扫描列表引入（枚举不预设，避免死值）。
-enum DiagnosticsConnectionPhase { idle, connecting, connected, disconnected }
+/// （连接动作延到首帧之后启动，起点状态真实可达）或扫描 sheet 取消后
+/// 的"未连接"；scanning = 扫描 sheet 打开中（票 07）。
+enum DiagnosticsConnectionPhase { idle, scanning, connecting, connected, disconnected }
 
 /// 单条检测点的最新读取快照（值 + 读取时刻，行尾"最后更新时间"的数据
 /// 源，story 14）。键 = 检测点行 id。
@@ -78,6 +83,9 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// 断连错误文案（"已断开"状态下状态条的错误说明；null = 无补充说明）。
   String? _statusError;
 
+  /// 扫描 sheet 句柄（非 null = sheet 在栈顶；_onScanSheetClosed 清空）。
+  BleScanSheetHandle? _scanSheetHandle;
+
   /// 最新读取快照表（键 = 检测点行 id；行列表与核心值卡共用）。
   final Map<int, _ReadingSnapshot> _readings = {};
 
@@ -97,24 +105,138 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     });
   }
 
-  /// 建会话并连接：置连接中 → 工厂新建会话 → 订阅事件（先听后连，会
-  /// 话契约）→ connect()。connect() 失败时事件与异常同源同因——状态条
-  /// 由 Disconnected 事件驱动（单一事实源），这里吞掉冗余异常。
+  /// 连接流程单一入口（进页面自动触发 / 重连按钮 / 扫描点选都汇到
+  /// 它）：设备记忆命中 → 直连（"连接中"）；无记忆 → 落扫描 sheet
+  /// （story 4/5）。mock 回退链路（dart-define）跳过扫描与记忆，直连
+  /// 演示设备。
   Future<void> _startConnect() async {
+    if (_phase == DiagnosticsConnectionPhase.connecting ||
+        _phase == DiagnosticsConnectionPhase.scanning) {
+      return;
+    }
+    if (obdMockLink) {
+      await _connectToDevice('mock-device');
+      return;
+    }
+    final preferences = ref.read(lunioPreferencesProvider);
+    final remembered = await preferences.getLastObdDeviceId();
     if (!mounted) {
       return;
     }
+    if (remembered == null) {
+      _openScanSheet();
+      return;
+    }
+    await _connectToDevice(remembered);
+  }
+
+  /// 直连指定设备（记忆直连/扫描点选共用）：置连接中 → 释放旧会话 →
+  /// 工厂新建会话 → 先听后连 → connect()。失败按错误类别分流（story
+  /// 5/8）：BLE 门禁类（蓝牙关/不支持/权限）状态条渲染错误文案；设备/
+  /// 链路类（未扫到/建链失败）直连落扫描 sheet、点选流回填 sheet 行态
+  /// 并恢复扫描；会话级（AT 超时等，适配器在但芯片无响应）状态条渲染
+  /// 错误文案。状态条由 Disconnected 事件驱动（单一事实源），这里只做
+  /// 降级分流。
+  Future<void> _connectToDevice(String deviceId,
+      {BleObdScanEntry? picked}) async {
     setState(() {
       _phase = DiagnosticsConnectionPhase.connecting;
       _statusError = null;
     });
-    final session = ref.read(obdSessionFactoryProvider)();
+    await _teardownSession();
+    final session = ref.read(obdSessionFactoryProvider)(deviceId);
     _session = session;
     _sub = session.events.listen(_onSessionEvent);
     try {
       await session.connect();
-    } on Elm327SessionException {
-      // 状态条已由 Disconnected 事件驱动，异常不重复成第二个状态源。
+      return;
+    } on Elm327SessionException catch (e) {
+      final ble = _bleErrorOf(e);
+      if (!mounted) {
+        return;
+      }
+      if (ble == null) {
+        // 会话级失败（AT 超时等，适配器在但芯片无响应）：状态条已由
+        // Disconnected 事件渲染错误文案；点选流 sheet 还开着、行不能
+        // 停在"连接中…"——同样回填失败态恢复扫描。
+        if (picked != null) {
+          setState(() {
+            _phase = DiagnosticsConnectionPhase.scanning;
+          });
+          final detail = e.cause is Elm327SessionException
+              ? (e.cause as Elm327SessionException).message
+              : e.message;
+          _scanSheetHandle?.reportPickFailed(picked, detail);
+        }
+        return;
+      }
+      if (picked != null) {
+        // 扫描点选流：门禁类关 sheet 露出错误状态条；设备/链路类回填
+        // 行态 + 恢复扫描（sheet 不关，story 6 状态反馈在列表里）。
+        if (ble.kind.isGateError || ble.kind == BleObdLinkErrorKind.linkLost) {
+          _scanSheetHandle?.close();
+        } else {
+          setState(() {
+            _phase = DiagnosticsConnectionPhase.scanning;
+          });
+          _scanSheetHandle?.reportPickFailed(picked, ble.statusCopy);
+        }
+        return;
+      }
+      if (!ble.kind.isGateError) {
+        // 记忆直连的设备/链路类失败：落扫描 sheet（story 5"直连失败
+        // 落扫描列表"）。门禁类保持断开态错误文案，用户按文案去修系
+        // 统状态，扫描也扫不出结果。
+        _openScanSheet();
+      }
+    }
+  }
+
+  /// 会话异常 → BLE 可辨识错误（cause 链一层解包；非 BLE 链路失败返
+  /// null 走会话级文案）。
+  BleObdTransportException? _bleErrorOf(Elm327SessionException e) {
+    final cause = e.cause;
+    return cause is BleObdTransportException ? cause : null;
+  }
+
+  /// 扫描点选（sheet 行点击回调）：建链成功即记忆（story 4 前提）+ 关
+  /// sheet；失败由 _connectToDevice 分流回 sheet。成功判据用会话状态
+  ///（await connect() 恢复时广播事件尚未递送，页面相位此刻还是
+  /// connecting——状态条由事件单一事实源渲染，这里不看它）。
+  Future<void> _connectToPicked(BleObdScanEntry entry) async {
+    await _connectToDevice(entry.id, picked: entry);
+    final session = _session;
+    if (!mounted ||
+        session == null ||
+        session.state != Elm327SessionState.connected) {
+      return;
+    }
+    await rememberObdDevice(ref, entry.id);
+    _scanSheetHandle?.close();
+  }
+
+  /// 打开扫描 sheet（story 5）：置扫描中相位；sheet 关闭回调里扫描中
+  /// 相位回 idle（取消路径），成功/门禁失败关闭保持原相位。
+  void _openScanSheet() {
+    if (_scanSheetHandle != null) return;
+    setState(() {
+      _phase = DiagnosticsConnectionPhase.scanning;
+    });
+    _scanSheetHandle = showBleScanSheet(
+      context,
+      onDevicePicked: (entry) => unawaited(_connectToPicked(entry)),
+      onClosed: _onScanSheetClosed,
+    );
+  }
+
+  /// sheet 关闭回调：句柄清空 + 扫描中相位回 idle（取消/下滑路径）。
+  void _onScanSheetClosed() {
+    _scanSheetHandle = null;
+    if (!mounted) return;
+    if (_phase == DiagnosticsConnectionPhase.scanning) {
+      setState(() {
+        _phase = DiagnosticsConnectionPhase.idle;
+      });
     }
   }
 
@@ -141,17 +263,6 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           _readings[probeId] = _ReadingSnapshot(reading, at);
         });
     }
-  }
-
-  /// 手动重连（断连状态条按钮，story 7）：丢弃旧会话新建实例再走完整
-  /// 连接流程（会话是一次性对象）。连接中重复触发直接忽略（防双会话
-  /// 并发连接）。
-  Future<void> _reconnect() async {
-    if (_phase == DiagnosticsConnectionPhase.connecting) {
-      return;
-    }
-    await _teardownSession();
-    await _startConnect();
   }
 
   /// 释放会话与事件订阅（dispose/重连前调用，幂等）：退订事件流 →
@@ -284,6 +395,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final (label, tone) = switch (_phase) {
       DiagnosticsConnectionPhase.idle => ('未连接', LunioStatusTone.warning),
+      DiagnosticsConnectionPhase.scanning => ('扫描中', LunioStatusTone.warning),
       DiagnosticsConnectionPhase.connecting => ('连接中', LunioStatusTone.warning),
       DiagnosticsConnectionPhase.connected => ('已连接', LunioStatusTone.normal),
       DiagnosticsConnectionPhase.disconnected => (
@@ -292,10 +404,20 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       ),
     };
     final hintText = switch (_phase) {
-      DiagnosticsConnectionPhase.idle => '即将开始连接',
+      DiagnosticsConnectionPhase.idle => '未连接适配器',
+      DiagnosticsConnectionPhase.scanning => obdScanningHint,
       DiagnosticsConnectionPhase.connecting => '正在建立连接…',
       DiagnosticsConnectionPhase.connected => '已连接 · 正在轮询启用检测点',
       DiagnosticsConnectionPhase.disconnected => _statusError ?? '连接已断开',
+    };
+    // 行尾动作按钮（按相位显隐）：断开=重连；未连接/扫描中=选择设备
+    //（重开扫描 sheet 的再入口）。
+    final actionLabel = switch (_phase) {
+      DiagnosticsConnectionPhase.disconnected => '重连',
+      DiagnosticsConnectionPhase.idle ||
+      DiagnosticsConnectionPhase.scanning => '选择设备',
+      DiagnosticsConnectionPhase.connecting ||
+      DiagnosticsConnectionPhase.connected => null,
     };
     return LunioCard(
       child: Row(
@@ -311,9 +433,11 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                   ?.copyWith(color: tokens.muted),
             ),
           ),
-          if (_phase == DiagnosticsConnectionPhase.disconnected)
+          if (actionLabel != null)
             TextButton(
-              onPressed: () => unawaited(_reconnect()),
+              onPressed: _phase == DiagnosticsConnectionPhase.disconnected
+                  ? () => unawaited(_startConnect())
+                  : () => _openScanSheet(),
               // 紧凑行尾按钮（ProfileSettingRow 同款）——LunioSecondaryButton
               // 的 FilledButton 带主题全宽 minimumSize，放进 Row 拿到无界
               // 宽约束直接布局崩溃。
@@ -327,7 +451,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                   side: BorderSide(color: tokens.line),
                 ),
               ),
-              child: const Text('重连'),
+              child: Text(actionLabel),
             ),
         ],
       ),
@@ -421,9 +545,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     return null;
   }
 
-  /// 断连原因 → 状态条错误文案（story 7/16）。会话异常直接用其消息
-  /// （消息文案在 throw 点书写），其他原因类型给通用文案。
+  /// 断连原因 → 状态条错误文案（story 7/16/8）。BLE 可辨识异常按 kind
+  /// 映射（statusCopy 单一出口）；会话异常直接用其消息（消息文案在
+  /// throw 点书写）；其他原因类型给通用文案。
   String _disconnectCopy(Object? cause) {
+    if (cause is BleObdTransportException) {
+      return cause.statusCopy;
+    }
     if (cause is Elm327SessionException) {
       return cause.message;
     }

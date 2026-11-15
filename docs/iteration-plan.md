@@ -87,8 +87,8 @@
 - [x] 04 ELM327 会话决策体：分帧缓冲、AT 序列状态机、串行轮询编排（plain-Dart 控制器 + Mock transport 单测）（完成于 2026-11-13；`obd_transport.dart` + `mock_obd_transport.dart` + `elm327_parser.dart` + `elm327_session.dart` 四模块，语料摘自实车日志，变异 3 处击杀：ATSP 7 必发/PID 匹配/组帧缓冲）。
 - [x] 05 诊断页：三区布局（状态条/核心值卡/检测点行列表）+ Mock transport 页面测试（完成于 2026-11-13；`obd_runtime.dart` 域内接缝（transport=Mock 演示表+会话工厂，票 07 换 BLE）、`diagnostics_rules.dart` 升数估算、动作层 `setDiagnosticsProbeEnabled`、widget 测试 6 用例门闩夹具零真实定时器、变异 2/2 击杀，743 绿）。
 - [x] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体（完成于 2026-11-13；`probe_form_controller.dart` 9 单测变异 2/2、`probe_form.dart` 表单+入口（ADR 0016 统一出口、删除确认入口弹）、动作层 `saveDiagnosticsProbe`/`removeDiagnosticsProbe`、内置行点按无编辑入口（story 23）、widget 5 用例升到 11，757 绿）。
-- [ ] 07 BLE 真链路：flutter_blue_plus + OBDTransport 传输层抽象（BLE/Mock 两实现）。
-- [ ] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档。
+- [x] 07 BLE 真链路：flutter_blue_plus + OBDTransport 传输层抽象（BLE/Mock 两实现）（完成于 2026-11-15；`ble_obd_transport.dart` 传输层+扫描器接缝+可辨识异常文案单一出口、`ble_scan_sheet.dart` 扫描选择 sheet、连接流程接设备记忆（直连/落扫/权限文案三向分流）、动作层 `rememberObdDevice`、双端权限声明、`--dart-define=LUNIO_OBD_MOCK=true` mock 回退开关、widget 7 新用例 764 绿；FBP 2.x 商业授权口径进 ADR 0020 修订节；**真机验收待执行**——清单在手册 5.10 节）。
+- [x] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档（完成于 2026-11-15；手册 5.10 补连接流程/扫描 sheet/BLE 传输层/真机验收清单六条）。
 
 票据：`.scratch/car-obd-diagnostics/issues/`（本机未跟踪文件）。
 来源：2026-11-12 grill 三轮 spec（`.scratch/car-obd-diagnostics/spec.md`）+ ADR 0020/0021 + 硬件实车验收语料 `docs/car_obd_link/`。

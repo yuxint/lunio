@@ -68,6 +68,11 @@
 	     或用户关掉实时活动时由 Dart 侧静默降级为"只有通知"。 -->
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<!-- 车辆诊断 BLE 链路（ADR 0020）：首次连接 OBD 适配器时系统弹授权
+	     窗；拒绝后适配器门禁抛 permissionDenied，诊断页状态条渲染"蓝牙
+	     权限未授权"文案（story 8）。 -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>连接 OBD 适配器，读取油量、水温等车辆实时数据</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

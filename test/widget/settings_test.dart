@@ -553,6 +553,9 @@ void main() {
     final repository = testRepository(database);
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
+    // 票 07：无记忆进诊断页会自动开扫描 sheet（挡住返回键路径），种设
+    // 备记忆让页面走直连，本用例只验导航。
+    await repository.setPreferenceValue('lastObdDeviceId', 'dev-1');
     final rig = DiagnosticsRig();
     await pumpApp(tester, database: database, extraOverrides: rig.overrides);
     await gotoTab(tester, '我的');

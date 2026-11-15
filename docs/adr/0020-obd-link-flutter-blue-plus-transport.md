@@ -53,7 +53,31 @@ Dart 侧需要持续字节流事件，方法通道形态承载不了。
 - pubspec 新增 flutter_blue_plus（首个 BLE 插件）；iOS Info.plist
   补蓝牙权限文案，Android 补 BLUETOOTH_SCAN / BLUETOOTH_CONNECT
   权限声明。
-- BLE 链路的真实验证只有真机一条路；Mock 与真机的行为差异（分片
+- BLE 链路的真实验证只有真机清单一条路；Mock 与真机的行为差异（分片
   时序、断连）要真机联调回归。
 - 未来若支持其他适配器（WiFi ELM327、OBDLink CX 等），走
   OBDTransport 新实现，协议层与页面不动。
+
+## 修订节（2026-11-15，票 07 落地时补充）
+
+- **flutter_blue_plus 2.x 许可口径**：2.x 起商业用途付费、个人/非营利
+  用途免费，connect 需显式传 `License.nonprofit`。本应用单人自用，落
+  在免费档；若未来商业化需购买商业授权。
+- **直连 = 定向扫描窗口**（实现细化，非推翻）：iOS 按标识直连要求设
+  备在系统缓存里，直接 connect 不可靠；`BleObdTransport.connect` 第
+  一步按设备标识过滤扫描（`withRemoteIds`，8 秒窗口）定位设备，再
+  connect（15 秒窗口，FBP 默认 35 秒收窄）。
+- **mock 回退开关**：装配默认 BLE；`--dart-define=LUNIO_OBD_MOCK=true`
+  整链回退票 05 语料演示 Mock——模拟器无蓝牙，视觉验收走它。
+- **扫描器接缝**：设备发现单独收 `ObdScanner` 抽象（真实现
+  `BleObdScanner`），扫描 sheet 经 `obdScannerProvider` 消费、测试换
+  受控假扫描器——FBP 静态门面与传输层同手法隔离。
+- **扫描列表不过滤设备名**（spec story 5 拍板）：`startScan` 不带名
+  称/服务过滤（`continuousUpdates` 开 RSSI 持续刷新，信号强度降序），
+  选中靠用户点选；识别靠名称"IOS-Vlink"与信号强度。
+- **story 6"连接中/已选"两态的落地口径**：点选行显"连接中…"即已选行
+  的连接反馈；建链成功 sheet 随即关闭（设备记忆已写），不存在独立的
+  "已选但未连接"停留态，故不做第二个徽标。
+- **点选流会话级失败也回填 sheet**：适配器建链成功但 AT 初始化超时
+  （芯片无响应）时，cause 链没有 BLE 可辨识异常——页面按"会话级失败"
+  分支同样调 `reportPickFailed` 回填行态恢复扫描，行不冻在"连接中…"。

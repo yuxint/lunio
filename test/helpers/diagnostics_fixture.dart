@@ -13,9 +13,13 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
 
 /// 即时应答脚本（单块，字节到达时机由 chunkGate 控）。
@@ -65,22 +69,42 @@ class RigGate {
 
 /// 诊断页测试装具。
 class DiagnosticsRig {
-  DiagnosticsRig({Map<String, MockObdScript>? responses}) {
+  DiagnosticsRig({
+    Map<String, MockObdScript>? responses,
+    this.connectError,
+  }) {
     mock = MockObdTransport(
       responses: responses ?? rigStandardResponses(),
       delay: (d) => chunkGate.gate(d),
     );
-    sessionFactory = () => Elm327Session(
-          transport: mock,
-          now: () => fixedNow,
-          delay: (d) => timeGate.gate(d),
-          responseTimeout: const Duration(milliseconds: 300),
-          pollInterval: const Duration(milliseconds: 100),
-        );
+    sessionFactory = (deviceId) {
+      lastDeviceId = deviceId;
+      return Elm327Session(
+        transport: connectError == null
+            ? mock
+            : _ThrowingConnectTransport(connectError!),
+        now: connectError == null ? () => fixedNow : DateTime.now,
+        delay: connectError == null
+            ? (d) => timeGate.gate(d)
+            : (d) => Future<void>.delayed(d),
+        responseTimeout: const Duration(milliseconds: 300),
+        pollInterval: const Duration(milliseconds: 100),
+      );
+    };
   }
+
+  /// 会话工厂最近一次收到的设备标识（连接流程传参断言用）。
+  String? lastDeviceId;
+
+  /// 注入的传输层建链失败错误（非 null = 会话建链必失败，直连降级分
+  /// 流用例用）。
+  final Object? connectError;
 
   /// 可控 Mock（测试表 + 字节门闩延时）。
   late final MockObdTransport mock;
+
+  /// 受控假扫描器（obdScannerProvider 覆盖用；emit 推清单）。
+  final FakeObdScanner scanner = FakeObdScanner();
 
   /// 字节到达门闩（Mock 延时接缝）。
   final RigGate chunkGate = RigGate();
@@ -92,12 +116,12 @@ class DiagnosticsRig {
   final DateTime fixedNow = DateTime(2026, 5, 19, 14, 30, 0);
 
   /// 会话工厂（obdSessionFactoryProvider 覆盖用）。
-  late final Elm327Session Function() sessionFactory;
+  late final Elm327Session Function(String deviceId) sessionFactory;
 
   /// pumpApp 的 extraOverrides。
   List<dynamic> get overrides => [
-        obdTransportProvider.overrideWithValue(mock),
         obdSessionFactoryProvider.overrideWithValue(sessionFactory),
+        obdScannerProvider.overrideWithValue(scanner),
       ];
 
   /// 释放字节门闩 + 泵帧：在途指令的响应到达，请求完成，下一条指令
@@ -128,4 +152,51 @@ class DiagnosticsRig {
     }
     fail('advanceUntil 20 拍内未见目标（finder: $finder）——门闩时序或应答表有问题');
   }
+}
+
+/// 受控假扫描器（ObdScanner 接缝的测试替身）：results 是广播流，用例
+/// 经 emit 推清单，startCalls/stopCalls 断言启停次数。
+class FakeObdScanner implements ObdScanner {
+  final _entries = StreamController<List<BleObdScanEntry>>.broadcast();
+  int startCalls = 0;
+  int stopCalls = 0;
+
+  @override
+  Stream<List<BleObdScanEntry>> get results => _entries.stream;
+
+
+  @override
+  Future<void> start() async {
+    startCalls++;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+  }
+
+  /// 推一批扫描结果（测试手动调用）。
+  void emit(List<BleObdScanEntry> entries) {
+    _entries.add(entries);
+  }
+}
+
+/// 建链即抛的传输层桩（直连降级分流用例用）：connect 抛注入错误，其
+/// 余契约方法空实现。
+class _ThrowingConnectTransport implements OBDTransport {
+  _ThrowingConnectTransport(this.error);
+
+  final Object error;
+
+  @override
+  Future<void> connect() async => throw error;
+
+  @override
+  Future<void> send(List<int> bytes) async {}
+
+  @override
+  Stream<Uint8List> get byteStream => const Stream.empty();
+
+  @override
+  Future<void> disconnect() async {}
 }

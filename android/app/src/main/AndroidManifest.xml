@@ -3,6 +3,25 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- 油价数据源需要联网拉取（debug 清单自带，release 需在主清单声明）。 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 车辆诊断 BLE 链路（ADR 0020）：
+         - API 31+：BLUETOOTH_SCAN（neverForLocation 免定位权限）与
+           BLUETOOTH_CONNECT 运行时权限。App 不代请求（Android 不专门
+           适配，spec 口径）：未授权时适配器门禁抛 permissionDenied，
+           诊断页状态条渲染"蓝牙权限未授权"文案引导去系统设置。
+         - API 30 及以下：旧蓝牙权限 + 精确定位（系统要求，扫描需要）。 -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30" />
 
     <application
         android:label="lunio"
