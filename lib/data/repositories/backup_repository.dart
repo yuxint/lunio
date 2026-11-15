@@ -78,9 +78,13 @@ class BackupRepository {
     // 检测点：段只导自定义项（catalogKey 为 null 的行），内置三条不进
     // 备份——恢复后由 bootstrap 幂等重建，对齐车型目录先例（ADR 0021）。
     // 启停是用户数据，自定义项停用态也导出。
+    // carId 为 NULL 的孤儿行跳过：只可能来自「无车库升级 v6」的迁移
+    // 回填（迁移已就地清理），但已升级到 v6 的旧库仍可能残留；实体
+    // carId 必填，放进来会让 diagnosticsProbeFromRow 抛 TypeError、
+    // 整个导出失败（审查问题 1）。孤儿行没有宿主，本身也恢复不了。
     final probeRows = await database.select(database.diagnosticsProbes).get();
     final diagnosticsProbes = probeRows
-        .where((row) => row.catalogKey == null)
+        .where((row) => row.catalogKey == null && row.carId != null)
         .map(diagnosticsProbeFromRow)
         // 最后读数是设备派生临时数据，不进备份（2026-11-15，ADR 0021
         // 修订节）：payload 是备份的内存形态，这里剥干净，恢复后从零积累。

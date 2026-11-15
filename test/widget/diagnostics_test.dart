@@ -491,7 +491,7 @@ void main() {
       // 改名保存：列表与库同步更新。
       await tester.enterText(find.widgetWithText(TextField, '检测点名称'), '进气压力');
       await tester.enterText(
-        find.widgetWithText(TextField, '刷新间隔（秒）'),
+        find.widgetWithText(TextField, '刷新间隔'),
         '60',
       );
       await tester.tap(find.text('保存修改'));

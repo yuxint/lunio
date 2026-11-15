@@ -273,6 +273,61 @@ void main() {
     expect(carRows.single.totalTankCapacityLiters, isNull);
   });
 
+  test('v4 无车老库升级到 v6：孤儿检测点行就地清理', () async {
+    final file = File('${tempDir.path}/lunio-v6-from-v4-no-car.sqlite');
+
+    // 1. 按当前代码建库，不放任何车辆，削成 v4 形态的检测点表并插入
+    //    两行（内置 + 自定义）——模拟"删光车辆后残留检测点"的 v4 老库
+    //    （v4 检测点是全局表，删车不删行）。
+    final current = AppDatabase.forFile(file);
+    await current.select(current.cars).get();
+    await current.close();
+
+    final shaved = AppDatabase.forFile(file);
+    await shaved.customStatement(
+      'ALTER TABLE cars DROP COLUMN total_tank_capacity_liters',
+    );
+    await shaved.customStatement('DROP TABLE diagnostics_probes');
+    await shaved.customStatement('''
+      CREATE TABLE diagnostics_probes (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        parse_type TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        catalog_key TEXT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'synced',
+        updated_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (catalog_key)
+      )
+    ''');
+    await shaved.customStatement(
+      "INSERT INTO diagnostics_probes (id, name, command, parse_type,"
+      " enabled, catalog_key, sync_status, updated_at, version)"
+      " VALUES (1, '油量', '012F', 'fuelLevel', 1, 'probe:fuelLevel',"
+      " 'synced', '2026-11-15T08:00:00.000', 1)",
+    );
+    await shaved.customStatement(
+      "INSERT INTO diagnostics_probes (id, name, command, parse_type,"
+      " enabled, catalog_key, sync_status, updated_at, version)"
+      " VALUES (2, '进气温度', '010F', 'coolantTemp', 1, NULL,"
+      " 'synced', '2026-11-15T08:00:00.000', 1)",
+    );
+    await shaved.customStatement('PRAGMA user_version = 4');
+    await shaved.close();
+
+    // 2. 重开 → 4→5 加读数列、5→6 重建每车结构。没有车时 car_id 回填
+    //    NULL，孤儿行没有宿主（仓库按 carId 过滤读不到、种子对账不认领、
+    //    备份导出实体 carId 必填会崩）——升级即清理，一行不留。
+    final upgraded = AppDatabase.forFile(file);
+    addTearDown(upgraded.close);
+    final probes = await upgraded.select(upgraded.diagnosticsProbes).get();
+    expect(probes, isEmpty, reason: '无车库升级时孤儿检测点行应就地清理');
+    final carRows = await upgraded.select(upgraded.cars).get();
+    expect(carRows, isEmpty);
+  });
+
   test('全新安装（无 user_version）走 onCreate，全部表建齐', () async {
     final file = File('${tempDir.path}/fresh.sqlite');
     final fresh = AppDatabase.forFile(file);

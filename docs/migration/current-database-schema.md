@@ -22,8 +22,11 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
   （可空），给 `diagnostics_probes` 加 `car_id`/`refresh_interval_seconds`
   /`header`，并把唯一键从 `{catalog_key}` 改为 `{car_id, catalog_key}`——
   SQLite 不能 ALTER 唯一约束，v5→v6 对该表做 `TableMigration` 重建，
-  存量检测点归第一辆车（没有车时 `car_id` 为 NULL），读数三列原样
-  保留。种子不在迁移里插，由 bootstrap 按车幂等对账写入。
+  存量检测点归第一辆车；没有车时回填出的 `car_id` 为 NULL——这些
+  孤儿行没有宿主（仓库按 carId 过滤读不到、bootstrap 种子对账也不
+  认领），且备份导出实体要求 carId 必填，迁移重建后立即删除，不
+  残留。读数三列原样保留。种子不在迁移里插，由 bootstrap 按车幂等
+  对账写入。
   ⚠ 迁移链纪律：`createTable` 永远建当前形态的表（含新列），"建表
   分支"与"加列分支"必须互斥（else-if），否则跨版本老库先建出含新
   列的表再加同名列会 duplicate column。v5→v6 同时把重复的

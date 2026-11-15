@@ -441,6 +441,36 @@ void main() {
     expect(custom.catalogKey, isNull);
   });
 
+  test('backup export skips orphan probes without a host car', () async {
+    final (carId, _) = await repos.seedCarAndItem();
+    // 合法对照：一个挂车的自定义检测点，导出应照常携带。
+    await repos.diagnosticsRepository.saveProbe(
+      DiagnosticsProbe(
+        carId: carId,
+        name: '进气温度',
+        command: '010F',
+        parseType: DiagnosticsParseType.coolantTemp,
+        enabled: true,
+      ),
+    );
+    // 裸插一行 car_id 为 NULL 的孤儿行：模拟「无车库升级 v6」迁移回填
+    // 的残留（迁移已就地清理，导出侧仍兜底跳过）。实体 carId 必填，
+    // 不跳过会让整次导出抛 TypeError（审查问题 1）。
+    await database.customStatement(
+      "INSERT INTO diagnostics_probes (id, name, command, parse_type,"
+      " enabled, catalog_key, refresh_interval_seconds, sync_status,"
+      " updated_at, version) VALUES (9001, '孤儿检测点', '012F',"
+      " 'fuelLevel', 1, NULL, 30, 'synced', '2026-11-15T08:00:00.000', 1)",
+    );
+
+    final backup = await backupRepository.exportBackupPayload();
+    expect(backup.diagnosticsProbes, hasLength(1));
+    expect(backup.diagnosticsProbes.single.name, '进气温度');
+    // 整条导出链路（payload → JSON）走通，孤儿行不进备份。
+    final json = const BackupCodec().encode(backup);
+    expect(json, isNot(contains('孤儿检测点')));
+  });
+
   test('backup restore rejects fuel record referencing missing car', () async {
     final (carId, _) = await repos.seedCarAndItem();
     final backup = await backupRepository.exportBackupPayload();

@@ -133,14 +133,14 @@ class ProbeFormState extends State<ProbeForm>
           ),
         ),
         const SizedBox(height: 10),
-        TextField(
+        // 数字输入统一走 LunioNumberField（整数模式自带 digitsOnly 与
+        // "完成"收键盘）；范围 5–3600 由控制器提交时校验并报行内错误。
+        LunioNumberField(
           controller: form.refreshIntervalController,
           enabled: !saving,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: '刷新间隔（秒）',
-            helperText: '自动轮询间隔，默认 30；范围 5–3600',
-          ),
+          decimals: 0,
+          labelText: '刷新间隔',
+          suffixText: '秒',
         ),
         const SizedBox(height: 10),
         Text('解析类型', style: Theme.of(context).textTheme.labelLarge),

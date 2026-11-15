@@ -491,12 +491,9 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       body = LunioPage(
         title: '车辆诊断',
         leading: _backKey(),
-        children: const [
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: Text('请先新增车辆')),
-          ),
-        ],
+        // 空态占位统一走 LunioEmptyCard（记录/加油/费用统计三页同文案
+        // 先例），不手写 Padding + Center + Text。
+        children: const [LunioEmptyCard('请先新增车辆')],
       );
     } else {
       final probesAsync = ref.watch(diagnosticsProbesProvider(carId));

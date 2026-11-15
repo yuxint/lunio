@@ -448,8 +448,11 @@ class AppDatabase extends _$AppDatabase {
           // header（ADR 0021 修订节、ADR 0023）。检测点唯一键从
           // {catalogKey} 改为 {carId, catalogKey}；SQLite 不能 ALTER
           // 约束，重建表。存量行归第一辆车（当前只有一辆时等价于当前
-          // 应用车辆）；没有车时 car_id 保持 NULL（该表无宿主，仓库
-          // 读不到孤儿行）。
+          // 应用车辆）；没有车时回填为 NULL，重建后立即清掉这些孤儿行
+          // ——它们没有宿主（仓库按 carId 过滤读不到、bootstrap 种子
+          // 对账也不会认领），且备份导出是全表读取、实体 carId 必填，
+          // 留着会让导出永久失败（审查问题 1）。v6 之前的检测点没有
+          // 归属概念，无车时无从归属，清理即升级语义。
           if (from < 6) {
             await m.addColumn(cars, cars.totalTankCapacityLiters);
             if (from >= 4) {
@@ -469,6 +472,9 @@ class AppDatabase extends _$AppDatabase {
                     diagnosticsProbes.header,
                   ],
                 ),
+              );
+              await m.database.customStatement(
+                'DELETE FROM diagnostics_probes WHERE car_id IS NULL',
               );
             }
           }
