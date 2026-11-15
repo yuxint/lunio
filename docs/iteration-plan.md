@@ -88,7 +88,7 @@
 - [x] 05 诊断页：三区布局（状态条/核心值卡/检测点行列表）+ Mock transport 页面测试（完成于 2026-11-13；`obd_runtime.dart` 域内接缝（transport=Mock 演示表+会话工厂，票 07 换 BLE）、`diagnostics_rules.dart` 升数估算、动作层 `setDiagnosticsProbeEnabled`、widget 测试 6 用例门闩夹具零真实定时器、变异 2/2 击杀，743 绿）。
 - [x] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体（完成于 2026-11-13；`probe_form_controller.dart` 9 单测变异 2/2、`probe_form.dart` 表单+入口（ADR 0016 统一出口、删除确认入口弹）、动作层 `saveDiagnosticsProbe`/`removeDiagnosticsProbe`、内置行点按无编辑入口（story 23）、widget 5 用例升到 11，757 绿）。
 - [x] 07 BLE 真链路：flutter_blue_plus + OBDTransport 传输层抽象（BLE/Mock 两实现）（完成于 2026-11-15；`ble_obd_transport.dart` 传输层+扫描器接缝+可辨识异常文案单一出口、`ble_scan_sheet.dart` 扫描选择 sheet、连接流程接设备记忆（直连/落扫/权限文案三向分流）、动作层 `rememberObdDevice`、双端权限声明、`--dart-define=LUNIO_OBD_MOCK=true` mock 回退开关、widget 7 新用例 764 绿；FBP 2.x 商业授权口径进 ADR 0020 修订节；**真机验收待执行**——清单在手册 5.10 节）。
-- [x] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档（完成于 2026-11-15；手册 5.10 补连接流程/扫描 sheet/BLE 传输层/真机验收清单六条）。
+- [x] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档（完成于 2026-11-15；手册 5.10 补连接流程/扫描 sheet/BLE 传输层/真机验收清单六条；收尾核对：手册行号锚点三轮全量比对修正 80 处漂移（含 provider 依赖图 26 节点刷新、漏绘诊断域两 provider 图后补注、偏好纪元清单 11→12 计数修正），AGENTS/GLOSSARY/ADR/migration v4 事实核对一致，DESIGN.md 无新视觉 token 不动）。
 
 票据：`.scratch/car-obd-diagnostics/issues/`（本机未跟踪文件）。
 来源：2026-11-12 grill 三轮 spec（`.scratch/car-obd-diagnostics/spec.md`）+ ADR 0020/0021 + 硬件实车验收语料 `docs/car_obd_link/`。
