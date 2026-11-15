@@ -29,9 +29,9 @@ const List<DiagnosticsProbeTemplate> diagnosticsProbeTemplates = [
     parseType: DiagnosticsParseType.speed,
   ),
   DiagnosticsProbeTemplate(
-    name: '进气温度',
-    command: '010F',
-    parseType: DiagnosticsParseType.intakeTemp,
+    name: '进气压力',
+    command: '010B',
+    parseType: DiagnosticsParseType.mapPressure,
   ),
   DiagnosticsProbeTemplate(
     name: '节气门',

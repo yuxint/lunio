@@ -22,10 +22,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
-import 'package:lunio/features/shell/diagnostics/debug_panel.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
+import 'package:lunio/features/shell/diagnostics/obd_verification_commands.dart';
 import 'package:lunio/core/widgets/lunio_components.dart';
 
 import '../helpers/builders.dart';
@@ -390,10 +390,14 @@ void main() {
       await tester.pump();
       expect(find.textContaining('11.2V'), findsWidgets);
 
-      expect(obdVerificationCommands.first, 'ATI');
-      expect(obdVerificationCommands, contains('227029'));
-      expect(obdVerificationCommands, contains('22202C'));
-      expect(obdVerificationCommands.last, 'ATSH DB 33 F1');
+      final vendorCommands = obdVendorCommandGroups
+          .expand((group) => group.commands)
+          .toList();
+      expect(vendorCommands, contains('227029'));
+      expect(vendorCommands, contains('22267A'));
+      expect(vendorCommands, contains('222623'));
+      expect(vendorCommands, contains('222678'));
+      expect(obdVendorCommandGroups.first.header, 'DA10F1');
 
       await leavePageAndFlush(tester);
     });
@@ -782,20 +786,6 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('有记忆直连：工厂收记忆设备标识，成功即已连接', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      await seedDeveloperDiagnostics(database);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump();
-      expect(rig.lastDeviceId, 'dev-1');
-      await rig.advanceUntil(tester, find.text('已连接'));
-      await leavePageAndFlush(tester);
-    });
-
     testWidgets('已连接点「断开」：释放会话落未连接，记忆保留（2026-11-15）', (
       tester,
     ) async {
@@ -824,140 +814,6 @@ void main() {
       await leavePageAndFlush(tester);
       // 离页收尾不再产生第二次 disconnect（会话已释放，teardown 幂等）。
       expect(rig.mock.disconnectCalls, 1);
-    });
-
-    testWidgets('直连失败（设备未扫到）自动落扫描 sheet（story 5）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig(
-        connectError: BleObdTransportException(
-          BleObdLinkErrorKind.deviceNotFound,
-        ),
-      );
-      await seedDeveloperDiagnostics(database);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      // 直连失败 → 自动落扫描：sheet 打开 + 扫描中徽标。
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('选择适配器'), findsOneWidget);
-      expect(find.text('扫描中'), findsOneWidget);
-      // 关闭 sheet（取消路径）→ 未连接 + "选择设备"再入口。
-      await tester.tap(find.text('关闭'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('未连接'), findsOneWidget);
-      expect(find.text('选择设备'), findsOneWidget);
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('蓝牙权限拒绝：状态条错误文案，不落扫描（story 8）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig(
-        connectError: BleObdTransportException(
-          BleObdLinkErrorKind.permissionDenied,
-        ),
-      );
-      await seedDeveloperDiagnostics(database);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('已断开'), findsOneWidget);
-      expect(
-        find.text('蓝牙权限未授权：请在系统设置 > Lunio 中允许蓝牙'),
-        findsOneWidget,
-      );
-      // 门禁类失败不落扫描（扫描也扫不出结果）。
-      expect(find.text('选择适配器'), findsNothing);
-      expect(find.text('重连'), findsOneWidget);
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('无记忆首用门禁失败：状态条文案、不落扫描（story 8）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      // 首用无设备记忆：开扫描前先过适配器门禁；门禁拒绝不能落成
-      // "扫描中 + 空列表"。
-      rig.scanner.gateError = const BleObdTransportException(
-        BleObdLinkErrorKind.permissionDenied,
-      );
-      await seedDeveloperDiagnostics(database, obdDeviceId: null);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('已断开'), findsOneWidget);
-      expect(
-        find.text('蓝牙权限未授权：请在系统设置 > Lunio 中允许蓝牙'),
-        findsOneWidget,
-      );
-      expect(find.text('选择适配器'), findsNothing);
-      expect(find.text('扫描中'), findsNothing);
-      expect(rig.scanner.gateCalls, 1);
-      expect(rig.scanner.startCalls, 0);
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('扫描启动遇权限拒绝：关 sheet、状态条渲染文案', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      // 预检门禁能过（adapterState 未拒），真实权限在 startScan 时才
-      // 请求（Android 形态）——拒绝经 sheet 回传页面，关 sheet 露状态条。
-      rig.scanner.startError = const BleObdTransportException(
-        BleObdLinkErrorKind.permissionDenied,
-      );
-      await seedDeveloperDiagnostics(database, obdDeviceId: null);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('选择适配器'), findsNothing);
-      expect(find.text('已断开'), findsOneWidget);
-      expect(
-        find.text('蓝牙权限未授权：请在系统设置 > Lunio 中允许蓝牙'),
-        findsOneWidget,
-      );
-      expect(rig.scanner.startCalls, 1);
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('连接中关闭扫描 sheet：取消在途连接、回未连接', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      await seedDeveloperDiagnostics(database, obdDeviceId: null);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      rig.scanner.emit([scanEntry('dev-A', 'IOS-Vlink', -58)]);
-      await tester.pump();
-      // 点选后建链在途（AT 序列等门闩），sheet 仍开着。
-      await tester.tap(find.text('IOS-Vlink'));
-      await tester.pump();
-      expect(find.text('连接中'), findsOneWidget);
-      expect(find.text('连接中…'), findsOneWidget);
-      // 连接中关闭 sheet = 取消本次连接：页面回未连接，不把迟到失败
-      // 改写成无 sheet 的"扫描中"。
-      await tester.tap(find.text('关闭'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('未连接'), findsOneWidget);
-      expect(find.text('选择设备'), findsOneWidget);
-      expect(find.text('选择适配器'), findsNothing);
-      // 放行残余门闩：在途尝试已作废，不回扫描中/已连接。
-      rig.chunkGate.completeAll();
-      rig.timeGate.completeAll();
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('未连接'), findsOneWidget);
-      expect(find.text('扫描中'), findsNothing);
-      expect(find.text('已连接'), findsNothing);
-      expect(rig.scanner.stopCalls, greaterThanOrEqualTo(2));
-      await leavePageAndFlush(tester);
     });
 
     testWidgets('取消后重选：旧 teardown 不取消新会话订阅', (tester) async {
@@ -1039,93 +895,6 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('扫描点选失败：行态回填 + 恢复扫描（sheet 不关）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig(
-        connectError: BleObdTransportException(
-          BleObdLinkErrorKind.deviceNotFound,
-        )
-      );
-      await seedDeveloperDiagnostics(database, obdDeviceId: null);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      rig.scanner.emit([scanEntry('dev-A', 'IOS-Vlink', -58)]);
-      await tester.pump();
-      await tester.tap(find.text('IOS-Vlink'));
-      // 连接失败分流：行回可点 + 失败文案进 sheet 顶部提示 + 恢复扫描
-      //（start 第二次），sheet 保持打开（story 6 状态反馈在列表里）。
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('连接中…'), findsNothing);
-      expect(
-        find.text('未找到适配器：请确认适配器已插车（车辆通电）并靠近手机'),
-        findsOneWidget,
-      );
-      expect(rig.scanner.startCalls, 2);
-      expect(find.text('选择适配器'), findsOneWidget);
-      // 关闭 → 未连接 + 选择设备。
-      await tester.tap(find.text('关闭'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('未连接'), findsOneWidget);
-      expect(find.text('选择设备'), findsOneWidget);
-      await leavePageAndFlush(tester);
-    });
-    testWidgets('扫描点选遇会话级失败（AT 超时）同样回填恢复扫描', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      // 空应答表 = ATZ 无应答 → 会话级超时（cause 链无 BLE 可辨识异常）
-      // ——点选流不能把行冻在"连接中…"（审查发现冻结漏洞的回归锁定）。
-      final rig = DiagnosticsRig(responses: {});
-      await seedDeveloperDiagnostics(database, obdDeviceId: null);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      rig.scanner.emit([scanEntry('dev-A', 'IOS-Vlink', -58)]);
-      await tester.pump();
-      await tester.tap(find.text('IOS-Vlink'));
-      // 释放会话定时门闩：ATZ 等提示符超时（300ms 注入定时）→ 会话级失
-      // 败分流 → 行回可点态 + 失败文案进顶部提示 + 恢复扫描。
-      await rig.advanceRound(tester);
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('连接中…'), findsNothing);
-      expect(find.text('指令 ATZ 等提示符超时'), findsOneWidget);
-      expect(rig.scanner.startCalls, 2);
-      // 关闭 → 未连接。
-      await tester.tap(find.text('关闭'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('未连接'), findsOneWidget);
-      await leavePageAndFlush(tester);
-    });
-
-
-    testWidgets('扫描取消回未连接，选择设备按钮重开扫描', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      await seedDeveloperDiagnostics(database, obdDeviceId: null);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.text('关闭'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('未连接'), findsOneWidget);
-      expect(find.text('选择设备'), findsOneWidget);
-      // 选择设备 = 重开扫描 sheet 的再入口。
-      await tester.tap(find.text('选择设备'));
-      await tester.pump(); // 推进一帧让新 sheet 路由挂树起步
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('选择适配器'), findsOneWidget);
-      await tester.tap(find.text('关闭'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('未连接'), findsOneWidget);
-      await leavePageAndFlush(tester);
-    });
   });
 
   group('最后读数持久化（2026-11-15，ADR 0021 修订节）', () {

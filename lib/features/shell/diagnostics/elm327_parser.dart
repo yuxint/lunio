@@ -233,6 +233,13 @@ ObdReading parseProbeResponse({
       }
       // 进气温度 = A − 40 ℃（Mode 01 PID 0x0F）。
       return ObdValue(display: '${a - 40}℃');
+    case DiagnosticsParseType.mapPressure:
+      final a = _firstDataByte(matched);
+      if (a == null) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 进气歧管绝对压力 = A kPa（Mode 01 PID 0x0B）。
+      return ObdValue(display: '$a kPa');
     case DiagnosticsParseType.throttlePercent:
       final a = _firstDataByte(matched);
       if (a == null) {

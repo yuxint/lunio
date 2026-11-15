@@ -58,6 +58,7 @@
 - [ ] 03 同步信号接缝：恢复备份后的强制补判改为显式同步信号，协调器不再拿数据 provider 失效当信号用。
 - [x] 04 吸附滚动视口共享模块：档位列表/加油记录卡垂直两处三明治收编为 `lib/features/shell/shared/scroll_window.dart`（`LunioSnapScrollWindow`，完成于 2026-10-06：垂直两处 2026-10-01 先行收编，本次补齐滚动条样式常量 `scrollbarThickness`/`scrollbarRadius` 单一出处、统计图表横向经论证不接入组件——参数管道，见票据决策日志；此前本节误记整票已覆盖不再立项）。
 - [x] 05 重入防护共享模块：通知同步控制器与小组件快照控制器的 busy/pending 重入协议收成一份小模块（完成于 2026-10-06：`lib/features/shell/reminders/guarded_op.dart`（`GuardedOp`，enter/exit 配对 + 重跑回调注入），快照控制器手抄 `_writing`/`_pending` 标志位一并换用，机制测试 `test/features/guarded_op_test.dart`）。
+- [x] 06 诊断连接编排：诊断页连接编排（相位机/尝试代数/扫描会话/最后读数合并与落库策略）收进 plain-Dart `DiagnosticsConnectionController`，页面只渲染转发、扫描 sheet 降为纯渲染器；widget 决策与竞态用例迁 controller 单测（完成于 2026-11-15；`test/features/diagnostics_connection_controller_test.dart` 15 用例，widget 29→20；GLOSSARY「诊断连接编排」；来源 2026-11-15 架构审查 C1，票据 `.scratch/diagnostics-connection-module/`）。
 
 票据：`.scratch/arch-0928/issues/`（本机未跟踪文件，换机即丢）。
 跑法：arch-pipeline 续跑（resumeDir=.scratch/arch-0928）或逐票 implement。
@@ -103,8 +104,8 @@
 - [x] 01 每车检测点：DB v6、备份 v5、每车播种/删车级联、`diagnosticsProbesProvider` 按车 family、项目式检测点管理 sheet（内置可编辑不可删、自定义可增改删）（完成于 2026-11-15，ADR 0021 修订节）。
 - [x] 02 刷新规则：每检测点 `refresh_interval_seconds` 默认 30（5–3600）、1 秒拍调度、手动刷新 `requestImmediatePoll`、调试暂停（完成于 2026-11-15，ADR 0023）。
 - [x] 03 双油量：车辆加满可加油量/油箱总容积、诊断油量卡可用/估算总油量、加油页不改（完成于 2026-11-15，ADR 0022）；测试覆盖思域 23.137% × 40.487 + 6.513 口径。
-- [x] 04 调试终端与一键验证：`debug_panel.dart`、`obdVerificationCommands`（标准 PID/能力位图 + 本田 227029/22202C/22267A）、日志复制；私有 DID 只验证不进正常轮询（完成于 2026-11-15，ADR 0023）。
-- [x] 05 测试/文档：全量 808 绿；迁移 v2–v5→v6、备份 v4→v5、检测点每车 CRUD/种子、会话手动刷新/暂停原始命令、widget 双油量/管理 sheet/调试终端；手册 5.10/5.10.1、AGENTS、migration schema、GLOSSARY、ADR 同步。
+- [x] 04 调试终端与一键全量采集：`debug_panel.dart`、本车能力位图自动枚举标准 PID + 09/06/DTC + OBDb Honda Civic 2022 `supported_commands_by_ecu` 126 条私有 DID 分组、日志复制；私有 DID 只验证不进正常轮询（完成于 2026-11-15，ADR 0023）。
+- [x] 05 测试/文档：全量 817 绿；迁移 v2–v5→v6、备份 v4→v5、检测点每车 CRUD/种子、会话手动刷新/暂停原始命令、widget 双油量/管理 sheet/调试终端、能力位图自动枚举/私有 DID 清单；010F 模板换 010B 进气压力；手册 5.10/5.10.1、AGENTS、migration schema、GLOSSARY、ADR 同步。
 - [ ] 06 Phase 2（待用户真车日志）：跑一键验证 → 标定 `227029` 油量偏移/缩放与水温命中命令 → 加 header/ISO-TP 多帧重组/私有解析 → 内置水温替换 + 实测总油量。
 - [ ] 07 电瓶起动电压测试：另立票，不在本轮（OBD 单点电压不能判断寿命，ADR 0022 背景外的独立能力）。
 

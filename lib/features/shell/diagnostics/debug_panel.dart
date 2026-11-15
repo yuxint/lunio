@@ -16,34 +16,8 @@ import '../../../core/widgets/lunio_components.dart';
 import '../shared/shell_shared.dart';
 import 'elm327_parser.dart' show normalizeObdCommand;
 import 'elm327_session.dart';
-
-/// 一键验证命令序列（ADR 0023）：标准能力/读数 + 本田私有 DID。
-/// `227029` 是 CIVIC_FLV（DA60，16 位 ÷100 升）；`22202C` 是
-/// ECT 1–4（DA01，16 位有符号 ÷10 ℃）；`22267A` 是原始水温。
-const List<String> obdVerificationCommands = [
-  'ATI',
-  'ATDPN',
-  '0100',
-  '0120',
-  '0140',
-  '0160',
-  '0105',
-  '012F',
-  '0142',
-  '010C',
-  'ATRV',
-  'ATSH DA 60 F1',
-  '227029',
-  'ATSH DA 10 F1',
-  '222623',
-  '222678',
-  '22267A',
-  '2223E2',
-  '2223E3',
-  'ATSH DA 01 F1',
-  '22202C',
-  'ATSH DB 33 F1',
-];
+import 'obd_verification.dart';
+import 'obd_verification_commands.dart';
 
 /// 调试面板：折叠展开 + 调试模式开关 + 自由终端 + 一键采集 + 日志。
 class DiagnosticsDebugPanel extends StatefulWidget {
@@ -150,29 +124,46 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
     }
     setState(() {
       _busy = true;
-      _log = 'Lunio OBD 验证日志\n'
+      _log = 'Lunio OBD 全量采集日志\n'
           '车辆：${widget.carLabel}\n'
           '开始：${DateTime.now().toIso8601String()}\n'
-          '说明：按顺序发送标准能力/读数 + 本田私有 DID；ATSH 变更后\n'
-          '由末尾 ATSH DB 33 F1 恢复。\n\n';
+          '说明：标准 PID 由本车 0100/0120/0140/0160/0180/01A0/01C0/01E0 '
+          '能力位图自动枚举；09/06/DTC 标准读取；私有 DID 按 OBDb Honda '
+          'Civic 2022 supported_commands_by_ecu（北美数据，实车可能不同）；'
+          '末尾 ATSH DB 33 F1 恢复。\n\n';
     });
+    Future<String> capture(String command) async {
+      _append('> ${normalizeObdCommand(command)}');
+      try {
+        final frame = await session.sendRawCommand(command);
+        _append(frame);
+        return frame;
+      } catch (error) {
+        _append('ERROR: $error');
+        return '';
+      }
+    }
+
     try {
-      for (final command in obdVerificationCommands) {
-        if (!mounted) {
-          break;
-        }
-        _append('> ${normalizeObdCommand(command)}');
-        try {
-          final frame = await session.sendRawCommand(command);
-          _append(frame);
-        } catch (error) {
-          _append('ERROR: $error');
+      await capture('ATI');
+      await capture('ATDPN');
+      await capture('ATRV');
+      await capture('ATSH DB33F1');
+      final supportFrames = <String, String>{};
+      for (final command in obdSupportQueries) {
+        supportFrames[command] = await capture(command);
+      }
+      for (final command in buildStandardVerificationCommands(supportFrames)) {
+        await capture(command);
+      }
+      for (final group in obdVendorCommandGroups) {
+        await capture('ATSH ${group.header}');
+        for (final command in group.commands) {
+          await capture(command);
         }
       }
+      await capture('ATSH DB33F1');
     } finally {
-      try {
-        await session.sendRawCommand('ATSH DB 33 F1');
-      } catch (_) {}
       if (mounted) {
         setState(() => _busy = false);
       }
@@ -282,7 +273,7 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
               runSpacing: 8,
               children: [
                 SmallActionButton(
-                  label: '一键采集验证日志',
+                  label: '一键采集全部数据',
                   primary: true,
                   onPressed: enabled && _debugMode && !_busy
                       ? () => unawaited(_runVerification())

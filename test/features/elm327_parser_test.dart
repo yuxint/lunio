@@ -127,6 +127,15 @@ void main() {
       expect(reading.display, '11.2V');
     });
 
+    test('进气压力 41 0B 65 → 101 kPa', () {
+      final reading = parseProbeResponse(
+        command: '010B',
+        parseType: DiagnosticsParseType.mapPressure,
+        frameText: '41 0B 65 \r\r',
+      ) as ObdValue;
+      expect(reading.display, '101 kPa');
+    });
+
     test('rawHex：多行帧编号原文照显（227029 语料形态）', () {
       final frame =
           '039 \r0: 62 70 29 8F FC 00 \r1: 00 00 00 2F FF FF 06 CF \r\r';

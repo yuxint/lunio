@@ -36,6 +36,9 @@ enum DiagnosticsParseType {
   /// 进气温度（`010F` 首字节 A−40，℃）。
   intakeTemp('intakeTemp', '进气温度（A−40）'),
 
+  /// 进气歧管绝对压力（`010B` 首字节 A，kPa）。
+  mapPressure('mapPressure', '进气压力（kPa）'),
+
   /// 节气门开度（`0111` 首字节 ×100/255，%）。
   throttlePercent('throttlePercent', '节气门（%）'),
 
