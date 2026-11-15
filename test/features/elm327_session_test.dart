@@ -350,15 +350,17 @@ void main() {
       final connecting = session.connect();
       await transport.started.future;
       await session.dispose();
-      // dispose 先行：迟到建链不得再标 connected/发事件（旧实现会向
-      // 已关闭的事件流 add，StateError 经 unawaited 链逃逸）。
+      // dispose 先行：迟到建链必须立即失败退出，不得再标 connected、
+      // 不得再投递任何事件（旧实现会先发 Disconnected，并在关闭流后
+      // add 连接事件时抛 StateError）。1 秒上限同时排除真实超时兜底
+      //（默认 responseTimeout 5 秒）造成的假通过。
       transport.release.complete();
       await expectLater(
-        connecting,
+        connecting.timeout(const Duration(seconds: 1)),
         throwsA(isA<Elm327SessionException>()),
       );
       await done.future.timeout(const Duration(seconds: 1));
-      expect(events.whereType<Elm327Connected>(), isEmpty);
+      expect(events, isEmpty);
       expect(session.state, Elm327SessionState.disconnected);
       expect(transport.disconnectCalls, greaterThanOrEqualTo(1));
     });

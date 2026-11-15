@@ -109,10 +109,11 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     });
   }
 
-  /// 连接流程单一入口（进页面自动触发 / 重连按钮 / 扫描点选都汇到
-  /// 它）：设备记忆命中 → 直连（"连接中"）；无记忆 → 落扫描 sheet
-  /// （story 4/5）。mock 回退链路（dart-define）跳过扫描与记忆，直连
-  /// 演示设备。
+  /// 进页面自动连接与「重连」按钮的入口：设备记忆命中 → 直连
+  ///（"连接中"）；无记忆 → 落扫描 sheet（story 4/5）。扫描点选走
+  /// [_connectToPicked] → [_connectToDevice]，「选择设备」按钮走
+  /// [_openScanSheet]。mock 回退链路（dart-define）跳过扫描与记忆，
+  /// 直连演示设备。
   Future<void> _startConnect() async {
     if (_phase == DiagnosticsConnectionPhase.connecting ||
         _phase == DiagnosticsConnectionPhase.scanning) {
@@ -135,13 +136,15 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   }
 
   /// 直连指定设备（记忆直连/扫描点选共用）：置连接中 → 释放旧会话 →
-  /// 工厂新建会话 → 先听后连 → connect()。失败按错误类别分流（story
+  /// 工厂新建会话 → 先听后连 → connect()。返回**本次尝试成功且仍是
+  /// 当前会话**的实例（取消/失败/被替换返 null），点选回调按它判成功，
+  /// 不读可能已被新尝试替换的 `_session`。失败按错误类别分流（story
   /// 5/8）：BLE 门禁类（蓝牙关/不支持/权限）状态条渲染错误文案；设备/
   /// 链路类（未扫到/建链失败）直连落扫描 sheet、点选流回填 sheet 行态
   /// 并恢复扫描；会话级（AT 超时等，适配器在但芯片无响应）状态条渲染
   /// 错误文案。状态条由 Disconnected 事件驱动（单一事实源），这里只做
   /// 降级分流。
-  Future<void> _connectToDevice(String deviceId,
+  Future<Elm327Session?> _connectToDevice(String deviceId,
       {BleObdScanEntry? picked}) async {
     final attempt = ++_connectAttempt;
     setState(() {
@@ -150,19 +153,22 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     });
     await _teardownSession();
     if (!mounted || attempt != _connectAttempt) {
-      return;
+      return null;
     }
     final session = ref.read(obdSessionFactoryProvider)(deviceId);
     _session = session;
     _sub = session.events.listen(_onSessionEvent);
     try {
       await session.connect();
-      return;
+      if (!mounted || attempt != _connectAttempt) {
+        return null;
+      }
+      return session;
     } on Elm327SessionException catch (e) {
       // 页面已退出，或连接已被取消（连接中关闭扫描 sheet）：迟到的
       // 失败不再改写相位、不再回填 sheet。
       if (!mounted || attempt != _connectAttempt) {
-        return;
+        return null;
       }
       final ble = _bleErrorOf(e);
       if (ble == null) {
@@ -175,7 +181,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
               : e.message;
           _resumeScanAfterPickFailed(picked, detail);
         }
-        return;
+        return null;
       }
       if (picked != null) {
         // 扫描点选流：门禁类关 sheet 露出错误状态条；设备/链路类回填
@@ -185,7 +191,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         } else {
           _resumeScanAfterPickFailed(picked, ble.statusCopy);
         }
-        return;
+        return null;
       }
       if (!ble.kind.isGateError) {
         // 记忆直连的设备/链路类失败：落扫描 sheet（story 5"直连失败
@@ -193,6 +199,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         // 统状态，扫描也扫不出结果。
         unawaited(_openScanSheet());
       }
+      return null;
     }
   }
 
@@ -221,18 +228,23 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   }
 
   /// 扫描点选（sheet 行点击回调）：建链成功即记忆（story 4 前提）+ 关
-  /// sheet；失败由 _connectToDevice 分流回 sheet。成功判据用会话状态
-  ///（await connect() 恢复时广播事件尚未递送，页面相位此刻还是
-  /// connecting——状态条由事件单一事实源渲染，这里不看它）。
+  /// sheet；失败由 _connectToDevice 分流回 sheet。成功判据用返回值与
+  /// 当前会话同一性（await connect() 恢复时广播事件尚未递送，页面相
+  /// 位此刻还是 connecting——状态条由事件单一事实源渲染，这里不看
+  /// 它）。取消后重选的新尝试已把 `_session` 换成新实例，旧续体按同
+  /// 一性检查退出，不会写旧设备标识或关掉新 sheet。
   Future<void> _connectToPicked(BleObdScanEntry entry) async {
-    await _connectToDevice(entry.id, picked: entry);
-    final session = _session;
+    final session = await _connectToDevice(entry.id, picked: entry);
     if (!mounted ||
         session == null ||
+        _session != session ||
         session.state != Elm327SessionState.connected) {
       return;
     }
     await rememberObdDevice(ref, entry.id);
+    if (!mounted || _session != session) {
+      return;
+    }
     _scanSheetHandle?.close();
   }
 
@@ -357,17 +369,20 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     }
   }
 
-  /// 释放会话与事件订阅（dispose/重连前调用，幂等）：退订事件流 →
-  /// 会话 dispose（停轮 + 断开传输层 + 关事件流）。
+  /// 释放会话与事件订阅（dispose/重连前调用，幂等）：会话与其订阅在
+  /// 首行成对捕获，随后清空页面字段。dispose 可能长时间等待传输层断
+  /// 开，期间新尝试可以创建新会话；续体只取消自己捕获的旧订阅，不会
+  /// 误取消新会话的订阅。
   Future<void> _teardownSession() async {
     final session = _session;
+    final sub = _sub;
     _session = null;
+    _sub = null;
     // 先 dispose 会话（停轮 + 断开传输层 + 关事件流——离开页断开的可
     // 观察出口在它身上），事件订阅取消放后且不等待其完成时机（广播订
     // 阅取消的完成时机与假异步环境耦合，不该挡住会话释放）。
     await session?.dispose();
-    unawaited(_sub?.cancel());
-    _sub = null;
+    unawaited(sub?.cancel());
   }
 
   /// 释放会话（离开页面断开，story 9）：dispose 是同步签名，会话释放

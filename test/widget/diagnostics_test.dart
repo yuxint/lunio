@@ -14,6 +14,8 @@
 // （cost_stats 测试先例注释）。
 //
 // 播种必须在 pumpApp 之前：装配后直写库不会触发 provider 失效。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -21,11 +23,31 @@ import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
+import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
 import 'package:lunio/core/widgets/lunio_components.dart';
 
 import '../helpers/builders.dart';
 import '../helpers/diagnostics_fixture.dart';
 import '../helpers/widget_app.dart';
+
+/// 会话 A 的传输层：disconnect 挂在门闩上，模拟旧 teardown 在新会话
+/// 建立之后才恢复（取消订阅竞态回归用例）。
+class _SlowDisconnectMock extends MockObdTransport {
+  _SlowDisconnectMock({
+    required super.responses,
+    required super.delay,
+    required this.disconnectGate,
+  });
+
+  final Completer<void> disconnectGate;
+
+  @override
+  Future<void> disconnect() async {
+    await disconnectGate.future;
+    await super.disconnect();
+  }
+}
 
 /// 播种应用车辆（可选油箱容积）并设为当前车：必须在 pumpApp 之前。
 Future<void> seedAppliedCar(AppDatabase database, {double? tankCapacity}) async {
@@ -642,6 +664,86 @@ void main() {
       expect(find.text('扫描中'), findsNothing);
       expect(find.text('已连接'), findsNothing);
       expect(rig.scanner.stopCalls, greaterThanOrEqualTo(2));
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('取消后重选：旧 teardown 不取消新会话订阅', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      // 会话 A 的断开挂门闩：关闭 sheet 取消 A 后，A 的 teardown 会
+      // 停在传输层断开上；期间重开 sheet 并连接 B，旧 teardown 恢复时
+      // 只准取消 A 的订阅。
+      final aDisconnectGate = Completer<void>();
+      var sessionCount = 0;
+      MockObdTransport? bMock;
+      Elm327Session factory(String deviceId) {
+        sessionCount++;
+        final MockObdTransport mock;
+        if (sessionCount == 1) {
+          mock = _SlowDisconnectMock(
+            responses: rigStandardResponses(),
+            delay: (d) => rig.chunkGate.gate(d),
+            disconnectGate: aDisconnectGate,
+          );
+        } else {
+          mock = MockObdTransport(
+            responses: rigStandardResponses(),
+            delay: (d) => rig.chunkGate.gate(d),
+          );
+        }
+        if (sessionCount == 2) {
+          bMock = mock;
+        }
+        return Elm327Session(
+          transport: mock,
+          now: () => rig.fixedNow,
+          delay: (d) => rig.timeGate.gate(d),
+          responseTimeout: const Duration(milliseconds: 300),
+          pollInterval: const Duration(milliseconds: 100),
+        );
+      }
+
+      await seedDeveloperDiagnostics(database, obdDeviceId: null);
+      await pumpApp(
+        tester,
+        database: database,
+        extraOverrides: [
+          obdSessionFactoryProvider.overrideWithValue(factory),
+          obdScannerProvider.overrideWithValue(rig.scanner),
+        ],
+      );
+      await openDiagnosticsPage(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      // 连接 A 后取消（旧 teardown 卡在断开门闩）。
+      rig.scanner.emit([scanEntry('dev-A', 'A 适配器', -50)]);
+      await tester.pump();
+      await tester.tap(find.text('A 适配器'));
+      await tester.pump();
+      expect(find.text('连接中'), findsOneWidget);
+      await tester.tap(find.text('关闭'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('未连接'), findsOneWidget);
+      // 重开扫描并连接 B。
+      await tester.tap(find.text('选择设备'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      rig.scanner.emit([scanEntry('dev-B', 'B 适配器', -50)]);
+      await tester.pump();
+      await tester.tap(find.text('B 适配器'));
+      await tester.pump();
+      await rig.advanceUntil(tester, find.text('已连接'));
+      expect(sessionCount, 2);
+      // 放行 A 的断开：旧 teardown 恢复，B 的页面订阅必须仍然有效。
+      aDisconnectGate.complete();
+      await tester.pump();
+      await tester.pump();
+      bMock!.injectError(StateError('B 链路断开'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('已断开'), findsOneWidget);
       await leavePageAndFlush(tester);
     });
 
