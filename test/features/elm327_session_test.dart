@@ -7,6 +7,7 @@
 // 可中断、链路丢失、dispose 释放。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
@@ -14,6 +15,7 @@ import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_parser.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/obd_transport.dart';
 
 /// 注入延时接缝：记录每次请求的时长并挂起，测试按序放行（completeAt）
 /// 或整体放行（completeAll）。会话侧 responseTimeout/pollInterval 与
@@ -80,6 +82,30 @@ MockObdScript resp(String text) => MockObdScript(
       firstChunkDelay: Duration.zero,
       chunkGap: Duration.zero,
     );
+
+/// 建链挂起的传输层桩：connect 停到用例放行，期间可被 dispose 打断。
+class _HangingConnectTransport implements OBDTransport {
+  final started = Completer<void>();
+  final release = Completer<void>();
+  int disconnectCalls = 0;
+
+  @override
+  Future<void> connect() async {
+    started.complete();
+    await release.future;
+  }
+
+  @override
+  Future<void> send(List<int> bytes) async {}
+
+  @override
+  Stream<Uint8List> get byteStream => const Stream.empty();
+
+  @override
+  Future<void> disconnect() async {
+    disconnectCalls++;
+  }
+}
 
 DiagnosticsProbe makeProbe(
   int id,
@@ -313,6 +339,28 @@ void main() {
       await session.dispose();
       await done.future.timeout(const Duration(seconds: 1));
       expect(session.state, Elm327SessionState.disconnected);
+    });
+
+    test('建链期间 dispose：不投递连接事件、释放后正常收尾', () async {
+      final transport = _HangingConnectTransport();
+      final session = Elm327Session(transport: transport);
+      final events = <Elm327SessionEvent>[];
+      final done = Completer<void>();
+      session.events.listen(events.add, onDone: done.complete);
+      final connecting = session.connect();
+      await transport.started.future;
+      await session.dispose();
+      // dispose 先行：迟到建链不得再标 connected/发事件（旧实现会向
+      // 已关闭的事件流 add，StateError 经 unawaited 链逃逸）。
+      transport.release.complete();
+      await expectLater(
+        connecting,
+        throwsA(isA<Elm327SessionException>()),
+      );
+      await done.future.timeout(const Duration(seconds: 1));
+      expect(events.whereType<Elm327Connected>(), isEmpty);
+      expect(session.state, Elm327SessionState.disconnected);
+      expect(transport.disconnectCalls, greaterThanOrEqualTo(1));
     });
 
     test('迟到的空白提示符帧不打断在途请求（防读数错位）', () async {

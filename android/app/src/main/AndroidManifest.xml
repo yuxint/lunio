@@ -6,8 +6,10 @@
     <!-- 车辆诊断 BLE 链路（ADR 0020）：
          - API 31+：BLUETOOTH_SCAN（neverForLocation 免定位权限）与
            BLUETOOTH_CONNECT 运行时权限。App 不代请求（Android 不专门
-           适配，spec 口径）：未授权时适配器门禁抛 permissionDenied，
-           诊断页状态条渲染"蓝牙权限未授权"文案引导去系统设置。
+           适配，spec 口径）：权限由 flutter_blue_plus 在 startScan/
+           connect 时申请，拒绝以平台异常返回；Dart 侧按消息归
+           permissionDenied，诊断页状态条渲染"蓝牙权限未授权"文案
+           引导去系统设置。
          - API 30 及以下：旧蓝牙权限 + 精确定位（系统要求，扫描需要）。 -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"

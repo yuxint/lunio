@@ -86,6 +86,10 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// 扫描 sheet 句柄（非 null = sheet 在栈顶；_onScanSheetClosed 清空）。
   BleScanSheetHandle? _scanSheetHandle;
 
+  /// 连接尝试代数（每次 _connectToDevice 自增）：关闭扫描 sheet/取消
+  /// 连接时自增作废在途尝试，迟到的失败回填不再改写页面相位。
+  int _connectAttempt = 0;
+
   /// 最新读取快照表（键 = 检测点行 id；行列表与核心值卡共用）。
   final Map<int, _ReadingSnapshot> _readings = {};
 
@@ -124,7 +128,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       return;
     }
     if (remembered == null) {
-      _openScanSheet();
+      await _openScanSheet();
       return;
     }
     await _connectToDevice(remembered);
@@ -139,11 +143,15 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// 降级分流。
   Future<void> _connectToDevice(String deviceId,
       {BleObdScanEntry? picked}) async {
+    final attempt = ++_connectAttempt;
     setState(() {
       _phase = DiagnosticsConnectionPhase.connecting;
       _statusError = null;
     });
     await _teardownSession();
+    if (!mounted || attempt != _connectAttempt) {
+      return;
+    }
     final session = ref.read(obdSessionFactoryProvider)(deviceId);
     _session = session;
     _sub = session.events.listen(_onSessionEvent);
@@ -151,22 +159,21 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       await session.connect();
       return;
     } on Elm327SessionException catch (e) {
-      final ble = _bleErrorOf(e);
-      if (!mounted) {
+      // 页面已退出，或连接已被取消（连接中关闭扫描 sheet）：迟到的
+      // 失败不再改写相位、不再回填 sheet。
+      if (!mounted || attempt != _connectAttempt) {
         return;
       }
+      final ble = _bleErrorOf(e);
       if (ble == null) {
         // 会话级失败（AT 超时等，适配器在但芯片无响应）：状态条已由
         // Disconnected 事件渲染错误文案；点选流 sheet 还开着、行不能
         // 停在"连接中…"——同样回填失败态恢复扫描。
         if (picked != null) {
-          setState(() {
-            _phase = DiagnosticsConnectionPhase.scanning;
-          });
           final detail = e.cause is Elm327SessionException
               ? (e.cause as Elm327SessionException).message
               : e.message;
-          _scanSheetHandle?.reportPickFailed(picked, detail);
+          _resumeScanAfterPickFailed(picked, detail);
         }
         return;
       }
@@ -176,10 +183,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         if (ble.kind.isGateError || ble.kind == BleObdLinkErrorKind.linkLost) {
           _scanSheetHandle?.close();
         } else {
-          setState(() {
-            _phase = DiagnosticsConnectionPhase.scanning;
-          });
-          _scanSheetHandle?.reportPickFailed(picked, ble.statusCopy);
+          _resumeScanAfterPickFailed(picked, ble.statusCopy);
         }
         return;
       }
@@ -187,9 +191,26 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         // 记忆直连的设备/链路类失败：落扫描 sheet（story 5"直连失败
         // 落扫描列表"）。门禁类保持断开态错误文案，用户按文案去修系
         // 统状态，扫描也扫不出结果。
-        _openScanSheet();
+        unawaited(_openScanSheet());
       }
     }
+  }
+
+  /// 点选连接失败回填：sheet 还在 = 行回可点 + 文案 + 恢复扫描；sheet
+  /// 已关闭（连接中被取消）= 回可恢复的未连接态，不在无人可见的相位
+  /// 上伪造"扫描中"。
+  void _resumeScanAfterPickFailed(BleObdScanEntry picked, String copy) {
+    final handle = _scanSheetHandle;
+    if (handle == null) {
+      setState(() {
+        _phase = DiagnosticsConnectionPhase.idle;
+      });
+      return;
+    }
+    setState(() {
+      _phase = DiagnosticsConnectionPhase.scanning;
+    });
+    handle.reportPickFailed(picked, copy);
   }
 
   /// 会话异常 → BLE 可辨识错误（cause 链一层解包；非 BLE 链路失败返
@@ -215,29 +236,100 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     _scanSheetHandle?.close();
   }
 
-  /// 打开扫描 sheet（story 5）：置扫描中相位；sheet 关闭回调里扫描中
-  /// 相位回 idle（取消路径），成功/门禁失败关闭保持原相位。
-  void _openScanSheet() {
-    if (_scanSheetHandle != null) return;
+  /// 打开扫描 sheet（story 5）：先过适配器门禁（无记忆首用不能把
+  /// 权限拒绝/蓝牙未开藏进空列表——门禁失败状态条渲染文案、不落扫
+  /// 描），再置扫描中相位。sheet 关闭回调里扫描中相位回 idle（取消
+  /// 路径），连接中关闭 = 取消本次连接。
+  Future<void> _openScanSheet() async {
+    if (_scanSheetHandle != null) {
+      return;
+    }
+    try {
+      await ref.read(obdScannerProvider).ensureReady();
+    } on BleObdTransportException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      if (!e.kind.isGateError) {
+        _openScanSheetNow();
+      } else {
+        setState(() {
+          _phase = DiagnosticsConnectionPhase.disconnected;
+          _statusError = e.statusCopy;
+        });
+      }
+      return;
+    } catch (_) {
+      // 未知门禁异常仍落 sheet，由 sheet 顶部提示兜底。
+      if (!mounted) {
+        return;
+      }
+      _openScanSheetNow();
+      return;
+    }
+    if (!mounted ||
+        _scanSheetHandle != null ||
+        _phase == DiagnosticsConnectionPhase.connecting ||
+        _phase == DiagnosticsConnectionPhase.connected) {
+      return;
+    }
+    _openScanSheetNow();
+  }
+
+  /// 门禁已过/兜底路径：置扫描中并挂 sheet。
+  void _openScanSheetNow() {
+    if (!mounted || _scanSheetHandle != null) {
+      return;
+    }
     setState(() {
       _phase = DiagnosticsConnectionPhase.scanning;
     });
     _scanSheetHandle = showBleScanSheet(
       context,
       onDevicePicked: (entry) => unawaited(_connectToPicked(entry)),
+      onGateFailed: _onScanGateFailed,
       onClosed: _onScanSheetClosed,
     );
   }
 
-  /// sheet 关闭回调：句柄清空 + 扫描中相位回 idle（取消/下滑路径）。
+  /// sheet 关闭回调：句柄清空 + 相位收尾。扫描中关闭 = 取消扫描回
+  /// 未连接；**连接中关闭 = 取消本次连接**（在途建链可能还要等 15
+  /// 秒，不能把页面停在无 sheet 的"连接中"）。
   void _onScanSheetClosed() {
     _scanSheetHandle = null;
     if (!mounted) return;
+    if (_phase == DiagnosticsConnectionPhase.connecting) {
+      // 建链成功但 Connected 事件尚未递送（点选成功路径会在这里关
+      // sheet）：不取消已成功的连接，相位交给事件渲染。
+      if (_session?.state == Elm327SessionState.connected) {
+        return;
+      }
+      _connectAttempt++;
+      unawaited(_teardownSession());
+      setState(() {
+        _phase = DiagnosticsConnectionPhase.idle;
+        _statusError = null;
+      });
+      return;
+    }
     if (_phase == DiagnosticsConnectionPhase.scanning) {
       setState(() {
         _phase = DiagnosticsConnectionPhase.idle;
       });
     }
+  }
+
+  /// 扫描启动时的门禁失败（Android 运行时权限在 startScan 才请求）：
+  /// 关 sheet，由状态条渲染错误文案（story 8）。
+  void _onScanGateFailed(BleObdTransportException error) {
+    if (!mounted) {
+      return;
+    }
+    _scanSheetHandle?.close();
+    setState(() {
+      _phase = DiagnosticsConnectionPhase.disconnected;
+      _statusError = error.statusCopy;
+    });
   }
 
   /// 会话事件 → 页面状态（状态条/读取快照表），每处进 setState 前
@@ -437,7 +529,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
             TextButton(
               onPressed: _phase == DiagnosticsConnectionPhase.disconnected
                   ? () => unawaited(_startConnect())
-                  : () => _openScanSheet(),
+                  : () => unawaited(_openScanSheet()),
               // 紧凑行尾按钮（ProfileSettingRow 同款）——LunioSecondaryButton
               // 的 FilledButton 带主题全宽 minimumSize，放进 Row 拿到无界
               // 宽约束直接布局崩溃。

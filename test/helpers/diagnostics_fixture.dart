@@ -155,19 +155,39 @@ class DiagnosticsRig {
 }
 
 /// 受控假扫描器（ObdScanner 接缝的测试替身）：results 是广播流，用例
-/// 经 emit 推清单，startCalls/stopCalls 断言启停次数。
+/// 经 emit 推清单；gateError/startError 模拟门禁与扫描启动失败；
+/// gateCalls/startCalls/stopCalls 断言调用次数。
 class FakeObdScanner implements ObdScanner {
   final _entries = StreamController<List<BleObdScanEntry>>.broadcast();
+  int gateCalls = 0;
   int startCalls = 0;
   int stopCalls = 0;
+
+  /// ensureReady 抛出的错误（null = 门禁通过）。
+  Object? gateError;
+
+  /// start 抛出的错误（null = 正常启动）。
+  Object? startError;
 
   @override
   Stream<List<BleObdScanEntry>> get results => _entries.stream;
 
+  @override
+  Future<void> ensureReady() async {
+    gateCalls++;
+    final error = gateError;
+    if (error != null) {
+      throw error;
+    }
+  }
 
   @override
   Future<void> start() async {
     startCalls++;
+    final error = startError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

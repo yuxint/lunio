@@ -51,11 +51,13 @@ class BleScanSheetHandle {
 BleScanSheetHandle showBleScanSheet(
   BuildContext context, {
   required void Function(BleObdScanEntry) onDevicePicked,
+  required void Function(BleObdTransportException) onGateFailed,
   required void Function() onClosed,
 }) {
   final handle = BleScanSheetHandle();
   // 统一 sheet 出口（ADR 0016 骨架；选择器 barrierDismissible 默认
-  // true：点遮罩/下滑关闭 = 取消，onClosed 回调里扫描中相位回 idle）。
+  // true：点遮罩/下滑关闭 = 取消，onClosed 回调里扫描中相位回 idle、
+  // 连接中相位取消在途连接）。
   showLunioModalSheet<void>(
     context: context,
     builder: (_) => PrototypeSheetFrame(
@@ -64,6 +66,7 @@ BleScanSheetHandle showBleScanSheet(
       child: _BleScanSheet(
         handle: handle,
         onDevicePicked: onDevicePicked,
+        onGateFailed: onGateFailed,
       ),
     ),
   ).whenComplete(() {
@@ -79,10 +82,15 @@ class _BleScanSheet extends ConsumerStatefulWidget {
   const _BleScanSheet({
     required this.handle,
     required this.onDevicePicked,
+    required this.onGateFailed,
   });
 
   final BleScanSheetHandle handle;
   final void Function(BleObdScanEntry) onDevicePicked;
+
+  /// 扫描启动遇门禁类失败（权限拒绝/蓝牙未开/不支持）：页面关 sheet、
+  /// 状态条渲染文案，不把空列表当正常扫描结果展示。
+  final void Function(BleObdTransportException) onGateFailed;
 
   @override
     ConsumerState<_BleScanSheet> createState() => _BleScanSheetState();
@@ -111,7 +119,8 @@ class _BleScanSheetState extends ConsumerState<_BleScanSheet> {
     unawaited(_startScan());
   }
 
-  /// 启动扫描；适配器门禁失败把文案挂到顶部提示（story 8）。
+  /// 启动扫描；适配器门禁失败分两路：门禁类（权限/开关/不支持）回传
+  /// 页面关 sheet、状态条渲染文案（story 8）；其余失败挂顶部提示。
   Future<void> _startScan() async {
     if (!mounted) {
       return;
@@ -119,10 +128,14 @@ class _BleScanSheetState extends ConsumerState<_BleScanSheet> {
     try {
       await _scanner.start();
     } catch (e) {
-      if (mounted) {
-        _setHint(e);
+      if (!mounted) {
+        return;
       }
-      return;
+      if (e is BleObdTransportException && e.kind.isGateError) {
+        widget.onGateFailed(e);
+        return;
+      }
+      _setHint(e);
     }
   }
 

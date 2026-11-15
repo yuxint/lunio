@@ -559,6 +559,92 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
+    testWidgets('无记忆首用门禁失败：状态条文案、不落扫描（story 8）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      // 首用无设备记忆：开扫描前先过适配器门禁；门禁拒绝不能落成
+      // "扫描中 + 空列表"。
+      rig.scanner.gateError = const BleObdTransportException(
+        BleObdLinkErrorKind.permissionDenied,
+      );
+      await seedDeveloperDiagnostics(database, obdDeviceId: null);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('已断开'), findsOneWidget);
+      expect(
+        find.text('蓝牙权限未授权：请在系统设置 > Lunio 中允许蓝牙'),
+        findsOneWidget,
+      );
+      expect(find.text('选择适配器'), findsNothing);
+      expect(find.text('扫描中'), findsNothing);
+      expect(rig.scanner.gateCalls, 1);
+      expect(rig.scanner.startCalls, 0);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('扫描启动遇权限拒绝：关 sheet、状态条渲染文案', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      // 预检门禁能过（adapterState 未拒），真实权限在 startScan 时才
+      // 请求（Android 形态）——拒绝经 sheet 回传页面，关 sheet 露状态条。
+      rig.scanner.startError = const BleObdTransportException(
+        BleObdLinkErrorKind.permissionDenied,
+      );
+      await seedDeveloperDiagnostics(database, obdDeviceId: null);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('选择适配器'), findsNothing);
+      expect(find.text('已断开'), findsOneWidget);
+      expect(
+        find.text('蓝牙权限未授权：请在系统设置 > Lunio 中允许蓝牙'),
+        findsOneWidget,
+      );
+      expect(rig.scanner.startCalls, 1);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('连接中关闭扫描 sheet：取消在途连接、回未连接', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database, obdDeviceId: null);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      rig.scanner.emit([scanEntry('dev-A', 'IOS-Vlink', -58)]);
+      await tester.pump();
+      // 点选后建链在途（AT 序列等门闩），sheet 仍开着。
+      await tester.tap(find.text('IOS-Vlink'));
+      await tester.pump();
+      expect(find.text('连接中'), findsOneWidget);
+      expect(find.text('连接中…'), findsOneWidget);
+      // 连接中关闭 sheet = 取消本次连接：页面回未连接，不把迟到失败
+      // 改写成无 sheet 的"扫描中"。
+      await tester.tap(find.text('关闭'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('未连接'), findsOneWidget);
+      expect(find.text('选择设备'), findsOneWidget);
+      expect(find.text('选择适配器'), findsNothing);
+      // 放行残余门闩：在途尝试已作废，不回扫描中/已连接。
+      rig.chunkGate.completeAll();
+      rig.timeGate.completeAll();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('未连接'), findsOneWidget);
+      expect(find.text('扫描中'), findsNothing);
+      expect(find.text('已连接'), findsNothing);
+      expect(rig.scanner.stopCalls, greaterThanOrEqualTo(2));
+      await leavePageAndFlush(tester);
+    });
+
     testWidgets('扫描点选失败：行态回填 + 恢复扫描（sheet 不关）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);

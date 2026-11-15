@@ -935,6 +935,14 @@ void main() {
         mileageKm: 12000,
       ),
     );
+    await repos.diagnosticsRepository.saveProbe(
+      DiagnosticsProbe(name: '节气门', command: '0111'),
+    );
+    expect(
+      (await database.select(database.diagnosticsProbes).get())
+          .where((row) => row.catalogKey == null),
+      hasLength(1),
+    );
 
     await backupRepository.clearAllData();
 
@@ -946,6 +954,7 @@ void main() {
       isEmpty,
     );
     expect(await database.select(database.appPreferences).get(), isEmpty);
+    expect(await database.select(database.diagnosticsProbes).get(), isEmpty);
     expect(
       await database.select(database.vehicleDefaultMaintenanceItems).get(),
       hasLength(defaultItemsBeforeClear.length),

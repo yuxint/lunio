@@ -12,8 +12,8 @@
 // connect 需显式传 License.nonprofit——本应用单人自用，落在免费档
 // （pubspec 注释同口径）。
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'obd_transport.dart';
@@ -142,6 +142,49 @@ Future<void> _stopScanBestEffort() async {
   }
 }
 
+/// 平台异常是否表示 Android 运行时蓝牙权限被拒。Android 端
+/// flutter_blue_plus 的 adapterState 查询不申请权限（权限在 startScan/
+/// connect 时才请求），拒绝以 PlatformException 返回，消息形如
+/// "Permission android.permission.BLUETOOTH_SCAN required to scan
+/// devices"（API 30 及以下为 ACCESS_FINE_LOCATION）。这里按消息识别，
+/// 统一归 [BleObdLinkErrorKind.permissionDenied]。
+bool _hasPermissionDeniedText(Object error) {
+  final errorText = switch (error) {
+    PlatformException(:final message) => message ?? '',
+    FlutterBluePlusException(:final description) => description ?? '',
+    _ => error.toString(),
+  };
+  final text = errorText.toLowerCase();
+  return text.contains('permission') &&
+      (text.contains('bluetooth') ||
+          text.contains('access_fine_location') ||
+          text.contains('access_coarse_location'));
+}
+
+/// 权限拒绝的平台异常 → 可辨识的 permissionDenied；其他异常返回 null
+///（调用方按自己的兜底类别包装）。
+BleObdTransportException? _permissionDeniedError(Object error) {
+  if (error is BleObdTransportException) {
+    return error.kind == BleObdLinkErrorKind.permissionDenied ? error : null;
+  }
+  if (!_hasPermissionDeniedText(error)) {
+    return null;
+  }
+  return BleObdTransportException(BleObdLinkErrorKind.permissionDenied, error);
+}
+
+/// 建链/扫描异常 → 可辨识 BLE 链路错误（权限拒绝优先，其余归 fallback）。
+BleObdTransportException _mapLinkFailure(
+  Object error, {
+  required BleObdLinkErrorKind fallback,
+}) {
+  if (error is BleObdTransportException) {
+    return error;
+  }
+  return _permissionDeniedError(error) ??
+      BleObdTransportException(fallback, error);
+}
+
 /// 一台扫描到的 BLE 设备（扫描列表行数据）。
 class BleObdScanEntry {
   const BleObdScanEntry({
@@ -169,11 +212,17 @@ abstract class ObdScanner {
   /// 它刷新列表）。
   Stream<List<BleObdScanEntry>> get results;
 
+  /// 适配器门禁（支持/授权/开关）：页面在打开扫描 sheet 前先调用它，
+  /// 门禁失败状态条渲染文案、不落扫描（story 8）。权限拒绝抛
+  /// [BleObdTransportException]。
+  Future<void> ensureReady();
+
   /// 开始扫描（已扫中幂等）。适配器门禁失败抛
   /// [BleObdTransportException]。
   Future<void> start();
 
-  /// 停止扫描（幂等，释放订阅与适配器扫描）。
+  /// 停止扫描（幂等，释放订阅与适配器扫描）。起始窗口内调用只置停扫
+  /// 旗，start 在检查点自行清理（不会扫出无人消费的结果）。
   Future<void> stop();
 
 }
@@ -185,8 +234,15 @@ class BleObdScanner implements ObdScanner {
   bool _scanning = false;
   bool _starting = false;
 
+  /// 起始窗口内的停扫请求（stop 在 start 尚未置 _scanning 时置旗，
+  /// start 在每个检查点自行清理并退出）。
+  bool _stopRequested = false;
+
   @override
   Stream<List<BleObdScanEntry>> get results => _entries.stream;
+
+  @override
+  Future<void> ensureReady() => _ensureAdapterReady();
 
   @override
   Future<void> start() async {
@@ -194,8 +250,12 @@ class BleObdScanner implements ObdScanner {
       return;
     }
     _starting = true;
+    _stopRequested = false;
     try {
       await _ensureAdapterReady();
+      if (_stopRequested) {
+        return;
+      }
       // 先订阅再 startScan（FBP 惯例：onScanResults 只在扫描中发射，
       // 启动后才发；先听后启动不丢首拍）。不过滤设备名——story 5 全
       // 部显示，选中靠用户点选。
@@ -213,17 +273,27 @@ class BleObdScanner implements ObdScanner {
         },
         onError: _entries.addError,
       );
+      if (_stopRequested) {
+        await _cancelScanResources();
+        return;
+      }
       // continuousUpdates：默认节流只报新设备，开着才持续刷新 RSSI
       //（列表排序依据）；removeIfGone 不开——离开范围的设备保留在列
       // 表里，避免"扫到过又消失"闪烁。
       await FlutterBluePlus.startScan(continuousUpdates: true);
+      if (_stopRequested) {
+        await _cancelScanResources();
+        return;
+      }
       _scanning = true;
-    } catch (_) {
+    } catch (e) {
       // 半开清理：startScan 抛错（门禁后意外失败）时订阅与底层扫描都
       // 撤干净，否则订阅泄漏、重试 start 会重复发射。
-      await _resultsSub?.cancel();
-      _resultsSub = null;
-      await _stopScanBestEffort();
+      await _cancelScanResources();
+      final denied = _permissionDeniedError(e);
+      if (denied != null) {
+        throw denied;
+      }
       rethrow;
     } finally {
       _starting = false;
@@ -232,10 +302,16 @@ class BleObdScanner implements ObdScanner {
 
   @override
   Future<void> stop() async {
+    _stopRequested = true;
     if (!_scanning) {
       return;
     }
     _scanning = false;
+    await _cancelScanResources();
+  }
+
+  /// 撤订阅 + 停底层扫描（start 的失败/取消路径与 stop 共用）。
+  Future<void> _cancelScanResources() async {
     await _resultsSub?.cancel();
     _resultsSub = null;
     await _stopScanBestEffort();
@@ -282,7 +358,9 @@ class BleObdTransport implements OBDTransport {
   @override
   Future<void> connect() async {
     await _ensureAdapterReady();
+    _throwIfReleased();
     final device = await _locateDevice();
+    _throwIfReleased();
     _device = device;
     // 断连监视订阅提前到建链前（建链成功到订阅之间的断连不再漏报）；
     // 流首值回放"已断开"由 _established 旗挡掉，建链前的真实断连（连
@@ -296,8 +374,35 @@ class BleObdTransport implements OBDTransport {
         );
       }
     });
-    await _establish(device);
+    try {
+      await _establish(device);
+    } catch (_) {
+      // 建链途中被 disconnect 释放：迟到的订阅/连接要当场收掉（否则
+      // 新连接与订阅无人持有、永久泄漏）。
+      if (_released) {
+        await _releaseLink(device);
+      }
+      rethrow;
+    }
+    if (_released) {
+      // 建链成功但释放旗已置：会话已先行断开，不再交付连接。
+      await _releaseLink(device);
+      throw const BleObdTransportException(
+        BleObdLinkErrorKind.connectFailed,
+        '连接已取消',
+      );
+    }
     _established = true;
+  }
+
+  /// 释放后安全退出（每个 await 后复检；页面退出/取消连接的竞态窗）。
+  void _throwIfReleased() {
+    if (_released) {
+      throw const BleObdTransportException(
+        BleObdLinkErrorKind.connectFailed,
+        '连接已取消',
+      );
+    }
   }
 
   /// 直连第一步：定向扫描定位目标设备。
@@ -318,6 +423,12 @@ class BleObdTransport implements OBDTransport {
       throw BleObdTransportException(
         BleObdLinkErrorKind.deviceNotFound,
       );
+    } catch (e) {
+      // Android 权限拒绝在 startScan 时才出现（见 _hasPermissionDeniedText）。
+      throw _mapLinkFailure(
+        e,
+        fallback: BleObdLinkErrorKind.connectFailed,
+      );
     } finally {
       try {
         await FlutterBluePlus.stopScan();
@@ -328,14 +439,18 @@ class BleObdTransport implements OBDTransport {
   }
 
   /// 直连第二~四步：建链 → 发现服务 → 订阅通知。GATT 形态缺失抛
-  /// serviceMissing，其余失败归 connectFailed。
+  /// serviceMissing，权限拒绝归 permissionDenied，其余失败归
+  /// connectFailed。每个 await 后复检释放旗：中途 disconnect 时当场
+  /// 退出，由 connect 的清理分支收掉半成品连接。
   Future<void> _establish(BluetoothDevice device) async {
     try {
       await device.connect(
         license: License.nonprofit,
         timeout: connectWindow,
       );
+      _throwIfReleased();
       final services = await device.discoverServices();
+      _throwIfReleased();
       final service = _findService(services);
       final notifyChar = _findChar(service, BleObdUuids.notify);
       final writeChar = _findChar(service, BleObdUuids.write);
@@ -345,19 +460,30 @@ class BleObdTransport implements OBDTransport {
         );
       }
       // 先订阅字节流再开通知，通知早到不丢字节（与会话"先听后连"同
-      // 一手法）。
+      // 一手法）。释放后迟到的通知直接丢弃（不再向已关闭的会话投递）。
       _notifySub = notifyChar.onValueReceived.listen(
-        (bytes) => _bytes.add(Uint8List.fromList(bytes)),
-        onError: (Object error) => _bytes.addError(error),
+        (bytes) {
+          if (_released) {
+            return;
+          }
+          _bytes.add(Uint8List.fromList(bytes));
+        },
+        onError: (Object error) {
+          if (_released) {
+            return;
+          }
+          _bytes.addError(error);
+        },
       );
       await notifyChar.setNotifyValue(true);
+      _throwIfReleased();
       _writeChar = writeChar;
     } on BleObdTransportException {
       rethrow;
     } catch (e) {
-      throw BleObdTransportException(
-        BleObdLinkErrorKind.connectFailed,
+      throw _mapLinkFailure(
         e,
+        fallback: BleObdLinkErrorKind.connectFailed,
       );
     }
   }
@@ -403,20 +529,41 @@ class BleObdTransport implements OBDTransport {
 
   /// 断开并释放（幂等）：置释放旗 → 退订断连监视（防自己的断开误报
   /// 链路丢失）→ 退订通知 → 断开设备（尽力而为：设备可能已消失）。
+  /// 在途 connect 的迟到建链由 connect 的释放复检分支收尾
+  ///（[_releaseLink]），不会留下无人持有的连接与订阅。
   @override
   Future<void> disconnect() async {
     if (_released) {
       return;
     }
     _released = true;
+    final device = _device;
+    if (device == null) {
+      // 尚未定位到设备：只收已有订阅（建链途中的迟到资源由 connect
+      // 的释放复检清理）。
+      await _connSub?.cancel();
+      _connSub = null;
+      await _notifySub?.cancel();
+      _notifySub = null;
+      return;
+    }
+    await _releaseLink(device);
+  }
+
+  /// 释放一条（半成品或已建成的）链路：退订两个订阅、清写通道与设备
+  /// 引用、尽力断开设备。disconnect 与 connect 的释放复检共用。
+  Future<void> _releaseLink(BluetoothDevice device) async {
     await _connSub?.cancel();
     _connSub = null;
     await _notifySub?.cancel();
     _notifySub = null;
-    final device = _device;
-    _device = null;
+    _writeChar = null;
+    _established = false;
+    if (identical(_device, device)) {
+      _device = null;
+    }
     try {
-      await device?.disconnect(timeout: 5);
+      await device.disconnect(timeout: 5);
     } catch (_) {
       // 断开尽力而为。
     }

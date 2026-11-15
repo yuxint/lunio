@@ -127,6 +127,27 @@ class Elm327Session {
   Completer<String>? _frameWaiter;
   int _generation = 0;
 
+  /// 已释放旗（dispose 首行置位）：之后禁止状态回写与事件投递——迟到
+  /// 的建链成功、断开、轮询结果都不得再碰已关闭的事件流（否则
+  /// StateError 经 unawaited 链逃逸）。
+  bool _disposed = false;
+
+  /// 事件投递单一出口：释放后/流关闭后静默丢弃。
+  void _emit(Elm327SessionEvent event) {
+    if (_disposed || _events.isClosed) {
+      return;
+    }
+    _events.add(event);
+  }
+
+  /// 释放后安全退出（每个 await 后复检；页面退出/关闭 sheet 取消连接
+  /// 的竞态窗）。
+  void _throwIfDisposed() {
+    if (_disposed) {
+      throw const Elm327SessionException('会话已释放');
+    }
+  }
+
   /// 连接并跑完 AT 初始化序列。成功 → 状态 connected + 发
   /// [Elm327Connected]；失败 → 状态 disconnected、发
   /// [Elm327Disconnected]，并上抛 [Elm327SessionException]（可辨识，
@@ -138,9 +159,13 @@ class Elm327Session {
     if (_state != Elm327SessionState.idle) {
       throw StateError('connect() 只允许从 idle 进入（当前 $_state）');
     }
+    if (_disposed) {
+      throw const Elm327SessionException('会话已释放');
+    }
     _state = Elm327SessionState.connecting;
     try {
       await _transport.connect();
+      _throwIfDisposed();
       // 先订阅再发首条指令，ATZ 横幅早到不丢字节。
       _byteSub = _transport.byteStream.listen(
         _onBytes,
@@ -150,14 +175,20 @@ class Elm327Session {
       );
       for (final command in Elm327Session.initSequence) {
         await _request(normalizeObdCommand(command));
+        _throwIfDisposed();
       }
     } catch (e) {
       _markDisconnected(e);
       await _teardown();
       throw Elm327SessionException('AT 初始化序列失败', e);
     }
+    if (_disposed) {
+      // dispose 已先行清尾：不再标 connected、不再投递事件（transport
+      // 的迟到建链由它自己的释放复检收尾）。
+      throw const Elm327SessionException('会话已释放');
+    }
     _state = Elm327SessionState.connected;
-    _events.add(const Elm327Connected());
+    _emit(const Elm327Connected());
   }
 
   /// 启动串行轮询循环（要求 connected；已启动再调抛 StateError）。
@@ -188,10 +219,12 @@ class Elm327Session {
     List<DiagnosticsProbe> Function() enabledProbes,
   ) async {
     try {
-      while (!_stopPolling) {
+      while (!_stopPolling && !_disposed) {
         final probes = enabledProbes();
         for (final probe in probes) {
-          if (_stopPolling || _state != Elm327SessionState.connected) {
+          if (_stopPolling ||
+              _disposed ||
+              _state != Elm327SessionState.connected) {
             return;
           }
           final probeId = probe.id;
@@ -208,13 +241,13 @@ class Elm327Session {
               parseType: probe.parseType,
               frameText: frame,
             );
-            _events.add(Elm327ProbeReading(
+            _emit(Elm327ProbeReading(
               probeId: probeId,
               reading: reading,
               at: _now(),
             ));
           } on Elm327TimeoutException {
-            _events.add(Elm327ProbeReading(
+            _emit(Elm327ProbeReading(
               probeId: probeId,
               reading: const ObdNoData('超时'),
               at: _now(),
@@ -229,7 +262,7 @@ class Elm327Session {
           } catch (e) {
             // 其他异常（解析缺陷等非链路问题）归单条无数据，不连坐
             // 断连语义、不中断轮询。
-            _events.add(Elm327ProbeReading(
+            _emit(Elm327ProbeReading(
               probeId: probeId,
               reading: ObdNoData('读取失败：$e'),
               at: _now(),
@@ -333,7 +366,7 @@ class Elm327Session {
     if (_state == Elm327SessionState.connecting ||
         _state == Elm327SessionState.connected) {
       _state = Elm327SessionState.disconnected;
-      _events.add(Elm327Disconnected(cause));
+      _emit(Elm327Disconnected(cause));
     }
   }
 
@@ -358,11 +391,13 @@ class Elm327Session {
   }
 
   /// 释放全部资源（页面 dispose 调用）：disconnect + 关闭事件流。幂
-  /// 等；之后 events 流关闭、连接级事件不再产生。
+  /// 等；之后 events 流关闭、连接级事件不再产生。释放旗在首行置位：
+  /// 在途 connect/poll 的迟到回写经 [_throwIfDisposed] 与 [_emit] 丢弃。
   Future<void> dispose() async {
+    _disposed = true;
     await disconnect();
     if (!_events.isClosed) {
-      _events.close();
+      unawaited(_events.close());
     }
   }
 
