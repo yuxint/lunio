@@ -21,7 +21,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/data/database/app_database.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
-import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/ble_obd_errors.dart';
+import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';

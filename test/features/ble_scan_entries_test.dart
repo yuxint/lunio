@@ -5,7 +5,7 @@
 // 修订节）。
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 
 BleObdScanEntry entry(String id, String name, int rssi) =>
     BleObdScanEntry(id: id, name: name, rssi: rssi);

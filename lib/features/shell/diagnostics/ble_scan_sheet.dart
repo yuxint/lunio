@@ -15,7 +15,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../shared/shell_shared.dart';
-import 'ble_obd_transport.dart' show BleObdScanEntry;
+import 'ble_scan_entries.dart' show BleObdScanEntry;
 import 'diagnostics_connection_controller.dart';
 
 /// 扫描中提示文案（页面状态条与 sheet 顶部提示共用一份，文案单一出

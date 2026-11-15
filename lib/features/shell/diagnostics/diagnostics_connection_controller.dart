@@ -22,10 +22,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../domain/entities/diagnostics_probe.dart';
-import 'ble_obd_transport.dart';
+import 'ble_obd_errors.dart';
+import 'ble_scan_entries.dart';
 import 'elm327_parser.dart' show ObdReading, ObdValue;
 import 'elm327_session.dart';
 import 'obd_runtime.dart';
+import 'obd_scanner.dart';
 
 /// 页面级连接相位（状态条渲染依据）。idle = 进页面首帧的「未连接」或
 /// 扫描 sheet 取消后的「未连接」；scanning = 扫描 sheet 打开中。

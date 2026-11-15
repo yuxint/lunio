@@ -11,7 +11,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
-import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/ble_obd_errors.dart';
+import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 import 'package:lunio/features/shell/diagnostics/diagnostics_connection_controller.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_parser.dart'
     show ObdNoData, ObdValue;

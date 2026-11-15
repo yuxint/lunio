@@ -8,9 +8,10 @@
 // Bean。
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'ble_obd_transport.dart';
+import 'ble_obd_link.dart';
 import 'elm327_session.dart';
 import 'mock_obd_transport.dart';
+import 'obd_scanner.dart';
 
 /// 诊断链路 mock 回退开关（dart-define）：`--dart-define=LUNIO_OBD_MOCK=true`
 /// 时整条链路回退票 05 语料演示 Mock（模拟器无蓝牙，视觉验收用）；默

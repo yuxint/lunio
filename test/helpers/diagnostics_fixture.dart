@@ -16,9 +16,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lunio/features/shell/diagnostics/ble_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/obd_scanner.dart';
 import 'package:lunio/features/shell/diagnostics/obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
 

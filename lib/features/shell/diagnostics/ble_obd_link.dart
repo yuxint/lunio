@@ -1,7 +1,12 @@
-// OBD 传输层 BLE 实现（票 07，ADR 0020）：flutter_blue_plus 2.3.x 胶水
-// 层。把 BLE 会话六步（适配器门禁 → 定向扫描定位设备 → 建链 → 发现服
-// 务 → 订阅通知 → 挂断连监视）翻译成 OBDTransport 的字节流契约，协议
-// 层与会话控制器零改动（传输层抽象的意义所在）。
+// OBD BLE 链路适配器（票 07，ADR 0020）：flutter_blue_plus 2.3.x 胶水层。
+// 把 BLE 会话六步（适配器门禁 → 定向扫描定位设备 → 建链 → 发现服务 →
+// 订阅通知 → 挂断连监视）翻译成 OBDTransport 的字节流契约，协议层与会
+// 话控制器零改动（传输层抽象的意义所在）。
+//
+// 2026-11-15 按概念拆分后本文件只留 FBP 胶水：适配器门禁、扫描归属代
+// 数、扫描器 adapter 与传输层 adapter（两者共享门禁与扫描归属，同住一
+// 处）。错误分类在 ble_obd_errors.dart、扫描清单协议在
+// ble_scan_entries.dart、契约在 obd_scanner.dart / obd_transport.dart。
 //
 // ≈ Java 的 JSch/serial 通信工具类：connect ≈ 六步建链（含握手前检
 // 查），send ≈ OutputStream.write，byteStream ≈ InputStream 事件流，
@@ -12,10 +17,13 @@
 // connect 需显式传 License.nonprofit——本应用单人自用，落在免费档
 // （pubspec 注释同口径）。
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'ble_obd_errors.dart';
+import 'ble_scan_entries.dart';
+import 'obd_scanner.dart';
 import 'obd_transport.dart';
 
 /// GATT 通道 UUID（docs/car_obd_link/ 实测事实：厂商借用 SIG 16-bit 编
@@ -32,68 +40,6 @@ class BleObdUuids {
 
   /// 写入 characteristic UUID（带响应写指令字节）。
   static const write = '00002af1-0000-1000-8000-00805f9b34fb';
-}
-
-/// BLE 链路错误类别（异常的可辨识分类；状态条文案单一出口见
-/// [BleObdTransportException.statusCopy]）。
-enum BleObdLinkErrorKind {
-  /// 设备不支持蓝牙（模拟器/无蓝牙主机）。
-  adapterUnavailable,
-
-  /// 蓝牙权限拒绝（iOS 首次弹窗拒绝 / Android 运行时权限拒绝）。
-  permissionDenied,
-
-  /// 蓝牙未开启。
-  adapterOff,
-
-  /// 定向扫描窗口内未发现目标设备（适配器断电/离开范围）。
-  deviceNotFound,
-
-  /// 建链或通道订阅失败（建链超时、服务发现失败等）。
-  connectFailed,
-
-  /// GATT 通道形态缺失（18F0/2AF0/2AF1 缺一，适配器固件异常）。
-  serviceMissing,
-
-  /// 链路丢失（连接后适配器断电/走远，经断连监视上抛）。
-  linkLost;
-
-  /// 门禁类（蓝牙关/不支持/权限）：扫描也扫不出结果，状态条渲染文案
-  /// 引导修系统状态、不落扫描 sheet（诊断页连接流程按它分流）。
-  bool get isGateError =>
-      this == BleObdLinkErrorKind.adapterOff ||
-      this == BleObdLinkErrorKind.adapterUnavailable ||
-      this == BleObdLinkErrorKind.permissionDenied;
-}
-
-/// BLE 链路可辨识异常（错误文案单一出口）。会话控制器把它当普通传输
-/// 层异常透传（Disconnected 事件 cause / connect() 重抛的 wrap cause），
-/// 页面按 kind 翻译状态条文案与降级分支。
-class BleObdTransportException implements Exception {
-  const BleObdTransportException(this.kind, [this.cause]);
-
-  final BleObdLinkErrorKind kind;
-  final Object? cause;
-
-  /// 状态条错误文案（story 8：权限拒绝/蓝牙未开有明确提示）。文案按
-  /// kind 唯一映射，throw 点不重复写字符串。
-  String get statusCopy => switch (kind) {
-        BleObdLinkErrorKind.adapterUnavailable =>
-          '蓝牙不可用：本设备不支持蓝牙，无法连接适配器',
-        BleObdLinkErrorKind.permissionDenied =>
-          '蓝牙权限未授权：请在系统设置 > Lunio 中允许蓝牙',
-        BleObdLinkErrorKind.adapterOff => '蓝牙未开启：请打开蓝牙后重试',
-        BleObdLinkErrorKind.deviceNotFound =>
-          '未找到适配器：请确认适配器已插车（车辆通电）并靠近手机',
-        BleObdLinkErrorKind.connectFailed => '适配器连接失败：请重试',
-        BleObdLinkErrorKind.serviceMissing =>
-          '适配器通道异常：请重启适配器后重试',
-        BleObdLinkErrorKind.linkLost => '连接已断开',
-      };
-
-  @override
-  String toString() => 'BleObdTransportException: ${kind.name}'
-      '${cause == null ? '' : ' ($cause)'}';
 }
 
 /// 适配器门禁：支持/授权/开关三查，通过才放行扫描与建链。蓝牙 API 首
@@ -129,7 +75,7 @@ Future<void> _ensureAdapterReady() async {
       BleObdLinkErrorKind.adapterUnavailable,
     );
   } catch (e) {
-    throw _mapLinkFailure(
+    throw mapBleObdLinkFailure(
       e,
       fallback: BleObdLinkErrorKind.adapterUnavailable,
     );
@@ -184,220 +130,6 @@ Future<void> _stopScanIfOwned(int token) async {
     return;
   }
   await _stopScanBestEffort();
-}
-
-/// 平台异常是否表示 Android 运行时蓝牙权限被拒。Android 端
-/// flutter_blue_plus 的 adapterState 查询不申请权限（权限在 startScan/
-/// connect 时才请求），拒绝以 PlatformException 返回，消息形如
-/// "Permission android.permission.BLUETOOTH_SCAN required to scan
-/// devices"（API 30 及以下为 ACCESS_FINE_LOCATION）。这里按消息识别，
-/// 统一归 [BleObdLinkErrorKind.permissionDenied]。
-bool _hasPermissionDeniedText(Object error) {
-  final errorText = switch (error) {
-    PlatformException(:final message) => message ?? '',
-    FlutterBluePlusException(:final description) => description ?? '',
-    _ => error.toString(),
-  };
-  final text = errorText.toLowerCase();
-  return text.contains('permission') &&
-      (text.contains('bluetooth') ||
-          text.contains('access_fine_location') ||
-          text.contains('access_coarse_location'));
-}
-
-/// 权限拒绝的平台异常 → 可辨识的 permissionDenied；其他异常返回 null
-///（调用方按自己的兜底类别包装）。
-BleObdTransportException? _permissionDeniedError(Object error) {
-  if (error is BleObdTransportException) {
-    return error.kind == BleObdLinkErrorKind.permissionDenied ? error : null;
-  }
-  if (!_hasPermissionDeniedText(error)) {
-    return null;
-  }
-  return BleObdTransportException(BleObdLinkErrorKind.permissionDenied, error);
-}
-
-/// 建链/扫描异常 → 可辨识 BLE 链路错误（权限拒绝优先，其余归 fallback）。
-BleObdTransportException _mapLinkFailure(
-  Object error, {
-  required BleObdLinkErrorKind fallback,
-}) {
-  if (error is BleObdTransportException) {
-    return error;
-  }
-  return _permissionDeniedError(error) ??
-      BleObdTransportException(fallback, error);
-}
-
-/// 扫描清单合并（纯函数，维护"首见定序"）：2026-11-15 拍板
-/// （ADR 0020 修订节）——RSSI 每拍抖 ±3~10dBm，按当前值重排会让行序
-/// 频繁乱跳，改为设备位置在首次发现时定死。
-///
-/// 规则：
-/// 1. 广播名为空的设备不进清单（同日拍板反转 story 5「全部显示防误
-///    伤」：无名条目是与 OBD 无关的周边蓝牙设备，留着只会淹没有效
-///    目标；有自定义名的适配器不受影响）。
-/// 2. 已在清单里的设备位置冻结，只更新信号强度/名称——后续拍摄不再
-///    重排。
-/// 3. 新设备按"当下展示的信号强度"插入：排在第一条比它弱的行之前；
-///    同强度排已有行之后（首见先后即次序）；同拍多台新设备之间按信
-///    号降序、同强度按设备标识排序（Dart List.sort 不保证稳定，显式
-///    定序保证测试确定性）。
-/// 4. 这一拍里没出现的老设备保留原行原值（FBP 全量清单偶发缺行/名瞬
-///    时为空时不闪行——扫描 sheet 生命周期短，宁可留旧不闪）。
-///
-/// ≈ Java 的合并函数：输入旧有序链表 + 新快照，返回新有序链表，不修
-/// 改入参。测试直接单测本函数（test/features/ble_scan_entries_test.
-/// dart）。
-List<BleObdScanEntry> mergeScanEntries(
-  List<BleObdScanEntry> previous,
-  List<BleObdScanEntry> latest,
-) {
-  final freshById = <String, BleObdScanEntry>{
-    for (final entry in latest)
-      if (entry.name.isNotEmpty) entry.id: entry,
-  };
-  final merged = <BleObdScanEntry>[];
-  for (final old in previous) {
-    final fresh = freshById.remove(old.id);
-    merged.add(fresh ?? old);
-  }
-  final newcomers = freshById.values.toList()
-    ..sort((a, b) {
-      final byRssi = b.rssi.compareTo(a.rssi);
-      return byRssi != 0 ? byRssi : a.id.compareTo(b.id);
-    });
-  for (final entry in newcomers) {
-    var index = merged.length;
-    for (var i = 0; i < merged.length; i++) {
-      if (merged[i].rssi < entry.rssi) {
-        index = i;
-        break;
-      }
-    }
-    merged.insert(index, entry);
-  }
-  return merged;
-}
-
-/// 扫描清单合并器：把高频原始扫描拍压成 ≤[interval] 的列表发射
-/// （2026-11-15 拍板，ADR 0020 修订节）。排序稳定性（[mergeScanEntries]）
-/// 与刷新节奏是同一根因的两面，都收在这里：
-///
-/// - 首拍立即发射：sheet 打开即见列表，不等整拍；
-/// - 出现新设备立即发射：发现即可见（插入本身就是要的信息）；
-/// - 只有信号数字变化时合并等待：距上次发射 ≥ [interval] 才发，
-///   不足则记脏，由外部节拍器到点调 [flushIfDue] 补发尾拍。
-///
-/// 定序状态生命周期 = 一次扫描会话（[reset] 由 [BleObdScanner.start]
-/// 调用）：恢复扫描重新定序一次，失败是低频路径，接受这一下重排，
-/// 不为此增加跨会话协议。时间经 [now] 注入，单测给固定时钟。
-/// ≈ Java 的节流阀（coalescing valve）：窗口内的更新合并成一次。
-class ScanEntryCoalescer {
-  ScanEntryCoalescer({
-    required this.emit,
-    this.interval = defaultInterval,
-    DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
-
-  /// 默认合并窗口：1 秒（行序冻结后数字 1Hz 刷新足够）。
-  static const defaultInterval = Duration(seconds: 1);
-
-  /// 发射出口（真扫描器接结果流控制器；单测收进列表）。
-  final void Function(List<BleObdScanEntry> entries) emit;
-
-  /// 合并窗口。
-  final Duration interval;
-
-  final DateTime Function() _now;
-
-  List<BleObdScanEntry> _entries = const [];
-  DateTime? _lastEmitAt;
-  bool _dirty = false;
-
-  /// 当前合并后的清单（只读；测试断言用）。
-  List<BleObdScanEntry> get entries => _entries;
-
-  /// 清空定序与节流窗口（新扫描会话调用）。
-  void reset() {
-    _entries = const [];
-    _lastEmitAt = null;
-    _dirty = false;
-  }
-
-  /// 收一拍原始清单：合并后按"首拍/新设备/窗口到点立即发，否则记脏"
-  /// 决定是否现在发射。
-  void accept(List<BleObdScanEntry> latest) {
-    final previousCount = _entries.length;
-    _entries = mergeScanEntries(_entries, latest);
-    final last = _lastEmitAt;
-    final due = last == null || _now().difference(last) >= interval;
-    if (_entries.length > previousCount || due) {
-      _emit();
-      return;
-    }
-    _dirty = true;
-  }
-
-  /// 节拍器到点补发（无待发更新不发）。
-  void flushIfDue() {
-    if (!_dirty) {
-      return;
-    }
-    final last = _lastEmitAt;
-    if (last == null || _now().difference(last) >= interval) {
-      _emit();
-    }
-  }
-
-  void _emit() {
-    _lastEmitAt = _now();
-    _dirty = false;
-    emit(_entries);
-  }
-}
-
-/// 一台扫描到的 BLE 设备（扫描列表行数据）。
-class BleObdScanEntry {
-  const BleObdScanEntry({
-    required this.id,
-    required this.name,
-    required this.rssi,
-  });
-
-  /// 平台设备标识（iOS = CBPeripheral identifier UUID；Android = MAC），
-  /// 设备记忆偏好与定向扫描都用它。
-  final String id;
-
-  /// 广播名（合并函数已过滤空名，清单里的条目恒非空）。
-  final String name;
-
-  /// 信号强度 dBm（越大越近）。列表序不跟随它实时变化：行位置在首见
-  /// 时定死，数字按 ≤1Hz 刷新（2026-11-15，ADR 0020 修订节）。
-  final int rssi;
-}
-
-/// 设备扫描器接缝（诊断页扫描选择 sheet 的数据源）。抽象出来是为了
-/// widget 测试可注入受控假扫描器——真扫描器碰 flutter_blue_plus 静态
-/// 门面，单测不可控（transport 接缝同手法）。
-abstract class ObdScanner {
-  /// 扫描结果流（每次发射 = 当前全量清单按首见定序整备；发射节奏由
-  /// 实现合并至 ≤1Hz，新设备立即发射；sheet 订阅它刷新列表）。
-  Stream<List<BleObdScanEntry>> get results;
-
-  /// 适配器门禁（支持/授权/开关）：页面在打开扫描 sheet 前先调用它，
-  /// 门禁失败状态条渲染文案、不落扫描（story 8）。权限拒绝抛
-  /// [BleObdTransportException]。
-  Future<void> ensureReady();
-
-  /// 开始扫描（已扫中幂等）。适配器门禁失败抛
-  /// [BleObdTransportException]。
-  Future<void> start();
-
-  /// 停止扫描（幂等，释放订阅与适配器扫描）。起始窗口内调用只置停扫
-  /// 旗，start 在检查点自行清理（不会扫出无人消费的结果）。
-  Future<void> stop();
-
 }
 
 /// 真扫描器（flutter_blue_plus 门面胶水）。
@@ -481,7 +213,7 @@ class BleObdScanner implements ObdScanner {
       // 半开清理：startScan 抛错（门禁后意外失败）时订阅与底层扫描都
       // 撤干净，否则订阅泄漏、重试 start 会重复发射。
       await _cancelScanResources(scanToken);
-      final denied = _permissionDeniedError(e);
+      final denied = bleObdPermissionDeniedError(e);
       if (denied != null) {
         throw denied;
       }
@@ -646,8 +378,9 @@ class BleObdTransport implements OBDTransport {
         );
       }
     } catch (e) {
-      // Android 权限拒绝在 startScan 时才出现（见 _hasPermissionDeniedText）。
-      throw _mapLinkFailure(
+      // Android 权限拒绝在 startScan 时才出现（平台异常按消息识别，
+      // 见 ble_obd_errors.dart 的权限映射）。
+      throw mapBleObdLinkFailure(
         e,
         fallback: BleObdLinkErrorKind.connectFailed,
       );
@@ -701,7 +434,7 @@ class BleObdTransport implements OBDTransport {
     } on BleObdTransportException {
       rethrow;
     } catch (e) {
-      throw _mapLinkFailure(
+      throw mapBleObdLinkFailure(
         e,
         fallback: BleObdLinkErrorKind.connectFailed,
       );
@@ -734,7 +467,6 @@ class BleObdTransport implements OBDTransport {
     }
     return null;
   }
-
 
   @override
   Future<void> send(List<int> bytes) async {
