@@ -89,10 +89,24 @@
 - [x] 06 检测点表单：增改删自定义项，走表单 sheet 运行时 + plain-Dart 决策体（完成于 2026-11-13；`probe_form_controller.dart` 9 单测变异 2/2、`probe_form.dart` 表单+入口（ADR 0016 统一出口、删除确认入口弹）、动作层 `saveDiagnosticsProbe`/`removeDiagnosticsProbe`、内置行点按无编辑入口（story 23）、widget 5 用例升到 11，757 绿）。
 - [x] 07 BLE 真链路：flutter_blue_plus + OBDTransport 传输层抽象（BLE/Mock 两实现）（完成于 2026-11-15；`ble_obd_transport.dart` 传输层+扫描器接缝+可辨识异常文案单一出口、`ble_scan_sheet.dart` 扫描选择 sheet、连接流程接设备记忆（直连/落扫/权限文案三向分流）、动作层 `rememberObdDevice`、双端权限声明、`--dart-define=LUNIO_OBD_MOCK=true` mock 回退开关、widget 11 新用例（页面测试共 22 用例）/ 全量 769 绿；2026-11-15 审查修复：建链/释放竞态收尾、首用门禁前置、Android 权限映射、连接中关 sheet 取消、停扫起始窗口（补 3 widget 用例 + 1 会话单测）；复核轮修复：teardown 订阅成对捕获、重选会话同一性、单次 device.disconnect、扫描归属代数（补 1 widget 重选用例）；FBP 2.x 商业授权口径进 ADR 0020 修订节；**真机验收待执行**——清单在手册 5.10 节）。
 - [x] 08 文档收尾：operations-manual 诊断页章节、真机验收清单归档（完成于 2026-11-15；手册 5.10 补连接流程/扫描 sheet/BLE 传输层/真机验收清单六条；收尾核对：手册行号锚点三轮全量比对修正 80 处漂移（含 provider 依赖图 26 节点刷新、漏绘诊断域两 provider 图后补注、偏好纪元清单 11→12 计数修正），AGENTS/GLOSSARY/ADR/migration v4 事实核对一致，DESIGN.md 无新视觉 token 不动。2026-11-15 审查退回修正手册 5 处事实漂移：开关行类名统一为 `_DeveloperSwitchRow`、`lastObdDeviceId` 写点、7.1 表清单补 `diagnostics_probes`、5.7 关开发者连带清单补 `diagnosticsEnabled`、连接入口改按 `_startConnect`/`_openScanSheet` 分述）。
+- [x] 09 扫描弹层修复：过滤空名设备 + 留白根因两处（完成于 2026-11-15；拍板反转 story 5「全部显示防误伤」——广播名为空的设备不进列表，`visibleScanEntries` 纯函数（过滤空名+信号降序）在扫描器数据源做、真扫描器与测试替身同一整备函数，单测 `test/features/ble_scan_entries_test.dart`；`ListView` 显式 `padding: EdgeInsets.zero` 去安全区垫入、空态占位去 `Center` 改紧凑上下 24dp；widget 加无留白几何回归用例；ADR 0020 修订节记反转）。
+- [x] 10 断开按钮：已连接状态条行尾「断开」（完成于 2026-11-15；`_disconnectManually` 释放会话落「未连接」相位（黄色未连接适配器+选择设备按钮），不落红色「已断开」；设备记忆保留、重进仍直连；手动断开后置会话 null，迟到断开事件不改写相位；连接中不加取消（拍板保持范围）；widget 用例锁相位与记忆保留）。
+- [x] 11 最后读数持久化：检测点行持久化最后有效读数（完成于 2026-11-15，ADR 0021 修订节；`diagnostics_probes` 加 `last_value`/`last_percent`/`last_reading_at` 三列、DB v4→v5 增量迁移（建表/加列分支互斥纪律）、只存有效值（无数据不写不覆盖）、每有效读数写一次不盖同步章（`saveProbeReading` 只 UPDATE 三列）、备份不携带（导出 payload 剥除、恢复从零积累）、行尾时间今天 `HH:mm:ss`/非今天 `M/d HH:mm:ss`（`formatReadingTime` 注入时钟可单测）、油量/水温核心值卡同源恢复；迁移 v2/v3 跨版本升级重复列缺陷当场修复并加 else-if 纪律；数据层三测试（迁移/仓库读数写点/备份契约）+ 跨天格式单测 + widget 2 用例（重进显读数/无数据不写不覆盖），全量 784 绿）；**真机视觉复验待执行**——留白/断开按钮/时间格式三项清单在手册 5.10 节 ⑦⑧⑨。
+- [x] 12 扫描列表稳定性：首见定序 + ≤1Hz 刷新（完成于 2026-11-15，ADR 0020 修订节；根治实车反馈「行序频繁乱跳」——根因是每次扫描拍按当时 RSSI 全量重排而 RSSI 每拍抖动；`mergeScanEntries` 合并纯函数（空名过滤沿用、已有行位置冻结只更新数字、新设备按当下强度插入一次）+ `ScanEntryCoalescer`（首拍/新设备立即发射、纯数字变化合并至 1Hz，扫描会话 start 复位；定时器随会话起停）接入真扫描器；测试替身 emit 走同一合并函数、start 复位镜像；单测 16 条（合并语义 11 + 节流 5）+ widget 顺序稳定用例 1（页面共 27 用例）；不做自动停扫/重排动画/额外文案（拍板范围）；**真机视觉复验待执行**——手册 5.10 节 ⑩）。
 
 票据：`.scratch/car-obd-diagnostics/issues/`（本机未跟踪文件）。
 来源：2026-11-12 grill 三轮 spec（`.scratch/car-obd-diagnostics/spec.md`）+ ADR 0020/0021 + 硬件实车验收语料 `docs/car_obd_link/`。
 验收：各票自带验收清单；BLE 真链路不进自动化，走 spec 的真机验收清单。
+
+### P8 车辆诊断 v2（每车检测点 / 刷新规则 / 双油量 / 调试终端，2026-11-15）
+
+- [x] 01 每车检测点：DB v6、备份 v5、每车播种/删车级联、`diagnosticsProbesProvider` 按车 family、项目式检测点管理 sheet（内置可编辑不可删、自定义可增改删）（完成于 2026-11-15，ADR 0021 修订节）。
+- [x] 02 刷新规则：每检测点 `refresh_interval_seconds` 默认 30（5–3600）、1 秒拍调度、手动刷新 `requestImmediatePoll`、调试暂停（完成于 2026-11-15，ADR 0023）。
+- [x] 03 双油量：车辆加满可加油量/油箱总容积、诊断油量卡可用/估算总油量、加油页不改（完成于 2026-11-15，ADR 0022）；测试覆盖思域 23.137% × 40.487 + 6.513 口径。
+- [x] 04 调试终端与一键验证：`debug_panel.dart`、`obdVerificationCommands`（标准 PID/能力位图 + 本田 227029/22202C/22267A）、日志复制；私有 DID 只验证不进正常轮询（完成于 2026-11-15，ADR 0023）。
+- [x] 05 测试/文档：全量 808 绿；迁移 v2–v5→v6、备份 v4→v5、检测点每车 CRUD/种子、会话手动刷新/暂停原始命令、widget 双油量/管理 sheet/调试终端；手册 5.10/5.10.1、AGENTS、migration schema、GLOSSARY、ADR 同步。
+- [ ] 06 Phase 2（待用户真车日志）：跑一键验证 → 标定 `227029` 油量偏移/缩放与水温命中命令 → 加 header/ISO-TP 多帧重组/私有解析 → 内置水温替换 + 实测总油量。
+- [ ] 07 电瓶起动电压测试：另立票，不在本轮（OBD 单点电压不能判断寿命，ADR 0022 背景外的独立能力）。
 
 ## 4. 未排期产品方向（想法池，按当前价值排序）
 

@@ -305,8 +305,22 @@ void main() {
     const codec = BackupCodec();
     final payload = BackupPayload(
       schemaVersion: BackupCodec.currentSchemaVersion,
+      cars: [
+        Car(
+          id: 1,
+          brand: '本田',
+          model: '思域',
+          powertrainType: PowertrainType.fuel,
+          currentMileageKm: 38600,
+          roadDate: const LocalDate(2023, 8, 12),
+          tankCapacityLiters: 40.487,
+          totalTankCapacityLiters: 47,
+          sync: sync,
+        ),
+      ],
       diagnosticsProbes: [
         DiagnosticsProbe(
+          carId: 1,
           name: '进气温度',
           command: '010F',
           parseType: DiagnosticsParseType.coolantTemp,
@@ -314,6 +328,7 @@ void main() {
         ),
         // 停用态的自定义项也是用户劳动成果，随段导出并往返保留。
         DiagnosticsProbe(
+          carId: 1,
           name: '发动机风速',
           command: '0114',
           parseType: DiagnosticsParseType.rawHex,
@@ -329,18 +344,46 @@ void main() {
     // （沿 fuelRecords 先例，ADR 0021）；段只导自定义项，内置不进备份。
     expect(encoded, isNot(contains('"diagnosticsProbes":[{"id"')));
     expect(encoded, isNot(contains('catalogKey')));
+    expect(encoded, contains('"carId":1'));
+    expect(encoded, contains('"refreshIntervalSeconds":30'));
 
     final decoded = codec.decode(encoded);
+    expect(decoded.cars.single.totalTankCapacityLiters, 47);
     expect(decoded.diagnosticsProbes, hasLength(2));
     final first = decoded.diagnosticsProbes.first;
+    expect(first.carId, 1);
     expect(first.name, '进气温度');
     expect(first.command, '010F');
     expect(first.parseType, DiagnosticsParseType.coolantTemp);
     expect(first.enabled, isTrue);
+    expect(first.refreshIntervalSeconds, 30);
+    expect(first.header, isNull);
     expect(first.id, isNull);
     expect(first.catalogKey, isNull);
     // 启停是用户数据，往返保留。
     expect(decoded.diagnosticsProbes.last.enabled, isFalse);
+
+    // v4 备份兼容：检测点条目没有 carId/间隔/header，归第一辆车 +
+    // 缺省间隔 30、header null（ADR 0021 修订节）。
+    final v4Json = encoded
+        .replaceFirst(
+          '"schemaVersion":${BackupCodec.currentSchemaVersion}',
+          '"schemaVersion":4',
+        )
+        .replaceAll('"carId":1,', '')
+        .replaceAll('"refreshIntervalSeconds":30,', '')
+        .replaceAll('"header":null,', '')
+        .replaceFirst('"totalTankCapacityLiters":47.0,', '');
+    final v4 = codec.decode(v4Json);
+    expect(v4.schemaVersion, 4);
+    expect(v4.cars.single.totalTankCapacityLiters, isNull);
+    expect(v4.diagnosticsProbes, hasLength(2));
+    expect(v4.diagnosticsProbes.every((p) => p.carId == 1), isTrue);
+    expect(
+      v4.diagnosticsProbes.every((p) => p.refreshIntervalSeconds == 30),
+      isTrue,
+    );
+    expect(v4.diagnosticsProbes.every((p) => p.header == null), isTrue);
 
     // 未知解析类型 wire 值：fail-fast 拒绝（与 PowertrainType.byWire
     // 同先例，坏数据不静默降级）。

@@ -1,23 +1,33 @@
 # 当前数据库表结构
 
 本文描述 Lunio 当前的 SQLite/Drift 数据库事实。产品文档版本、车型目录
-asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
-（ADR 0021）；备份 JSON `schemaVersion` 为 `4`（解码兼容读 v1–v3，
-见下文"备份契约边界"）。
+asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
+（ADR 0021 修订节、ADR 0022、ADR 0023）；备份 JSON `schemaVersion` 为
+`5`（解码兼容读 v1–v4，见下文"备份契约边界"）。
 
 本文只记录当前代码事实，不记录历史版本演变。事实源是
 `lib/data/database/app_database.dart` 和生成文件 `lib/data/database/app_database.g.dart`。
 
 ## 版本和升级策略（ADR 0005）
 
-- 当前数据库：`schemaVersion = 4`。
+- 当前数据库：`schemaVersion = 6`。
 - 全新安装走 `createAll` 建全部表，然后 bootstrap 从 asset
-  目录灌入车型目录与默认保养模板，并幂等对账写入内置三条检测点
-  种子（ADR 0021）。
+  目录灌入车型目录与默认保养模板，并按车幂等对账写入内置三条检测点
+  种子（ADR 0021 修订节）。
 - 纯增量变更（新增表/列）走 `onUpgrade` 增量迁移，老库原地升级、
-  存量数据保留：v2→v3 只建 `fuel_records` 表；v3→v4 只建
-  `diagnostics_probes` 表（见 `app_database.dart` 的 `migration`；
-  检测点种子不在迁移里插，由 bootstrap 总入口幂等对账写入）。
+  存量数据保留：v2→v3 只建 `fuel_records` 表；v3→v4 建
+  `diagnostics_probes` 表；v4→v5 给 `diagnostics_probes` 加最后读数
+  三列（`last_value`/`last_percent`/`last_reading_at`，升级后为
+  NULL = 还没有最后读数）；v5→v6 给 `cars` 加 `total_tank_capacity_liters`
+  （可空），给 `diagnostics_probes` 加 `car_id`/`refresh_interval_seconds`
+  /`header`，并把唯一键从 `{catalog_key}` 改为 `{car_id, catalog_key}`——
+  SQLite 不能 ALTER 唯一约束，v5→v6 对该表做 `TableMigration` 重建，
+  存量检测点归第一辆车（没有车时 `car_id` 为 NULL），读数三列原样
+  保留。种子不在迁移里插，由 bootstrap 按车幂等对账写入。
+  ⚠ 迁移链纪律：`createTable` 永远建当前形态的表（含新列），"建表
+  分支"与"加列分支"必须互斥（else-if），否则跨版本老库先建出含新
+  列的表再加同名列会 duplicate column。v5→v6 同时把重复的
+  `from < 4` 建表分支收敛成单链。
   ⚠ 例外（docs/adr/0015）：`fuel_records` 表结构在 v3 内按应付/实付
   模型定义；装载旧里程/加满模型数据的 v3 库与新代码不兼容，必须
   卸载重装，不提供升级路径。
@@ -52,8 +62,13 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
 - `powertrain_type`：动力类型（见 docs/adr/0003），取值 `fuel`/`hybrid`/`plugIn`/`extended`/`ev`，默认 `fuel`。添加车辆时用户选择，添加后不可改。
 - `current_mileage_km`：当前里程，单位公里。
 - `road_date`：上路日期，格式 `yyyy-MM-dd`。
-- `tank_capacity_liters`：油箱总容积，单位升，可空（添加/编辑车辆时填写，
-  非必填，加油预估的加满金额用它计算；1–999、最多四位小数）。
+- `tank_capacity_liters`：加满可加油量（可用容积，升），可空（添加/
+  编辑车辆时填写，非必填；加油预估的加满金额用它计算；1–999、最多
+  四位小数）。语义按 ADR 0022 固定为"仪表 0% 到跳枪的实际加油量"
+  （思域 40.487 L），不再表示总容积。
+- `total_tank_capacity_liters`：油箱总容积，单位升，可空（官方总容积，
+  思域 47 L）；与可用容积同时有值时不得小于可用容积；储备油量 =
+  总容积 − 可用容积（ADR 0022）。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
 - `version`：同步/冲突预留版本号，默认 `1`。
@@ -231,7 +246,7 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
 加油记录表（docs/adr/0015）：一次加油
 的流水，五项输入字段记一笔（日期/油品/单价/应付/实付）；容积由实体按
 应付÷单价算好落列**预留**（页面暂不展示，与 `cars.tank_capacity_liters`
-油箱容积不是同一概念）。
+加满可加油量不是同一概念）。
 
 字段：
 
@@ -266,19 +281,33 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
 
 ### `diagnostics_probes`
 
-车辆诊断检测点表（docs/adr/0021，GLOSSARY「车辆诊断」节）：全局指令
-库，不挂车——指令语义与车无关，删车不级联、与车辆数据纪元无关。
+车辆诊断检测点表（docs/adr/0021 修订节、docs/adr/0023，GLOSSARY
+「车辆诊断」节）：每车一套，挂 `car_id`；删车在仓库事务里手工级联
+删除。
 
 字段：
 
 - `id`：主键（雪花 id）。
+- `car_id`：所属车辆 ID，来源于 `cars.id`；存储可空只为迁移期存量
+  回填，代码层必填（种子/表单/恢复备份都带车）。
 - `name`：展示名（如"油量"）。
 - `command`：指令原文（如 `012F`、`ATRV`）。
 - `parse_type`：解析类型（`DiagnosticsParseType` 稳定 wire 值：
-  `fuelLevel`/`coolantTemp`/`voltageText`/`rawHex`）。
-- `enabled`：启停，默认 `true`。内置行也允许启停（唯一可变的内置字段）。
-- `catalog_key`：内置标识，可空；非空 = 内置行（只读 + 可启停），
+  `fuelLevel`/`coolantTemp`/`rpm`/`speed`/`intakeTemp`/
+  `throttlePercent`/`engineLoad`/`moduleVoltage`/`voltageText`/
+  `rawHex`）。
+- `enabled`：启停，默认 `true`。
+- `catalog_key`：内置标识，可空；非空 = 内置行（可编辑、不可删），
   空 = 自定义行（可增改删）。
+- `refresh_interval_seconds`：自动轮询间隔（秒），默认 `30`，范围
+  5–3600（ADR 0023）。
+- `header`：29-bit 物理头（如 `DA 60 F1`），可空；私有 DID 预留，
+  本轮无 UI（ADR 0023）。
+- `last_value`：最后读数展示值文本，可空（2026-11-15 修订节：最后
+  一次**有效**轮询的值，重进页面可见；只写有效值，无数据不写不覆盖）。
+- `last_percent`：最后读数的油量百分比，可空（仅 fuelLevel 类有效值；
+  油量卡升数估算重进后不缺数据）。
+- `last_reading_at`：最后读数时刻，ISO-8601 `TEXT`，可空。
 - `sync_status`：同步状态，默认 `synced`。
 - `updated_at`：最后更新时间。
 - `version`：同步/冲突预留版本号，默认 `1`。
@@ -286,16 +315,24 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
 约束：
 
 - 主键：`id`。
-- 唯一键：`catalog_key`，允许多条空值（自定义行恒为空）。
+- 唯一键：`car_id + catalog_key`，允许多条 `catalog_key` 空值
+  （自定义行该列为空）。
+- 普通索引：`car_id`（`idx_diagnostics_probes_car_id`，按车拉检测点）。
 
 业务注意：
 
-- 内置三条种子（油量 `012F`/水温 `0105`/电压 `ATRV`）由 bootstrap
-  总入口幂等对账写入：首启插入、重复运行零写库、内置行漂移纠偏
-  （名称/指令/解析类型三列纠回，启停是用户数据不重置）、种子集合外
-  内置 key 清理、自定义行不碰。
-- 内置行不可改删（仓库守卫拒绝）；启停允许。
-- 检测点写点不 bump 车辆数据纪元；列表 provider 走"写点直失效"模型。
+- 内置三条种子（油量 `012F`/水温 `0105`/电压 `ATRV`）按车播种：新增
+  车辆时播种、bootstrap 按车补缺失；**只补缺失、不纠偏用户编辑**，
+  种子集合外内置 key 清理、自定义行不碰。
+- 内置行可编辑（名称/指令/解析类型/刷新间隔/启停），不可删除；自定义
+  行可增改删。核心值卡按 `catalogKey` 在当前应用车辆的检测点里定位。
+- 每个检测点自己的自动轮询间隔（默认 30 秒）；手动刷新立即轮询全部
+  启用项；调试终端打开时暂停自动轮询。
+- 检测点写点不 bump 车辆数据纪元；列表 provider 按车 family 走"写点
+  直失效"模型；删车事务级联删除该车检测点。
+- 检测点写点与最后读数写点分叉（2026-11-15 修订节）：表单/启停写点
+  盖同步章；`saveProbeReading` 只 UPDATE 读数三列，`sync_status` /
+  `updated_at` / `version` 有意不动。
 
 ### `app_preferences`
 
@@ -339,34 +376,40 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `4`
 
 ## 删除和恢复边界
 
-- 删除车辆不碰检测点表（不挂 carId，ADR 0021）。
-- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录、检测点（含内置行，随 bootstrap 重灌重建）和车辆。
+- 删除车辆在仓库事务里级联删除该车检测点（每车一套，ADR 0021 修订节）。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录、检测点（含内置行）和车辆。清空后没有车，内置三条不再全局重灌；下次新增车辆时按车播种。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
-- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点内置三条由 bootstrap 幂等重建，自定义项由备份 `diagnosticsProbes` 段重插（ADR 0021，行 id 重新生成）。
+- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点内置三条由每车 bootstrap 重建；自定义项由备份 `diagnosticsProbes` 段按 `carId` 重映射重插（ADR 0021 修订节，行 id 重新生成）。
 
 ## 备份契约边界
 
-当前 JSON 备份契约版本为 `schemaVersion = 4`，由
-`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1/v2/v3/v4——
+当前 JSON 备份契约版本为 `schemaVersion = 5`，由
+`lib/data/backup/backup_codec.dart` 编码/解码。解码接受 v1–v5——
 v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没有它就
 等于"项目费用全部未填"；v3 只比 v2 多了 `fuelRecords` 数组，v1/v2
 文件没有它就等于"没有加油记录"；v4 只比 v3 多了 `diagnosticsProbes`
-数组，v1–v3 文件没有它就等于"没有自定义检测点"，均按空读入
-（docs/adr/0010 修订、docs/adr/0014、docs/adr/0021）；除此之外的版本
-直接拒绝，不做旧版本字段回退（docs/adr/0005）。
+数组，v1–v3 文件没有它就等于"没有自定义检测点"；v5 只比 v4 多了
+`cars.totalTankCapacityLiters` 与检测点条目的 `carId`/
+`refreshIntervalSeconds`/`header`，v1–v4 的检测点没有 `carId` 时恢复
+到第一辆车、缺省间隔 30、header/总容积 null。均按纯增量缺失读入
+（docs/adr/0010 修订、docs/adr/0014、docs/adr/0021 修订节、
+docs/adr/0022）；除此之外的版本直接拒绝，不做旧版本字段回退
+（docs/adr/0005）。
 
 备份导出包含：
 
-- `cars`（含 `powertrainType`；含 `tankCapacityLiters`，可空）
+- `cars`（含 `powertrainType`；含 `tankCapacityLiters` 与
+  `totalTankCapacityLiters`，均可空）
 - `maintenanceItems`
 - `records`（v2 条目含 `itemCosts`：`{ itemId, materialCents, laborCents, costCents }`，
   三个金额可空，只写有内容的项目）
 - `fuelPrediction`（全局加油设置：省份 + 油品编号，用户改过才有值）
 - `fuelPredictions`（每车加油预测设置：剩余油量）
 - `fuelRecords`（加油流水：条目不带 id，恢复时重新生成雪花 ID）
-- `diagnosticsProbes`（v4，自定义检测点：条目 { name, command, parseType, enabled, sync }，
-  不带 id / catalogKey——内置三条不进备份、恢复后由 bootstrap 重建；
-  启停是用户数据，随段导出）
+- `diagnosticsProbes`（v5，自定义检测点：条目 { carId, name, command,
+  parseType, enabled, refreshIntervalSeconds, header, sync }，不带自身
+  id / catalogKey——内置三条不进备份、恢复后由每车 bootstrap 重建；
+  carId 恢复时重映射；启停/刷新间隔是用户数据，随段导出）
 
 备份不包含：
 
@@ -377,6 +420,8 @@ v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没
 - 提醒延后/确认状态
 - 停车倒计时
 - 油价缓存与手填油价（临时数据）
+- 检测点最后读数（设备派生临时数据，导出 payload 显式剥除，恢复后
+  从零积累，2026-11-15 修订节；删检测点列随行删）
 
 恢复备份时，源车辆 ID 和项目 ID 会换成新雪花 ID（事务内维护旧→新对应表）；
 加油预测设置与加油记录的 `carId` 同样按对应表重映射；恢复完成后当前应用

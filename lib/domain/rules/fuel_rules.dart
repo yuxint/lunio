@@ -4,7 +4,8 @@
 //  1. 加满金额与所需油量的计算（分=cent 存 int，避免浮点累加误差）；
 //  2. 档位表（100% 到 0% 每 2% 一档，滚动定档用，见 GLOSSARY.md"档位"）；
 //  3. 油价缓存"该不该重新拉"的判断（10 个自然日规则，见 ADR 0001）。
-//  4. 油箱容积校验（容积在 Car 上，写库/恢复备份前调用）。
+//  4. 两个容积校验（可用容积与总容积在 Car 上，写库/恢复备份前调用；
+//     双油量口径见 ADR 0022）。
 //  5. 预估下次油价（调价预告变动中值参与计算，见 ADR 0006）。
 // （满箱段油耗口径随加油记录模型重定义删除，见 ADR 0015。）
 import '../../core/date/local_date.dart';
@@ -27,27 +28,43 @@ class FuelRules {
     for (var percent = 100; percent >= 0; percent -= percentStep) percent,
   ];
 
-  /// 油箱容积校验（Car.tankCapacityLiters，写库/恢复备份前调用）：
+  /// 加满可加油量校验（Car.tankCapacityLiters，写库/恢复备份前调用）：
   /// null 合法（未填写）；有值时 1–999 升，最多四位小数。
+  static void validateTankCapacity(double? liters) {
+    _validateCapacityValue(liters, 'tankCapacityLiters');
+  }
+
+  /// 油箱总容积校验（Car.totalTankCapacityLiters，ADR 0022）：null 合法；
+  /// 有值时 1–999 升、最多四位小数，且与可用容积同时有值时不得小于
+  /// 可用容积（储备油量 = 总容积 − 可用容积，负数无意义）。
+  static void validateTotalTankCapacity(
+    double? liters, {
+    double? usableCapacityLiters,
+  }) {
+    _validateCapacityValue(liters, 'totalTankCapacityLiters');
+    if (liters != null &&
+        usableCapacityLiters != null &&
+        liters < usableCapacityLiters) {
+      throw ArgumentError.value(
+        liters,
+        'totalTankCapacityLiters',
+        'must not be less than usable capacity',
+      );
+    }
+  }
+
+  /// 两个容积共用的数值规则：1–999 升，最多四位小数。
   /// （小数位数判定：放大 10000 倍取整再回除，能还原说明小数不超过 4 位；
   /// 直接比较乘积会有浮点误差，如 55.1 × 10000 不精确等于 551000。）
-  static void validateTankCapacity(double? liters) {
+  static void _validateCapacityValue(double? liters, String name) {
     if (liters == null) {
       return;
     }
     if (liters < 1 || liters > 999) {
-      throw ArgumentError.value(
-        liters,
-        'tankCapacityLiters',
-        'must be between 1 and 999',
-      );
+      throw ArgumentError.value(liters, name, 'must be between 1 and 999');
     }
     if ((liters * 10000).roundToDouble() / 10000 != liters) {
-      throw ArgumentError.value(
-        liters,
-        'tankCapacityLiters',
-        'at most four decimal places',
-      );
+      throw ArgumentError.value(liters, name, 'at most four decimal places');
     }
   }
 

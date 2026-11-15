@@ -41,10 +41,11 @@ import '../../../domain/rules/diagnostics_rules.dart';
 import '../shared/shell_shared.dart';
 import 'ble_obd_transport.dart';
 import 'ble_scan_sheet.dart';
+import 'debug_panel.dart';
 import 'elm327_parser.dart' show ObdReading, ObdNoData, ObdValue;
 import 'elm327_session.dart';
 import 'obd_runtime.dart';
-import 'probe_form.dart';
+import 'probe_management_sheet.dart';
 
 /// 页面级连接状态机（状态条渲染依据）。idle = 进页面首帧的"未连接"
 /// （连接动作延到首帧之后启动，起点状态真实可达）或扫描 sheet 取消后
@@ -344,10 +345,25 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     });
   }
 
+  /// 手动断开（已连接相位「断开」按钮，2026-11-15 新增）：释放会话并
+  /// 落「未连接」相位——手动断开不是异常，不落红色「已断开」；设备记
+  /// 忆不清除（重进页面仍自动直连记忆设备）。连接尝试代数自增作废在
+  /// 途尝试，迟到的失败回填不改写相位。
+  Future<void> _disconnectManually() async {
+    _connectAttempt++;
+    setState(() {
+      _phase = DiagnosticsConnectionPhase.idle;
+      _statusError = null;
+    });
+    await _teardownSession();
+  }
+
   /// 会话事件 → 页面状态（状态条/读取快照表），每处进 setState 前
-  /// mounted 守卫（dispose 后迟到事件不再改 UI）。
+  /// mounted 守卫（dispose 后迟到事件不再改 UI）。会话为 null（已释放/
+  /// 已手动断开）时迟到事件一律忽略——手动断开后迟到的 Disconnected
+  /// 事件不再把「未连接」改写成「已断开」。
   void _onSessionEvent(Elm327SessionEvent event) {
-    if (!mounted) {
+    if (!mounted || _session == null) {
       return;
     }
     switch (event) {
@@ -366,6 +382,21 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         setState(() {
           _readings[probeId] = _ReadingSnapshot(reading, at);
         });
+        // 最后读数落库（只存有效值）：unawaited 交给事件循环，写失败
+        // 不打断渲染链——读数是临时数据，下一轮轮询会再写。
+        if (reading is ObdValue) {
+          final repository = ref.read(diagnosticsRepositoryProvider);
+          unawaited(
+            repository
+                .saveProbeReading(
+                  probeId,
+                  value: reading.display,
+                  percent: reading.percent,
+                  at: at,
+                )
+                .catchError((_) {}),
+          );
+        }
     }
   }
 
@@ -404,6 +435,27 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     return _probes.where((probe) => probe.enabled).toList();
   }
 
+  /// 检测点快照取值（行列表与核心值卡共源）：实时读数优先（本会话的
+  /// 最新轮询），页内还没有实时读数时回退持久化的最后读数（重进页面
+  /// 可见，2026-11-15）。两者都无 = null（行显"—/未更新"，卡显占位）。
+  _ReadingSnapshot? _snapshotFor(DiagnosticsProbe probe) {
+    final live = _readings[probe.id];
+    if (live != null) {
+      return live;
+    }
+    final value = probe.lastValue;
+    final at = probe.lastReadingAt;
+    if (value == null || at == null) {
+      return null;
+    }
+    // 重建快照：display + percent 足够渲染（水温/电压只显 display，
+    // 油量卡升数估算用 percent）；celsius 不持久化，重建后不需要。
+    return _ReadingSnapshot(
+      ObdValue(display: value, percent: probe.lastPercent),
+      at,
+    );
+  }
+
   /// 返回键（pushed 子页，LunioTopBar leading 位，费用统计页先例）。
   Widget _backKey() => LunioIconButton(
         icon: Icons.arrow_back_ios_new,
@@ -418,24 +470,49 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     // 会话连接与检测点列表互相独立（initState 已启动，不受列表装载影
     // 响），装载失败只影响列表区，连接状态条随数据分支一起消失——与
     // 三页主数据门卫同构。
-    final probesAsync = ref.watch(diagnosticsProbesProvider);
-    // 油箱容积（油量卡升数估算的数据源，story 10/11）：当前应用车辆
-    // 就绪才取，未就绪/无车按未填处理（只显百分比）。
-    final appliedCar = ref
-        .watch(appliedCarProvider)
-        .maybeWhen(data: (car) => car, orElse: () => null);
-    final Widget body = probesAsync.when(
-      // skipLoadingOnReload：启停写库后的列表重算窗口保持旧内容渲染
-      //（逐出重算只是换数据源，不该整页闪加载占位），fresh 到达自然重绘。
-      skipLoadingOnReload: true,
-      loading: () => const LoadingPage(title: '车辆诊断'),
-      error: (error, stackTrace) =>
-          ErrorPage(title: '车辆诊断', error: error, leading: _backKey()),
-      data: (probes) {
-        _probes = probes;
-        return _buildContent(context, probes, appliedCar);
-      },
+    // 检测点每车一套（ADR 0021 修订节）：先取当前应用车辆，再 watch
+    // 它自己的 family；无车时页面只给空态提示。
+    final appliedCarAsync = ref.watch(appliedCarProvider);
+    final appliedCar = appliedCarAsync.maybeWhen(
+      data: (car) => car,
+      orElse: () => null,
     );
+    final carId = appliedCar?.id;
+    final Widget body;
+    if (appliedCarAsync.isLoading && !appliedCarAsync.hasValue) {
+      body = const LoadingPage(title: '车辆诊断');
+    } else if (appliedCarAsync.hasError && !appliedCarAsync.hasValue) {
+      body = ErrorPage(
+        title: '车辆诊断',
+        error: appliedCarAsync.error!,
+        leading: _backKey(),
+      );
+    } else if (carId == null) {
+      body = LunioPage(
+        title: '车辆诊断',
+        leading: _backKey(),
+        children: const [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: Text('请先新增车辆')),
+          ),
+        ],
+      );
+    } else {
+      final probesAsync = ref.watch(diagnosticsProbesProvider(carId));
+      body = probesAsync.when(
+        // skipLoadingOnReload：启停写库后的列表重算窗口保持旧内容渲染
+        //（逐出重算只是换数据源，不该整页闪加载占位），fresh 到达自然重绘。
+        skipLoadingOnReload: true,
+        loading: () => const LoadingPage(title: '车辆诊断'),
+        error: (error, stackTrace) =>
+            ErrorPage(title: '车辆诊断', error: error, leading: _backKey()),
+        data: (probes) {
+          _probes = probes;
+          return _buildContent(context, probes, appliedCar, carId);
+        },
+      );
+    }
     // pushed 子页不经过 AppShell，Scaffold（页面底色）要自己提供——
     // 页内 InkWell/chips 需要 Material 祖先，与 AppShell 同款底色。
     return Scaffold(backgroundColor: tokens.background, body: body);
@@ -446,6 +523,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     BuildContext context,
     List<DiagnosticsProbe> probes,
     Car? appliedCar,
+    int carId,
   ) {
     final fuelProbe = _probeByCatalogKey(
       probes,
@@ -479,18 +557,25 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                 padding: const EdgeInsets.only(bottom: 10),
                 child: _ProbeRow(
                   probe: probe,
-                  snapshot: _readings[probe.id],
+                  snapshot: _snapshotFor(probe),
                   onToggle: (value) =>
                       setDiagnosticsProbeEnabled(ref, probe, value),
-                  onTap: probe.isBuiltIn
-                      ? null
-                      : () => showProbeFormSheet(context, ref, probe: probe),
                 ),
               ),
             _AddProbeRow(
-              onTap: () => showProbeFormSheet(context, ref),
+              onTap: () => showProbeManagementSheet(
+                context,
+                car: appliedCar!,
+              ),
             ),
           ],
+        ),
+        const SizedBox(height: 18),
+        DiagnosticsDebugPanel(
+          session: _session,
+          connected: _phase == DiagnosticsConnectionPhase.connected,
+          carLabel: '${appliedCar?.brand ?? ''} ${appliedCar?.model ?? ''}'
+              .trim(),
         ),
       ],
     );
@@ -518,13 +603,14 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       DiagnosticsConnectionPhase.disconnected => _statusError ?? '连接已断开',
     };
     // 行尾动作按钮（按相位显隐）：断开=重连；未连接/扫描中=选择设备
-    //（重开扫描 sheet 的再入口）。
+    //（重开扫描 sheet 的再入口）；已连接=断开（2026-11-15 新增，落
+    // 未连接相位）；连接中无动作（拍板保持范围，不加取消）。
     final actionLabel = switch (_phase) {
       DiagnosticsConnectionPhase.disconnected => '重连',
       DiagnosticsConnectionPhase.idle ||
       DiagnosticsConnectionPhase.scanning => '选择设备',
-      DiagnosticsConnectionPhase.connecting ||
-      DiagnosticsConnectionPhase.connected => null,
+      DiagnosticsConnectionPhase.connected => '断开',
+      DiagnosticsConnectionPhase.connecting => null,
     };
     return LunioCard(
       child: Row(
@@ -540,11 +626,23 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                   ?.copyWith(color: tokens.muted),
             ),
           ),
+          if (_phase == DiagnosticsConnectionPhase.connected)
+            IconButton(
+              tooltip: '立即刷新',
+              onPressed: () => _session?.requestImmediatePoll(),
+              icon: const Icon(Icons.refresh, size: 20),
+              visualDensity: VisualDensity.compact,
+              color: tokens.primary,
+            ),
           if (actionLabel != null)
             TextButton(
-              onPressed: _phase == DiagnosticsConnectionPhase.disconnected
-                  ? () => unawaited(_startConnect())
-                  : () => unawaited(_openScanSheet()),
+              onPressed: switch (_phase) {
+                DiagnosticsConnectionPhase.disconnected =>
+                  () => unawaited(_startConnect()),
+                DiagnosticsConnectionPhase.connected =>
+                  () => unawaited(_disconnectManually()),
+                _ => () => unawaited(_openScanSheet()),
+              },
               // 紧凑行尾按钮（ProfileSettingRow 同款）——LunioSecondaryButton
               // 的 FilledButton 带主题全宽 minimumSize，放进 Row 拿到无界
               // 宽约束直接布局崩溃。
@@ -565,23 +663,25 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     );
   }
 
-  /// 油量卡（第二区左）：百分比大字 + 估算升数小字（story 10）。容积
-  /// 未填只显百分比、不提示去填（story 11）；无读取/无数据显占位符。
+  /// 油量卡（第二区左）：百分比大字 + 双油量小字（ADR 0022）。可用油量
+  /// 用加满可加油量；总油量 = 储备 + 可用，总容积未填只显可用。容积未
+  /// 填只显百分比、不提示去填（story 11）；无读取/无数据显占位符。
   Widget _buildFuelCard(
     BuildContext context,
     DiagnosticsProbe? fuelProbe,
     Car? appliedCar,
   ) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final snapshot = fuelProbe == null ? null : _readings[fuelProbe.id];
+    final snapshot = fuelProbe == null ? null : _snapshotFor(fuelProbe);
     final reading = snapshot?.reading;
     // 油量百分比只认 fuelLevel 解析类型的值（无数据/未读取都显占位符）。
     final percent = reading is ObdValue ? reading.percent : null;
-    final liters = percent == null
+    final estimate = percent == null
         ? null
-        : DiagnosticsRules.estimateFuelLiters(
-            percent,
-            appliedCar?.tankCapacityLiters,
+        : DiagnosticsRules.estimateFuel(
+            percent: percent,
+            tankCapacityLiters: appliedCar?.tankCapacityLiters,
+            totalTankCapacityLiters: appliedCar?.totalTankCapacityLiters,
           );
     return LunioCard(
       child: Column(
@@ -597,10 +697,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                   color: reading is ObdNoData ? tokens.subtle : tokens.ink,
                 ),
           ),
-          if (liters != null) ...[
+          if (estimate != null) ...[
             const SizedBox(height: 4),
             Text(
-              '≈ ${liters.toStringAsFixed(1)} 升',
+              estimate.totalLiters == null
+                  ? '≈ ${estimate.usableLiters.toStringAsFixed(1)} 升'
+                  : '可用 ${estimate.usableLiters.toStringAsFixed(1)} 升 · '
+                      '估算总油量 ${estimate.totalLiters!.toStringAsFixed(1)} 升',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: tokens.muted,
                   ),
@@ -617,7 +720,9 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     DiagnosticsProbe? coolantProbe,
   ) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final snapshot = coolantProbe == null ? null : _readings[coolantProbe.id];
+    final snapshot = coolantProbe == null
+        ? null
+        : _snapshotFor(coolantProbe);
     final reading = snapshot?.reading;
     return LunioCard(
       child: Column(
@@ -674,7 +779,6 @@ class _ProbeRow extends StatelessWidget {
     required this.probe,
     required this.snapshot,
     required this.onToggle,
-    this.onTap,
   });
 
   final DiagnosticsProbe probe;
@@ -685,10 +789,6 @@ class _ProbeRow extends StatelessWidget {
   /// 启停开关回调（动作层编排：写库 → 逐出检测点 provider）。
   final ValueChanged<bool> onToggle;
 
-  /// 整行点按 → 编辑表单（仅自定义行非 null；内置行 null = 无编辑入口，
-  /// story 23"内置三件套只能启停、不可改删"的 UI 呈现）。
-  final VoidCallback? onTap;
-
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
@@ -696,7 +796,10 @@ class _ProbeRow extends StatelessWidget {
     final reading = snapshot?.reading;
     final isNoData = reading is ObdNoData;
     final valueText = reading?.display ?? '—';
-    final timeText = snapshot == null ? '未更新' : formatClock(snapshot.at);
+    // 跨天读数带日期（今天 HH:mm:ss、非今天 M/d HH:mm:ss，2026-11-15）。
+    final timeText = snapshot == null
+        ? '未更新'
+        : formatReadingTime(snapshot.at, now: DateTime.now());
     final row = Row(
       children: [
           Expanded(
@@ -711,6 +814,17 @@ class _ProbeRow extends StatelessWidget {
                         color: tokens.muted,
                       ),
                 ),
+                if (reading is ObdNoData) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    reading.reason,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: tokens.subtle,
+                        ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -729,17 +843,13 @@ class _ProbeRow extends StatelessWidget {
           Switch(value: probe.enabled, onChanged: onToggle),
         ],
     );
-    // 内置行 = 普通卡（点按无反应，story 23 只读守卫的 UI 呈现）；
-    // 自定义行 = 整卡可点进编辑表单（LunioTappableCard：卡圆角与水波
-    // 裁剪圆角组件内部对齐，不手写三明治）。
-    if (onTap == null) {
-      return LunioCard(child: row);
-    }
-    return LunioTappableCard(onTap: onTap!, child: row);
+    // 页面只负责实时读数；编辑/增删统一走管理 sheet（项目看齐）。
+    return LunioCard(child: row);
   }
 }
 
-/// 列表尾"添加检测点"行（story 20 入口）：整卡可点，居中 ＋ 图标 + 文案。
+/// 列表尾"管理检测点"行：打开项目式的检测点管理 sheet（新增/编辑/
+/// 启停/删除都在 sheet 内）。
 class _AddProbeRow extends StatelessWidget {
   const _AddProbeRow({required this.onTap});
 
@@ -754,10 +864,10 @@ class _AddProbeRow extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.add, size: 18, color: tokens.muted),
+            Icon(Icons.tune, size: 18, color: tokens.muted),
             const SizedBox(width: 6),
             Text(
-              '添加检测点',
+              '管理检测点',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: tokens.muted,
                   ),

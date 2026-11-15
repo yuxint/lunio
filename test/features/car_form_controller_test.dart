@@ -212,21 +212,38 @@ void main() {
     // 低于下限（1 升起）。
     harness.controller.capacityController.text = '0.5';
     expect(harness.controller.submitPayload(), isNull);
-    expect(harness.reportedError, '油箱容积需在 1–999 升之间，最多四位小数');
+    expect(harness.reportedError, '加满可加油量需在 1–999 升之间，最多四位小数');
 
     // 超上限。
     harness.controller.capacityController.text = '1000';
     expect(harness.controller.submitPayload(), isNull);
-    expect(harness.reportedError, '油箱容积需在 1–999 升之间，最多四位小数');
+    expect(harness.reportedError, '加满可加油量需在 1–999 升之间，最多四位小数');
 
     // 小数位超过四位（规则本体在 FuelRules，这里锁表单侧文案）。
     harness.controller.capacityController.text = '55.12345';
     expect(harness.controller.submitPayload(), isNull);
-    expect(harness.reportedError, '油箱容积需在 1–999 升之间，最多四位小数');
+    expect(harness.reportedError, '加满可加油量需在 1–999 升之间，最多四位小数');
 
     // 清空容积 = 选填放行，错误不再报（合法空态）。
     harness.controller.capacityController.text = '';
     expect(harness.controller.submitPayload(), isNotNull);
+  });
+
+  test('total capacity must be >= usable capacity (ADR 0022)', () {
+    final harness = CarFormHarness();
+    harness.controller.capacityController.text = '40.487';
+    harness.controller.totalCapacityController.text = '40';
+    expect(harness.controller.submitPayload(), isNull);
+    expect(
+      harness.reportedError,
+      '油箱总容积需在 1–999 升之间，最多四位小数，且不得小于加满可加油量',
+    );
+
+    harness.controller.totalCapacityController.text = '47';
+    final payload = harness.controller.submitPayload();
+    expect(payload, isNotNull);
+    expect(payload!.tankCapacityLiters, 40.487);
+    expect(payload.totalTankCapacityLiters, 47);
   });
 
   test('new payload uses selection and pendingCreate with injected now', () async {

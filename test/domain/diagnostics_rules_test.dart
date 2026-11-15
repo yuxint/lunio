@@ -21,4 +21,60 @@ void main() {
       expect(DiagnosticsRules.estimateFuelLiters(100, 55), equals(55.0));
     });
   });
+
+  group('DiagnosticsRules.estimateFuel（ADR 0022 双油量）', () {
+    test('思域口径：23.137% × 40.487 可用 + 6.513 储备 = 15.879 估算总', () {
+      final estimate = DiagnosticsRules.estimateFuel(
+        percent: 59 / 255 * 100, // CSV 原始 59/255 = 23.137%
+        tankCapacityLiters: 40.487,
+        totalTankCapacityLiters: 47,
+      );
+      expect(estimate, isNotNull);
+      expect(estimate!.usableLiters, closeTo(9.37, 0.01));
+      expect(estimate.reserveLiters, closeTo(6.513, 0.001));
+      expect(estimate.totalLiters, closeTo(15.88, 0.01));
+    });
+
+    test('总容积未填或小于可用容积：只返回可用，不造负储备', () {
+      final noTotal = DiagnosticsRules.estimateFuel(
+        percent: 50,
+        tankCapacityLiters: 40,
+      );
+      expect(noTotal!.usableLiters, 20);
+      expect(noTotal.reserveLiters, isNull);
+      expect(noTotal.totalLiters, isNull);
+
+      final dirty = DiagnosticsRules.estimateFuel(
+        percent: 50,
+        tankCapacityLiters: 40,
+        totalTankCapacityLiters: 30,
+      );
+      expect(dirty!.totalLiters, isNull);
+      expect(
+        DiagnosticsRules.estimateFuel(
+          percent: 50,
+          totalTankCapacityLiters: 47,
+        ),
+        isNull,
+      );
+    });
+
+    test('0% / 100% 边界：总油量 = 储备 / 总容积', () {
+      final empty = DiagnosticsRules.estimateFuel(
+        percent: 0,
+        tankCapacityLiters: 40,
+        totalTankCapacityLiters: 47,
+      )!;
+      expect(empty.usableLiters, 0);
+      expect(empty.totalLiters, closeTo(7, 0.001));
+
+      final full = DiagnosticsRules.estimateFuel(
+        percent: 100,
+        tankCapacityLiters: 40,
+        totalTankCapacityLiters: 47,
+      )!;
+      expect(full.usableLiters, 40);
+      expect(full.totalLiters, closeTo(47, 0.001));
+    });
+  });
 }

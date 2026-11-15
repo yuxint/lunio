@@ -37,6 +37,7 @@ domain.Car carFromRow(CarRow row) {
     currentMileageKm: row.currentMileageKm,
     roadDate: LocalDate.parse(row.roadDate),
     tankCapacityLiters: row.tankCapacityLiters,
+    totalTankCapacityLiters: row.totalTankCapacityLiters,
     sync: SyncMetadata(
       status: SyncStatus.values.byName(row.syncStatus),
       updatedAt: DateTime.parse(row.updatedAt),
@@ -56,6 +57,7 @@ CarsCompanion carCompanion(domain.Car car, int id) {
     currentMileageKm: car.currentMileageKm,
     roadDate: car.roadDate.toString(),
     tankCapacityLiters: Value(car.tankCapacityLiters),
+    totalTankCapacityLiters: Value(car.totalTankCapacityLiters),
     syncStatus: Value(car.sync.status.name),
     updatedAt: car.sync.updatedAt.toIso8601String(),
     version: Value(car.sync.version),
@@ -353,11 +355,19 @@ VehicleDefaultMaintenanceItemsCompanion defaultItemCompanion(
 domain.DiagnosticsProbe diagnosticsProbeFromRow(DiagnosticsProbeRow row) {
   return domain.DiagnosticsProbe(
     id: row.id,
+    carId: row.carId!,
     name: row.name,
     command: row.command,
     parseType: domain.DiagnosticsParseType.byWire(row.parseType),
     enabled: row.enabled,
     catalogKey: row.catalogKey,
+    refreshIntervalSeconds: row.refreshIntervalSeconds,
+    header: row.header,
+    lastValue: row.lastValue,
+    lastPercent: row.lastPercent,
+    lastReadingAt: row.lastReadingAt == null
+        ? null
+        : DateTime.parse(row.lastReadingAt!),
     sync: SyncMetadata(
       status: SyncStatus.values.byName(row.syncStatus),
       updatedAt: DateTime.parse(row.updatedAt),
@@ -367,18 +377,24 @@ domain.DiagnosticsProbe diagnosticsProbeFromRow(DiagnosticsProbeRow row) {
 }
 
 /// 检测点实体 + 指定 id → 插入用 Companion（bootstrap 种子插入与恢复
-/// 备份段重插（ADR 0021）共用，字段清单全库只有这一份）。
+/// 备份段重插（ADR 0021）共用，字段清单全库只有这一份）。最后读数三列
+/// 有意不进插入清单：插入即无读数（种子/恢复备份都是全新起点，读数
+/// 是设备派生临时数据，恢复后从零积累），唯一写点在仓库
+/// [DiagnosticsRepository.saveProbeReading]。
 DiagnosticsProbesCompanion diagnosticsProbeCompanion(
   domain.DiagnosticsProbe probe,
   int id,
 ) {
   return DiagnosticsProbesCompanion.insert(
     id: Value(id),
+    carId: Value(probe.carId),
     name: probe.name,
     command: probe.command,
     parseType: probe.parseType.wire,
     enabled: Value(probe.enabled),
     catalogKey: Value(probe.catalogKey),
+    refreshIntervalSeconds: Value(probe.refreshIntervalSeconds),
+    header: Value(probe.header),
     syncStatus: Value(probe.sync.status.name),
     updatedAt: probe.sync.updatedAt.toIso8601String(),
     version: Value(probe.sync.version),

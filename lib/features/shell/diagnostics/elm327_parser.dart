@@ -193,7 +193,7 @@ ObdReading parseProbeResponse({
   final matched = matchResponseLine(lines, command);
   switch (parseType) {
     case DiagnosticsParseType.fuelLevel:
-      final a = _firstDataByte(matched, command);
+      final a = _firstDataByte(matched);
       if (a == null) {
         return ObdNoData(_noDataReason(matched, command));
       }
@@ -204,13 +204,57 @@ ObdReading parseProbeResponse({
         percent: percent,
       );
     case DiagnosticsParseType.coolantTemp:
-      final a = _firstDataByte(matched, command);
+      final a = _firstDataByte(matched);
       if (a == null) {
         return ObdNoData(_noDataReason(matched, command));
       }
       // 水温 = A − 40 ℃（Mode 01 PID 0x05 标准公式）。
       final celsius = a - 40;
       return ObdValue(display: '$celsius℃', celsius: celsius);
+    case DiagnosticsParseType.rpm:
+      final data = _dataBytes(matched);
+      if (data == null || data.length < 2) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 转速 = (A×256+B)/4 rpm（Mode 01 PID 0x0C）。
+      final rpm = ((data[0] << 8) | data[1]) / 4;
+      return ObdValue(display: '${rpm.toStringAsFixed(0)} rpm');
+    case DiagnosticsParseType.speed:
+      final a = _firstDataByte(matched);
+      if (a == null) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 车速 = A km/h（Mode 01 PID 0x0D）。
+      return ObdValue(display: '$a km/h');
+    case DiagnosticsParseType.intakeTemp:
+      final a = _firstDataByte(matched);
+      if (a == null) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 进气温度 = A − 40 ℃（Mode 01 PID 0x0F）。
+      return ObdValue(display: '${a - 40}℃');
+    case DiagnosticsParseType.throttlePercent:
+      final a = _firstDataByte(matched);
+      if (a == null) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 节气门 = A × 100 / 255 %（Mode 01 PID 0x11）。
+      return ObdValue(display: '${(a * 100 / 255).toStringAsFixed(1)}%');
+    case DiagnosticsParseType.engineLoad:
+      final a = _firstDataByte(matched);
+      if (a == null) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 发动机负荷 = A × 100 / 255 %（Mode 01 PID 0x04）。
+      return ObdValue(display: '${(a * 100 / 255).toStringAsFixed(1)}%');
+    case DiagnosticsParseType.moduleVoltage:
+      final data = _dataBytes(matched);
+      if (data == null || data.length < 2) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 控制模块电压 = (A×256+B)/1000 V（Mode 01 PID 0x42）。
+      final volts = ((data[0] << 8) | data[1]) / 1000;
+      return ObdValue(display: '${volts.toStringAsFixed(2)}V');
     case DiagnosticsParseType.voltageText:
       // 电压文本：ATRV 响应即文本（语料 `11.2V\r\r>`），回显已去，整
       // 文本直接展示。
@@ -229,14 +273,23 @@ ObdReading parseProbeResponse({
   }
 }
 
-/// 公式类（fuelLevel/coolantTemp）从 PID 匹配行取首个数据字节 A（跳
-/// 过 service+pid 两字节）；无匹配行或缺数据字节返回 null。
-int? _firstDataByte(String? matched, String command) {
+/// 公式类从 PID 匹配行取数据字节（跳过 service+pid 两字节）；无匹配行
+/// 或不足两字节返回 null。
+List<int>? _dataBytes(String? matched) {
   if (matched == null) {
     return null;
   }
-  final data = extractHexBytes(matched).sublist(2);
-  return data.isEmpty ? null : data.first;
+  final bytes = extractHexBytes(matched);
+  if (bytes.length < 2) {
+    return null;
+  }
+  return bytes.sublist(2);
+}
+
+/// 单字节公式取首个数据字节 A；无匹配行或缺数据字节返回 null。
+int? _firstDataByte(String? matched) {
+  final data = _dataBytes(matched);
+  return data == null || data.isEmpty ? null : data.first;
 }
 
 /// 公式类无数据的原因短语：无匹配行 vs 匹配行缺数据字节。

@@ -56,9 +56,15 @@ Future<void> createCar(
   Car car,
   List<MaintenanceItem> items,
 ) async {
-  await ref
+  final carId = await ref
       .read(lunioRepositoryProvider)
       .createCarWithMaintenanceItems(car, items);
+  // 每车一套检测点（ADR 0021 修订节）：建车收尾按车播种内置三条；失败
+  // 由 bootstrap 兜底补种，不让建车本身回滚。
+  await ref
+      .read(diagnosticsRepositoryProvider)
+      .seedBuiltInProbesForCar(carId);
+  ref.invalidate(diagnosticsProbesProvider);
   ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
@@ -226,10 +232,11 @@ Future<void> setDiagnosticsProbeEnabled(
   await ref
       .read(diagnosticsRepositoryProvider)
       .setProbeEnabled(probe.id!, enabled);
-  ref.invalidate(diagnosticsProbesProvider);
+  final provider = diagnosticsProbesProvider(probe.carId);
+  ref.invalidate(provider);
   // 等重算落地再返回：启停下一轮生效的快照时序窗口收窄到动作完成点
   //（页面数据分支此刻已拿到 fresh 清单，轮询快照 getter 读它）。
-  await ref.read(diagnosticsProbesProvider.future);
+  await ref.read(provider.future);
 }
 
 /// 保存检测点（票 06 表单提交）：按 id 分派新增/编辑（saveMaintenanceItem
@@ -243,17 +250,22 @@ Future<void> saveDiagnosticsProbe(WidgetRef ref, DiagnosticsProbe probe) async {
   } else {
     await repository.updateProbe(probe);
   }
-  ref.invalidate(diagnosticsProbesProvider);
-  await ref.read(diagnosticsProbesProvider.future);
+  final provider = diagnosticsProbesProvider(probe.carId);
+  ref.invalidate(provider);
+  await ref.read(provider.future);
 }
 
-/// 删除自定义检测点（表单编辑态删除入口）：仓库拒绝内置行（ADR 0021
-/// "内置三件套永远在、永远正确"），UI 侧删除入口只挂自定义行。逐出 +
+/// 删除自定义检测点（管理卡片删除入口）：仓库拒绝内置行（ADR 0021
+/// 修订节：内置可编辑、不可删），UI 侧删除入口只挂自定义行。逐出 +
 /// 等重算落地同 [saveDiagnosticsProbe]。
-Future<void> removeDiagnosticsProbe(WidgetRef ref, int probeId) async {
-  await ref.read(diagnosticsRepositoryProvider).deleteProbe(probeId);
-  ref.invalidate(diagnosticsProbesProvider);
-  await ref.read(diagnosticsProbesProvider.future);
+Future<void> removeDiagnosticsProbe(
+  WidgetRef ref,
+  DiagnosticsProbe probe,
+) async {
+  await ref.read(diagnosticsRepositoryProvider).deleteProbe(probe.id!);
+  final provider = diagnosticsProbesProvider(probe.carId);
+  ref.invalidate(provider);
+  await ref.read(provider.future);
 }
 
 /// 记住 OBD 适配器（票 07：扫描点选连接成功后写设备记忆）：偏好门面

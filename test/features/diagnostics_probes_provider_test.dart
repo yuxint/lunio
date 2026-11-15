@@ -14,16 +14,21 @@ import 'package:lunio/data/repositories/built_in_catalog_repository.dart';
 import 'package:lunio/data/repositories/diagnostics_repository.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
 
+import '../helpers/builders.dart';
 import '../helpers/built_in_catalog_loader.dart';
+import '../helpers/widget_app.dart';
 
 void main() {
   late AppDatabase database;
   late DiagnosticsRepository diagnostics;
   late ProviderContainer container;
+  late int carId;
 
-  setUp(() {
+  setUp(() async {
     database = AppDatabase.inMemory();
-    diagnostics = DiagnosticsRepository(database);
+    final repos = testRepository(database);
+    carId = await repos.insertCarForTest(defaultCar());
+    diagnostics = repos.diagnosticsRepository;
     container = ProviderContainer(overrides: [
       appDatabaseProvider.overrideWithValue(database),
       builtInCatalogRepositoryProvider.overrideWithValue(
@@ -42,35 +47,48 @@ void main() {
     await database.close();
   });
 
-  test('读侧 await bootstrap：首帧即读到内置三条种子', () async {
-    final probes = await container.read(diagnosticsProbesProvider.future);
+  test('读侧 await bootstrap：首帧即读到该车内置三条种子', () async {
+    final probes = await container.read(
+      diagnosticsProbesProvider(carId).future,
+    );
     expect(probes, hasLength(3));
     expect(probes.map((p) => p.name).toList(), ['油量', '水温', '电压']);
     expect(probes.every((p) => p.isBuiltIn), isTrue);
+    expect(probes.every((p) => p.carId == carId), isTrue);
   });
 
   test('写点直失效：写库后读侧缓存不变，逐出后才可见新值', () async {
-    final first = await container.read(diagnosticsProbesProvider.future);
+    final first = await container.read(
+      diagnosticsProbesProvider(carId).future,
+    );
     expect(first, hasLength(3));
     await diagnostics.saveProbe(
-      DiagnosticsProbe(name: '进气温度', command: '010F'),
+      DiagnosticsProbe(carId: carId, name: '进气温度', command: '010F'),
     );
     // 未逐出：provider 缓存住旧列表（本 provider 不 watch 任何纪元，
     // 也不监听数据库——写点必须显式逐出，这正是要锁住的契约）。
-    final cached = await container.read(diagnosticsProbesProvider.future);
+    final cached = await container.read(
+      diagnosticsProbesProvider(carId).future,
+    );
     expect(cached, same(first));
     // 写点逐出（动作层诊断分节协议，后续 UI 票接入）。
-    container.invalidate(diagnosticsProbesProvider);
-    final second = await container.read(diagnosticsProbesProvider.future);
+    container.invalidate(diagnosticsProbesProvider(carId));
+    final second = await container.read(
+      diagnosticsProbesProvider(carId).future,
+    );
     expect(second, hasLength(4));
     expect(second.last.name, '进气温度');
   });
 
-  test('不随车辆数据纪元重算（表不挂车，ADR 0021）', () async {
-    final first = await container.read(diagnosticsProbesProvider.future);
+  test('不随车辆数据纪元重算（写点直失效模型）', () async {
+    final first = await container.read(
+      diagnosticsProbesProvider(carId).future,
+    );
     expect(first, hasLength(3));
     container.read(vehicleDataEpochProvider.notifier).bump();
-    final second = await container.read(diagnosticsProbesProvider.future);
+    final second = await container.read(
+      diagnosticsProbesProvider(carId).future,
+    );
     expect(second, same(first), reason: '纪元 bump 不得牵动检测点列表');
   });
 }

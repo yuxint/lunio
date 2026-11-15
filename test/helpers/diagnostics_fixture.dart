@@ -65,6 +65,15 @@ class RigGate {
       }
     }
   }
+
+  /// 只放行指定时长的闩（区分 300ms 响应超时与 1s 轮询拍）。
+  void completeDuration(Duration duration) {
+    for (var index = 0; index < requests.length; index++) {
+      if (requests[index] == duration && !_completers[index].isCompleted) {
+        _completers[index].complete();
+      }
+    }
+  }
 }
 
 /// 诊断页测试装具。
@@ -88,7 +97,6 @@ class DiagnosticsRig {
             ? (d) => timeGate.gate(d)
             : (d) => Future<void>.delayed(d),
         responseTimeout: const Duration(milliseconds: 300),
-        pollInterval: const Duration(milliseconds: 100),
       );
     };
   }
@@ -131,12 +139,22 @@ class DiagnosticsRig {
     await tester.pump();
   }
 
-  /// 释放会话定时门闩 + 泵帧：已完成请求的超时闩无副作用放行 + 轮间
-  /// 隔闩放行进下一轮。仅当无在途请求（值已全部渲染）时调用——在途
-  /// 请求会被误判超时。
-  Future<void> advanceRound(WidgetTester tester) async {
-    timeGate.completeAll();
+  /// 只放行响应超时闩（300ms）：让在途静默请求落行级无数据。用于
+  /// "单条超时/无数据不连坐"类用例，不能连带放行 1s 轮询拍。
+  Future<void> completeProbeTimeout(WidgetTester tester) async {
+    timeGate.completeDuration(const Duration(milliseconds: 300));
     await tester.pump();
+  }
+
+  /// 释放轮询拍进入下一轮：每检测点默认 30 秒间隔（ADR 0023），按
+  /// 1 秒拍推进 31 拍（第 30 拍把倒计时减到 0，第 31 拍触发下一轮）。
+  /// 仅当无在途请求（值已全部渲染）时调用；已完成请求的 300ms 超时
+  /// 闩无副作用放行。
+  Future<void> advanceRound(WidgetTester tester) async {
+    for (var tick = 0; tick < 31; tick++) {
+      timeGate.completeAll();
+      await tester.pump();
+    }
   }
 
   /// 逐拍推进直至 finder 出现（connect + 一轮 ≈ 7 拍，20 拍封顶防死循环）。
@@ -163,6 +181,10 @@ class FakeObdScanner implements ObdScanner {
   int startCalls = 0;
   int stopCalls = 0;
 
+  /// 已发射清单（emit 经 [mergeScanEntries] 与真扫描器同一合并契约——
+  /// 首见定序跨拍保持；start 复位镜像真扫描器的新扫描会话）。
+  List<BleObdScanEntry> _last = const [];
+
   /// ensureReady 抛出的错误（null = 门禁通过）。
   Object? gateError;
 
@@ -184,6 +206,7 @@ class FakeObdScanner implements ObdScanner {
   @override
   Future<void> start() async {
     startCalls++;
+    _last = const [];
     final error = startError;
     if (error != null) {
       throw error;
@@ -195,9 +218,12 @@ class FakeObdScanner implements ObdScanner {
     stopCalls++;
   }
 
-  /// 推一批扫描结果（测试手动调用）。
+  /// 推一批扫描结果（测试手动调用）。经 [mergeScanEntries] 整备——
+  /// 与真扫描器同一契约（空名过滤 + 首见定序），替身忠实镜像数据源
+  /// 行为，widget 用例经接缝端到端锁过滤与顺序稳定性。
   void emit(List<BleObdScanEntry> entries) {
-    _entries.add(entries);
+    _last = mergeScanEntries(_last, entries);
+    _entries.add(_last);
   }
 }
 

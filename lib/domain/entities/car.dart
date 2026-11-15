@@ -19,6 +19,7 @@ class Car {
     required this.currentMileageKm,
     required this.roadDate,
     this.tankCapacityLiters,
+    this.totalTankCapacityLiters,
     required this.sync,
   });
 
@@ -44,23 +45,32 @@ class Car {
   /// 上路日期（无保养记录时的时间进度基线）。只用年月日，不带时分秒。
   final LocalDate roadDate;
 
-  /// 油箱容积（升），车的物理属性。非必填，未填为 null（加油预估的
-  /// 加满金额需要它，空态时加油页引导去填）。校验规则见
-  /// FuelRules.validateTankCapacity：1–999，最多四位小数；
-  /// 写库/恢复备份前由 Repository 统一校验（Car 保持可 const 构造，
-  /// 校验不放构造函数里）。
+  /// 加满可加油量（可用容积，升）：仪表 0% 加到跳枪的实际加油量，
+  /// 车的属性。非必填，未填为 null（加油预估的加满金额需要它，空态
+  /// 时加油页引导去填）。列名沿用 `tank_capacity_liters`，语义按
+  /// ADR 0022 固定为"可用容积"（思域 40.487 L）。校验规则见
+  /// FuelRules.validateTankCapacity：1–999，最多四位小数；写库/恢复
+  /// 备份前由 Repository 统一校验（Car 保持可 const 构造，校验不放
+  /// 构造函数里）。
   final double? tankCapacityLiters;
+
+  /// 油箱总容积（升）：官方总容积（思域 47 L），含 0% 以下的储备。
+  /// 非必填；与可用容积同时填写时不得小于可用容积。双油量口径见
+  /// ADR 0022：储备油量 = 总容积 − 可用容积。
+  final double? totalTankCapacityLiters;
 
   /// 云同步元数据（为未来同步预留，当前全部为 synced）。
   final SyncMetadata sync;
 
   /// 复制并替换部分字段（Dart 惯用的"不可变对象更新"方式）。
-  /// 只开放里程/容积/sync 的替换——品牌/型号/上路日期是身份字段，
+  /// 只开放里程/两个容积/sync 的替换——品牌/型号/上路日期是身份字段，
   /// 编辑车辆表单也不允许修改它们。
   Car copyWith({
     int? currentMileageKm,
     double? tankCapacityLiters,
     bool keepCapacity = true,
+    double? totalTankCapacityLiters,
+    bool keepTotalCapacity = true,
     SyncMetadata? sync,
   }) {
     return Car(
@@ -73,6 +83,9 @@ class Car {
       tankCapacityLiters: keepCapacity
           ? (tankCapacityLiters ?? this.tankCapacityLiters)
           : tankCapacityLiters,
+      totalTankCapacityLiters: keepTotalCapacity
+          ? (totalTankCapacityLiters ?? this.totalTankCapacityLiters)
+          : totalTankCapacityLiters,
       sync: sync ?? this.sync,
     );
   }

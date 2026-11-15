@@ -80,6 +80,10 @@ class LunioRepository {
       item.validate();
     }
     FuelRules.validateTankCapacity(car.tankCapacityLiters);
+    FuelRules.validateTotalTankCapacity(
+      car.totalTankCapacityLiters,
+      usableCapacityLiters: car.tankCapacityLiters,
+    );
     // 边界包装：品牌+型号+上路日期或项目同名撞表级唯一约束时翻译成
     // typed uniqueConstraint（无业务前置查重的最后防线）。
     return guardUniqueConstraint(() => database.transaction(() async {
@@ -112,7 +116,7 @@ class LunioRepository {
     return rows.map(carFromRow).toList();
   }
 
-  /// 编辑车辆（只允许改里程/上路日期/油箱容积/sync；品牌型号是身份字段
+  /// 编辑车辆（只允许改里程/上路日期/两个容积/sync；品牌型号是身份字段
   /// 不可改，因此 UI 的编辑表单不提供品牌车型输入）。id 为空抛错。
   Future<void> updateCar(domain.Car car) {
     final carId = car.id;
@@ -120,6 +124,10 @@ class LunioRepository {
       throw ArgumentError('Car id is required');
     }
     FuelRules.validateTankCapacity(car.tankCapacityLiters);
+    FuelRules.validateTotalTankCapacity(
+      car.totalTankCapacityLiters,
+      usableCapacityLiters: car.tankCapacityLiters,
+    );
     // 边界包装：改上路日期撞上另一辆同品牌型号同日期的车（cars 表
     // {brand,model,roadDate} 唯一约束）时翻译成 typed uniqueConstraint。
     return guardUniqueConstraint(
@@ -130,6 +138,7 @@ class LunioRepository {
           currentMileageKm: Value(car.currentMileageKm),
           roadDate: Value(car.roadDate.toString()),
           tankCapacityLiters: Value(car.tankCapacityLiters),
+          totalTankCapacityLiters: Value(car.totalTankCapacityLiters),
           syncStatus: Value(car.sync.status.name),
           updatedAt: Value(car.sync.updatedAt.toIso8601String()),
           version: Value(car.sync.version),
@@ -188,6 +197,9 @@ class LunioRepository {
       await (database.delete(
         database.maintenanceItems,
       )..where((row) => row.carsId.equals(carId))).go();
+      await (database.delete(
+        database.diagnosticsProbes,
+      )..where((row) => row.carId.equals(carId))).go();
       await preferences.clearAppliedCarIdIfValue(carId);
       await fuel.deleteForCar(carId);
       await (database.delete(

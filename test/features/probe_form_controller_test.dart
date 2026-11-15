@@ -20,11 +20,13 @@ import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import 'package:lunio/features/shell/diagnostics/probe_form_controller.dart';
+import 'package:lunio/features/shell/diagnostics/probe_templates.dart';
 
 /// 测试夹具：装配控制器 + 行内错误捕获 + 注入时钟。
 class ProbeFormHarness {
   ProbeFormHarness({DiagnosticsProbe? probe}) {
     controller = ProbeFormController(
+      carId: 1,
       probe: probe,
       reportError: (message) => reportedError = message,
       now: () => fixedNow,
@@ -43,10 +45,12 @@ class ProbeFormHarness {
 /// 编辑态夹具目标（自定义检测点，已入库形态：带 id、启停 false）。
 DiagnosticsProbe editTarget() => DiagnosticsProbe(
       id: 512,
+      carId: 1,
       name: '节气门',
       command: '0111',
       parseType: DiagnosticsParseType.rawHex,
       enabled: false,
+      refreshIntervalSeconds: 60,
     );
 
 void main() {
@@ -56,15 +60,18 @@ void main() {
     expect(harness.controller.nameController.text, isEmpty);
     expect(harness.controller.commandController.text, isEmpty);
     expect(harness.controller.parseType, DiagnosticsParseType.rawHex);
+    expect(harness.controller.refreshIntervalController.text, '30');
   });
 
   test('edit form backfills name, raw command and parse type', () {
     final harness = ProbeFormHarness(
       probe: DiagnosticsProbe(
         id: 512,
+        carId: 1,
         name: '节气门',
         command: '01 11',
         parseType: DiagnosticsParseType.coolantTemp,
+        refreshIntervalSeconds: 45,
       ),
     );
 
@@ -73,6 +80,7 @@ void main() {
     // 指令回填原文（未归一的存量形态也原样回显，提交时才归一）。
     expect(harness.controller.commandController.text, '01 11');
     expect(harness.controller.parseType, DiagnosticsParseType.coolantTemp);
+    expect(harness.controller.refreshIntervalController.text, '45');
   });
 
   test('validation ladder rejects blank name', () {
@@ -132,8 +140,10 @@ void main() {
     final payload = harness.controller.submitPayload();
     expect(payload, isNotNull);
     expect(payload!.id, isNull);
+    expect(payload.carId, 1);
     expect(payload.catalogKey, isNull);
     expect(payload.parseType, DiagnosticsParseType.rawHex);
+    expect(payload.refreshIntervalSeconds, 30);
     expect(payload.enabled, isTrue);
     expect(payload.sync.status, SyncStatus.pendingCreate);
     expect(payload.sync.updatedAt, harness.fixedNow);
@@ -145,8 +155,10 @@ void main() {
     final payload = harness.controller.submitPayload();
     expect(payload, isNotNull);
     expect(payload!.id, 512);
+    expect(payload.carId, 1);
     expect(payload.enabled, isFalse, reason: '编辑不碰启停');
     expect(payload.parseType, DiagnosticsParseType.rawHex);
+    expect(payload.refreshIntervalSeconds, 60);
     expect(payload.sync.status, SyncStatus.pendingUpdate);
     expect(payload.sync.updatedAt, harness.fixedNow);
   });
@@ -158,5 +170,32 @@ void main() {
     harness.controller.commandController.text = '0105';
     final payload = harness.controller.submitPayload();
     expect(payload!.parseType, DiagnosticsParseType.coolantTemp);
+  });
+
+  test('applyTemplate fills name/command/parseType', () {
+    final harness = ProbeFormHarness();
+    final template = diagnosticsProbeTemplates.first;
+    harness.controller.applyTemplate(
+      name: template.name,
+      command: template.command,
+      parseType: template.parseType,
+    );
+    final payload = harness.controller.submitPayload();
+    expect(payload, isNotNull);
+    expect(payload!.name, template.name);
+    expect(payload.command, template.command);
+    expect(payload.parseType, template.parseType);
+    expect(payload.refreshIntervalSeconds, 30, reason: '模板不动间隔');
+  });
+
+  test('refresh interval rejects outside 5–3600 seconds', () {
+    final harness = ProbeFormHarness();
+    harness.controller.nameController.text = '节气门';
+    harness.controller.commandController.text = '0111';
+    for (final value in ['4', '3601', '', 'abc']) {
+      harness.controller.refreshIntervalController.text = value;
+      expect(harness.controller.submitPayload(), isNull);
+      expect(harness.reportedError, '刷新间隔必须是 5–3600 秒');
+    }
   });
 }

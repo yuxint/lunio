@@ -86,7 +86,6 @@ class Elm327Session {
     DateTime Function()? now,
     Future<void> Function(Duration)? delay,
     this.responseTimeout = const Duration(seconds: 5),
-    this.pollInterval = const Duration(seconds: 3),
   })  :
         _now = now ?? DateTime.now,
         _delay = delay ?? _realDelay;
@@ -98,8 +97,9 @@ class Elm327Session {
   /// 响应超时（单条指令等 `>` 的上限；真机联调再定）。
   final Duration responseTimeout;
 
-  /// 轮间隔（ADR 0020 决定 4：常量默认 3 秒，真机联调再定）。
-  final Duration pollInterval;
+  /// 轮询调度拍（ADR 0023）：每个检测点自己的 [DiagnosticsProbe
+  /// .refreshIntervalSeconds] 按这个 1 秒拍倒计时，默认 30 秒。
+  static const Duration pollTick = Duration(seconds: 1);
 
   static Future<void> _realDelay(Duration d) => Future<void>.delayed(d);
 
@@ -126,6 +126,15 @@ class Elm327Session {
   Future<void>? _pollLoop;
   Completer<String>? _frameWaiter;
   int _generation = 0;
+
+  /// 每个检测点剩余秒数（ADR 0023，每车检测点独立间隔）。
+  final Map<int, int> _remainingSeconds = {};
+
+  /// 调试模式暂停旗：true 时自动轮询停拍，等待恢复。
+  bool _paused = false;
+
+  /// 可被手动刷新/暂停/停止提前唤醒的一秒睡眠。
+  Completer<void>? _wakeSleep;
 
   /// 已释放旗（dispose 首行置位）：之后禁止状态回写与事件投递——迟到
   /// 的建链成功、断开、轮询结果都不得再碰已关闭的事件流（否则
@@ -206,6 +215,8 @@ class Elm327Session {
       throw StateError('轮询已启动，不要重复调用');
     }
     _stopPolling = false;
+    _paused = false;
+    _remainingSeconds.clear();
     _pollLoop = _poll(enabledProbes);
   }
 
@@ -213,6 +224,46 @@ class Elm327Session {
   /// 入，幂等。
   void stopPolling() {
     _stopPolling = true;
+    _wakePoll();
+  }
+
+  /// 手动刷新（ADR 0023）：把所有已知检测点的倒计时清零并唤醒睡眠，
+  /// 下一拍立即轮询全部启用项；自动间隔随之重置。
+  void requestImmediatePoll() {
+    for (final id in _remainingSeconds.keys.toList()) {
+      _remainingSeconds[id] = 0;
+    }
+    _wakePoll();
+  }
+
+  /// 调试模式暂停（ADR 0023）：置暂停旗并等在途请求收尾；之后自动轮
+  /// 询不再发新请求，原始命令可以独占链路。可重复调用。
+  Future<void> pausePolling() async {
+    _paused = true;
+    _wakePoll();
+    while (_frameWaiter != null && !_disposed) {
+      await _delay(const Duration(milliseconds: 50));
+    }
+  }
+
+  /// 恢复自动轮询（调试退出/一键采集收尾）。
+  void resumePolling() {
+    _paused = false;
+    _wakePoll();
+  }
+
+  /// 调试终端原始命令（ADR 0023）：规整后走与轮询同一条串行链路，
+  /// 返回提示符前的完整帧文本。调用方应先 [pausePolling]，避免与自动
+  /// 轮询抢占；未连接抛会话异常。
+  Future<String> sendRawCommand(String command) {
+    if (_state != Elm327SessionState.connected) {
+      throw const Elm327SessionException('未连接');
+    }
+    final normalized = normalizeObdCommand(command);
+    if (normalized.isEmpty) {
+      throw ArgumentError('指令不能为空');
+    }
+    return _request(normalized);
   }
 
   Future<void> _poll(
@@ -220,59 +271,128 @@ class Elm327Session {
   ) async {
     try {
       while (!_stopPolling && !_disposed) {
-        final probes = enabledProbes();
+        if (_paused) {
+          await _sleepPoll();
+          continue;
+        }
+        final probes = enabledProbes()
+            .where((probe) => probe.id != null)
+            .toList();
         for (final probe in probes) {
+          _remainingSeconds.putIfAbsent(probe.id!, () => 0);
+        }
+        final ids = {for (final probe in probes) probe.id!};
+        _remainingSeconds.removeWhere((id, _) => !ids.contains(id));
+        final due = [
+          for (final probe in probes)
+            if ((_remainingSeconds[probe.id!] ?? 0) <= 0) probe,
+        ];
+        if (due.isEmpty) {
+          _tickRemaining(ids);
+          await _sleepPoll();
+          continue;
+        }
+        final dueIds = {for (final probe in due) probe.id!};
+        for (final probe in due) {
           if (_stopPolling ||
               _disposed ||
               _state != Elm327SessionState.connected) {
             return;
           }
-          final probeId = probe.id;
-          if (probeId == null) {
-            // 未入库检测点跳过（快照契约是库表行；null id 属上游 bug，
-            // 跳过保轮询存活，事件里不冒出假 id）。
-            continue;
+          if (_paused) {
+            // 暂停时停止本轮余下条目；它们的倒计时保持 0，恢复后立即
+            // 补跑（调试终端独占链路）。
+            break;
           }
-          final command = normalizeObdCommand(probe.command);
-          try {
-            final frame = await _request(command);
-            final reading = parseProbeResponse(
-              command: command,
-              parseType: probe.parseType,
-              frameText: frame,
-            );
-            _emit(Elm327ProbeReading(
-              probeId: probeId,
-              reading: reading,
-              at: _now(),
-            ));
-          } on Elm327TimeoutException {
-            _emit(Elm327ProbeReading(
-              probeId: probeId,
-              reading: const ObdNoData('超时'),
-              at: _now(),
-            ));
-          } on Elm327SessionException {
-            // 链路/会话级失败（send 失败、断开中断）：整轮退出 +
-            // 断开事件，连接级语义（story 16）。
-            _markDisconnected(
-              const Elm327SessionException('轮询中链路失败'),
-            );
+          final keep = await _pollOne(probe);
+          if (!keep) {
             return;
-          } catch (e) {
-            // 其他异常（解析缺陷等非链路问题）归单条无数据，不连坐
-            // 断连语义、不中断轮询。
-            _emit(Elm327ProbeReading(
-              probeId: probeId,
-              reading: ObdNoData('读取失败：$e'),
-              at: _now(),
-            ));
+          }
+          _remainingSeconds[probe.id!] = probe.refreshIntervalSeconds;
+        }
+        for (final id in ids) {
+          if (!dueIds.contains(id)) {
+            final value = _remainingSeconds[id] ?? 0;
+            if (value > 0) {
+              _remainingSeconds[id] = value - 1;
+            }
           }
         }
-        await _delay(pollInterval);
+        await _sleepPoll();
       }
     } finally {
       _pollLoop = null;
+    }
+  }
+
+  /// 每秒一拍的倒计时（ADR 0023）：每个检测点按自己的
+  /// `refreshIntervalSeconds` 到期。
+  void _tickRemaining(Set<int> ids) {
+    for (final id in ids) {
+      final value = _remainingSeconds[id] ?? 0;
+      if (value > 0) {
+        _remainingSeconds[id] = value - 1;
+      }
+    }
+  }
+
+  /// 单条检测点读取：值/无数据都发事件；链路级失败标记断开并返回
+  /// false（整轮退出）。
+  Future<bool> _pollOne(DiagnosticsProbe probe) async {
+    final probeId = probe.id!;
+    final command = normalizeObdCommand(probe.command);
+    try {
+      final frame = await _request(command);
+      final reading = parseProbeResponse(
+        command: command,
+        parseType: probe.parseType,
+        frameText: frame,
+      );
+      _emit(Elm327ProbeReading(
+        probeId: probeId,
+        reading: reading,
+        at: _now(),
+      ));
+      return true;
+    } on Elm327TimeoutException {
+      _emit(Elm327ProbeReading(
+        probeId: probeId,
+        reading: const ObdNoData('超时'),
+        at: _now(),
+      ));
+      return true;
+    } on Elm327SessionException {
+      // 链路/会话级失败（send 失败、断开中断）：整轮退出 + 断开事件，
+      // 连接级语义（story 16）。
+      _markDisconnected(const Elm327SessionException('轮询中链路失败'));
+      return false;
+    } catch (e) {
+      // 其他异常（解析缺陷等非链路问题）归单条无数据，不连坐断连语义、
+      // 不中断轮询。
+      _emit(Elm327ProbeReading(
+        probeId: probeId,
+        reading: ObdNoData('读取失败：$e'),
+        at: _now(),
+      ));
+      return true;
+    }
+  }
+
+  /// 可被手动刷新/暂停/停止提前唤醒的一秒睡眠。
+  Future<void> _sleepPoll() async {
+    final wake = Completer<void>();
+    _wakeSleep = wake;
+    final delayFuture = _delay(pollTick);
+    await Future.any([delayFuture, wake.future]);
+    if (identical(_wakeSleep, wake)) {
+      _wakeSleep = null;
+    }
+  }
+
+  void _wakePoll() {
+    final wake = _wakeSleep;
+    if (wake != null && !wake.isCompleted) {
+      wake.complete();
     }
   }
 
@@ -375,6 +495,7 @@ class Elm327Session {
   /// 关闭时调它，不造伪事件）。
   Future<void> disconnect() async {
     _stopPolling = true;
+    _wakePoll();
     final waiter = _frameWaiter;
     if (waiter != null && !waiter.isCompleted) {
       waiter.completeError(
@@ -411,6 +532,7 @@ class Elm327Session {
   /// 列与已失效的等待者无害）。
   Future<void> _teardown() async {
     _stopPolling = true;
+    _wakePoll();
     _generation++;
     _frames.clear();
     _assembler.clear();

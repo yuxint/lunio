@@ -11,3 +11,14 @@ String formatClock(DateTime dateTime) {
   final second = dateTime.second.toString().padLeft(2, '0');
   return '$hour:$minute:$second';
 }
+
+/// 读数时刻显示（2026-11-15，诊断页最后读数用）：今天显 HH:mm:ss（视
+/// 觉不变），非今天显 M/d HH:mm:ss（跨天读数带日期，避免"只显时分秒"
+/// 误导）。now 由调用方注入（页面传 DateTime.now()，测试注入固定时
+/// 钟），保持纯函数可单测。
+String formatReadingTime(DateTime at, {required DateTime now}) {
+  final sameDay =
+      at.year == now.year && at.month == now.month && at.day == now.day;
+  final clock = formatClock(at);
+  return sameDay ? clock : '${at.month}/${at.day} $clock';
+}

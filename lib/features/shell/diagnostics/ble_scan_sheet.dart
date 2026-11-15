@@ -1,6 +1,9 @@
 // 扫描选择 sheet（票 07）：诊断页"无记忆/直连失败"落到附近的 BLE 设备
-// 列表，用户点选后回页面建链（story 5/6）。不过滤设备名（story 5：
-// 全部显示防误伤），信号强度降序，行内"连接中…"状态反馈（story 6）。
+// 列表，用户点选后回页面建链（story 5/6）。广播名为空的设备不进列表
+//（2026-11-15 拍板反转 story 5「全部显示防误伤」，过滤在扫描器数据源
+// mergeScanEntries 合并函数，sheet 只渲染收到的清单），行序首见定序
+//（位置冻结、信号数字 ≤1Hz 刷新，2026-11-15 拍板），行内"连接中…"状态
+// 反馈（story 6）。
 //
 // sheet 是纯视图 + 受控状态：扫描数据源经 obdScannerProvider 注入
 //（测试换假扫描器），点选/关闭经回调与句柄协议回传页面——连接编排归
@@ -152,7 +155,8 @@ class _BleScanSheetState extends ConsumerState<_BleScanSheet> {
     });
   }
 
-  /// 扫描结果到达：整表刷新（扫描器已按信号强度降序）。
+  /// 扫描结果到达：整表刷新（扫描器已按首见定序整备：行位置冻结、
+  /// 信号数字 ≤1Hz 刷新、新设备立即插入）。
   void _onResults(List<BleObdScanEntry> entries) {
     if (!mounted) {
       return;
@@ -218,20 +222,25 @@ class _BleScanSheetState extends ConsumerState<_BleScanSheet> {
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(context).height * 0.48,
           ),
+          // 列表显式零内边距：ListView 默认拿系统安全区插值（状态栏高
+          // 度）当自己的 padding，弹层贴屏底却把屏顶 inset 垫进列表顶
+          //（2026-11-15 真机留白根因，widget 测试几何断言守卫）。
           child: _entries.isEmpty
               ? Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text(
-                      '附近暂无蓝牙设备，请确认适配器已插车',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: tokens.subtle),
-                    ),
+                  // 不用 Center：Center 撑满约束最大高度（列表限高 48%
+                  // 屏高），文案被推到中部、上下全成空白（留白根因之二）。
+                  child: Text(
+                    '附近暂无蓝牙设备，请确认适配器已插车',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: tokens.subtle),
                   ),
                 )
               : ListView.builder(
+                  padding: EdgeInsets.zero,
                   shrinkWrap: true,
                   itemCount: _entries.length,
                   itemBuilder: (context, index) {
@@ -290,7 +299,8 @@ class _BleScanSheetState extends ConsumerState<_BleScanSheet> {
 }
 
 /// 扫描设备行（LunioTappableCard 整卡可点；连接中行态右侧"连接中…"
-/// 状态文本，story 6；name 为空显"未命名设备"）。
+/// 状态文本，story 6）。空名设备在扫描器合并函数就被过滤，行内名称
+/// 恒非空。
 class _ScanDeviceRow extends StatelessWidget {
   const _ScanDeviceRow({
     required this.entry,
@@ -305,14 +315,13 @@ class _ScanDeviceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final name = entry.name.isEmpty ? '未命名设备' : entry.name;
     final row = Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name, style: Theme.of(context).textTheme.titleSmall),
+                Text(entry.name, style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 2),
                 Text(
                   '信号强度 ${entry.rssi}',

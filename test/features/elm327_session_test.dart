@@ -114,6 +114,7 @@ DiagnosticsProbe makeProbe(
 ) {
   return DiagnosticsProbe(
     id: id,
+    carId: 1,
     name: 'P$id',
     command: command,
     parseType: parseType,
@@ -194,10 +195,11 @@ void main() {
         mock.sentCommands,
         ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '012F', '0105', 'ATRV'],
       );
-      // 轮间停 pollInterval：第 8 个延时请求 = 轮间延时（前 7 个是各
-      // 指令的响应超时竞速，时长 5s）。
+      // 轮间停 1 秒调度拍（ADR 0023）：第 8 个延时请求 = 轮末一拍
+      // （前 7 个是各指令的响应超时竞速，时长 5s；检测点间隔默认 30s，
+      // 倒计时按拍递减）。
       expect(gate.requests.length, 8);
-      expect(gate.requests.last, const Duration(seconds: 3));
+      expect(gate.requests.last, Elm327Session.pollTick);
       await session.dispose();
     });
 
@@ -262,6 +264,76 @@ void main() {
       await pumpEventQueue();
       // 检查点退出：不再发下一轮（变异目标：删轮末检查点 → 此断言失败）。
       expect(mock.sentCommands.length, 5);
+      await session.dispose();
+    });
+
+    test('手动刷新立即补跑一轮（不动自动间隔）', () async {
+      final gate = _DelayGate();
+      final mock = MockObdTransport(
+        responses: mockObdCorpusDemoResponses(),
+        delay: (_) async {},
+      );
+      final session = Elm327Session(transport: mock, delay: gate.gate);
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+      session.startPolling(
+        enabledProbes: () => [
+          makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
+        ],
+      );
+      final first = await queue.next() as Elm327ProbeReading;
+      expect(first.probeId, 1);
+      // 等循环进入 1 秒调度拍（一拍 = pollTick）。
+      while (!gate.requests.contains(Elm327Session.pollTick)) {
+        await pumpEventQueue();
+      }
+      session.requestImmediatePoll();
+      final second = await queue.next() as Elm327ProbeReading;
+      expect(second.probeId, 1);
+      expect(
+        mock.sentCommands.where((command) => command == '012F'),
+        hasLength(2),
+      );
+      await session.dispose();
+    });
+
+    test('暂停后原始命令独占链路，恢复后继续轮询', () async {
+      final gate = _DelayGate();
+      final mock = MockObdTransport(
+        responses: mockObdCorpusDemoResponses(),
+        delay: (_) async {},
+      );
+      final session = Elm327Session(transport: mock, delay: gate.gate);
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+      session.startPolling(
+        enabledProbes: () => [
+          makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
+        ],
+      );
+      final first = await queue.next() as Elm327ProbeReading;
+      expect(first.probeId, 1);
+      while (!gate.requests.contains(Elm327Session.pollTick)) {
+        await pumpEventQueue();
+      }
+      await session.pausePolling();
+      final frame = await session.sendRawCommand('ATRV');
+      expect(frame, contains('11.2V'));
+      expect(
+        mock.sentCommands.where((command) => command == '012F'),
+        hasLength(1),
+        reason: '暂停期间不再自动轮询',
+      );
+      session.resumePolling();
+      session.requestImmediatePoll();
+      final second = await queue.next() as Elm327ProbeReading;
+      expect(second.probeId, 1);
+      expect(
+        mock.sentCommands.where((command) => command == '012F'),
+        hasLength(2),
+      );
       await session.dispose();
     });
   });

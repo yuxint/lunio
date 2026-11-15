@@ -42,6 +42,10 @@ void main() {
     final shaved = AppDatabase.forFile(file);
     await shaved.customStatement('DROP TABLE fuel_records');
     await shaved.customStatement('DROP TABLE diagnostics_probes');
+    // v6 新增的 cars 总容积列在 v2 形态里不存在。
+    await shaved.customStatement(
+      'ALTER TABLE cars DROP COLUMN total_tank_capacity_liters',
+    );
     await shaved.customStatement('PRAGMA user_version = 2');
     await shaved.close();
 
@@ -92,6 +96,10 @@ void main() {
     // 2. 削成 v3 形态：删新表、版本号改回 3。
     final shaved = AppDatabase.forFile(file);
     await shaved.customStatement('DROP TABLE diagnostics_probes');
+    // v6 新增的 cars 总容积列在 v3 形态里不存在。
+    await shaved.customStatement(
+      'ALTER TABLE cars DROP COLUMN total_tank_capacity_liters',
+    );
     await shaved.customStatement('PRAGMA user_version = 3');
     await shaved.close();
 
@@ -113,6 +121,9 @@ void main() {
         'parse_type',
         'enabled',
         'catalog_key',
+        'car_id',
+        'refresh_interval_seconds',
+        'header',
         'sync_status',
         'updated_at',
         'version',
@@ -122,6 +133,144 @@ void main() {
     expect(carRows, hasLength(1), reason: '升级不得丢存量数据');
     expect(carRows.single.brand, '大众');
     expect(carRows.single.currentMileageKm, 12000);
+  });
+
+  test('v4 老库升级到 v6：读数三列 + 每车/间隔/header + 总容积', () async {
+    final file = File('${tempDir.path}/lunio-v6-from-v4.sqlite');
+
+    // 1. 按当前代码建库，只留车辆存量；检测点表随后按 v4 形态重建。
+    final current = AppDatabase.forFile(file);
+    await current.customStatement(
+      "INSERT INTO cars (id, brand, model, powertrain_type,"
+      " current_mileage_km, road_date, sync_status, updated_at, version)"
+      " VALUES (1, '大众', '朗逸', 'fuel', 12000, '2024-01-01',"
+      " 'synced', '2024-01-01T00:00:00', 1)",
+    );
+    await current.close();
+
+    // 2. 削成 v4 形态：cars 去掉 v6 总容积列；diagnostics_probes 重建为
+    //    v4 表（无读数三列、无 car_id/refresh/header，唯一键仍 catalogKey）。
+    final shaved = AppDatabase.forFile(file);
+    await shaved.customStatement(
+      'ALTER TABLE cars DROP COLUMN total_tank_capacity_liters',
+    );
+    await shaved.customStatement('DROP TABLE diagnostics_probes');
+    await shaved.customStatement('''
+      CREATE TABLE diagnostics_probes (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        parse_type TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        catalog_key TEXT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'synced',
+        updated_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (catalog_key)
+      )
+    ''');
+    await shaved.customStatement(
+      "INSERT INTO diagnostics_probes (id, name, command, parse_type,"
+      " enabled, catalog_key, sync_status, updated_at, version)"
+      " VALUES (1, '油量', '012F', 'fuelLevel', 1, 'probe:fuelLevel',"
+      " 'synced', '2026-11-15T08:00:00.000', 1)",
+    );
+    await shaved.customStatement('PRAGMA user_version = 4');
+    await shaved.close();
+
+    // 3. 重开 → 4→5 加读数三列、5→6 重建每车/间隔/header 与总容积。
+    final upgraded = AppDatabase.forFile(file);
+    addTearDown(upgraded.close);
+    final columnRows = await upgraded
+        .customSelect('PRAGMA table_info(diagnostics_probes)')
+        .get();
+    final columnNames = columnRows.map((row) => row.data['name']).toSet();
+    expect(
+      columnNames,
+      containsAll([
+        'last_value',
+        'last_percent',
+        'last_reading_at',
+        'car_id',
+        'refresh_interval_seconds',
+        'header',
+      ]),
+    );
+    final probes = await upgraded.select(upgraded.diagnosticsProbes).get();
+    expect(probes, hasLength(1));
+    expect(probes.single.name, '油量');
+    expect(probes.single.command, '012F');
+    expect(probes.single.enabled, isTrue);
+    expect(probes.single.carId, 1, reason: '存量行归第一辆车');
+    expect(probes.single.refreshIntervalSeconds, 30);
+    expect(probes.single.header, isNull);
+    expect(probes.single.lastValue, isNull, reason: '升级后读数列从 NULL 起步');
+    final carRows = await upgraded.select(upgraded.cars).get();
+    expect(carRows, hasLength(1), reason: '升级不得丢存量数据');
+    expect(carRows.single.currentMileageKm, 12000);
+    expect(carRows.single.totalTankCapacityLiters, isNull);
+  });
+
+  test('v5 老库升级到 v6：读数保留，每车/间隔/header + 总容积补齐', () async {
+    final file = File('${tempDir.path}/lunio-v6-from-v5.sqlite');
+
+    final current = AppDatabase.forFile(file);
+    await current.customStatement(
+      "INSERT INTO cars (id, brand, model, powertrain_type,"
+      " current_mileage_km, road_date, sync_status, updated_at, version)"
+      " VALUES (1, '大众', '朗逸', 'fuel', 12000, '2024-01-01',"
+      " 'synced', '2024-01-01T00:00:00', 1)",
+    );
+    await current.close();
+
+    // v5 形态：有读数三列，无 car_id/refresh/header，唯一键 catalogKey。
+    final shaved = AppDatabase.forFile(file);
+    await shaved.customStatement(
+      'ALTER TABLE cars DROP COLUMN total_tank_capacity_liters',
+    );
+    await shaved.customStatement('DROP TABLE diagnostics_probes');
+    await shaved.customStatement('''
+      CREATE TABLE diagnostics_probes (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        parse_type TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        catalog_key TEXT NULL,
+        last_value TEXT NULL,
+        last_percent REAL NULL,
+        last_reading_at TEXT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'synced',
+        updated_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (catalog_key)
+      )
+    ''');
+    await shaved.customStatement(
+      "INSERT INTO diagnostics_probes (id, name, command, parse_type,"
+      " enabled, catalog_key, last_value, last_percent, last_reading_at,"
+      " sync_status, updated_at, version) VALUES (1, '油量', '012F',"
+      " 'fuelLevel', 1, 'probe:fuelLevel', '37.6%', 37.6,"
+      " '2026-11-14T08:00:00.000', 'synced', '2026-11-15T08:00:00.000', 1)",
+    );
+    await shaved.customStatement('PRAGMA user_version = 5');
+    await shaved.close();
+
+    final upgraded = AppDatabase.forFile(file);
+    addTearDown(upgraded.close);
+    final probes = await upgraded.select(upgraded.diagnosticsProbes).get();
+    expect(probes, hasLength(1));
+    expect(probes.single.carId, 1);
+    expect(probes.single.refreshIntervalSeconds, 30);
+    expect(probes.single.header, isNull);
+    expect(probes.single.lastValue, '37.6%', reason: '读数随迁移保留');
+    expect(probes.single.lastPercent, 37.6);
+    expect(
+      probes.single.lastReadingAt,
+      '2026-11-14T08:00:00.000',
+    );
+    final carRows = await upgraded.select(upgraded.cars).get();
+    expect(carRows.single.totalTankCapacityLiters, isNull);
   });
 
   test('全新安装（无 user_version）走 onCreate，全部表建齐', () async {

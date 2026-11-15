@@ -551,6 +551,10 @@ void main() {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
+    // 诊断页每车一套检测点（ADR 0021 修订节）：先播种应用车辆，bootstrap
+    // 才有宿主可灌内置三条。
+    final carId = await repository.insertCarForTest(defaultCar());
+    await repository.setAppliedCarId(carId);
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     // 票 07：无记忆进诊断页会自动开扫描 sheet（挡住返回键路径），种设

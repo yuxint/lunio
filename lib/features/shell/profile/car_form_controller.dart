@@ -2,14 +2,16 @@
 // 第一步与编辑车辆 sheet 共用的那张表单里，全部字段决策的唯一实现。
 //
 // 职责：
-//   1. 字段态：品牌车型选中项、动力类型、当前里程、上路日期、油箱容积；
+//   1. 字段态：品牌车型选中项、动力类型、当前里程、上路日期、加满可
+//      加油量、油箱总容积；
 //   2. 初始态（构造一处）：新增默认选目录第一项 + 目录推荐动力类型 +
-//      里程 "0" + 容积空 + 上路日期 = 生效今天；编辑（含向导"上一步"
-//      带回的无 id 草稿）回填 initialCar 的字段值；
+//      里程 "0" + 两个容积空 + 上路日期 = 生效今天；编辑（含向导"上
+//      一步"带回的无 id 草稿）回填 initialCar 的字段值；
 //   3. 换车型时动力类型重置为该车型的目录推荐值（自定义车型无推荐值
 //      回燃油，用户可再改）；
-//   4. 校验：里程非负整数；容积选填，规则本体在 FuelRules
-//      .validateTankCapacity（1–999、最多四位小数），这里只做表单侧的
+//   4. 校验：里程非负整数；两个容积选填，规则本体在 FuelRules
+//      .validateTankCapacity / validateTotalTankCapacity（1–999、最多
+//      四位小数、总容积不小于可用容积，ADR 0022），这里只做表单侧的
 //      中文文案翻译；
 //   5. 提交载荷构造：编辑保留 id 与身份字段（品牌/车型/动力类型），
 //      sync 状态位按新增/编辑取 pendingCreate/pendingUpdate。
@@ -80,6 +82,9 @@ class CarFormController {
        ),
        capacityController = TextEditingController(
          text: _capacityInputText(initialCar?.tankCapacityLiters),
+       ),
+       totalCapacityController = TextEditingController(
+         text: _capacityInputText(initialCar?.totalTankCapacityLiters),
        ) {
     // 初始态唯一实现点：编辑（含向导"上一步"带回的无 id 草稿）回填
     // initialCar 的字段值，新增默认选目录第一项（老目录时代写死的
@@ -131,8 +136,11 @@ class CarFormController {
   /// 里程输入框（公里，非负整数）。
   final TextEditingController mileageController;
 
-  /// 油箱容积输入框（升，选填）。
+  /// 加满可加油量输入框（升，选填，ADR 0022）。
   final TextEditingController capacityController;
+
+  /// 油箱总容积输入框（升，选填，ADR 0022）。
+  final TextEditingController totalCapacityController;
 
   /// 上路日期（新增默认 = 生效今天，编辑 = 原日期）。
   late LocalDate roadDate;
@@ -169,12 +177,13 @@ class CarFormController {
     roadDate = picked;
   }
 
-  /// 「保存车辆 / 下一步」的提交载荷：里程非负整数校验 → 容积校验
-  /// （选填，1–999、最多四位小数，规则本体在 FuelRules）失败时报行内
-  /// 错误（中文文案）并返回 null；成功时构造 [Car]——编辑保留 id 与
-  /// 身份字段（品牌/车型/动力类型）、容积空 = null（选填语义）、sync
-  /// 状态位按新增/编辑取 pendingCreate/pendingUpdate、updatedAt 经注入
-  /// 的 now。写库由 widget 经 handle → 动作层完成，本类不碰。
+  /// 「保存车辆 / 下一步」的提交载荷：里程非负整数校验 → 两个容积校验
+  /// （选填，1–999、最多四位小数、总容积不小于可用容积，规则本体在
+  /// FuelRules，ADR 0022）失败时报行内错误（中文文案）并返回 null；
+  /// 成功时构造 [Car]——编辑保留 id 与身份字段（品牌/车型/动力类型）、
+  /// 容积空 = null（选填语义）、sync 状态位按新增/编辑取
+  /// pendingCreate/pendingUpdate、updatedAt 经注入的 now。写库由 widget
+  /// 经 handle → 动作层完成，本类不碰。
   ///
   /// 输入框本身带数字键盘约束（里程非负整数、容积最多四位小数），
   /// 这里兜的是程序态输入与粘贴。
@@ -189,10 +198,20 @@ class CarFormController {
     if (capacityText.isNotEmpty) {
       final parsed = double.tryParse(capacityText);
       if (parsed == null || !_isValidTankCapacity(parsed)) {
-        reportError('油箱容积需在 1–999 升之间，最多四位小数');
+        reportError('加满可加油量需在 1–999 升之间，最多四位小数');
         return null;
       }
       tankCapacity = parsed;
+    }
+    final totalCapacityText = totalCapacityController.text.trim();
+    double? totalTankCapacity;
+    if (totalCapacityText.isNotEmpty) {
+      final parsed = double.tryParse(totalCapacityText);
+      if (parsed == null || !_isValidTotalCapacity(parsed, tankCapacity)) {
+        reportError('油箱总容积需在 1–999 升之间，最多四位小数，且不得小于加满可加油量');
+        return null;
+      }
+      totalTankCapacity = parsed;
     }
     final initialCar = this.initialCar;
     return Car(
@@ -207,6 +226,7 @@ class CarFormController {
       currentMileageKm: mileage,
       roadDate: roadDate,
       tankCapacityLiters: tankCapacity,
+      totalTankCapacityLiters: totalTankCapacity,
       sync: SyncMetadata(
         status: isEditing ? SyncStatus.pendingUpdate : SyncStatus.pendingCreate,
         updatedAt: _now(),
@@ -218,6 +238,7 @@ class CarFormController {
   void dispose() {
     mileageController.dispose();
     capacityController.dispose();
+    totalCapacityController.dispose();
   }
 
   /// 容积回填文本：整数不带小数位（55），非整数按原样（64.5、55.1234），
@@ -265,6 +286,20 @@ class CarFormController {
   static bool _isValidTankCapacity(double liters) {
     try {
       FuelRules.validateTankCapacity(liters);
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  /// 总容积合法性：规则本体在 FuelRules.validateTotalTankCapacity
+  /// （抛 ArgumentError 表非法），这里翻译成布尔供校验阶梯用。
+  static bool _isValidTotalCapacity(double liters, double? usableLiters) {
+    try {
+      FuelRules.validateTotalTankCapacity(
+        liters,
+        usableCapacityLiters: usableLiters,
+      );
       return true;
     } on ArgumentError {
       return false;

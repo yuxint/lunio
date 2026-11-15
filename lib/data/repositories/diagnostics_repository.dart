@@ -57,9 +57,12 @@ class DiagnosticsRepository {
 
   final AppDatabase database;
 
-  /// 内置三条种子（ADR 0021）：油量/水温/电压。顺序即列表展示顺序；
-  /// catalogKey 是稳定对账标识，只增不改（改名/换 key = 对账目标集合
-  /// 变化，旧 key 行会被清理重建）。
+  /// 检测点默认自动轮询间隔（秒，ADR 0023）。
+  static const int defaultRefreshIntervalSeconds = 30;
+
+  /// 内置三条种子（ADR 0021 修订节）：油量/水温/电压。每辆车各一套，
+  /// 顺序即列表展示顺序；catalogKey 是稳定对账标识，只增不改（改名/
+  /// 换 key = 对账目标集合变化，旧 key 行会被清理重建）。
   static const List<DiagnosticsProbeSeed> builtInProbeSeeds = [
     DiagnosticsProbeSeed(
       catalogKey: builtInFuelLevelKey,
@@ -81,11 +84,13 @@ class DiagnosticsRepository {
     ),
   ];
 
-  /// 检测点全量列表：内置三条在前（按种子声明顺序）、自定义按 id 升序
-  /// （雪花 id 时间有序 = 创建顺序）。诊断页列表与轮询的"启用检测点"
-  /// 快照共用这一份读取。
-  Future<List<domain.DiagnosticsProbe>> listProbes() async {
-    final rows = await database.select(database.diagnosticsProbes).get();
+  /// 某辆车的检测点全量列表：内置三条在前（按种子声明顺序）、自定义
+  /// 按 id 升序（雪花 id 时间有序 = 创建顺序）。诊断页列表与轮询的
+  /// "启用检测点"快照共用这一份读取。
+  Future<List<domain.DiagnosticsProbe>> listProbes(int carId) async {
+    final rows = await (database.select(
+      database.diagnosticsProbes,
+    )..where((row) => row.carId.equals(carId))).get();
     final probes = rows.map(diagnosticsProbeFromRow).toList();
     final seedOrder = {
       for (final (index, seed) in builtInProbeSeeds.indexed)
@@ -135,9 +140,10 @@ class DiagnosticsRepository {
     return probeId;
   }
 
-  /// 编辑自定义检测点（名称/指令/解析类型三业务字段；启停走
-  /// [setProbeEnabled]，不混在本方法里）。内置行只读：目标行带内置
-  /// key 时拒绝（ArgumentError，防编程错误——UI 侧不给内置行编辑入口）。
+  /// 编辑检测点（名称/指令/解析类型/刷新间隔/header 五业务字段；启停走
+  /// [setProbeEnabled]）。内置行也可编辑（ADR 0021 修订节），但
+  /// catalogKey/carId 不改写——内置标识与归属保持。行不存在或 carId
+  /// 不匹配拒绝（ArgumentError，防编程错误）。
   Future<void> updateProbe(domain.DiagnosticsProbe probe) async {
     final probeId = probe.id;
     if (probeId == null) {
@@ -150,8 +156,8 @@ class DiagnosticsRepository {
     if (row == null) {
       throw ArgumentError('Probe not found: $probeId');
     }
-    if (row.catalogKey != null) {
-      throw ArgumentError('Built-in probe is read-only: $probeId');
+    if (row.carId != probe.carId) {
+      throw ArgumentError('Probe carId mismatch: $probeId');
     }
     await (database.update(
       database.diagnosticsProbes,
@@ -160,6 +166,8 @@ class DiagnosticsRepository {
         name: Value(probe.name),
         command: Value(probe.command),
         parseType: Value(probe.parseType.wire),
+        refreshIntervalSeconds: Value(probe.refreshIntervalSeconds),
+        header: Value(probe.header),
         syncStatus: Value(SyncStatus.pendingUpdate.name),
         updatedAt: Value(DateTime.now().toIso8601String()),
       ),
@@ -183,6 +191,29 @@ class DiagnosticsRepository {
     }
   }
 
+  /// 写最后读数（2026-11-15，ADR 0021 修订节）：轮询每收到一个**有效**
+  /// 读数（ObdValue）由页面调用；「无数据」读数不调用（不写库、不覆盖
+  /// 旧值）。只 UPDATE 最后读数三列，syncStatus/updatedAt/version 有意
+  /// 不动——读数是设备派生临时数据，高频写（约每秒 1 次）不盖同步章
+  /// （与表单/启停写点分叉，理由见 ADR 0021 修订节）。行不存在静默跳
+  /// 过（读数写点与列表重算竞态：检测点刚被删除，迟到读数不复活行）。
+  Future<void> saveProbeReading(
+    int probeId, {
+    required String value,
+    double? percent,
+    required DateTime at,
+  }) async {
+    await (database.update(database.diagnosticsProbes)..where(
+          (row) => row.id.equals(probeId),
+        )).write(
+      DiagnosticsProbesCompanion(
+        lastValue: Value(value),
+        lastPercent: Value(percent),
+        lastReadingAt: Value(at.toIso8601String()),
+      ),
+    );
+  }
+
   /// 删除自定义检测点。内置行不可删（ArgumentError，防编程错误——
   /// "内置三件套永远在、永远正确"，ADR 0021）；行不存在同样拒绝。
   Future<void> deleteProbe(int probeId) async {
@@ -200,70 +231,68 @@ class DiagnosticsRepository {
     )..where((row) => row.id.equals(probeId))).go();
   }
 
-  /// 内置三条种子的幂等对账（ADR 0021 决定 3）。并入 bootstrap 总入口
-  /// （BuiltInCatalogRepository.ensureBootstrapData 注入调用），首启
-  /// 插入、重复运行零写库、漂移纠偏、种子外内置 key 清理、自定义行
-  /// 不碰。事务内三步：
-  ///  1. 删除"种子集合外仍带内置 key"的行（未来版本种子收缩时清残留；
-  ///     自定义行 catalogKey 为 null，不在删除范围）；
-  ///  2. 缺失补插（enabled 恒 true 落库）；
-  ///  3. 漂移纠偏：内置行名称/指令/解析类型三列 ≠ 种子值时纠回（内置
-  ///     只读，漂移即数据被外部改动）；enabled 故意不比不写——启停是
-  ///     用户数据，对账不得重置。
+  /// 内置三条种子的幂等对账（ADR 0021 修订节，每车一套）。并入
+  /// bootstrap 总入口（BuiltInCatalogRepository.ensureBootstrapData 注入
+  /// 调用）：遍历所有车辆，逐车补缺失内置、清理种子外内置 key。
+  /// **只补缺失，不纠偏用户编辑**——内置行可改名称/指令/解析类型/间隔，
+  /// 对账不得把用户改动改回去；自定义行不碰。
   Future<void> ensureBuiltInProbes() async {
+    final carRows = await database.select(database.cars).get();
+    await database.transaction(() async {
+      for (final car in carRows) {
+        await _ensureBuiltInProbesForCar(car.id);
+      }
+    });
+  }
+
+  /// 给一辆车播种内置三条（新增车辆收尾调用；bootstrap 也经上面的全量
+  /// 入口走到这里）。幂等：已有 key 不动。
+  Future<void> seedBuiltInProbesForCar(int carId) {
+    return database.transaction(() => _ensureBuiltInProbesForCar(carId));
+  }
+
+  Future<void> _ensureBuiltInProbesForCar(int carId) async {
     final targetKeys = {
       for (final seed in builtInProbeSeeds) seed.catalogKey,
     };
-    await database.transaction(() async {
-      await (database.delete(database.diagnosticsProbes)..where(
-            (row) =>
-                row.catalogKey.isNotNull() &
-                row.catalogKey.isNotIn(targetKeys),
-          ))
-          .go();
-      final rows = await database.select(database.diagnosticsProbes).get();
-      final rowByKey = {
-        for (final row in rows)
-          if (row.catalogKey != null) row.catalogKey!: row,
-      };
-      for (final seed in builtInProbeSeeds) {
-        final row = rowByKey[seed.catalogKey];
-        if (row == null) {
-          await database
-              .into(database.diagnosticsProbes)
-              .insert(
-                diagnosticsProbeCompanion(
-                  domain.DiagnosticsProbe(
-                    name: seed.name,
-                    command: seed.command,
-                    parseType: seed.parseType,
-                    enabled: true,
-                    catalogKey: seed.catalogKey,
-                    sync: SyncMetadata(
-                      status: SyncStatus.synced,
-                      updatedAt: DateTime.now(),
-                    ),
-                  ),
-                  SnowflakeIdGenerator.instance.next(),
+    await (database.delete(database.diagnosticsProbes)..where(
+          (row) =>
+              row.carId.equals(carId) &
+              row.catalogKey.isNotNull() &
+              row.catalogKey.isNotIn(targetKeys),
+        ))
+        .go();
+    final rows = await (database.select(
+      database.diagnosticsProbes,
+    )..where((row) => row.carId.equals(carId))).get();
+    final rowByKey = {
+      for (final row in rows)
+        if (row.catalogKey != null) row.catalogKey!: row,
+    };
+    for (final seed in builtInProbeSeeds) {
+      if (rowByKey.containsKey(seed.catalogKey)) {
+        continue;
+      }
+      await database
+          .into(database.diagnosticsProbes)
+          .insert(
+            diagnosticsProbeCompanion(
+              domain.DiagnosticsProbe(
+                carId: carId,
+                name: seed.name,
+                command: seed.command,
+                parseType: seed.parseType,
+                enabled: true,
+                catalogKey: seed.catalogKey,
+                refreshIntervalSeconds: defaultRefreshIntervalSeconds,
+                sync: SyncMetadata(
+                  status: SyncStatus.synced,
+                  updatedAt: DateTime.now(),
                 ),
-              );
-        } else if (row.name != seed.name ||
-            row.command != seed.command ||
-            row.parseType != seed.parseType.wire) {
-          final probeId = row.id;
-          await (database.update(
-            database.diagnosticsProbes,
-          )..where((r) => r.id.equals(probeId))).write(
-            DiagnosticsProbesCompanion(
-              name: Value(seed.name),
-              command: Value(seed.command),
-              parseType: Value(seed.parseType.wire),
-              syncStatus: Value(SyncStatus.synced.name),
-              updatedAt: Value(DateTime.now().toIso8601String()),
+              ),
+              SnowflakeIdGenerator.instance.next(),
             ),
           );
-        }
-      }
-    });
+    }
   }
 }

@@ -240,6 +240,9 @@ class TestRepositories {
             tankCapacityLiters: car.tankCapacityLiters == null
                 ? const Value.absent()
                 : Value(car.tankCapacityLiters),
+            totalTankCapacityLiters: car.totalTankCapacityLiters == null
+                ? const Value.absent()
+                : Value(car.totalTankCapacityLiters),
           ),
         );
     return carId;

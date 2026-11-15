@@ -41,21 +41,29 @@ import 'elm327_parser.dart' show normalizeObdCommand;
 /// 渲染所需的派生状态经 isEditing / 两个 controller / parseType 暴露。
 class ProbeFormController {
   ProbeFormController({
+    required this.carId,
     DiagnosticsProbe? probe,
     required this.reportError,
     DateTime Function()? now,
   })  : probe = probe,
         _now = now ?? DateTime.now,
         // 编辑回填：名称 trim（存量行可能有未 trim 形态）、指令回填
-        // 原文（未归一的存量形态原样回显，提交时才归一）、解析类型
-        // 回填原值。新增默认：解析类型原始 hex（story 24 兜底）。
+        // 原文（未归一的存量形态原样回显，提交时才归一）、解析类型/
+        // 刷新间隔回填原值。新增默认：解析类型原始 hex、间隔 30 秒。
         nameController = TextEditingController(text: probe?.name.trim() ?? ''),
         commandController =
             TextEditingController(text: probe?.command ?? ''),
+        refreshIntervalController = TextEditingController(
+          text: (probe?.refreshIntervalSeconds ?? 30).toString(),
+        ),
         parseType = probe?.parseType ?? DiagnosticsParseType.rawHex;
 
-  /// 编辑目标检测点（null = 新增）。custom-only：内置行不进表单（UI
-  /// 只读守卫），catalogKey 恒 null。
+  /// 归属车辆（每车一套，ADR 0021 修订节）。新增/编辑都带上；编辑时
+  /// 与目标行 carId 不匹配会被仓库拒绝。
+  final int carId;
+
+  /// 编辑目标检测点（null = 新增）。内置行也可编辑（ADR 0021 修订节）；
+  /// catalogKey/header 在提交载荷里按原值守恒。
   final DiagnosticsProbe? probe;
 
   /// 行内错误注入点：控制器把校验错误的文案写到 widget 侧的
@@ -72,6 +80,9 @@ class ProbeFormController {
   /// 指令原文输入框。
   final TextEditingController commandController;
 
+  /// 刷新间隔输入框（秒，ADR 0023）。默认 30，范围 5–3600。
+  final TextEditingController refreshIntervalController;
+
   /// 解析类型选中项（新增默认 rawHex）。分段控件结构上必有选中项，
   /// "解析类型必选"由 UI 结构保证、无需用户面对报错。
   DiagnosticsParseType parseType;
@@ -83,6 +94,17 @@ class ProbeFormController {
     parseType = value;
   }
 
+  /// 从推荐模板回填名称/指令/解析类型（刷新间隔保持用户当前值）。
+  void applyTemplate({
+    required String name,
+    required String command,
+    required DiagnosticsParseType parseType,
+  }) {
+    nameController.text = name;
+    commandController.text = command;
+    this.parseType = parseType;
+  }
+
   /// 「保存」的提交载荷：校验阶梯失败时报行内错误（中文文案）并返回
   /// null；成功时构造 [DiagnosticsProbe]——指令经 normalizeObdCommand
   /// 归一（大写 + 去全部空白，落库即发送文本）、名称 trim、启停保持
@@ -92,6 +114,9 @@ class ProbeFormController {
   DiagnosticsProbe? submitPayload() {
     final name = nameController.text.trim();
     final command = normalizeObdCommand(commandController.text);
+    final refreshInterval = int.tryParse(
+      refreshIntervalController.text.trim(),
+    );
     if (name.isEmpty) {
       reportError('检测点名称不能为空');
       return null;
@@ -104,12 +129,22 @@ class ProbeFormController {
       reportError('指令只能由字母与数字组成');
       return null;
     }
+    if (refreshInterval == null ||
+        refreshInterval < 5 ||
+        refreshInterval > 3600) {
+      reportError('刷新间隔必须是 5–3600 秒');
+      return null;
+    }
     return DiagnosticsProbe(
       id: probe?.id,
+      carId: carId,
       name: name,
       command: command,
       parseType: parseType,
       enabled: probe?.enabled ?? true,
+      catalogKey: probe?.catalogKey,
+      refreshIntervalSeconds: refreshInterval,
+      header: probe?.header,
       sync: SyncMetadata(
         status: isEditing ? SyncStatus.pendingUpdate : SyncStatus.pendingCreate,
         updatedAt: _now(),
@@ -121,6 +156,7 @@ class ProbeFormController {
   void dispose() {
     nameController.dispose();
     commandController.dispose();
+    refreshIntervalController.dispose();
   }
 
   /// 指令格式正则（归一后仅 ASCII 字母与数字）。

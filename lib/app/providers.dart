@@ -53,7 +53,7 @@
 //   │         └─ vehicleModelsProvider
 //   ├─ defaultItemsTemplateProvider（向导默认模板 family，挂 builtInCatalogRepository）
 //   ├─ diagnosticsEnabledProvider（诊断开关，偏好纪元）
-//   ├─ diagnosticsProbesProvider（检测点列表，写点直失效模型）
+//   ├─ diagnosticsProbesProvider（每车检测点 family，写点直失效模型）
 //   └─ 加油域 provider：开关/当前车设置/加油记录（family + applied 派生）
 //      在本文件；省份/油品/手填价/数据源/油价控制器/生效链在
 //      features/shell/fuel/fuel_prices.dart
@@ -203,18 +203,17 @@ final diagnosticsEnabledProvider = FutureProvider<bool>((ref) {
   return ref.watch(lunioPreferencesProvider).getDiagnosticsEnabled();
 });
 
-/// 检测点列表（全局指令库，不挂车，ADR 0021）。内置三条种子由 bootstrap
-/// 总入口幂等对账写入，读侧显式 await bootstrap 再查表（与 cars/
-/// vehicleModels 同款）——首启第一帧就能读到种子。
+/// 某辆车的检测点列表（每车一套，ADR 0021 修订节）。内置三条种子由
+/// bootstrap 总入口按车幂等补齐，读侧显式 await bootstrap 再查表——
+/// 首启第一帧就能读到种子。
 /// 失效走"写点直失效"模型（同 [parkingCountdownProvider] 先例）：本
 /// provider 不 watch 任何纪元；检测点写点（增/删/改/启停/恢复备份/
-/// 清空数据）完成后直接逐出本 provider（动作层诊断分节收编排，后续
-/// UI 票接入）。不 bump 车辆数据纪元、不进通知同步数据源清单（表不挂
-/// 车，ADR 0021）。
+/// 清空数据）完成后直接逐出对应车的 family 实例（动作层诊断分节收
+/// 编排）。不 bump 车辆数据纪元、不进通知同步数据源清单。
 final diagnosticsProbesProvider =
-    FutureProvider<List<DiagnosticsProbe>>((ref) async {
+    FutureProvider.family<List<DiagnosticsProbe>, int>((ref, carId) async {
       await ref.watch(defaultMaintenanceBootstrapProvider.future);
-      return ref.watch(diagnosticsRepositoryProvider).listProbes();
+      return ref.watch(diagnosticsRepositoryProvider).listProbes(carId);
     });
 
 // ---------------- 加油预测 ----------------
@@ -586,8 +585,9 @@ void invalidateAllAppDataProviders(WidgetRef ref) {
   ref.invalidate(defaultMaintenanceBootstrapProvider);
   ref.invalidate(parkingCountdownProvider);
   // 检测点列表同"写点直失效"模型：恢复备份/清空数据清了检测点表
-  // （内置随 bootstrap 重灌重建、自定义由备份 diagnosticsProbes 段重插，
-  // ADR 0021），读侧必须显式逐出，否则缓存住旧列表。
+  // （内置随每车 bootstrap 重建、自定义由备份 diagnosticsProbes 段
+  // 按 carId 重映射重插，ADR 0021 修订节），family 全量逐出，否则
+  // 缓存住旧列表。
   ref.invalidate(diagnosticsProbesProvider);
   ref.read(vehicleDataEpochProvider.notifier).bump();
   ref.read(preferencesEpochProvider.notifier).bump();

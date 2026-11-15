@@ -82,6 +82,15 @@ class BackupRepository {
     final diagnosticsProbes = probeRows
         .where((row) => row.catalogKey == null)
         .map(diagnosticsProbeFromRow)
+        // 最后读数是设备派生临时数据，不进备份（2026-11-15，ADR 0021
+        // 修订节）：payload 是备份的内存形态，这里剥干净，恢复后从零积累。
+        .map(
+          (probe) => probe.copyWith(
+            lastValue: null,
+            lastPercent: null,
+            lastReadingAt: null,
+          ),
+        )
         .toList();
     // 全局加油设置（省份/油品）：用户改过才有值，没改过不带进备份。
     // 这里故意用原始读而不是 getFuelProvince()/getFuelGrade()——两个
@@ -282,16 +291,23 @@ class BackupRepository {
             );
       }
 
-      // 自定义检测点（备份 v4 新增段，ADR 0021）：不挂车、无引用
-      // 重映射负担，行 id 重新生成雪花（条目不带 id，沿 fuelRecords
-      // 先例）。catalogKey 显式清一次：decode 产物恒为 null，这里兜住
-      // 手拼 payload，防止内置 key 走漏成"种子外内置行"被对账清掉。
+      // 自定义检测点（备份 v5，ADR 0021 修订节）：每车一套，carId 经
+      // carIdMap 重映射到恢复后的新雪花 id；行 id 重新生成雪花（条目
+      // 不带 id，沿 fuelRecords 先例）。catalogKey 显式清一次：decode
+      // 产物恒为 null，这里兜住手拼 payload，防止内置 key 走漏成
+      // "种子外内置行"被对账清掉。
       for (final probe in payload.diagnosticsProbes) {
+        final carId = carIdMap[probe.carId];
+        if (carId == null) {
+          throw ArgumentError(
+            'Backup diagnostics probe references missing car',
+          );
+        }
         await database
             .into(database.diagnosticsProbes)
             .insert(
               diagnosticsProbeCompanion(
-                probe.copyWith(catalogKey: null),
+                probe.copyWith(catalogKey: null, carId: carId),
                 SnowflakeIdGenerator.instance.next(),
               ),
             );
@@ -302,12 +318,13 @@ class BackupRepository {
   /// 清空数据（"我的"页入口）：事务内删 8 张表（4 张业务表
   /// + 加油预测设置表 + 加油记录表 + 检测点表 + 偏好表）。
   /// 语义（用户确认过的口径）：清空车辆、保养项目、保养记录、加油预测
-  /// 设置、加油记录、检测点（自定义+内置行一并删，内置随 bootstrap
-  /// 重灌重建）和全部偏好设置（主题、通知、手动日期、开发者模式、
-  /// 停车倒计时、油价缓存、手填油价、snooze/ack）；
+  /// 设置、加油记录、检测点（自定义+内置行一并删；内置不再全局重灌，
+  /// 下次新增车辆时按车播种）和全部偏好设置（主题、通知、手动日期、
+  /// 开发者模式、停车倒计时、油价缓存、手填油价、snooze/ack）；
   /// 默认车辆模型与默认保养项目两张目录表不动。
-  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录与检测点
-  /// 种子；系统通知的取消由调用方（通知协调器 runAllDataClear）负责。
+  /// 清空后 UI 会 invalidate 触发 bootstrap 重新灌车型目录；检测点种子
+  /// 随新增车辆播种；系统通知的取消由调用方（通知协调器
+  /// runAllDataClear）负责。
   Future<void> clearAllData() {
     return database.transaction(() async {
       await _preferences.deleteAll();
@@ -328,8 +345,9 @@ class BackupRepository {
   /// ——恢复出来的车/项目拿的是全新雪花 id，旧 snooze/ack 与新数据在
   /// 语义上已无关联，不该继续生效。加油记录清表是备份 v3 补上的：不删
   /// 会把恢复前残留的旧加油记录留在库里，变成指向已删车辆的孤儿行
-  /// （ADR 0014）。检测点清表配合备份 v4：清掉的内置行随 bootstrap
-  /// 重灌重建、自定义行由备份 diagnosticsProbes 段重插（ADR 0021）。
+  /// （ADR 0014）。检测点清表配合备份 v5：清掉的内置行随每车 bootstrap
+  /// 重灌重建、自定义行由备份 diagnosticsProbes 段按 carId 重映射重插
+  /// （ADR 0021 修订节）。
   Future<void> _clearRestorableDataInTransaction() async {
     await database.delete(database.maintenanceRecordItems).go();
     await database.delete(database.maintenanceRecords).go();

@@ -183,10 +183,20 @@ class AddCarFormState extends State<AddCarForm>
           // 最多四位小数，整数部分至多 3 位。
           decimals: 4,
           maxIntegerDigits: 3,
-          labelText: '油箱容积（选填）',
+          labelText: '加满可加油量（选填）',
           suffixText: '升',
           // 标签始终浮在框顶：默认行为下空值未聚焦时标签会落进输入框
           // 中间（占位符位置），与上方字段（标签都在框顶）不一致。
+          alwaysFloatLabel: true,
+        ),
+        const SizedBox(height: 10),
+        LunioNumberField(
+          controller: form.totalCapacityController,
+          enabled: !saving,
+          decimals: 4,
+          maxIntegerDigits: 3,
+          labelText: '油箱总容积（选填）',
+          suffixText: '升',
           alwaysFloatLabel: true,
         ),
         if (errorText != null) ...[

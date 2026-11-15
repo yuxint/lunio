@@ -37,8 +37,10 @@ part 'app_database.g.dart';
 // ---------------------------- 表定义 ----------------------------
 
 /// 车辆表。roadDate/syncStatus/updatedAt 以文本存储（yyyy-MM-dd / ISO 时间）。
-/// tankCapacityLiters：油箱容积（升），车的属性，添加/编辑车辆时填写，
-/// 可空（非必填）；加油预估用它算加满金额。
+/// tankCapacityLiters：加满可加油量（可用容积，升），车的属性，添加/
+/// 编辑车辆时填写，可空（非必填）；加油预估用它算加满金额（ADR 0022）。
+/// totalTankCapacityLiters：官方总容积（升），可空；储备油量 =
+/// 总容积 − 可用容积（ADR 0022）。
 /// powertrainType：动力类型（ADR 0003），添加车辆时用户选择、添加后不可改。
 @DataClassName('CarRow')
 class Cars extends Table {
@@ -50,6 +52,7 @@ class Cars extends Table {
   IntColumn get currentMileageKm => integer()();
   TextColumn get roadDate => text()();
   RealColumn get tankCapacityLiters => real().nullable()();
+  RealColumn get totalTankCapacityLiters => real().nullable()();
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
   IntColumn get version => integer().withDefault(const Constant(1))();
@@ -299,19 +302,25 @@ class FuelRecords extends Table {
   // 故意不声明 uniqueKeys：同车同日多条加油合法（ADR 0014）。
 }
 
-/// 车辆诊断检测点表（ADR 0021，2026-11-12）：全局指令库，不挂 carId
-/// ——指令语义与车无关（`012F` 在任何支持的车上都是油量液位百分比），
-/// 每车一套是为"不同车用不同指令"付复杂度，该场景不存在。
-///  - 名称/指令原文/解析类型/启停：检测点四要素（GLOSSARY「检测点」），
-///    删除车辆不级联、与车辆数据纪元无关（写点不 bump 车辆纪元）；
+/// 车辆诊断检测点表（ADR 0021 修订节，2026-11-15）：每车一套，挂
+/// carId；删车在仓库事务里手工级联删除。与车辆数据纪元无关（写点不
+/// bump 车辆纪元，读写走 provider 点失效）。
+///  - 名称/指令原文/解析类型/刷新间隔/启停：检测点五要素（GLOSSARY
+///    「检测点」）；内置三行可编辑、不可删除，自定义行可增改删；
 ///  - catalogKey：内置标识——非 null = 内置行（bootstrap 按 key 幂等
-///    对账，只读 + 可启停），null = 自定义行（可增改删）。唯一约束
-///    {catalogKey}：内置 key 全库唯一，自定义行该列为 NULL（SQLite
-///    UNIQUE 允许多个 NULL，互不冲突，与 vehicleDefaultMaintenanceItems
-///    的 {catalogId} 同款）。
+///    补缺失，不纠偏用户编辑），null = 自定义行。唯一约束
+///    {carId, catalogKey}：同一辆车的内置 key 唯一；自定义行该列为
+///    NULL（SQLite UNIQUE 允许多个 NULL）。
+///  - refreshIntervalSeconds：每条检测点自己的自动轮询间隔（ADR 0023）
+///  - header：29-bit 物理头（私有 DID 预留，本轮无 UI）
+@TableIndex(name: 'idx_diagnostics_probes_car_id', columns: {#carId})
 @DataClassName('DiagnosticsProbeRow')
 class DiagnosticsProbes extends Table {
   IntColumn get id => integer()();
+
+  /// 所属车辆 id（每车一套）。存储列可空只为迁移期存量回填；代码层
+  /// 必填——种子/表单/恢复备份都必须带车。
+  IntColumn get carId => integer().nullable()();
 
   /// 展示名（如"油量"）。
   TextColumn get name => text()();
@@ -322,11 +331,34 @@ class DiagnosticsProbes extends Table {
   /// 解析类型（DiagnosticsParseType 的稳定 wire 值）。
   TextColumn get parseType => text()();
 
-  /// 启停。内置行也允许启停（唯一可变的内置字段）。
+  /// 启停。轮询只发启用项。
   BoolColumn get enabled => boolean().withDefault(const Constant(true))();
 
-  /// 内置标识（稳定 catalogKey）：非 null = 内置行，null = 自定义行。
+  /// 内置标识（稳定 catalogKey）：非 null = 内置行（可编辑、不可删），
+  /// null = 自定义行（可增改删）。
   TextColumn get catalogKey => text().nullable()();
+
+  /// 自动轮询间隔（秒，ADR 0023）：默认 30，范围 5–3600。
+  IntColumn get refreshIntervalSeconds =>
+      integer().withDefault(const Constant(30))();
+
+  /// 29-bit 物理头（如 `DA 60 F1`，私有 DID 预留，ADR 0023）；null =
+  /// 默认功能寻址。本轮无 UI。
+  TextColumn get header => text().nullable()();
+
+  /// 最后读数三列（2026-11-15，ADR 0021 修订节）：检测点最后一次**有效**
+  /// 轮询的展示值与时刻，离页重进可见。只写有效值——「无数据」不写库、
+  /// 不覆盖旧值；页内实时显示不受影响（无数据照显灰字）。读数是设备
+  /// 派生的临时数据：不进备份（导出/恢复白名单不携带）、高频写不盖同
+  /// 步章（syncStatus/updatedAt/version 不动）。
+  TextColumn get lastValue => text().nullable()();
+
+  /// 最后读数的油量百分比（仅 fuelLevel 类有效值写，可空）：重进页面
+  /// 油量卡升数估算（百分比 × 油箱容积）不缺数据。
+  RealColumn get lastPercent => real().nullable()();
+
+  /// 最后读数的时刻（ISO 8601 文本）。
+  TextColumn get lastReadingAt => text().nullable()();
 
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get updatedAt => text()();
@@ -337,7 +369,7 @@ class DiagnosticsProbes extends Table {
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => [
-    {catalogKey},
+    {carId, catalogKey},
   ];
 }
 
@@ -380,7 +412,7 @@ class AppDatabase extends _$AppDatabase {
   /// 改表结构必须 +1，并在 onUpgrade 补增量分支（ADR 0005 及其
   /// 2026-09-20 修订）。改完跑 build_runner。
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 6;
 
   /// 迁移策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写
   /// onUpgrade 增量迁移，老库原地升级、存量数据保留——用户拍板"升级
@@ -398,12 +430,47 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await m.createTable(fuelRecords);
           }
-          // v3 → v4：新增车辆诊断检测点表（ADR 0021），纯增量——只建
-          // 新表，不碰任何旧表，存量数据原样保留。种子三条内置检测点
-          // 不在迁移里插（迁移只管结构）：首启种子由 bootstrap 总入口
-          // （ensureBootstrapData → ensureBuiltInProbes）幂等对账写入。
+          // v3 → v4：新增车辆诊断检测点表（ADR 0021）。createTable 永远
+          // 建**当前形态**（含 v5 读数三列与 v6 每车/间隔/header 列），
+          // 所以建表分支必须与后面的加列分支互斥。
           if (from < 4) {
             await m.createTable(diagnosticsProbes);
+          } else if (from < 5) {
+            // v4 → v5：最后读数三列，纯增量 ADD COLUMN（ADR 0021 修订节）。
+            await m.addColumn(diagnosticsProbes, diagnosticsProbes.lastValue);
+            await m.addColumn(diagnosticsProbes, diagnosticsProbes.lastPercent);
+            await m.addColumn(
+              diagnosticsProbes,
+              diagnosticsProbes.lastReadingAt,
+            );
+          }
+          // v5 → v6：双油量总容积（ADR 0022）+ 检测点每车/刷新间隔/
+          // header（ADR 0021 修订节、ADR 0023）。检测点唯一键从
+          // {catalogKey} 改为 {carId, catalogKey}；SQLite 不能 ALTER
+          // 约束，重建表。存量行归第一辆车（当前只有一辆时等价于当前
+          // 应用车辆）；没有车时 car_id 保持 NULL（该表无宿主，仓库
+          // 读不到孤儿行）。
+          if (from < 6) {
+            await m.addColumn(cars, cars.totalTankCapacityLiters);
+            if (from >= 4) {
+              await m.alterTable(
+                TableMigration(
+                  diagnosticsProbes,
+                  columnTransformer: {
+                    diagnosticsProbes.carId: const CustomExpression<int>(
+                      '(SELECT id FROM cars ORDER BY id LIMIT 1)',
+                    ),
+                    diagnosticsProbes.refreshIntervalSeconds:
+                        const Constant(30),
+                  },
+                  newColumns: [
+                    diagnosticsProbes.carId,
+                    diagnosticsProbes.refreshIntervalSeconds,
+                    diagnosticsProbes.header,
+                  ],
+                ),
+              );
+            }
           }
         },
       );

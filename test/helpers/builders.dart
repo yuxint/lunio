@@ -35,6 +35,7 @@ Car defaultCar({
   LocalDate roadDate = const LocalDate(2023, 8, 12),
   PowertrainType powertrainType = PowertrainType.fuel,
   double? tankCapacityLiters,
+  double? totalTankCapacityLiters,
   SyncMetadata? sync,
 }) {
   return Car(
@@ -44,6 +45,7 @@ Car defaultCar({
     currentMileageKm: currentMileageKm,
     roadDate: roadDate,
     tankCapacityLiters: tankCapacityLiters,
+    totalTankCapacityLiters: totalTankCapacityLiters,
     sync: sync ?? testSync,
   );
 }

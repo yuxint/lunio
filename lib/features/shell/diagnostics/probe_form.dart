@@ -5,9 +5,8 @@
 // plain-Dart 控制器 ProbeFormController（probe_form_controller.dart，
 // FuelRecordFormController 先例）——本文件只做组装与渲染、转发事件。
 //
-// 编辑态在底部动作行之外多一个删除入口（fuel_records_card 先例）：
-// 确认框在入口函数弹（破坏性操作的文案属 UI 决策），写库经动作层
-// removeDiagnosticsProbe（ADR 0007），成功 pop + toast 归运行时。
+// 删除入口在管理 sheet 的卡片上（照保养项目交互，ADR 0021 修订节），
+// 本表单只负责新增/编辑保存；确认框与删除动作在 probe_management_sheet。
 //
 // ≈ Java 的表单 JSP + BackingBean 装配：widget 只画字段与转发，业务
 // 决策在控制器、生命周期在表单运行时、写库在动作层，各在其位。
@@ -22,18 +21,22 @@ import '../../../domain/entities/diagnostics_parse_type.dart';
 import '../../../domain/entities/diagnostics_probe.dart';
 import '../shared/shell_shared.dart';
 import 'probe_form_controller.dart';
+import 'probe_templates.dart';
 
-/// 检测点表单（新增/编辑共用）：名称 + 指令原文 + 解析类型（四选一，
-/// 默认原始 hex）。校验失败行内错误文案（不弹窗）；编辑态底部多一个
-/// 删除按钮（确认框在 sheet 入口函数里弹）。本 widget 只渲染字段、
-/// 构造控制器并转发事件；字段态/校验/归一/载荷构造全在控制器。
+/// 检测点表单（新增/编辑共用）：名称 + 指令原文 + 刷新间隔 + 解析类型。
+/// 校验失败行内错误文案（不弹窗）；删除在管理 sheet 的卡片上。
+/// 本 widget 只渲染字段、构造控制器并转发事件；字段态/校验/归一/载荷
+/// 构造全在控制器。
 class ProbeForm extends StatefulWidget implements FormSheetHandleWidget {
   const ProbeForm({
+    required this.carId,
     required this.handle,
     required this.onSubmit,
     this.probe,
-    this.onDelete,
   });
+
+  /// 归属车辆（每车一套，ADR 0021 修订节）。
+  final int carId;
 
   /// 编辑态的既有检测点（null = 新增）。
   final DiagnosticsProbe? probe;
@@ -44,9 +47,6 @@ class ProbeForm extends StatefulWidget implements FormSheetHandleWidget {
 
   /// 保存回调（构造实体后调用，实现在入口函数里接动作层）。
   final Future<void> Function(DiagnosticsProbe probe) onSubmit;
-
-  /// 删除回调（仅编辑态非 null；确认框在回调里）。
-  final Future<void> Function()? onDelete;
 
   @override
   State<ProbeForm> createState() => ProbeFormState();
@@ -63,7 +63,11 @@ class ProbeFormState extends State<ProbeForm>
   @override
   void initState() {
     super.initState();
-    form = ProbeFormController(probe: widget.probe, reportError: _reportError);
+    form = ProbeFormController(
+      carId: widget.carId,
+      probe: widget.probe,
+      reportError: _reportError,
+    );
   }
 
   /// 行内错误接线（构造注入点）：mounted 守卫防卸载后写把手。
@@ -84,12 +88,36 @@ class ProbeFormState extends State<ProbeForm>
     setState(() => form.setParseType(value));
   }
 
+  void _applyTemplate(DiagnosticsProbeTemplate template) {
+    setState(() {
+      form.applyTemplate(
+        name: template.name,
+        command: template.command,
+        parseType: template.parseType,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text('推荐模板（可选）', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final template in diagnosticsProbeTemplates)
+              ActionChip(
+                label: Text(template.name),
+                onPressed: saving ? null : () => _applyTemplate(template),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: form.nameController,
           enabled: !saving,
@@ -102,6 +130,16 @@ class ProbeFormState extends State<ProbeForm>
           decoration: const InputDecoration(
             labelText: '指令原文',
             helperText: '如 012F、ATRV，仅字母与数字',
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: form.refreshIntervalController,
+          enabled: !saving,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '刷新间隔（秒）',
+            helperText: '自动轮询间隔，默认 30；范围 5–3600',
           ),
         ),
         const SizedBox(height: 10),
@@ -132,16 +170,6 @@ class ProbeFormState extends State<ProbeForm>
           onConfirm: _submit,
           saving: saving,
         ),
-        if (isEditing) ...[
-          const SizedBox(height: 8),
-          Center(
-            child: SmallActionButton(
-              label: '删除',
-              danger: true,
-              onPressed: saving ? null : widget.onDelete,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -201,16 +229,14 @@ class _ParseTypeChip extends StatelessWidget {
   }
 }
 
-/// ★ 检测点表单 sheet 入口（列表尾"添加检测点"行 / 点自定义行）：新增
-/// 与编辑共用。装载/守卫/pop/toast 时序归 showLunioFormSheetNoLoad
-///（ADR 0016）；提交经动作层 saveDiagnosticsProbe（ADR 0007）。编辑态
-/// 删除：确认框在入口弹（破坏性操作的文案属 UI 决策），写库经动作层
-/// removeDiagnosticsProbe；handle.run 失败错误写行内错误位（sheet 留
-/// 场），成功 pop + toast 归运行时。副标题注明"仅用于读取类指令"
-///（spec 安全边界拍板：不做指令白名单）。
+/// ★ 检测点表单 sheet 入口（管理 sheet 的新增/编辑按钮）：新增与编辑
+/// 共用。装载/守卫/pop/toast 时序归 showLunioFormSheetNoLoad（ADR 0016）；
+/// 提交经动作层 saveDiagnosticsProbe（ADR 0007）。删除在管理卡片上。
+/// 副标题注明"仅用于读取类指令"（spec 安全边界拍板：不做指令白名单）。
 Future<void> showProbeFormSheet(
   BuildContext context,
   WidgetRef ref, {
+  required int carId,
   DiagnosticsProbe? probe,
 }) {
   return showLunioFormSheetNoLoad<void>(
@@ -219,26 +245,10 @@ Future<void> showProbeFormSheet(
     subtitle: '仅用于读取类指令（如标准 PID 查询）',
     builder: (sheetContext, handle) {
       return ProbeForm(
+        carId: carId,
         probe: probe,
         handle: handle,
         onSubmit: (value) => saveDiagnosticsProbe(ref, value),
-        onDelete: probe == null
-            ? null
-            : () async {
-                final confirmed = await showConfirmDialog(
-                  context: context,
-                  title: '删除检测点',
-                  message: '确定删除 ${probe.name}？',
-                  confirmLabel: '删除',
-                );
-                if (confirmed != true || !context.mounted) {
-                  return;
-                }
-                await handle.run(() => removeDiagnosticsProbe(ref, probe.id!));
-                if (context.mounted && handle.errorText == null) {
-                  handle.close(toast: '检测点已删除');
-                }
-              },
       );
     },
     successMessage: '检测点已保存',

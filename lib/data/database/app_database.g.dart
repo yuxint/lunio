@@ -80,6 +80,17 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
         type: DriftSqlType.double,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _totalTankCapacityLitersMeta =
+      const VerificationMeta('totalTankCapacityLiters');
+  @override
+  late final GeneratedColumn<double> totalTankCapacityLiters =
+      GeneratedColumn<double>(
+        'total_tank_capacity_liters',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _syncStatusMeta = const VerificationMeta(
     'syncStatus',
   );
@@ -124,6 +135,7 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
     currentMileageKm,
     roadDate,
     tankCapacityLiters,
+    totalTankCapacityLiters,
     syncStatus,
     updatedAt,
     version,
@@ -196,6 +208,15 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
         ),
       );
     }
+    if (data.containsKey('total_tank_capacity_liters')) {
+      context.handle(
+        _totalTankCapacityLitersMeta,
+        totalTankCapacityLiters.isAcceptableOrUnknown(
+          data['total_tank_capacity_liters']!,
+          _totalTankCapacityLitersMeta,
+        ),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -257,6 +278,10 @@ class $CarsTable extends Cars with TableInfo<$CarsTable, CarRow> {
         DriftSqlType.double,
         data['${effectivePrefix}tank_capacity_liters'],
       ),
+      totalTankCapacityLiters: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}total_tank_capacity_liters'],
+      ),
       syncStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}sync_status'],
@@ -286,6 +311,7 @@ class CarRow extends DataClass implements Insertable<CarRow> {
   final int currentMileageKm;
   final String roadDate;
   final double? tankCapacityLiters;
+  final double? totalTankCapacityLiters;
   final String syncStatus;
   final String updatedAt;
   final int version;
@@ -297,6 +323,7 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     required this.currentMileageKm,
     required this.roadDate,
     this.tankCapacityLiters,
+    this.totalTankCapacityLiters,
     required this.syncStatus,
     required this.updatedAt,
     required this.version,
@@ -312,6 +339,11 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     map['road_date'] = Variable<String>(roadDate);
     if (!nullToAbsent || tankCapacityLiters != null) {
       map['tank_capacity_liters'] = Variable<double>(tankCapacityLiters);
+    }
+    if (!nullToAbsent || totalTankCapacityLiters != null) {
+      map['total_tank_capacity_liters'] = Variable<double>(
+        totalTankCapacityLiters,
+      );
     }
     map['sync_status'] = Variable<String>(syncStatus);
     map['updated_at'] = Variable<String>(updatedAt);
@@ -330,6 +362,9 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       tankCapacityLiters: tankCapacityLiters == null && nullToAbsent
           ? const Value.absent()
           : Value(tankCapacityLiters),
+      totalTankCapacityLiters: totalTankCapacityLiters == null && nullToAbsent
+          ? const Value.absent()
+          : Value(totalTankCapacityLiters),
       syncStatus: Value(syncStatus),
       updatedAt: Value(updatedAt),
       version: Value(version),
@@ -351,6 +386,9 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       tankCapacityLiters: serializer.fromJson<double?>(
         json['tankCapacityLiters'],
       ),
+      totalTankCapacityLiters: serializer.fromJson<double?>(
+        json['totalTankCapacityLiters'],
+      ),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       version: serializer.fromJson<int>(json['version']),
@@ -367,6 +405,9 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       'currentMileageKm': serializer.toJson<int>(currentMileageKm),
       'roadDate': serializer.toJson<String>(roadDate),
       'tankCapacityLiters': serializer.toJson<double?>(tankCapacityLiters),
+      'totalTankCapacityLiters': serializer.toJson<double?>(
+        totalTankCapacityLiters,
+      ),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'version': serializer.toJson<int>(version),
@@ -381,6 +422,7 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     int? currentMileageKm,
     String? roadDate,
     Value<double?> tankCapacityLiters = const Value.absent(),
+    Value<double?> totalTankCapacityLiters = const Value.absent(),
     String? syncStatus,
     String? updatedAt,
     int? version,
@@ -394,6 +436,9 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     tankCapacityLiters: tankCapacityLiters.present
         ? tankCapacityLiters.value
         : this.tankCapacityLiters,
+    totalTankCapacityLiters: totalTankCapacityLiters.present
+        ? totalTankCapacityLiters.value
+        : this.totalTankCapacityLiters,
     syncStatus: syncStatus ?? this.syncStatus,
     updatedAt: updatedAt ?? this.updatedAt,
     version: version ?? this.version,
@@ -413,6 +458,9 @@ class CarRow extends DataClass implements Insertable<CarRow> {
       tankCapacityLiters: data.tankCapacityLiters.present
           ? data.tankCapacityLiters.value
           : this.tankCapacityLiters,
+      totalTankCapacityLiters: data.totalTankCapacityLiters.present
+          ? data.totalTankCapacityLiters.value
+          : this.totalTankCapacityLiters,
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
           : this.syncStatus,
@@ -431,6 +479,7 @@ class CarRow extends DataClass implements Insertable<CarRow> {
           ..write('currentMileageKm: $currentMileageKm, ')
           ..write('roadDate: $roadDate, ')
           ..write('tankCapacityLiters: $tankCapacityLiters, ')
+          ..write('totalTankCapacityLiters: $totalTankCapacityLiters, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -447,6 +496,7 @@ class CarRow extends DataClass implements Insertable<CarRow> {
     currentMileageKm,
     roadDate,
     tankCapacityLiters,
+    totalTankCapacityLiters,
     syncStatus,
     updatedAt,
     version,
@@ -462,6 +512,7 @@ class CarRow extends DataClass implements Insertable<CarRow> {
           other.currentMileageKm == this.currentMileageKm &&
           other.roadDate == this.roadDate &&
           other.tankCapacityLiters == this.tankCapacityLiters &&
+          other.totalTankCapacityLiters == this.totalTankCapacityLiters &&
           other.syncStatus == this.syncStatus &&
           other.updatedAt == this.updatedAt &&
           other.version == this.version);
@@ -475,6 +526,7 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
   final Value<int> currentMileageKm;
   final Value<String> roadDate;
   final Value<double?> tankCapacityLiters;
+  final Value<double?> totalTankCapacityLiters;
   final Value<String> syncStatus;
   final Value<String> updatedAt;
   final Value<int> version;
@@ -486,6 +538,7 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     this.currentMileageKm = const Value.absent(),
     this.roadDate = const Value.absent(),
     this.tankCapacityLiters = const Value.absent(),
+    this.totalTankCapacityLiters = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.version = const Value.absent(),
@@ -498,6 +551,7 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     required int currentMileageKm,
     required String roadDate,
     this.tankCapacityLiters = const Value.absent(),
+    this.totalTankCapacityLiters = const Value.absent(),
     this.syncStatus = const Value.absent(),
     required String updatedAt,
     this.version = const Value.absent(),
@@ -514,6 +568,7 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     Expression<int>? currentMileageKm,
     Expression<String>? roadDate,
     Expression<double>? tankCapacityLiters,
+    Expression<double>? totalTankCapacityLiters,
     Expression<String>? syncStatus,
     Expression<String>? updatedAt,
     Expression<int>? version,
@@ -527,6 +582,8 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
       if (roadDate != null) 'road_date': roadDate,
       if (tankCapacityLiters != null)
         'tank_capacity_liters': tankCapacityLiters,
+      if (totalTankCapacityLiters != null)
+        'total_tank_capacity_liters': totalTankCapacityLiters,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (version != null) 'version': version,
@@ -541,6 +598,7 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     Value<int>? currentMileageKm,
     Value<String>? roadDate,
     Value<double?>? tankCapacityLiters,
+    Value<double?>? totalTankCapacityLiters,
     Value<String>? syncStatus,
     Value<String>? updatedAt,
     Value<int>? version,
@@ -553,6 +611,8 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
       currentMileageKm: currentMileageKm ?? this.currentMileageKm,
       roadDate: roadDate ?? this.roadDate,
       tankCapacityLiters: tankCapacityLiters ?? this.tankCapacityLiters,
+      totalTankCapacityLiters:
+          totalTankCapacityLiters ?? this.totalTankCapacityLiters,
       syncStatus: syncStatus ?? this.syncStatus,
       updatedAt: updatedAt ?? this.updatedAt,
       version: version ?? this.version,
@@ -583,6 +643,11 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
     if (tankCapacityLiters.present) {
       map['tank_capacity_liters'] = Variable<double>(tankCapacityLiters.value);
     }
+    if (totalTankCapacityLiters.present) {
+      map['total_tank_capacity_liters'] = Variable<double>(
+        totalTankCapacityLiters.value,
+      );
+    }
     if (syncStatus.present) {
       map['sync_status'] = Variable<String>(syncStatus.value);
     }
@@ -605,6 +670,7 @@ class CarsCompanion extends UpdateCompanion<CarRow> {
           ..write('currentMileageKm: $currentMileageKm, ')
           ..write('roadDate: $roadDate, ')
           ..write('tankCapacityLiters: $tankCapacityLiters, ')
+          ..write('totalTankCapacityLiters: $totalTankCapacityLiters, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -5389,6 +5455,15 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _carIdMeta = const VerificationMeta('carId');
+  @override
+  late final GeneratedColumn<int> carId = GeneratedColumn<int>(
+    'car_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -5446,6 +5521,59 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _refreshIntervalSecondsMeta =
+      const VerificationMeta('refreshIntervalSeconds');
+  @override
+  late final GeneratedColumn<int> refreshIntervalSeconds = GeneratedColumn<int>(
+    'refresh_interval_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(30),
+  );
+  static const VerificationMeta _headerMeta = const VerificationMeta('header');
+  @override
+  late final GeneratedColumn<String> header = GeneratedColumn<String>(
+    'header',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastValueMeta = const VerificationMeta(
+    'lastValue',
+  );
+  @override
+  late final GeneratedColumn<String> lastValue = GeneratedColumn<String>(
+    'last_value',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastPercentMeta = const VerificationMeta(
+    'lastPercent',
+  );
+  @override
+  late final GeneratedColumn<double> lastPercent = GeneratedColumn<double>(
+    'last_percent',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastReadingAtMeta = const VerificationMeta(
+    'lastReadingAt',
+  );
+  @override
+  late final GeneratedColumn<String> lastReadingAt = GeneratedColumn<String>(
+    'last_reading_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _syncStatusMeta = const VerificationMeta(
     'syncStatus',
   );
@@ -5484,11 +5612,17 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    carId,
     name,
     command,
     parseType,
     enabled,
     catalogKey,
+    refreshIntervalSeconds,
+    header,
+    lastValue,
+    lastPercent,
+    lastReadingAt,
     syncStatus,
     updatedAt,
     version,
@@ -5507,6 +5641,12 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('car_id')) {
+      context.handle(
+        _carIdMeta,
+        carId.isAcceptableOrUnknown(data['car_id']!, _carIdMeta),
+      );
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -5544,6 +5684,45 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
         catalogKey.isAcceptableOrUnknown(data['catalog_key']!, _catalogKeyMeta),
       );
     }
+    if (data.containsKey('refresh_interval_seconds')) {
+      context.handle(
+        _refreshIntervalSecondsMeta,
+        refreshIntervalSeconds.isAcceptableOrUnknown(
+          data['refresh_interval_seconds']!,
+          _refreshIntervalSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('header')) {
+      context.handle(
+        _headerMeta,
+        header.isAcceptableOrUnknown(data['header']!, _headerMeta),
+      );
+    }
+    if (data.containsKey('last_value')) {
+      context.handle(
+        _lastValueMeta,
+        lastValue.isAcceptableOrUnknown(data['last_value']!, _lastValueMeta),
+      );
+    }
+    if (data.containsKey('last_percent')) {
+      context.handle(
+        _lastPercentMeta,
+        lastPercent.isAcceptableOrUnknown(
+          data['last_percent']!,
+          _lastPercentMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_reading_at')) {
+      context.handle(
+        _lastReadingAtMeta,
+        lastReadingAt.isAcceptableOrUnknown(
+          data['last_reading_at']!,
+          _lastReadingAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -5571,7 +5750,7 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-    {catalogKey},
+    {carId, catalogKey},
   ];
   @override
   DiagnosticsProbeRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -5581,6 +5760,10 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      carId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}car_id'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -5600,6 +5783,26 @@ class $DiagnosticsProbesTable extends DiagnosticsProbes
       catalogKey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}catalog_key'],
+      ),
+      refreshIntervalSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}refresh_interval_seconds'],
+      )!,
+      header: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}header'],
+      ),
+      lastValue: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_value'],
+      ),
+      lastPercent: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}last_percent'],
+      ),
+      lastReadingAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_reading_at'],
       ),
       syncStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -5626,6 +5829,10 @@ class DiagnosticsProbeRow extends DataClass
     implements Insertable<DiagnosticsProbeRow> {
   final int id;
 
+  /// 所属车辆 id（每车一套）。存储列可空只为迁移期存量回填；代码层
+  /// 必填——种子/表单/恢复备份都必须带车。
+  final int? carId;
+
   /// 展示名（如"油量"）。
   final String name;
 
@@ -5635,21 +5842,49 @@ class DiagnosticsProbeRow extends DataClass
   /// 解析类型（DiagnosticsParseType 的稳定 wire 值）。
   final String parseType;
 
-  /// 启停。内置行也允许启停（唯一可变的内置字段）。
+  /// 启停。轮询只发启用项。
   final bool enabled;
 
-  /// 内置标识（稳定 catalogKey）：非 null = 内置行，null = 自定义行。
+  /// 内置标识（稳定 catalogKey）：非 null = 内置行（可编辑、不可删），
+  /// null = 自定义行（可增改删）。
   final String? catalogKey;
+
+  /// 自动轮询间隔（秒，ADR 0023）：默认 30，范围 5–3600。
+  final int refreshIntervalSeconds;
+
+  /// 29-bit 物理头（如 `DA 60 F1`，私有 DID 预留，ADR 0023）；null =
+  /// 默认功能寻址。本轮无 UI。
+  final String? header;
+
+  /// 最后读数三列（2026-11-15，ADR 0021 修订节）：检测点最后一次**有效**
+  /// 轮询的展示值与时刻，离页重进可见。只写有效值——「无数据」不写库、
+  /// 不覆盖旧值；页内实时显示不受影响（无数据照显灰字）。读数是设备
+  /// 派生的临时数据：不进备份（导出/恢复白名单不携带）、高频写不盖同
+  /// 步章（syncStatus/updatedAt/version 不动）。
+  final String? lastValue;
+
+  /// 最后读数的油量百分比（仅 fuelLevel 类有效值写，可空）：重进页面
+  /// 油量卡升数估算（百分比 × 油箱容积）不缺数据。
+  final double? lastPercent;
+
+  /// 最后读数的时刻（ISO 8601 文本）。
+  final String? lastReadingAt;
   final String syncStatus;
   final String updatedAt;
   final int version;
   const DiagnosticsProbeRow({
     required this.id,
+    this.carId,
     required this.name,
     required this.command,
     required this.parseType,
     required this.enabled,
     this.catalogKey,
+    required this.refreshIntervalSeconds,
+    this.header,
+    this.lastValue,
+    this.lastPercent,
+    this.lastReadingAt,
     required this.syncStatus,
     required this.updatedAt,
     required this.version,
@@ -5658,12 +5893,28 @@ class DiagnosticsProbeRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || carId != null) {
+      map['car_id'] = Variable<int>(carId);
+    }
     map['name'] = Variable<String>(name);
     map['command'] = Variable<String>(command);
     map['parse_type'] = Variable<String>(parseType);
     map['enabled'] = Variable<bool>(enabled);
     if (!nullToAbsent || catalogKey != null) {
       map['catalog_key'] = Variable<String>(catalogKey);
+    }
+    map['refresh_interval_seconds'] = Variable<int>(refreshIntervalSeconds);
+    if (!nullToAbsent || header != null) {
+      map['header'] = Variable<String>(header);
+    }
+    if (!nullToAbsent || lastValue != null) {
+      map['last_value'] = Variable<String>(lastValue);
+    }
+    if (!nullToAbsent || lastPercent != null) {
+      map['last_percent'] = Variable<double>(lastPercent);
+    }
+    if (!nullToAbsent || lastReadingAt != null) {
+      map['last_reading_at'] = Variable<String>(lastReadingAt);
     }
     map['sync_status'] = Variable<String>(syncStatus);
     map['updated_at'] = Variable<String>(updatedAt);
@@ -5674,6 +5925,9 @@ class DiagnosticsProbeRow extends DataClass
   DiagnosticsProbesCompanion toCompanion(bool nullToAbsent) {
     return DiagnosticsProbesCompanion(
       id: Value(id),
+      carId: carId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(carId),
       name: Value(name),
       command: Value(command),
       parseType: Value(parseType),
@@ -5681,6 +5935,19 @@ class DiagnosticsProbeRow extends DataClass
       catalogKey: catalogKey == null && nullToAbsent
           ? const Value.absent()
           : Value(catalogKey),
+      refreshIntervalSeconds: Value(refreshIntervalSeconds),
+      header: header == null && nullToAbsent
+          ? const Value.absent()
+          : Value(header),
+      lastValue: lastValue == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastValue),
+      lastPercent: lastPercent == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastPercent),
+      lastReadingAt: lastReadingAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastReadingAt),
       syncStatus: Value(syncStatus),
       updatedAt: Value(updatedAt),
       version: Value(version),
@@ -5694,11 +5961,19 @@ class DiagnosticsProbeRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return DiagnosticsProbeRow(
       id: serializer.fromJson<int>(json['id']),
+      carId: serializer.fromJson<int?>(json['carId']),
       name: serializer.fromJson<String>(json['name']),
       command: serializer.fromJson<String>(json['command']),
       parseType: serializer.fromJson<String>(json['parseType']),
       enabled: serializer.fromJson<bool>(json['enabled']),
       catalogKey: serializer.fromJson<String?>(json['catalogKey']),
+      refreshIntervalSeconds: serializer.fromJson<int>(
+        json['refreshIntervalSeconds'],
+      ),
+      header: serializer.fromJson<String?>(json['header']),
+      lastValue: serializer.fromJson<String?>(json['lastValue']),
+      lastPercent: serializer.fromJson<double?>(json['lastPercent']),
+      lastReadingAt: serializer.fromJson<String?>(json['lastReadingAt']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
       version: serializer.fromJson<int>(json['version']),
@@ -5709,11 +5984,17 @@ class DiagnosticsProbeRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'carId': serializer.toJson<int?>(carId),
       'name': serializer.toJson<String>(name),
       'command': serializer.toJson<String>(command),
       'parseType': serializer.toJson<String>(parseType),
       'enabled': serializer.toJson<bool>(enabled),
       'catalogKey': serializer.toJson<String?>(catalogKey),
+      'refreshIntervalSeconds': serializer.toJson<int>(refreshIntervalSeconds),
+      'header': serializer.toJson<String?>(header),
+      'lastValue': serializer.toJson<String?>(lastValue),
+      'lastPercent': serializer.toJson<double?>(lastPercent),
+      'lastReadingAt': serializer.toJson<String?>(lastReadingAt),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'updatedAt': serializer.toJson<String>(updatedAt),
       'version': serializer.toJson<int>(version),
@@ -5722,21 +6003,36 @@ class DiagnosticsProbeRow extends DataClass
 
   DiagnosticsProbeRow copyWith({
     int? id,
+    Value<int?> carId = const Value.absent(),
     String? name,
     String? command,
     String? parseType,
     bool? enabled,
     Value<String?> catalogKey = const Value.absent(),
+    int? refreshIntervalSeconds,
+    Value<String?> header = const Value.absent(),
+    Value<String?> lastValue = const Value.absent(),
+    Value<double?> lastPercent = const Value.absent(),
+    Value<String?> lastReadingAt = const Value.absent(),
     String? syncStatus,
     String? updatedAt,
     int? version,
   }) => DiagnosticsProbeRow(
     id: id ?? this.id,
+    carId: carId.present ? carId.value : this.carId,
     name: name ?? this.name,
     command: command ?? this.command,
     parseType: parseType ?? this.parseType,
     enabled: enabled ?? this.enabled,
     catalogKey: catalogKey.present ? catalogKey.value : this.catalogKey,
+    refreshIntervalSeconds:
+        refreshIntervalSeconds ?? this.refreshIntervalSeconds,
+    header: header.present ? header.value : this.header,
+    lastValue: lastValue.present ? lastValue.value : this.lastValue,
+    lastPercent: lastPercent.present ? lastPercent.value : this.lastPercent,
+    lastReadingAt: lastReadingAt.present
+        ? lastReadingAt.value
+        : this.lastReadingAt,
     syncStatus: syncStatus ?? this.syncStatus,
     updatedAt: updatedAt ?? this.updatedAt,
     version: version ?? this.version,
@@ -5744,6 +6040,7 @@ class DiagnosticsProbeRow extends DataClass
   DiagnosticsProbeRow copyWithCompanion(DiagnosticsProbesCompanion data) {
     return DiagnosticsProbeRow(
       id: data.id.present ? data.id.value : this.id,
+      carId: data.carId.present ? data.carId.value : this.carId,
       name: data.name.present ? data.name.value : this.name,
       command: data.command.present ? data.command.value : this.command,
       parseType: data.parseType.present ? data.parseType.value : this.parseType,
@@ -5751,6 +6048,17 @@ class DiagnosticsProbeRow extends DataClass
       catalogKey: data.catalogKey.present
           ? data.catalogKey.value
           : this.catalogKey,
+      refreshIntervalSeconds: data.refreshIntervalSeconds.present
+          ? data.refreshIntervalSeconds.value
+          : this.refreshIntervalSeconds,
+      header: data.header.present ? data.header.value : this.header,
+      lastValue: data.lastValue.present ? data.lastValue.value : this.lastValue,
+      lastPercent: data.lastPercent.present
+          ? data.lastPercent.value
+          : this.lastPercent,
+      lastReadingAt: data.lastReadingAt.present
+          ? data.lastReadingAt.value
+          : this.lastReadingAt,
       syncStatus: data.syncStatus.present
           ? data.syncStatus.value
           : this.syncStatus,
@@ -5763,11 +6071,17 @@ class DiagnosticsProbeRow extends DataClass
   String toString() {
     return (StringBuffer('DiagnosticsProbeRow(')
           ..write('id: $id, ')
+          ..write('carId: $carId, ')
           ..write('name: $name, ')
           ..write('command: $command, ')
           ..write('parseType: $parseType, ')
           ..write('enabled: $enabled, ')
           ..write('catalogKey: $catalogKey, ')
+          ..write('refreshIntervalSeconds: $refreshIntervalSeconds, ')
+          ..write('header: $header, ')
+          ..write('lastValue: $lastValue, ')
+          ..write('lastPercent: $lastPercent, ')
+          ..write('lastReadingAt: $lastReadingAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -5778,11 +6092,17 @@ class DiagnosticsProbeRow extends DataClass
   @override
   int get hashCode => Object.hash(
     id,
+    carId,
     name,
     command,
     parseType,
     enabled,
     catalogKey,
+    refreshIntervalSeconds,
+    header,
+    lastValue,
+    lastPercent,
+    lastReadingAt,
     syncStatus,
     updatedAt,
     version,
@@ -5792,11 +6112,17 @@ class DiagnosticsProbeRow extends DataClass
       identical(this, other) ||
       (other is DiagnosticsProbeRow &&
           other.id == this.id &&
+          other.carId == this.carId &&
           other.name == this.name &&
           other.command == this.command &&
           other.parseType == this.parseType &&
           other.enabled == this.enabled &&
           other.catalogKey == this.catalogKey &&
+          other.refreshIntervalSeconds == this.refreshIntervalSeconds &&
+          other.header == this.header &&
+          other.lastValue == this.lastValue &&
+          other.lastPercent == this.lastPercent &&
+          other.lastReadingAt == this.lastReadingAt &&
           other.syncStatus == this.syncStatus &&
           other.updatedAt == this.updatedAt &&
           other.version == this.version);
@@ -5804,32 +6130,50 @@ class DiagnosticsProbeRow extends DataClass
 
 class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
   final Value<int> id;
+  final Value<int?> carId;
   final Value<String> name;
   final Value<String> command;
   final Value<String> parseType;
   final Value<bool> enabled;
   final Value<String?> catalogKey;
+  final Value<int> refreshIntervalSeconds;
+  final Value<String?> header;
+  final Value<String?> lastValue;
+  final Value<double?> lastPercent;
+  final Value<String?> lastReadingAt;
   final Value<String> syncStatus;
   final Value<String> updatedAt;
   final Value<int> version;
   const DiagnosticsProbesCompanion({
     this.id = const Value.absent(),
+    this.carId = const Value.absent(),
     this.name = const Value.absent(),
     this.command = const Value.absent(),
     this.parseType = const Value.absent(),
     this.enabled = const Value.absent(),
     this.catalogKey = const Value.absent(),
+    this.refreshIntervalSeconds = const Value.absent(),
+    this.header = const Value.absent(),
+    this.lastValue = const Value.absent(),
+    this.lastPercent = const Value.absent(),
+    this.lastReadingAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.version = const Value.absent(),
   });
   DiagnosticsProbesCompanion.insert({
     this.id = const Value.absent(),
+    this.carId = const Value.absent(),
     required String name,
     required String command,
     required String parseType,
     this.enabled = const Value.absent(),
     this.catalogKey = const Value.absent(),
+    this.refreshIntervalSeconds = const Value.absent(),
+    this.header = const Value.absent(),
+    this.lastValue = const Value.absent(),
+    this.lastPercent = const Value.absent(),
+    this.lastReadingAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     required String updatedAt,
     this.version = const Value.absent(),
@@ -5839,22 +6183,35 @@ class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
        updatedAt = Value(updatedAt);
   static Insertable<DiagnosticsProbeRow> custom({
     Expression<int>? id,
+    Expression<int>? carId,
     Expression<String>? name,
     Expression<String>? command,
     Expression<String>? parseType,
     Expression<bool>? enabled,
     Expression<String>? catalogKey,
+    Expression<int>? refreshIntervalSeconds,
+    Expression<String>? header,
+    Expression<String>? lastValue,
+    Expression<double>? lastPercent,
+    Expression<String>? lastReadingAt,
     Expression<String>? syncStatus,
     Expression<String>? updatedAt,
     Expression<int>? version,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (carId != null) 'car_id': carId,
       if (name != null) 'name': name,
       if (command != null) 'command': command,
       if (parseType != null) 'parse_type': parseType,
       if (enabled != null) 'enabled': enabled,
       if (catalogKey != null) 'catalog_key': catalogKey,
+      if (refreshIntervalSeconds != null)
+        'refresh_interval_seconds': refreshIntervalSeconds,
+      if (header != null) 'header': header,
+      if (lastValue != null) 'last_value': lastValue,
+      if (lastPercent != null) 'last_percent': lastPercent,
+      if (lastReadingAt != null) 'last_reading_at': lastReadingAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (version != null) 'version': version,
@@ -5863,22 +6220,35 @@ class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
 
   DiagnosticsProbesCompanion copyWith({
     Value<int>? id,
+    Value<int?>? carId,
     Value<String>? name,
     Value<String>? command,
     Value<String>? parseType,
     Value<bool>? enabled,
     Value<String?>? catalogKey,
+    Value<int>? refreshIntervalSeconds,
+    Value<String?>? header,
+    Value<String?>? lastValue,
+    Value<double?>? lastPercent,
+    Value<String?>? lastReadingAt,
     Value<String>? syncStatus,
     Value<String>? updatedAt,
     Value<int>? version,
   }) {
     return DiagnosticsProbesCompanion(
       id: id ?? this.id,
+      carId: carId ?? this.carId,
       name: name ?? this.name,
       command: command ?? this.command,
       parseType: parseType ?? this.parseType,
       enabled: enabled ?? this.enabled,
       catalogKey: catalogKey ?? this.catalogKey,
+      refreshIntervalSeconds:
+          refreshIntervalSeconds ?? this.refreshIntervalSeconds,
+      header: header ?? this.header,
+      lastValue: lastValue ?? this.lastValue,
+      lastPercent: lastPercent ?? this.lastPercent,
+      lastReadingAt: lastReadingAt ?? this.lastReadingAt,
       syncStatus: syncStatus ?? this.syncStatus,
       updatedAt: updatedAt ?? this.updatedAt,
       version: version ?? this.version,
@@ -5890,6 +6260,9 @@ class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (carId.present) {
+      map['car_id'] = Variable<int>(carId.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -5905,6 +6278,23 @@ class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
     }
     if (catalogKey.present) {
       map['catalog_key'] = Variable<String>(catalogKey.value);
+    }
+    if (refreshIntervalSeconds.present) {
+      map['refresh_interval_seconds'] = Variable<int>(
+        refreshIntervalSeconds.value,
+      );
+    }
+    if (header.present) {
+      map['header'] = Variable<String>(header.value);
+    }
+    if (lastValue.present) {
+      map['last_value'] = Variable<String>(lastValue.value);
+    }
+    if (lastPercent.present) {
+      map['last_percent'] = Variable<double>(lastPercent.value);
+    }
+    if (lastReadingAt.present) {
+      map['last_reading_at'] = Variable<String>(lastReadingAt.value);
     }
     if (syncStatus.present) {
       map['sync_status'] = Variable<String>(syncStatus.value);
@@ -5922,11 +6312,17 @@ class DiagnosticsProbesCompanion extends UpdateCompanion<DiagnosticsProbeRow> {
   String toString() {
     return (StringBuffer('DiagnosticsProbesCompanion(')
           ..write('id: $id, ')
+          ..write('carId: $carId, ')
           ..write('name: $name, ')
           ..write('command: $command, ')
           ..write('parseType: $parseType, ')
           ..write('enabled: $enabled, ')
           ..write('catalogKey: $catalogKey, ')
+          ..write('refreshIntervalSeconds: $refreshIntervalSeconds, ')
+          ..write('header: $header, ')
+          ..write('lastValue: $lastValue, ')
+          ..write('lastPercent: $lastPercent, ')
+          ..write('lastReadingAt: $lastReadingAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('version: $version')
@@ -5972,6 +6368,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_fuel_records_car_id',
     'CREATE INDEX idx_fuel_records_car_id ON fuel_records (car_id)',
   );
+  late final Index idxDiagnosticsProbesCarId = Index(
+    'idx_diagnostics_probes_car_id',
+    'CREATE INDEX idx_diagnostics_probes_car_id ON diagnostics_probes (car_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5991,6 +6391,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     idxMaintenanceRecordsCarId,
     idxMaintenanceRecordItemsRecordId,
     idxFuelRecordsCarId,
+    idxDiagnosticsProbesCarId,
   ];
 }
 
@@ -6003,6 +6404,7 @@ typedef $$CarsTableCreateCompanionBuilder =
       required int currentMileageKm,
       required String roadDate,
       Value<double?> tankCapacityLiters,
+      Value<double?> totalTankCapacityLiters,
       Value<String> syncStatus,
       required String updatedAt,
       Value<int> version,
@@ -6016,6 +6418,7 @@ typedef $$CarsTableUpdateCompanionBuilder =
       Value<int> currentMileageKm,
       Value<String> roadDate,
       Value<double?> tankCapacityLiters,
+      Value<double?> totalTankCapacityLiters,
       Value<String> syncStatus,
       Value<String> updatedAt,
       Value<int> version,
@@ -6061,6 +6464,11 @@ class $$CarsTableFilterComposer extends Composer<_$AppDatabase, $CarsTable> {
 
   ColumnFilters<double> get tankCapacityLiters => $composableBuilder(
     column: $table.tankCapacityLiters,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get totalTankCapacityLiters => $composableBuilder(
+    column: $table.totalTankCapacityLiters,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6123,6 +6531,11 @@ class $$CarsTableOrderingComposer extends Composer<_$AppDatabase, $CarsTable> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get totalTankCapacityLiters => $composableBuilder(
+    column: $table.totalTankCapacityLiters,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
     builder: (column) => ColumnOrderings(column),
@@ -6175,6 +6588,11 @@ class $$CarsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<double> get totalTankCapacityLiters => $composableBuilder(
+    column: $table.totalTankCapacityLiters,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get syncStatus => $composableBuilder(
     column: $table.syncStatus,
     builder: (column) => column,
@@ -6222,6 +6640,7 @@ class $$CarsTableTableManager
                 Value<int> currentMileageKm = const Value.absent(),
                 Value<String> roadDate = const Value.absent(),
                 Value<double?> tankCapacityLiters = const Value.absent(),
+                Value<double?> totalTankCapacityLiters = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<int> version = const Value.absent(),
@@ -6233,6 +6652,7 @@ class $$CarsTableTableManager
                 currentMileageKm: currentMileageKm,
                 roadDate: roadDate,
                 tankCapacityLiters: tankCapacityLiters,
+                totalTankCapacityLiters: totalTankCapacityLiters,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,
@@ -6246,6 +6666,7 @@ class $$CarsTableTableManager
                 required int currentMileageKm,
                 required String roadDate,
                 Value<double?> tankCapacityLiters = const Value.absent(),
+                Value<double?> totalTankCapacityLiters = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 required String updatedAt,
                 Value<int> version = const Value.absent(),
@@ -6257,6 +6678,7 @@ class $$CarsTableTableManager
                 currentMileageKm: currentMileageKm,
                 roadDate: roadDate,
                 tankCapacityLiters: tankCapacityLiters,
+                totalTankCapacityLiters: totalTankCapacityLiters,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,
@@ -8670,11 +9092,17 @@ typedef $$FuelRecordsTableProcessedTableManager =
 typedef $$DiagnosticsProbesTableCreateCompanionBuilder =
     DiagnosticsProbesCompanion Function({
       Value<int> id,
+      Value<int?> carId,
       required String name,
       required String command,
       required String parseType,
       Value<bool> enabled,
       Value<String?> catalogKey,
+      Value<int> refreshIntervalSeconds,
+      Value<String?> header,
+      Value<String?> lastValue,
+      Value<double?> lastPercent,
+      Value<String?> lastReadingAt,
       Value<String> syncStatus,
       required String updatedAt,
       Value<int> version,
@@ -8682,11 +9110,17 @@ typedef $$DiagnosticsProbesTableCreateCompanionBuilder =
 typedef $$DiagnosticsProbesTableUpdateCompanionBuilder =
     DiagnosticsProbesCompanion Function({
       Value<int> id,
+      Value<int?> carId,
       Value<String> name,
       Value<String> command,
       Value<String> parseType,
       Value<bool> enabled,
       Value<String?> catalogKey,
+      Value<int> refreshIntervalSeconds,
+      Value<String?> header,
+      Value<String?> lastValue,
+      Value<double?> lastPercent,
+      Value<String?> lastReadingAt,
       Value<String> syncStatus,
       Value<String> updatedAt,
       Value<int> version,
@@ -8703,6 +9137,11 @@ class $$DiagnosticsProbesTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get carId => $composableBuilder(
+    column: $table.carId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8728,6 +9167,31 @@ class $$DiagnosticsProbesTableFilterComposer
 
   ColumnFilters<String> get catalogKey => $composableBuilder(
     column: $table.catalogKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get refreshIntervalSeconds => $composableBuilder(
+    column: $table.refreshIntervalSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get header => $composableBuilder(
+    column: $table.header,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastValue => $composableBuilder(
+    column: $table.lastValue,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lastPercent => $composableBuilder(
+    column: $table.lastPercent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastReadingAt => $composableBuilder(
+    column: $table.lastReadingAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8761,6 +9225,11 @@ class $$DiagnosticsProbesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get carId => $composableBuilder(
+    column: $table.carId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -8783,6 +9252,31 @@ class $$DiagnosticsProbesTableOrderingComposer
 
   ColumnOrderings<String> get catalogKey => $composableBuilder(
     column: $table.catalogKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get refreshIntervalSeconds => $composableBuilder(
+    column: $table.refreshIntervalSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get header => $composableBuilder(
+    column: $table.header,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastValue => $composableBuilder(
+    column: $table.lastValue,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lastPercent => $composableBuilder(
+    column: $table.lastPercent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastReadingAt => $composableBuilder(
+    column: $table.lastReadingAt,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -8814,6 +9308,9 @@ class $$DiagnosticsProbesTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
+  GeneratedColumn<int> get carId =>
+      $composableBuilder(column: $table.carId, builder: (column) => column);
+
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
 
@@ -8828,6 +9325,27 @@ class $$DiagnosticsProbesTableAnnotationComposer
 
   GeneratedColumn<String> get catalogKey => $composableBuilder(
     column: $table.catalogKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get refreshIntervalSeconds => $composableBuilder(
+    column: $table.refreshIntervalSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get header =>
+      $composableBuilder(column: $table.header, builder: (column) => column);
+
+  GeneratedColumn<String> get lastValue =>
+      $composableBuilder(column: $table.lastValue, builder: (column) => column);
+
+  GeneratedColumn<double> get lastPercent => $composableBuilder(
+    column: $table.lastPercent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastReadingAt => $composableBuilder(
+    column: $table.lastReadingAt,
     builder: (column) => column,
   );
 
@@ -8884,21 +9402,33 @@ class $$DiagnosticsProbesTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<int?> carId = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> command = const Value.absent(),
                 Value<String> parseType = const Value.absent(),
                 Value<bool> enabled = const Value.absent(),
                 Value<String?> catalogKey = const Value.absent(),
+                Value<int> refreshIntervalSeconds = const Value.absent(),
+                Value<String?> header = const Value.absent(),
+                Value<String?> lastValue = const Value.absent(),
+                Value<double?> lastPercent = const Value.absent(),
+                Value<String?> lastReadingAt = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
                 Value<int> version = const Value.absent(),
               }) => DiagnosticsProbesCompanion(
                 id: id,
+                carId: carId,
                 name: name,
                 command: command,
                 parseType: parseType,
                 enabled: enabled,
                 catalogKey: catalogKey,
+                refreshIntervalSeconds: refreshIntervalSeconds,
+                header: header,
+                lastValue: lastValue,
+                lastPercent: lastPercent,
+                lastReadingAt: lastReadingAt,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,
@@ -8906,21 +9436,33 @@ class $$DiagnosticsProbesTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<int?> carId = const Value.absent(),
                 required String name,
                 required String command,
                 required String parseType,
                 Value<bool> enabled = const Value.absent(),
                 Value<String?> catalogKey = const Value.absent(),
+                Value<int> refreshIntervalSeconds = const Value.absent(),
+                Value<String?> header = const Value.absent(),
+                Value<String?> lastValue = const Value.absent(),
+                Value<double?> lastPercent = const Value.absent(),
+                Value<String?> lastReadingAt = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 required String updatedAt,
                 Value<int> version = const Value.absent(),
               }) => DiagnosticsProbesCompanion.insert(
                 id: id,
+                carId: carId,
                 name: name,
                 command: command,
                 parseType: parseType,
                 enabled: enabled,
                 catalogKey: catalogKey,
+                refreshIntervalSeconds: refreshIntervalSeconds,
+                header: header,
+                lastValue: lastValue,
+                lastPercent: lastPercent,
+                lastReadingAt: lastReadingAt,
                 syncStatus: syncStatus,
                 updatedAt: updatedAt,
                 version: version,

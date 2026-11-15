@@ -361,25 +361,36 @@ void main() {
   test('backup restore re-inserts custom probes and bootstrap rebuilds built-ins',
       () async {
     // 车辆本身与本用例断言无关，播种只为库里有常规业务数据（贴近真实）。
-    await repos.seedCarAndItem();
+    final (carId, _) = await repos.seedCarAndItem();
     final diagnostics = repos.diagnosticsRepository;
     // 基准态：bootstrap 已灌内置三条 + 用户加了一个停用的自定义项
     // （启停是用户数据，备份往返应保留）。
     await repos.catalogRepository.ensureBootstrapData();
     final customId = await diagnostics.saveProbe(
       DiagnosticsProbe(
+        carId: carId,
         name: '进气温度',
         command: '010F',
         parseType: DiagnosticsParseType.coolantTemp,
         enabled: false,
       ),
     );
+    // 最后读数是设备派生临时数据：先写一笔读数，验证它不进备份。
+    await diagnostics.saveProbeReading(
+      customId,
+      value: '42℃',
+      at: DateTime(2026, 11, 14, 8),
+    );
 
-    // 导出只带自定义项：payload 与 JSON 双重确认（内置不进备份，ADR 0021）。
+    // 导出只带自定义项：payload 与 JSON 双重确认（内置不进备份，ADR 0021；
+    // 最后读数不进备份，2026-11-15 修订节）。
     final backup = await backupRepository.exportBackupPayload();
     expect(backup.diagnosticsProbes, hasLength(1));
     expect(backup.diagnosticsProbes.single.name, '进气温度');
-    expect(const BackupCodec().encode(backup), isNot(contains('catalogKey')));
+    expect(backup.diagnosticsProbes.single.lastValue, isNull);
+    final backupJson = const BackupCodec().encode(backup);
+    expect(backupJson, isNot(contains('catalogKey')));
+    expect(backupJson, isNot(contains('lastValue')));
 
     // 换新内存库恢复（模拟换机重装：检测点表全空）。
     await database.close();
@@ -410,13 +421,16 @@ void main() {
     expect(restoredRows.single.name, '进气温度');
     expect(restoredRows.single.command, '010F');
     expect(restoredRows.single.enabled, isFalse);
+    expect(restoredRows.single.lastValue, isNull, reason: '读数不随备份恢复');
     expect(restoredRows.single.id, isNot(customId));
 
     // 恢复完成后种子重建（生产路径：恢复动作失效全量 provider，bootstrap
     // 重跑 ensureBootstrapData → ensureBuiltInProbes）且自定义项存活：
     // 3 内置回到库 + 自定义项业务字段原样保留。
     await catalogRepository.ensureBootstrapData();
-    final probes = await restoredDiagnostics.listProbes();
+    final restoredCarRows = await database.select(database.cars).get();
+    final restoredCarId = restoredCarRows.single.id;
+    final probes = await restoredDiagnostics.listProbes(restoredCarId);
     expect(probes, hasLength(4), reason: '3 内置 + 1 自定义');
     expect(probes.where((probe) => probe.isBuiltIn), hasLength(3));
     final custom = probes.last;
@@ -936,7 +950,7 @@ void main() {
       ),
     );
     await repos.diagnosticsRepository.saveProbe(
-      DiagnosticsProbe(name: '节气门', command: '0111'),
+      DiagnosticsProbe(carId: carId, name: '节气门', command: '0111'),
     );
     expect(
       (await database.select(database.diagnosticsProbes).get())
