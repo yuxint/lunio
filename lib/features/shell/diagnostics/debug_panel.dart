@@ -16,8 +16,7 @@ import '../../../core/widgets/lunio_components.dart';
 import '../shared/shell_shared.dart';
 import 'elm327_parser.dart' show normalizeObdCommand;
 import 'elm327_session.dart';
-import 'obd_verification.dart';
-import 'obd_verification_commands.dart';
+import 'obd_verification_run.dart';
 
 /// 调试面板：折叠展开 + 调试模式开关 + 自由终端 + 一键采集 + 日志。
 class DiagnosticsDebugPanel extends StatefulWidget {
@@ -117,6 +116,10 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
     }
   }
 
+  /// 一键采集：run 协议归 `obd_verification_run.dart`（发什么 / 顺序 /
+  /// 日志格式 / 默认头恢复），本 widget 只清空日志、把日志块追加进
+  /// `_log` 并持有 busy 生命周期。执行器 adapter 把会话异常翻译成
+  /// run module 的结果分类：超时=继续，其余会话失败=中止。
   Future<void> _runVerification() async {
     final session = widget.session;
     if (session == null || !_debugMode || _busy) {
@@ -124,45 +127,29 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
     }
     setState(() {
       _busy = true;
-      _log = 'Lunio OBD 全量采集日志\n'
-          '车辆：${widget.carLabel}\n'
-          '开始：${DateTime.now().toIso8601String()}\n'
-          '说明：标准 PID 由本车 0100/0120/0140/0160/0180/01A0/01C0/01E0 '
-          '能力位图自动枚举；09/06/DTC 标准读取；私有 DID 按 OBDb Honda '
-          'Civic 2022 supported_commands_by_ecu（北美数据，实车可能不同）；'
-          '末尾 ATSH DB 33 F1 恢复。\n\n';
+      _log = '';
     });
-    Future<String> capture(String command) async {
-      _append('> ${normalizeObdCommand(command)}');
-      try {
-        final frame = await session.sendRawCommand(command);
-        _append(frame);
-        return frame;
-      } catch (error) {
-        _append('ERROR: $error');
-        return '';
-      }
-    }
-
     try {
-      await capture('ATI');
-      await capture('ATDPN');
-      await capture('ATRV');
-      await capture('ATSH DB33F1');
-      final supportFrames = <String, String>{};
-      for (final command in obdSupportQueries) {
-        supportFrames[command] = await capture(command);
-      }
-      for (final command in buildStandardVerificationCommands(supportFrames)) {
-        await capture(command);
-      }
-      for (final group in obdVendorCommandGroups) {
-        await capture('ATSH ${group.header}');
-        for (final command in group.commands) {
-          await capture(command);
-        }
-      }
-      await capture('ATSH DB33F1');
+      await runObdVerification(
+        carLabel: widget.carLabel,
+        onLog: (block) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _log = '$_log$block';
+          });
+        },
+        send: (command) async {
+          try {
+            return ObdCommandFrame(await session.sendRawCommand(command));
+          } on Elm327TimeoutException catch (error) {
+            return ObdCommandTimeout(error);
+          } on Elm327SessionException catch (error) {
+            return ObdCommandFailure(error);
+          }
+        },
+      );
     } finally {
       if (mounted) {
         setState(() => _busy = false);

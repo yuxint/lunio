@@ -401,6 +401,48 @@ void main() {
 
       await leavePageAndFlush(tester);
     });
+
+    testWidgets('一键采集接线：点按钮走 run module，日志出真实头块与首条命令', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('37.6%'));
+      // 收完第一轮余下两条，循环回到调度拍，暂停才有确定边界。
+      await rig.deliverChunks(tester);
+      await rig.deliverChunks(tester);
+
+      await tester.ensureVisible(find.text('调试'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('展开'));
+      await tester.pumpAndSettle();
+
+      final debugSwitch = find.descendant(
+        of: find
+            .ancestor(
+              of: find.text('调试模式（暂停自动轮询）'),
+              matching: find.byType(Row),
+            )
+            .first,
+        matching: find.byType(Switch),
+      );
+      await tester.tap(debugSwitch);
+      await tester.pumpAndSettle();
+
+      // 点采集：run module 同步吐出日志头与首条命令，随后挂在 ATI 请求
+      // 上（静默脚本无字节）——这正是接线冒烟要锁的边。
+      await tester.tap(find.text('一键采集全部数据'));
+      await tester.pump();
+
+      final log = tester.widget<SelectableText>(find.byType(SelectableText)).data;
+      expect(log, contains('Lunio OBD 全量采集日志'));
+      expect(log, contains('> ATI'));
+      expect(rig.mock.sentCommands, contains('ATI'));
+
+      await leavePageAndFlush(tester);
+    });
   });
 
   group('表单增改删（票 06）', () {

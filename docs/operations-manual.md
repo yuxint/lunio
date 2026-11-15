@@ -420,9 +420,9 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 - **每车一套检测点**（ADR 0021 修订节）：`diagnostics_probes` 挂 `car_id`；切车/删车随车变化，删车事务级联；`diagnosticsProbesProvider` 是按车 family；新增车辆时按车播种三条内置（`createCar` 动作收尾），bootstrap 按车补缺失、不纠偏用户编辑。
 - **检测点管理 sheet**：页面列表尾"管理检测点" → `probe_management_sheet.dart`；顶部"新增"、卡片 = 名称 + "每 N 秒刷新 · 解析类型" + 编辑/启停/删除；内置卡片"内置"标签、无删除；自定义可增改删；删除确认"删除检测点"。
 - **刷新规则**：每个检测点自己的 `refresh_interval_seconds`（默认 30，范围 5–3600，ADR 0023）；`Elm327Session` 按 1 秒拍倒计时调度；已连接时状态条行尾刷新图标 → `requestImmediatePoll` 立即轮询全部启用项；调试终端打开时暂停自动轮询。
-- **调试终端**：诊断页底部"调试"卡（`debug_panel.dart`）→ 展开 → "调试模式"暂停轮询；自由命令（如 `0105`、`ATSH DA 60 F1`、`227029`）+ 发送；"一键采集全部数据"先读本车 `0100/0120/0140/0160/0180/01A0/01C0/01E0` 能力位图并自动枚举标准 PID、读 `09/06/DTC`，再按 OBDb Honda Civic 2022 `supported_commands_by_ecu` 清单分组读私有 DID（126 条，含 `227029`/`222623`/`222678`/`22267A`），日志带时间戳与原始行、可复制；退出调试恢复 `ATSH DB 33 F1` 并重启轮询。私有 DID 本轮只验证，不进正常轮询；验证通过后再加 header/多帧重组/私有解析（ADR 0023）。
+- **调试终端**：诊断页底部"调试"卡（`debug_panel.dart`）→ 展开 → "调试模式"暂停轮询；自由命令（如 `0105`、`ATSH DA 60 F1`、`227029`）+ 发送；"一键采集全部数据"先读本车 `0100/0120/0140/0160/0180/01A0/01C0/01E0` 能力位图并自动枚举标准 PID、读 `09/06/DTC`，再按 OBDb Honda Civic 2022 `supported_commands_by_ecu` 清单分组读私有 DID（126 条，含 `227029`/`222623`/`222678`/`22267A`），日志带时间戳与原始行、可复制；退出调试恢复 `ATSH DB 33 F1` 并重启轮询。run 协议归 `obd_verification_run.dart`（顶层 `runObdVerification`：命令序列 / 默认头恢复 / 日志组装；单条超时继续、链路失败中止，中止行在恢复尝试之后；日志格式是交付契约）。私有 DID 本轮只验证，不进正常轮询；验证通过后再加 header/多帧重组/私有解析（ADR 0023）。
 - **车辆字段/油量**：车辆表单"油箱容积"改为"加满可加油量"，新增"油箱总容积"（ADR 0022）；加油页继续用加满可加油量，不改；诊断油量卡显示可用/估算总（私有 DID 标定后显示实测总）。
-- 测试：`test/widget/diagnostics_test.dart` 20 用例（双油量卡、调试终端、管理 sheet 增改删、内置可编辑不可删、刷新间隔、无数据原因）；`diagnostics_connection_controller_test.dart` 15 用例（连接编排）；`probe_form_controller_test.dart` 11 用例；`obd_verification_test.dart` 6 用例（能力位图自动枚举、09/06、私有 DID 清单）；`elm327_session_test.dart` 手动刷新/暂停原始命令；迁移/备份 v6/v5 用例。
+- 测试：`test/widget/diagnostics_test.dart` 21 用例（双油量卡、调试终端、一键采集接线、管理 sheet 增改删、内置可编辑不可删、刷新间隔、无数据原因）；`diagnostics_connection_controller_test.dart` 15 用例（连接编排）；`probe_form_controller_test.dart` 11 用例；`obd_verification_test.dart` 6 用例（能力位图自动枚举、09/06、私有 DID 清单）+ `obd_verification_run_test.dart` 6 用例（run 协议：格式逐字、超时继续、链路失败中止、恢复头与中止行时序）；`elm327_session_test.dart` 手动刷新/暂停原始命令；迁移/备份 v6/v5 用例。
 
 ### 5.11 加油页（/fuel，开发者开关打开时可见）
 
