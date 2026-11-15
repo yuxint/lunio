@@ -1,16 +1,17 @@
-// 提醒通知域的内容组装：系统通知清单、到期/生效清单、全量数据签名。
+// 提醒通知域的内容组装：系统通知清单、到期/生效清单。
 //
 // 在 App 中的位置：提醒的 UI 半边（视图模型/行组装/空态分类/英雄卡
-// 概览）已拆到 reminder_rows.dart，本文件保留通知域消费的四块：
-//  1. 系统通知清单组装（buildScheduledNotifications，控制器重排时调用）；
+// 概览）已拆到 reminder_rows.dart，本文件保留通知域消费的三块：
+//  1. 系统通知清单组装（buildScheduledNotifications，系统通知 lane 的
+//     执行体调用）；
 //  2. 应用内提醒弹窗的到期清单（maintenanceNotices，"没记录不产生
 //     提醒"产品约定的单一实现）；
 //  3. 生效到期清单单一出口（buildActiveDueList，GLOSSARY 词条）：到期
 //     清单减去静默后的生效部分 + 里程更新提醒生效性，系统通知与应用
 //     内弹窗两通道经它取同一份（2026-10-19 收编，此前两处各手抄一份
-//     同形循环）；
-//  4. 全量数据签名（reminderNotificationDataSignature + 停车倒计时
-//     摘要），签名变化才重排系统通知/弹应用内弹窗。
+//     同形循环）。
+// 变更判定（数据变没变）已归「同步快照」（notification_sync_engine.dart，
+// 2026-11-15 收编），本文件不再拥有字符串签名函数。
 // 行组装与 UI 复用同一个 buildReminderRows（reminder_rows.dart），
 // "界面看到的"和"通知里发的"来自同一次组装规则。
 // snooze/ack 抑制协议（"稍后提醒"/"知道了"）已收编进通知协调器
@@ -181,64 +182,6 @@ List<DateTime> reservedNotificationDateTimes(
     return const [];
   }
   return [parkingCountdown.endsAt];
-}
-
-/// 停车倒计时的签名片段（进系统通知总签名：倒计时变了要重排）。
-String parkingCountdownReminderSignature(ParkingCountdown? parkingCountdown) {
-  if (parkingCountdown == null) {
-    return 'parking:none';
-  }
-  return 'parking:${parkingCountdown.endsAt.toIso8601String()}';
-}
-
-/// ★ 全量数据签名：把车辆/项目/记录的全部影响提醒的字段拼成一个大字符串。
-/// 通知同步控制器在数据变化时调用，签名变了才重排系统通知
-/// （原 AppShell 每帧 build 拼接的性能热点已随 R11/R12 修复移除）。
-String reminderNotificationDataSignature({
-  required Car car,
-  required List<MaintenanceItem> items,
-  required List<MaintenanceRecord> records,
-  required LocalDate today,
-}) {
-  final itemSignature = items
-      .map((item) {
-        return [
-          item.id,
-          item.carsId,
-          item.enabled,
-          item.remindByMileage,
-          item.remindByTime,
-          item.mileageIntervalKm,
-          item.timeIntervalMonths,
-          item.notOverdueUpperLimit,
-          item.overdueUpperLimit,
-          item.sortOrder,
-          item.sync.updatedAt.toIso8601String(),
-          item.sync.version,
-        ].join(',');
-      })
-      .join('|');
-  final recordSignature = records
-      .map((record) {
-        return [
-          record.id,
-          record.carId,
-          record.date,
-          record.mileageKm,
-          record.itemIds.join('+'),
-          record.sync.updatedAt.toIso8601String(),
-          record.sync.version,
-        ].join(',');
-      })
-      .join('|');
-  return [
-    car.id,
-    car.currentMileageKm,
-    car.sync.updatedAt.toIso8601String(),
-    today,
-    itemSignature,
-    recordSignature,
-  ].join(';');
 }
 
 /// 里程更新提醒是否到期：上次里程更新日（= car.sync.updatedAt 的日期）

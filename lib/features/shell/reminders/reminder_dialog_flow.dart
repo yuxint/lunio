@@ -2,9 +2,10 @@
 // （知道了/稍后提醒）各写哪些抑制偏好、动作后什么时候要强制重排系统
 // 通知'这一组决策的 plain-Dart 模块（2026-10-15 收编）。
 //
-// 在 App 中的位置：NotificationSyncController._showDueInAppNotifications
-// 的执行内核。控制器保留被动监听外壳（签名比对、GuardedOp 防重入、
-// _disposed、shellContext 提取），本类持有检查链的全部决策；静默读取、
+// 在 App 中的位置：通知同步 engine（notification_sync_engine.dart）的应用内
+// lane 执行体（NotificationSyncController._showDueInAppNotifications）的
+// 执行内核。变更判定与 per-lane 防重入归 engine（2026-11-15 收编）；控制器
+// 保留被动监听外壳、生产接缝组装与执行体，本类持有检查链的全部决策；静默读取、
 // 弹窗呈现、抑制偏好写、强制重排全部经构造注入的接缝传入，本类不持有
 // WidgetRef/BuildContext，可无 widget 单测（单测
 // test/features/reminder_dialog_flow_test.dart，completer 驱动 await
@@ -27,6 +28,7 @@ import '../../../domain/entities/car.dart';
 import '../../../domain/entities/maintenance_item.dart';
 import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
+import 'notification_sync_engine.dart';
 import 'notification_sync_guard.dart';
 import 'reminder_notifications.dart';
 import 'reminder_rows.dart';
@@ -100,18 +102,22 @@ class InAppReminderDialogFlow {
   final Future<void> Function(int carId, LocalDate today)
       acknowledgeMileageUpdate;
 
-  /// 动作后的强制重排（生产 = 清空系统通知与应用内两个签名并立即重跑
-  /// syncFromProviders；_disposed 检查在生产闭包内）。snooze 影响系统
-  /// 通知内容、ack 影响应用内弹窗静默，两类动作都触发重排。
+  /// 动作后的强制重排（生产 = engine.invalidateAllLanes()：失效系统通知
+  /// 与应用内两条 lane 并立即重跑；_disposed 检查在生产闭包内）。snooze
+  /// 影响系统通知内容、ack 影响应用内弹窗静默，两类动作都触发重排。
   final void Function() onForceReschedule;
 
   /// 应用内提醒检查链：静默过滤 → 无到期短路 → 依次呈现两类弹窗并按
-  /// 动作写抑制偏好 → 动作后强制重排。调用方（通知同步控制器）已在外层
-  /// 做签名比对与 GuardedOp 防重入；本方法内部的检查点全部经同步票。
+  /// 动作写抑制偏好 → 动作后强制重排。调用方（通知同步 engine）已在外层
+  /// 做快照变更判定与 per-lane 防重入；本方法内部的检查点全部经同步票。
   ///
-  /// 参数是通知同步控制器从应用车辆数据束与通知设置快照出的当轮数据
-  /// （车/项目/记录/生效今天 + 通知设置），本方法不读 provider。
-  Future<void> checkAndPresent({
+  /// 结果口径（[SyncLaneOutcome]）：票作废 / 壳层已拆 → aborted（engine
+  /// 不记账，下一轮补判）；开关关 / 无到期 / 用户关闭弹窗 / 动作已完成
+  /// → applied（记账，等下一次输入变化）。
+  ///
+  /// 参数是 engine 快照出的当轮数据（车/项目/记录/生效今天 + 通知设置），
+  /// 本方法不读 provider。
+  Future<SyncLaneOutcome> checkAndPresent({
     required LunioNotificationSettings settings,
     required Car car,
     required List<MaintenanceItem> items,
@@ -120,13 +126,13 @@ class InAppReminderDialogFlow {
   }) async {
     final run = acquireRun();
     // 入口复查：写库进行中读到的 items/records 是未提交的半成品，算都
-    // 不要算（控制器 syncFromProviders 入口早退只挡"检查开始时写库已在
-    // 跑"的那一半，这里挡"检查开始后写库才开始"的另一半）。
+    // 不要算（engine 入口早退只挡"检查开始时写库已在跑"的那一半，这里
+    // 挡"检查开始后写库才开始"的另一半）。
     if (!run.isValid) {
-      return;
+      return SyncLaneOutcome.aborted;
     }
     if (!settings.inAppNotificationsEnabled) {
-      return;
+      return SyncLaneOutcome.applied;
     }
     // 生效到期清单（GLOSSARY 词条）经单一出口组装（reminder_notifications
     // 的 buildActiveDueList，系统通知通道同取一份）：静默语义按通道绑定
@@ -142,24 +148,24 @@ class InAppReminderDialogFlow {
       shouldAbort: () => !run.isValid,
     );
     if (active == null) {
-      return;
+      return SyncLaneOutcome.aborted;
     }
     final dueNotices = active.maintenanceNotices;
     final showMileageReminder = active.mileageUpdate;
     if (dueNotices.isEmpty && !showMileageReminder) {
-      return;
+      return SyncLaneOutcome.applied;
     }
     // 展示前复查第一道（保养弹窗，与下方展示调用之间无 await，无竞态
     // 窗口）：旗真 = 写库仍在进行，清单是半成品；代数变了 = 写库在本次
     // 检查期间已开始并结束，数据过期；disposed = 壳层已拆。都放弃，
     // 等最终一轮补判。
     if (!run.isValid) {
-      return;
+      return SyncLaneOutcome.aborted;
     }
     var changedSystemSchedule = false;
     if (dueNotices.isNotEmpty) {
       if (!canPresentDialog()) {
-        return;
+        return SyncLaneOutcome.aborted;
       }
       final action = await showMaintenanceDialog(
         car: car,
@@ -167,7 +173,7 @@ class InAppReminderDialogFlow {
         today: today,
       );
       if (!run.isValid) {
-        return;
+        return SyncLaneOutcome.aborted;
       }
       if (action != null) {
         // snoozed 与 acknowledged 都改变抑制状态 → 都要重排；snooze 的
@@ -186,18 +192,18 @@ class InAppReminderDialogFlow {
     }
     if (showMileageReminder) {
       if (!canPresentDialog()) {
-        return;
+        return SyncLaneOutcome.aborted;
       }
       // 展示前复查第二道（里程弹窗，与下方展示调用之间无 await）：保养
       // 弹窗挂起与 ack 写偏好都是 await，破坏性写库可能在期间开始并
       // 结束，showMileageReminder 是旧快照算出来的，弹前必须再问一次票
       // （2026-09-25 补齐，审查：此前只有保养弹窗前一道）。
       if (!run.isValid) {
-        return;
+        return SyncLaneOutcome.aborted;
       }
       final action = await showMileageDialog(car: car, today: today);
       if (!run.isValid) {
-        return;
+        return SyncLaneOutcome.aborted;
       }
       if (action != null) {
         changedSystemSchedule = true;
@@ -210,5 +216,6 @@ class InAppReminderDialogFlow {
     if (changedSystemSchedule) {
       onForceReschedule();
     }
+    return SyncLaneOutcome.applied;
   }
 }

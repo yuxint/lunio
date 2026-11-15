@@ -132,14 +132,14 @@ appDatabaseProvider(:285)
 
 ### 1.3 首次通知权限请求
 
-执行体在通知协调器（`reminders/notification_coordinator.dart → LunioNotificationCoordinator`），控制器只做防重入与签名重置：
+执行体在通知协调器（`reminders/notification_coordinator.dart → LunioNotificationCoordinator`），控制器只做防重入与系统 lane 失效：
 
 | 步骤 | 代码位置 | 做了什么 | 数据变化 |
 |---|---|---|---|
 | 1 | `notification_sync_controller.dart → _ensureInitialSystemNotificationPermission`（防重入）→ `notification_coordinator.dart → ensureInitialSystemNotificationPermission` | 读偏好 `systemNotificationPermissionRequested` 分流 | — |
 | 2a | 未请求过 → 协调器 `requestPermission` | 弹系统权限对话框（iOS/Android 13+） | 写 `systemNotificationPermissionRequested=true`；被拒时写 `systemNotificationsEnabled=false` 并失效偏好缓存 |
 | 2b | 请求过 → 协调器 `reconcileSystemEnabled` 查系统真实开关 | 用户可能在系统设置改过，回写偏好保持一致（查询失败回退偏好值，R14） | 可能更新 `systemNotificationsEnabled` |
-| 3 | 真的弹了请求（2a）→ 控制器清空签名 | 下帧触发系统通知首次全量重排 | — |
+| 3 | 真的弹了请求（2a）→ 控制器失效系统通知 lane（`notification_sync_engine.dart → invalidateSystemLane`） | 下帧触发系统通知首次全量重排 | — |
 
 ---
 
@@ -220,7 +220,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ## 3. 应用内提醒弹窗（snooze / ack）
 
-**触发时机**：通知同步控制器检测"应用内通知开 + 到期项变化/回到前台"（`reminders/notification_sync_controller.dart → _showDueInAppNotifications`，只保留 GuardedOp 防重入外壳）；检查链的全部决策——生效到期清单获取（GLOSSARY.md 词汇：**生效到期清单**；组装经单一出口 `reminder_notifications.dart → buildActiveDueList`，静默语义按通道绑定协调器两个静默读方法、系统通知组装同取一份，2026-10-19 收编）、弹窗动作分支、各检查点、动作后强制重排——收在决策体 `reminders/reminder_dialog_flow.dart → InAppReminderDialogFlow.checkAndPresent`（plain-Dart，不碰 BuildContext，静默读/弹窗呈现/抑制偏好写/重排全部经注入接缝，2026-10-15 收编；单测 `test/features/reminder_dialog_flow_test.dart` + `test/features/active_due_list_test.dart`，检查点位点已变异验证）。
+**触发时机**：通知同步 engine 检测"应用内通知开 + 到期项变化/回到前台"（`reminders/notification_sync_engine.dart → NotificationSyncEngine` 的应用内 lane；`reminders/notification_sync_controller.dart → _showDueInAppNotifications` 只是 lane 执行体，变更判定与 per-lane 防重入在 engine）；检查链的全部决策——生效到期清单获取（GLOSSARY.md 词汇：**生效到期清单**；组装经单一出口 `reminder_notifications.dart → buildActiveDueList`，静默语义按通道绑定协调器两个静默读方法、系统通知组装同取一份，2026-10-19 收编）、弹窗动作分支、各检查点、动作后强制重排——收在决策体 `reminders/reminder_dialog_flow.dart → InAppReminderDialogFlow.checkAndPresent`（plain-Dart，不碰 BuildContext，静默读/弹窗呈现/抑制偏好写/重排全部经注入接缝，2026-10-15 收编；返回 `SyncLaneOutcome`：aborted 不记账、engine 下一轮补判；单测 `test/features/reminder_dialog_flow_test.dart` + `test/features/active_due_list_test.dart`，检查点位点已变异验证）。
 
 **中间态守卫**：破坏性写库（恢复备份/清空数据/删除车辆，经协调器三个 run* 模板驱动守卫）的写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃（写库逐行插入会经 Drift 同连接流查询暴露未提交的半成品数据，拿它算提醒会得出"全部到期"的假结论）；决策体在静默判定每轮循环后（经生效清单单一出口 `buildActiveDueList` 的 shouldAbort 接缝）与弹窗展示前（保养弹窗返回后、里程弹窗展示前，与各自展示调用之间无 await）各问一次同步票 `run.isValid`（= 未销毁 && 无中间态旗 && 代数未变，见 6.3），封掉"检查开始后写库才开始/恰好结束"的窄窗。检查执行中来新请求由重入 harness 记 pending，本轮 finally 强制重跑，消除"弹窗开着时数据变化的那一拍被丢"整类问题。
 
@@ -230,9 +230,9 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 2 | `reminder_dialogs.dart:61 → showMaintenanceReminderDialog`（决策体经 `showMaintenanceDialog` 接缝呈现） | 弹保养提醒框（逐项列出；与里程弹窗共用 `_ReminderDialog` 骨架 + `LunioDialogCard` 卡片外壳） | — |
 | 3a | 点"知道了" | 返回 acknowledged，决策体经 ack 写接缝（生产绑定协调器 `acknowledgeMaintenanceItem`）逐项写当日 ack | `maintenanceInAppReminderAcknowledgedOn:<itemId>` = 今天（当天不再弹，系统通知照发） |
 | 3b | 点"15 天内不再提醒" | 弹窗内 `onSnooze` 经协调器 `snoozeMaintenanceItems` 写 snooze（snooze 写在弹窗呈现闭包内完成，不经决策体） | `maintenanceReminderSnoozedUntil:<itemId>` = 今天+15 天（系统+应用内一起静默） |
-| 4 | 有动作后 | 决策体判 `changedSystemSchedule` → 经 `onForceReschedule` 接缝（控制器生产闭包）清空两个签名并立即重跑 `syncFromProviders` | 系统通知按新抑制状态重排 |
+| 4 | 有动作后 | 决策体判 `changedSystemSchedule` → 经 `onForceReschedule` 接缝（控制器生产闭包）调 `engine.invalidateAllLanes()`（失效两条 lane 并立即重跑） | 系统通知按新抑制状态重排 |
 | 5 | 里程更新弹窗同构 | `reminder_dialogs.dart:102 → showMileageUpdateReminderDialog`（决策体经 `showMileageDialog` 接缝呈现）；是否到期判定 `reminder_notifications.dart → mileageUpdateReminderDue`（上次里程更新日 = car.sync.updatedAt + 按记录频率推断的间隔） | `mileageUpdateSnoozedUntil:<carId>` / `mileageUpdateInAppAcknowledgedOn:<carId>`（经协调器 `snoozeMileageUpdate` / `acknowledgeMileageUpdate` 写入） |
-| 6 | 回到前台 | `app_shell.dart → didChangeAppLifecycleState` 转交 `controller.onAppResumed()` 清空应用内签名并重跑同步 | 强制重查（处理完离开再回来，到期会再弹） |
+| 6 | 回到前台 | `app_shell.dart → didChangeAppLifecycleState` 转交 `controller.onAppResumed()`：失效应用内 lane（`engine.invalidateInAppLane`）并立即重跑同步 | 强制重查（处理完离开再回来，到期会再弹） |
 
 ---
 
@@ -266,7 +266,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 | 3 | 第二步 `_buildIntervalStep`（:761） | 每个项目"按里程/按时间"间隔输入（预填当前值，可改，可返回上一步；间隔草稿持有权在控制器 `form.intervalDrafts`） | — |
 | 4 | widget `_submit()`（:820）→ 控制器 `RecordFormController.submitPayload` → `records/record_interval_updates.dart → buildItemUpdates()` | 控制器把间隔草稿整理成待更新项目实体清单：正整数校验（规则收在 `MaintenanceRules.validateIntervals`，**与保养项目表单共用**，文案经 `intervalProblemText` 生成、带项目名前缀）；**有变化的项目**才生成 update 实体（注入时钟重建实体的 sync 元数据）。仍在第一步时先推进不自动提交（提交只能从第二步发起）。草稿类与清单生成收在 `record_interval_updates.dart`（单测 `test/features/record_interval_updates_test.dart`；校验规则单测在 `test/domain/maintenance_rules_test.dart`） | — |
 | 5 | onSubmit（sheet 入口处）→ `shell_actions.dart → saveMaintenanceRecord`（动作层，ADR 0007） | 内部按 id 分流：新增 → `repository.saveMaintenanceRecordWithItemUpdates`（lunio_repository.dart:345）；编辑 → `updateMaintenanceRecordWithItemUpdates`(:361)。两个入口与基础版（不带间隔更新）共用私有写管线 `_writeRecord`（:384）——四个写入口共用它，新增写库不变量只改这一处。**单事务**：项目归属校验 → 同日唯一校验（`_ensureRecordIsUnique`，**同车同日只允许一条记录**，无论项目是否相同；已有记录即抛"这辆车当天已有保养记录，请编辑原记录"）→ 插/改主表+关联表（**费用三列按 itemId 从 `record.itemCosts` 取，`_insertRecordItemRowsInTransaction`**）→ 车辆里程只增同步 → 更新项目间隔；写完失效车辆家族 | `maintenance_records` + `maintenance_record_items`（含费用三列）；可能更新 `cars.current_mileage_km`、`maintenance_items` 间隔 |
-| 6 | 提交成功关 sheet + toast"保养记录已保存"（表单运行时统一收口，ADR 0016） | 记录页/提醒页/通知签名全部刷新 | — |
+| 6 | 提交成功关 sheet + toast"保养记录已保存"（表单运行时统一收口，ADR 0016） | 记录页/提醒页/通知同步全部刷新 | — |
 
 ### 4.3 删除记录
 
@@ -375,7 +375,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 4. `backupRepository.restoreBackupPayload`——事务外**两层预校验**：引用完整性（`_validateBackupReferences`，含加油预测/加油记录的 carId 存在性）+ 业务规则（`_validateBackupBusinessRules`：逐条 `item.validate()` / `RecordRules.validateRecord` / 加油预测与加油记录实体 `validate()`，含项目费用金额非负且 itemId 在记录项目集合内；**末段做保养记录的同车同日查重**——跨行检查，表级唯一约束 {carId,date} 的业务前置检查、与手工录入 `_ensureRecordIsUnique` 同一条规则，真实导出的备份不可能触发（源库约束挡着），触发即文件被手工编辑过/外来，整文件拒绝；只查保养记录，加油记录无 {carId,date} 约束是 ADR 0014 有意设计；变异验证锁定）；**校验失败统一抛 typed `LunioErrorException(backupInvalidData)`**（ADR 0009 修订节），篡改备份直接拒绝且不碰库 → 单一大事务：`_clearRestorableDataInTransaction` **只清 7 张业务表（4 张主业务表 + 加油预测设置 + 加油记录 + 检测点，检测点内置三条随每车 bootstrap 重建、自定义项由备份 diagnosticsProbes 段按 carId 重映射重插，ADR 0021 修订节）+ 按前缀清提醒抑制键（snooze/ack），偏好整体保留** → cars→items→records→fuelPredictions→fuelRecords→diagnosticsProbes 逐行插入（id 全换新雪花 id，旧→新映射；检测点段按 carId 重映射到恢复后的新车辆 id，行 id 重新生成雪花；**项目费用按备份旧 itemId 查表、随关联行恢复，"材料/工时有值但项目费用为空"的旧备份条目由关联行 companion 内置 `RecordRules.normalizeItemCost` 按材料+工时补齐（写 seam 单点），恢复不把违规数据带进新库；加油预测/加油记录 carId 同表重映射**）→ 应用车辆指向第一辆；任何一行失败整体回滚（**事务边界经 `data/repositories/unique_constraint.dart` 的 `guardUniqueConstraint` 包裹**：撞唯一约束的驱动异常 `SqliteException(2067)` 翻译成 typed `uniqueConstraint`——进程内连接异常直接到达、生产后台 isolate 连接经 drift 远程协议包成 `DriftRemoteException`（remoteCause 才是 SqliteException）两种形态都认，ADR 0009 2026-10-01 修订节）；
 5. 恢复成功后模板在**旗还举着时执行屏障重算**（`refreshProviders` 闭包）：`invalidateAllAppDataProviders` 全量失效 + 逐个 await 同步数据源清单（`notificationSyncSources`，与 `start()` 订阅同一份单一声明，2026-10-01 收编）内各数据源的新 future 全部落定（`notificationSettings` / 应用车辆数据束 `appliedCarBoard` / `parkingCountdown`——数据束落定即车/项目/记录/生效今天四上游全落定；单读失败不拦收尾）——屏障期间一切同步触发被入口早退丢弃，settle 时数据必然已收敛，"部分 provider 新、部分旧"的混合快照在结构上读不到；
 6. 模板收尾：**guard.settleDataReset()**（finally：**再 bump 一次代数**作废写库期间启动的同步 + 关中间态旗；失败回滚同样执行）→ 取消旧数据残留的 8000/8900 系（停车 9001~9004 与 iOS 实时活动**都不动**——停车倒计时偏好保留且其通知/活动仍有效）；恢复失败（异常上抛）时不取消，旧通知原样保留；
-7. 成功结局模板**强制补判一轮**（bump 守卫模块的显式同步信号 `notificationSyncSignalProvider`，同步控制器 `start()` 订阅它、收到即重跑一轮；2026-10-06 起取代"失效 `notificationSettingsProvider` 当信号"——补判通道与同步数据源清单解耦，调整清单不会顺手踢断补判）：屏障吞掉了窗口内全部重算触发，settle 后没有自然触发，系统通知重排与应用内弹窗检查由这一轮用收敛后的最终数据补跑；失败结局数据已回滚、签名与数据仍一致，不会出假弹窗也无需补判；
+7. 成功结局模板**强制补判一轮**（bump 守卫模块的显式同步信号 `notificationSyncSignalProvider`，同步控制器 `start()` 订阅它、收到即重跑一轮；2026-10-06 起取代"失效 `notificationSettingsProvider` 当信号"——补判通道与同步数据源清单解耦，调整清单不会顺手踢断补判）：屏障吞掉了窗口内全部重算触发，settle 后没有自然触发，系统通知重排与应用内弹窗检查由这一轮用收敛后的最终数据补跑；失败结局数据已回滚、快照与数据仍一致，不会出假弹窗也无需补判；
 8. 失败分支（错误分类留页面薄壳，ADR 0009 修订节，2026-10-01 起全按类型分支）：**恢复预校验拒绝（typed backupInvalidData）→ 弹对话框给 throw 点具体原因**（同车同日重复=哪辆车哪天几条；实体校验失败=字段+原因；正文统一附"本次恢复未写入任何数据"）→ 驱动层唯一约束冲突（预校验拦不住的最后防线，恢复事务边界经 `guardUniqueConstraint` 包装成 typed `uniqueConstraint`）→ 按 kind 弹通用"本次恢复未写入任何数据"对话框 → 其他 → toast（`friendlyError` 同步收成纯类型识别，文本匹配缝已删）。
 
 ### 5.5 清空数据
@@ -389,14 +389,14 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 1. `showLunioFormSheet` 的 `load` 预装载 `notificationSettingsProvider.future`（装载失败 friendlyError toast 且不开壳，杜绝 loading 期默认值覆盖真实设置；ADR 0016）；
 2. 装载中协调器 `reconcileSystemEnabled`（`notification_coordinator.dart`）向系统查真实开关并回写偏好（不一致才写；查询失败回退偏好值，R14）；
 3. 表单：系统通知状态行（只读）+ "系统设置"跳转（`NativeNotificationSettings` → 原生设置页，跳转后 sheet 关闭）+ 应用内通知开关 + 到期重复频率三段（每周/每 2 周/每月）；
-4. 保存 → `shell_actions.dart → saveNotificationSettings`（动作层：先协调器 `reconcileSystemEnabled` 对账系统真值，再经偏好门面 `LunioPreferences.saveNotificationSettings`（**一个事务内批量写 3 个偏好 key**），协调器内部失效偏好缓存）→ 提交成功关 sheet + toast"设置已保存"（表单运行时统一收口，ADR 0016）→ 同步控制器签名变化触发系统通知重排。
+4. 保存 → `shell_actions.dart → saveNotificationSettings`（动作层：先协调器 `reconcileSystemEnabled` 对账系统真值，再经偏好门面 `LunioPreferences.saveNotificationSettings`（**一个事务内批量写 3 个偏好 key**），协调器内部失效偏好缓存）→ 提交成功关 sheet + toast"设置已保存"（表单运行时统一收口，ADR 0016）→ 同步快照变化触发系统通知重排。
 
 > 产品口径：保养到期提醒是 App 核心能力，**不提供用户关闭入口**（R5 确认；原 `maintenanceDueEnabled` 偏好已不存在，老库残留 key 无人读取）。
 
 ### 5.7 手动日期（开发者模式专属）
 
 1. 开发者模式：版本 footer **连点 5 次** → `profile_page.dart:208 → _handleVersionTap` → `shell_actions.dart → setDeveloperModeEnabled`（动作层：写 `developerModeEnabled`，关闭时**连带清 `manualDateEnabled`/`manualDate`/`fuelPredictionEnabled`/`diagnosticsEnabled`**——加油预测与车辆诊断的开关入口只在开发者模式可见）；
-2. "手动日期"行 → `settings_manual_date.dart → showManualDateSheet`：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + bump 偏好纪元（ADR 0017））→ 提交成功关 sheet + toast"手动日期已保存"（表单运行时统一收口，ADR 0016）→ **`effectiveTodayProvider`（providers.dart:275）重算**，所有提醒进度/表单默认日期/通知签名里的 today 全部按新日期。
+2. "手动日期"行 → `settings_manual_date.dart → showManualDateSheet`：开关+日期（1990~今天+10 年）→ `shell_actions.dart → saveManualDate`（动作层：写 `manualDateEnabled`/`manualDate` + bump 偏好纪元（ADR 0017））→ 提交成功关 sheet + toast"手动日期已保存"（表单运行时统一收口，ADR 0016）→ **`effectiveTodayProvider`（providers.dart:275）重算**，所有提醒进度/表单默认日期/同步快照里的 today 全部按新日期。
 
 ### 5.8 主题切换
 
@@ -452,31 +452,29 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 6.2 生命周期与跨零点刷新
 
-`app_shell.dart → didChangeAppLifecycleState`：resumed（回前台）转交 `_notificationSync.onAppResumed()`（清空应用内提醒签名并立即重跑同步，强制重查弹窗）+ 刷新 Android 导航 inset。Android 三键导航 inset 适配在 `_refreshAndroidSystemNavigationInset`（requestId+mounted 双检查）。
+`app_shell.dart → didChangeAppLifecycleState`：resumed（回前台）转交 `_notificationSync.onAppResumed()`（失效应用内 lane 并立即重跑同步，强制重查弹窗）+ 刷新 Android 导航 inset。Android 三键导航 inset 适配在 `_refreshAndroidSystemNavigationInset`（requestId+mounted 双检查）。
 
 **跨零点静默刷新**：`_AppShellState._scheduleMidnightDateRefresh`（initState 启动）排一个对准下一个 00:00:00 的 Timer，触发时 `ref.invalidate(effectiveTodayProvider)`（"今天"是 FutureProvider 只算一次，跨零点不失效会让提醒页到期概览/待关注项目、"我的"页车龄停在昨天）→ 各 watch 方自动重建（应用车辆数据束 watch 它，提醒页与两个同步控制器随之刷新；通知同步控制器经数据束静默重排系统通知）→ 重新排次日零点。App 在后台时 Timer 挂起，回前台瞬间补触发。手动日期开启时重算结果不变，无害。dispose 取消 Timer。
 
 ### 6.3 系统通知同步引擎（核心机制）
 
-**位置**：`lib/features/shell/reminders/notification_sync_controller.dart → NotificationSyncController`（AppShell 的 initState 创建并 `start()`，dispose 关闭；build 只渲染，无同步副作用）。应用内弹窗检查链的决策收在 `reminders/reminder_dialog_flow.dart → InAppReminderDialogFlow`（plain-Dart 决策体，接缝注入，2026-10-15 收编，见第 3 节）。
+**位置**：装配外壳 `lib/features/shell/reminders/notification_sync_controller.dart → NotificationSyncController`（AppShell 的 initState 创建并 `start()`，dispose 关闭；build 只渲染，无同步副作用）+ 变更判定与分发 `reminders/notification_sync_engine.dart → NotificationSyncEngine`（2026-11-15 收编：同步快照、两条 lane 判定、成功记账、per-lane pending；守卫/代数/显式信号协议不变）。应用内弹窗检查链的决策收在 `reminders/reminder_dialog_flow.dart → InAppReminderDialogFlow`（plain-Dart 决策体，接缝注入，2026-10-15 收编，见第 3 节）。
 
 **触发**：`start()` 对同步数据源清单 `notificationSyncSources`（模块内单一声明：通知设置 / **应用车辆数据束** `appliedCarBoardProvider`（providers.dart，车/项目/记录/生效今天四件套一次拿齐）/ 停车倒计时——恢复备份屏障的等待名单 `waitForNotificationSyncSources` 与它同源推导，2026-10-01 收编）逐个 `ref.listenManual(..., fireImmediately: true)`——任何一个变化（含首拍）都调 `syncFromProviders`。清单之外另有两条控制面订阅：停车实时活动对账（`parkingCountdownProvider`，ADR 0012），与**显式同步信号** `notificationSyncSignalProvider`（守卫模块，2026-10-06）——协调器恢复备份屏障重算后 bump 它强制补判一轮（见 5.4 第 7 步），信号是控制面触发不是数据源、不进清单（清单类型擦到 `FutureProvider<Object?>`，屏障侧要逐个 await `.future`，Notifier 形态进不去也是防呆）。
 
 ```
 provider 变化 / 首拍 / 回前台（onAppResumed）
-  → syncFromProviders：写库中间态旗为真直接丢弃（守卫模块
-    isDataResetInFlight，见第 3 节）；否则读
-    同步数据源清单当前值（数据束未就绪或无车即 return，数据齐才继续）
-  → 拼"系统通知签名" = 重复频率 + 停车倒计时摘要 + 全量数据签名
-      （reminder_notifications.dart → reminderNotificationDataSignature：
-       车辆/项目/记录全部相关字段 + today 拼成一个大字符串）
-  → 签名 != 上次记录？
-      是 → 记录新签名 → _applySystemNotificationSchedule
-             ├─ 执行中又有新签名 → 置 pending，本轮 finally 置空签名
-             │   并用最新数据重跑一轮（不丢更新，R3）
-             ├─ 开关关 → cancelLunioNotifications（全取消）
+  → syncFromProviders（控制器薄外壳）：系统开关开 → 首启权限链
+    （真的弹过授权 → 失效系统 lane）
+  → engine.sync()：入口早退（已销毁 / 写库中间态旗 isDataResetInFlight，
+    见第 3 节）→ 读「同步快照」NotificationSyncSnapshot（GLOSSARY 词条：
+    通知设置 + 应用车辆数据束（无车/未就绪 → 本轮不跑）+ 停车倒计时）
+  → 系统通知 lane：sameSystemLane 与上次成功消费的快照比较
+      （开关关 → 折叠为「关」；开 → 重复频率 + 停车到点时刻 + 数据面）
+      不等价 → _applySystemNotificationSchedule（控制器侧 lane 执行体）
+             ├─ 开关关 → cancelLunioNotifications（全取消）→ applied
              ├─ 协调器 ensureSystemNotificationsSchedulable（查系统开关、
-             │   必要时补请求/回写偏好，仍不可用则回写关并取消）
+             │   必要时补请求/回写偏好，仍不可用则回写关并取消）→ skipped
              ├─ buildScheduledNotifications（reminder_notifications.dart）
              │    ├─ buildActiveDueList 生效到期清单（单一出口，应用内
              │    │  弹窗通道同取一份；"稍后提醒"过滤，经协调器静默读）
@@ -489,14 +487,18 @@ provider 变化 / 首拍 / 回前台（onAppResumed）
                      再每条通知排 8 次重复，
                      避开停车到点时刻 ±5 分钟步进错峰；月/日步进按日历字段
                      计算（R34：月末钳制 + 不做 24 小时累加））
-      否 → 什么都不做
+                  → applied（aborted 不记账、下一轮补判；skipped 记账）
+      执行中又有新快照 → per-lane GuardedOp 置 pending，本轮结束用最新
+      快照重跑（不丢更新，R3）
+  → 应用内 lane：sameInAppLane 比较（应用内开关 + 数据面）
+      不等价 → 决策体 checkAndPresent（见第 3 节）→ applied / aborted
 ```
 
-**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，协调器是唯一写者，同步控制器与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，定义在守卫模块而非 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，`syncFromProviders` 入口查守卫 `isDataResetInFlight` 旗直接丢弃、应用内弹窗检查链在静默循环与弹窗展示前再复查——检查点在决策体 `reminder_dialog_flow.dart`，静默循环内位点经生效清单单一出口 `buildActiveDueList` 的 shouldAbort 接缝注入，见第 3 节）；③ 执行中 pending 重跑（不丢更新，系统通知与应用内弹窗两条路径都有，reminders 域共享模块 `guarded_op.dart → GuardedOp`——小组件快照控制器同款，2026-10-06 从控制器私有 `_GuardedOp` 收编）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（GLOSSARY.md 词汇：**同步守卫**）。
+**防竞态四层**（状态与票的单一事实来源：`reminders/notification_sync_guard.dart → NotificationSyncGuard`，协调器是唯一写者，两个 lane 执行体与协调器读票）：① 同步代数（`notificationSyncGenerationProvider`，定义在守卫模块而非 providers.dart；删车/恢复/清空由协调器 run* 模板经 guard.begin/settle 在写库前后各 bump 一次——前者作废写库前已在途的任务，后者作废写库进行中才启动的任务）；② 中间态守卫（破坏性写库事务进行中，engine 入口查守卫 `isDataResetInFlight` 旗直接丢弃、应用内弹窗检查链在静默循环与弹窗展示前再复查——检查点在决策体 `reminder_dialog_flow.dart`，静默循环内位点经生效清单单一出口 `buildActiveDueList` 的 shouldAbort 接缝注入，见第 3 节）；③ 执行中 pending 重跑（不丢更新，engine 的两个 per-lane `GuardedOp`（`guarded_op.dart`，小组件快照控制器同款，2026-10-06 从控制器私有 `_GuardedOp` 收编）；成功才记账让重跑无需清签名，失效代数保证在途轮次不吞掉强制重跑，2026-11-15）；④ `_disposed` 检查（控制器随主壳层销毁后所有 await 检查点放弃）。①②④ 合成一张同步票 **SyncRun**：各异步任务开工时 `guard.acquire()` 领票（可注入 disposed），每个不可逆副作用（排通知/弹窗）之前问一次 `run.isValid`（= 未销毁 && 无旗 && 代数未变）——检查点不再手抄协议（GLOSSARY.md 词汇：**同步守卫**）。
 
 > 通知域协议（权限真值对账、删车/恢复/清空的通知清扫、"稍后提醒/知道了"静默读写）的执行体集中在 `reminders/notification_coordinator.dart → LunioNotificationCoordinator`（GLOSSARY.md 词汇：**通知协调器**）；控制器保留被动监听外壳，停车倒计时的通知尾巴由协调器 `onParkingCountdownSaved/Cleared` 承接。
 
-**一句话：任何数据/偏好变化 → provider 变更 → listenManual 回调 → 签名 diff → 全量重排系统通知。**
+**一句话：任何数据/偏好变化 → provider 变更 → listenManual 回调 → 同步快照 + 两条 lane diff → 重排系统通知 / 重查应用内弹窗。**
 
 ### 6.4 系统通知 id 分配表
 
