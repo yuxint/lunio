@@ -58,10 +58,13 @@
 //      在本文件；省份/油品/手填价/数据源/油价控制器/生效链在
 //      features/shell/fuel/fuel_prices.dart
 // ```
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/date/app_date_context.dart';
+import '../core/date/midnight.dart';
 import '../core/notifications/lunio_notification_service.dart';
 import '../core/date/local_date.dart';
 import '../core/platform/native_live_activities.dart';
@@ -268,12 +271,33 @@ final appliedCarFuelRecordsProvider =
       return ref.watch(fuelRecordsForCarProvider(car!.id!).future);
     });
 
-/// 全局生效的"今天"：手动日期优先，否则系统今天。
+/// 全局生效的"今天"：手动日期优先，否则系统今天（GLOSSARY「生效今天」）。
 /// 所有业务日期口径（提醒进度、记录表单默认日期、snooze/ack 判断）都用它，
 /// 只有停车倒计时和系统通知调度时刻用真实时间（tz.TZDateTime.now）。
+///
+/// 零点自刷新（ADR 0025）：build 体内按注入时钟排一次性 Timer，到点
+/// invalidateSelf；重建（零点或偏好纪元 bump）自然重排下一次。定时器只在
+/// 有人观察「今天」时存活——provider 暂停时取消、恢复时重排，与 Riverpod 3
+/// 的 pause 生命周期对齐，测试树卸载后不留 pending timer。
 final effectiveTodayProvider = FutureProvider<LocalDate>((ref) async {
   ref.watch(preferencesEpochProvider);
   final baseDateContext = ref.watch(appDateContextProvider);
+  Timer? midnightTimer;
+
+  void armMidnightTimer() {
+    midnightTimer?.cancel();
+    midnightTimer = Timer(
+      untilNextMidnight(baseDateContext.readSystemNow()),
+      () => ref.invalidateSelf(),
+    );
+  }
+
+  armMidnightTimer();
+  ref.onCancel(() => midnightTimer?.cancel());
+  // 暂停结束重新观察时重排（生产路径壳层持续观察，不会进入暂停窗口；
+  // 生命周期内禁止 invalidateSelf，跨零点暂停的陈旧窗口由下次重建收口）。
+  ref.onResume(armMidnightTimer);
+  ref.onDispose(() => midnightTimer?.cancel());
   final manualDate = await ref.watch(manualDatePreferenceProvider.future);
   return manualDate ?? baseDateContext.today();
 });

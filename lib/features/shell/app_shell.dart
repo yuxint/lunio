@@ -11,8 +11,6 @@
 //
 // ConsumerStatefulWidget = "有状态 + 能用 Riverpod 容器"的组件。
 // State 的字段（下划线开头）≈ Controller 的私有成员变量。
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,15 +50,6 @@ class _AppShellState extends ConsumerState<AppShell>
   /// 与通知同步 watch 同一组上游但互不相干；initState 创建并 start。
   late final WidgetSnapshotController _widgetSnapshot;
 
-  /// 跨零点刷新定时器：对准下一个 00:00:00 触发，失效
-  /// effectiveTodayProvider（"今天"缓存跨零点会过期，提醒页的到期
-  /// 概览/待关注项目、"我的"页车龄都会停在昨天的日期）。失效后各
-  /// watch 方自动重建，通知同步控制器也监听该 provider，会静默重排
-  /// 系统通知；触发后重新排下一个零点。App 在后台时定时器挂起，
-  /// 回到前台的瞬间补触发，效果一致。手动日期开启时失效重算结果
-  /// 不变（手动日期优先），无害。
-  Timer? _midnightRefreshTimer;
-
   // ---- Android 三键导航 inset 适配 ----
   double _androidThreeButtonNavigationInset = 0.0;
 
@@ -79,7 +68,6 @@ class _AppShellState extends ConsumerState<AppShell>
     _notificationSync.start();
     _widgetSnapshot = WidgetSnapshotController(ref: ref, isAlive: () => mounted);
     _widgetSnapshot.start();
-    _scheduleMidnightDateRefresh();
     _refreshAndroidSystemNavigationInset();
   }
 
@@ -87,22 +75,8 @@ class _AppShellState extends ConsumerState<AppShell>
   void dispose() {
     _notificationSync.dispose();
     _widgetSnapshot.dispose();
-    _midnightRefreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  /// 排一个对准下一个零点的定时器：触发时失效生效"今天"，再排次日。
-  void _scheduleMidnightDateRefresh() {
-    final now = DateTime.now();
-    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
-    _midnightRefreshTimer = Timer(nextMidnight.difference(now), () {
-      if (!mounted) {
-        return;
-      }
-      ref.invalidate(effectiveTodayProvider);
-      _scheduleMidnightDateRefresh();
-    });
   }
 
   /// 回到前台：清空应用内提醒签名（强制重新检查弹窗，实现"用户处理完
