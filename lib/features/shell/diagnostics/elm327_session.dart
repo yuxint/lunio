@@ -404,6 +404,8 @@ class Elm327Session {
   /// 超时对 send 阶段同样生效：BLE 半开链路下写挂的 send 可能永不返回，
   /// 超时（及链路丢失/断开）必须以错误收尾整条请求、在 finally 释放
   /// 串行槽——否则后续请求全部撞「串行违规」、pausePolling 死循环。
+  /// 帧先到也立即收尾 send 阶段（帧到达即证明写入已送达），挂死的写
+  /// 回调不占串行槽。
   Future<String> _request(String command) async {
     if (_frameWaiter != null) {
       throw StateError('上一条指令未完成，串行违规');
@@ -430,11 +432,12 @@ class Elm327Session {
     }
 
     final sendFuture = send();
-    // send 迟到失败（超时已赢下本条请求）无归属，不上报未处理异步错误。
+    // send 迟到失败（超时/帧已赢下本条请求）无归属，不上报未处理异步错误。
     sendFuture.ignore();
-    // send 阶段与"请求收尾信号"竞速：completer 以错误收尾（超时/链路
-    // 丢失/断开）时立即退出 send 阶段，send 在后台自生自灭；帧先到
-    // （成功）不打断 send 阶段——帧已缓存，send 返回后照常消费。
+    // send 阶段与"请求收尾信号"竞速：completer 收尾（帧到达或超时/链路
+    // 丢失/断开）时立即退出 send 阶段，send 在后台自生自灭。帧到达即
+    // 证明写入已送达——写回调挂死的半开链路窄时序下，等 send 返回会
+    // 永久占用串行槽。
     final sendPhase = Completer<void>();
     unawaited(
       sendFuture.then(
@@ -452,7 +455,11 @@ class Elm327Session {
     );
     unawaited(
       completer.future.then(
-        (_) {},
+        (_) {
+          if (!sendPhase.isCompleted) {
+            sendPhase.complete();
+          }
+        },
         onError: (Object error, StackTrace stackTrace) {
           if (!sendPhase.isCompleted) {
             sendPhase.completeError(error, stackTrace);

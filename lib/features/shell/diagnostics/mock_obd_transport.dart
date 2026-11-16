@@ -115,7 +115,9 @@ class MockObdTransport implements OBDTransport {
 /// 语料对齐的演示脚本表（票 05 模拟器演示用）：key = 规整指令文本。
 /// 形态全部取自实车日志：ATZ 横幅无回显、ATE0 自带最后一次回显、
 /// 012F 走 209ms 双通知分片、内置三条一轮的实车数值（油量 0x60 =
-/// 37.6%、水温 0167 = 95℃（41 67 03 87 83，A 传感器）、电压 11.2V）。
+/// 37.6%、水温 0167 = 95℃（41 67 03 87 83，A 传感器）、电压 11.2V），
+/// 外加模板里程表 01A6（66,068 km，ADR 0026 两档演示用；不在内置
+/// 三条里、默认不轮询，启用模板探针后才有消费者）。
 Map<String, MockObdScript> mockObdCorpusDemoResponses() {
   List<int> chunk(String text) => latin1.encode(text);
   MockObdScript instant(String text) => MockObdScript(
@@ -134,6 +136,7 @@ Map<String, MockObdScript> mockObdCorpusDemoResponses() {
     'ATSP7': instant('OK\r\r>'),
     '012F': MockObdScript(chunks: [chunk('41 2F 60 \r'), chunk('\r>')]),
     '0167': instant('41 67 03 87 83 \r\r>'),
+    '01A6': instant('41 A6 00 0A 14 C8 \r\r>'),
     'ATRV': instant('11.2V\r\r>'),
   };
 }

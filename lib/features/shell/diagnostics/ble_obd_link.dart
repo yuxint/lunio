@@ -172,6 +172,11 @@ class BleObdScanner implements ObdScanner {
   /// start 在每个检查点自行清理并退出）。
   bool _stopRequested = false;
 
+  /// stop 调用纪元：start 入口记值、等接管收尾后比对——等待期间又来了
+  /// 一次 stop（关 → 开 → 关都落在门禁等待窗口内），接管者必须放弃
+  /// 启动，否则会在 sheet 已关闭时留下无消费者的 BLE 扫描。
+  int _stopEpoch = 0;
+
   /// 在途 start 的完成句柄：起始窗口内被 stop 作废后，新的 start 等它
   /// 收尾再接管（见 [start]）。
   Future<void>? _pendingStart;
@@ -184,6 +189,7 @@ class BleObdScanner implements ObdScanner {
 
   @override
   Future<void> start() async {
+    final stopEpoch = _stopEpoch;
     if (_scanning) {
       return;
     }
@@ -202,6 +208,11 @@ class BleObdScanner implements ObdScanner {
       await pending.catchError((_) {});
       if (_scanning || _starting) {
         // 在途 start 其实已成功，或另一并发 start 已接管。
+        return;
+      }
+      if (_stopEpoch != stopEpoch) {
+        // 等待接管期间又发生了一次 stop（关 → 开 → 关）：本次启动已
+        // 被取消，放弃——否则扫描会在 sheet 已关闭后启动。
         return;
       }
     }
@@ -278,9 +289,11 @@ class BleObdScanner implements ObdScanner {
   @override
   Future<void> stop() async {
     _stopRequested = true;
+    _stopEpoch++;
     if (!_scanning) {
       // 起始窗口内的 stop：置旗后由在途 start 的检查点自行清理；随后
-      // 重开的 start 会等它收尾并接管（_pendingStart）。
+      // 重开的 start 会等它收尾并接管（_pendingStart，比对 _stopEpoch
+      // 防止接管等待期间的第二次 stop 被吞）。
       return;
     }
     _scanning = false;

@@ -207,6 +207,31 @@ void main() {
       });
     });
 
+    test('接管等待期间再 stop：接管者放弃启动（不留无消费者扫描）', () {
+      fakeAsync((async) {
+        final radio = FakeObdRadio();
+        final scanner = BleObdScanner(radio: radio);
+        Object? error;
+        void capture(Object e) => error = e;
+        unawaited(scanner.start().catchError(capture));
+        async.flushMicrotasks();
+
+        // 关 → 开 → 关：第二次 stop 落在接管者等待旧 attempt 的窗口内。
+        unawaited(scanner.stop());
+        unawaited(scanner.start().catchError(capture));
+        unawaited(scanner.stop());
+        async.flushMicrotasks();
+
+        radio.emitAdapterState(RadioAdapterState.on);
+        async.flushMicrotasks();
+
+        expect(error, isNull);
+        expect(radio.startScanCalls, 0);
+        expect(radio.events, isNot(contains('listenScanResults')));
+        expect(radio.stopScanCalls, 0);
+      });
+    });
+
     test('startScan 抛权限异常：类型化 permissionDenied + 半开清理', () {
       fakeAsync((async) {
         final radio = FakeObdRadio()..emitAdapterState(RadioAdapterState.on);

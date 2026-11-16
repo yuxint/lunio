@@ -134,6 +134,34 @@ class _HangingSendTransport implements OBDTransport {
   Future<void> disconnect() => inner.disconnect();
 }
 
+/// 响应帧先到、写回调随后永久挂起的传输层桩（半开链路极窄时序）：
+/// 指定指令先注入完整应答帧，再让 send 永不返回。
+class _FrameBeforeSendReturnsTransport implements OBDTransport {
+  _FrameBeforeSendReturnsTransport({required this.inner, required this.holdOn});
+
+  final MockObdTransport inner;
+  final String holdOn;
+
+  @override
+  Future<void> connect() => inner.connect();
+
+  @override
+  Future<void> send(List<int> bytes) async {
+    final command = latin1.decode(bytes).trim();
+    if (command == holdOn) {
+      inner.injectBytes(latin1.encode('41 2F 60 \r\r>'));
+      await Completer<void>().future;
+    }
+    return inner.send(bytes);
+  }
+
+  @override
+  Stream<Uint8List> get byteStream => inner.byteStream;
+
+  @override
+  Future<void> disconnect() => inner.disconnect();
+}
+
 DiagnosticsProbe makeProbe(
   int id,
   String command,
@@ -300,6 +328,36 @@ void main() {
       expect(reading.probeId, 1);
       expect((reading.reading as ObdNoData).reason, '超时');
       // 串行槽已释放：原始命令可发（旧实现这里抛「串行违规」）。
+      final frame = await session.sendRawCommand('ATRV');
+      expect(frame, contains('11.2V'));
+      await session.dispose();
+    });
+
+    test('帧先到而 send 挂起：请求照常完成、串行槽不占死', () async {
+      final gate = _DelayGate();
+      final inner = MockObdTransport(
+        responses: mockObdCorpusDemoResponses(),
+        delay: (_) async {},
+      );
+      final transport = _FrameBeforeSendReturnsTransport(
+        inner: inner,
+        holdOn: '012F',
+      );
+      final session = Elm327Session(transport: transport, delay: gate.gate);
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+      session.startPolling(enabledProbes: () => [
+        makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
+      ]);
+      // 帧先到即证明写入已送达：不等到挂死的 send，本条请求直接完成
+      //（旧实现 sendPhase 只在 completer 报错时才收尾，此处会死锁）。
+      final reading =
+          await queue.next().timeout(const Duration(seconds: 1))
+              as Elm327ProbeReading;
+      expect(reading.probeId, 1);
+      expect((reading.reading as ObdValue).display, '37.6%');
+      // 串行槽已释放：原始命令可发。
       final frame = await session.sendRawCommand('ATRV');
       expect(frame, contains('11.2V'));
       await session.dispose();

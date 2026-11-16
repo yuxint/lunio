@@ -197,6 +197,26 @@ class _ProbeManagementSheetContentState
 class _OdometerAutoSyncRow extends ConsumerWidget {
   const _OdometerAutoSyncRow();
 
+  /// 写偏好失败 toast 兜底（动作层异常穿透，调用点翻译；与本文件
+  /// 行开关的 `_toggleProbe` 同一接缝口径）。
+  Future<void> _setAutoSync(
+    BuildContext context,
+    WidgetRef ref,
+    bool value,
+  ) async {
+    try {
+      await setObdOdometerAutoSync(ref, value);
+    } catch (error) {
+      if (context.mounted) {
+        showStatusOverlay(
+          context,
+          friendlyError(error),
+          StatusOverlayTone.error,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
@@ -227,7 +247,8 @@ class _OdometerAutoSyncRow extends ConsumerWidget {
           ),
           Switch(
             value: enabled,
-            onChanged: (value) => unawaited(setObdOdometerAutoSync(ref, value)),
+            onChanged: (value) =>
+                unawaited(_setAutoSync(context, ref, value)),
           ),
         ],
       ),
