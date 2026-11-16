@@ -1078,6 +1078,31 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
+    testWidgets('守卫：静默档 ECU 里程不大于车辆里程不写库（只增不减）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedAppliedCar(database, mileageKm: 70000);
+      await seedDeveloperDiagnostics(database);
+      await seedOdometerProbe(database);
+      await testRepository(database).setPreferenceValue(
+        LunioPreferences.obdOdometerAutoSyncKey,
+        'true',
+      );
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('66,068 km'));
+      // 静默同步链（读开关/读车/守卫）走完后仍应是原值。
+      await tester.pump();
+      await tester.pump();
+
+      // 动作层「只增不减」守卫拒绝分支（ADR 0026 静默自动写的唯一安全
+      // 栏）：删掉守卫 → 这里变 66068，用例红灯。
+      final cars = await database.select(database.cars).get();
+      expect(cars.single.currentMileageKm, 70000);
+      await leavePageAndFlush(tester);
+    });
+
     testWidgets('静默自动写：开关开时读到更大里程直接落库、不弹窗', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);

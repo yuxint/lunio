@@ -1,9 +1,11 @@
-// 诊断调试终端（ADR 0023）：自由 AT/PID 命令 + 一键验证脚本 + 原始
+// 诊断调试终端（ADR 0023）：自由 AT/PID 命令 + 一键检测脚本 + 原始
 // 响应日志。进入调试模式暂停自动轮询，退出恢复默认 29-bit 头并重启
 // 轮询；日志可复制交回分析。
 //
-// 本轮私有 DID 只在这里验证，不进正常轮询：验证通过后再决定把内置
-// 水温换成命中命令、或把 227029 加为实测总油量检测点。
+// 一键检测是健康快照（2026-11-16 精简，ADR 0023 修订节）：快照集 ∩ 本车
+// 位图 + DTC + 只读 227029。私有 DID 本轮仍不进正常轮询；2026-11-16 定案
+// ——内置水温已切标准 PID 0167、227029 为表显刻度交叉验证不接产品卡片
+//（ADR 0021 修订节、ADR 0022 修订节）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'dart:async';
@@ -18,7 +20,7 @@ import 'elm327_parser.dart' show normalizeObdCommand;
 import 'elm327_session.dart';
 import 'obd_verification_run.dart';
 
-/// 调试面板：折叠展开 + 调试模式开关 + 自由终端 + 一键采集 + 日志。
+/// 调试面板：折叠展开 + 调试模式开关 + 自由终端 + 一键检测 + 日志。
 class DiagnosticsDebugPanel extends StatefulWidget {
   const DiagnosticsDebugPanel({
     required this.session,
@@ -116,7 +118,7 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
     }
   }
 
-  /// 一键采集：run 协议归 `obd_verification_run.dart`（发什么 / 顺序 /
+  /// 一键检测：run 协议归 `obd_verification_run.dart`（发什么 / 顺序 /
   /// 日志格式 / 默认头恢复），本 widget 只清空日志、把日志块追加进
   /// `_log` 并持有 busy 生命周期。执行器 adapter 把会话异常翻译成
   /// run module 的结果分类：超时=继续，其余会话失败=中止。

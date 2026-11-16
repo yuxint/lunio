@@ -172,6 +172,10 @@ class BleObdScanner implements ObdScanner {
   /// start 在每个检查点自行清理并退出）。
   bool _stopRequested = false;
 
+  /// 在途 start 的完成句柄：起始窗口内被 stop 作废后，新的 start 等它
+  /// 收尾再接管（见 [start]）。
+  Future<void>? _pendingStart;
+
   @override
   Stream<List<BleObdScanEntry>> get results => _entries.stream;
 
@@ -180,11 +184,41 @@ class BleObdScanner implements ObdScanner {
 
   @override
   Future<void> start() async {
-    if (_scanning || _starting) {
+    if (_scanning) {
       return;
+    }
+    if (_starting) {
+      if (!_stopRequested) {
+        // 重复 start：幂等返回。
+        return;
+      }
+      // 在途 start 已被 stop 作废（典型路径：首装权限弹窗期间关 sheet
+      // 再重开）：等它收尾后由本次调用接管。直接撞 _starting 门卫返回
+      // 会让本次会话从未 startScan，sheet 停在"正在扫描"空转。
+      final pending = _pendingStart;
+      if (pending == null) {
+        return;
+      }
+      await pending.catchError((_) {});
+      if (_scanning || _starting) {
+        // 在途 start 其实已成功，或另一并发 start 已接管。
+        return;
+      }
     }
     _starting = true;
     _stopRequested = false;
+    final attempt = _runStart();
+    _pendingStart = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (identical(_pendingStart, attempt)) {
+        _pendingStart = null;
+      }
+    }
+  }
+
+  Future<void> _runStart() async {
     int? scanToken;
     try {
       await _ensureAdapterReady(radio, adapterStateWindow);
@@ -245,6 +279,8 @@ class BleObdScanner implements ObdScanner {
   Future<void> stop() async {
     _stopRequested = true;
     if (!_scanning) {
+      // 起始窗口内的 stop：置旗后由在途 start 的检查点自行清理；随后
+      // 重开的 start 会等它收尾并接管（_pendingStart）。
       return;
     }
     _scanning = false;

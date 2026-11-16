@@ -390,7 +390,7 @@ void main() {
   });
 
   group('里程不联动', () {
-    test('加油记录不回写车辆当前里程（保养记录是唯一写源）', () async {
+    test('加油记录不回写车辆当前里程（保养记录是常规写源，ADR 0026）', () async {
       final carId = await seedCar(currentMileageKm: 10000);
       // 新增路径。
       final recordId = await fuelRepository.saveFuelRecord(

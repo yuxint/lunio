@@ -5,15 +5,17 @@
 // controller 状态、把用户动作转发给 controller。连接编排（相位机、尝试
 // 代数、直连/扫描分流、取消与重连、最后读数合并与落库）全部收在
 // diagnostics_connection_controller.dart（plain-Dart，构造注入会话工厂/
-// 扫描器/设备记忆/读数落库/两个 UI 动作）。
+// 扫描器/设备记忆/读数落库/ECU 里程回调与两个 UI 动作）。
 //
-// 三区布局（票 05，未变）：
+// 四区布局（票 05 三区 + 调试终端）：
 //   1. 连接状态条：未连接/扫描中/连接中/已连接/已断开 + 错误文案；行尾
 //      动作按相位：已断开=重连、未连接/扫描中=选择设备、已连接=断开。
 //   2. 核心值卡：油量（百分比大字 + 双油量小字，ADR 0022）+ 水温；数据
 //      经 controller.readingFor 取（实时优先、持久化回退）。
 //   3. 检测点行列表：名称 + 当前值 + 最后更新时间 + 启停开关；无数据
 //      行级灰态不连坐；列表尾「管理检测点」打开项目式管理 sheet。
+//   4. 调试终端（debug_panel.dart，ADR 0023）：折叠展开，连接后可暂停
+//      自动轮询、发原始命令、跑一键检测并复制日志。
 //
 // ≈ Java 的 View：State 只持有 controller 与扫描 sheet 句柄（UI 资源），
 // 业务决策一律转发；controller 经 ChangeNotifier 通知重建（ListenableBuilder）。
@@ -115,19 +117,23 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// 关、当前应用车辆后守卫写入（守卫在动作层 syncCarMileageFromEcu）。
   /// 失败降级不提示（静默档语义），下一轮轮询再试。
   Future<void> _syncOdometerSilently(ObdValue reading) async {
-    final km = reading.kilometers;
-    if (km == null || !mounted) {
-      return;
+    try {
+      final km = reading.kilometers;
+      if (km == null || !mounted) {
+        return;
+      }
+      final autoSync = await ref.read(obdOdometerAutoSyncProvider.future);
+      if (!autoSync || !mounted) {
+        return;
+      }
+      final car = await ref.read(appliedCarProvider.future);
+      if (car == null || !mounted) {
+        return;
+      }
+      await syncCarMileageFromEcu(ref, car, km);
+    } catch (_) {
+      // 静默档语义：读偏好/读车/写库失败都不提示，下一轮轮询再试。
     }
-    final autoSync = await ref.read(obdOdometerAutoSyncProvider.future);
-    if (!autoSync || !mounted) {
-      return;
-    }
-    final car = await ref.read(appliedCarProvider.future);
-    if (car == null || !mounted) {
-      return;
-    }
-    await syncCarMileageFromEcu(ref, car, km);
   }
 
   /// 确认式里程同步（开关关 = 默认档）：确认框两值对照，确认后走动作
@@ -143,11 +149,36 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     if (confirmed != true || !mounted) {
       return;
     }
-    final current = await ref.read(appliedCarProvider.future);
-    if (current == null || !mounted) {
-      return;
+    try {
+      final current = await ref.read(appliedCarProvider.future);
+      if (current == null || !mounted) {
+        return;
+      }
+      await syncCarMileageFromEcu(ref, current, ecuKm);
+    } catch (error) {
+      if (mounted) {
+        showStatusOverlay(
+          context,
+          friendlyError(error),
+          StatusOverlayTone.error,
+        );
+      }
     }
-    await syncCarMileageFromEcu(ref, current, ecuKm);
+  }
+
+  /// 行启停开关：写库失败 toast 兜底（动作层异常穿透，调用点翻译）。
+  Future<void> _toggleProbe(DiagnosticsProbe probe, bool value) async {
+    try {
+      await setDiagnosticsProbeEnabled(ref, probe, value);
+    } catch (error) {
+      if (mounted) {
+        showStatusOverlay(
+          context,
+          friendlyError(error),
+          StatusOverlayTone.error,
+        );
+      }
+    }
   }
 
   /// 检测点单行组装：读取快照每行取一次；里程同步确认入口按 ADR 0026
@@ -168,9 +199,10 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       child: _ProbeRow(
         probe: probe,
         snapshot: snapshot,
-        onToggle: (value) => setDiagnosticsProbeEnabled(ref, probe, value),
+        onToggle: (value) => unawaited(_toggleProbe(probe, value)),
         mileageSyncAvailable: canSync,
-        onSyncMileage: canSync ? () => _confirmMileageSync(car, km) : null,
+        onSyncMileage:
+            canSync ? () => unawaited(_confirmMileageSync(car, km)) : null,
       ),
     );
   }

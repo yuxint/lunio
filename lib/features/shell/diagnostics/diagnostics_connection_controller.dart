@@ -478,14 +478,34 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 性 + 会话状态）→ 写设备记忆 → 关 sheet。取消后重选的新尝试已把
   /// `_session` 换成新实例，旧续体按同一性检查退出。
   Future<void> _connectToPicked(BleObdScanEntry entry) async {
-    final session = await _connectToDevice(entry.id, picked: entry);
+    final Elm327Session? session;
+    try {
+      session = await _connectToDevice(entry.id, picked: entry);
+    } catch (error) {
+      // 会话工厂/收尾的意外异常（动作层契约的调用点翻译）：行不能停在
+      // 「连接中…」，回填失败文案并恢复扫描。
+      if (!_disposed) {
+        _resumeScanAfterPickFailed(
+          entry,
+          error is BleObdTransportException
+              ? error.statusCopy
+              : '连接失败，请重试',
+        );
+      }
+      return;
+    }
     if (_disposed ||
         session == null ||
         _session != session ||
         session.state != Elm327SessionState.connected) {
       return;
     }
-    await rememberDevice(entry.id);
+    try {
+      await rememberDevice(entry.id);
+    } catch (_) {
+      // 设备记忆只是下次直连的便利数据：偏好写失败不影响本次已建成的
+      // 连接与 sheet 关闭（否则行永久停在「连接中…」）。
+    }
     if (_disposed || _session != session) {
       return;
     }

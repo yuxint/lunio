@@ -6,8 +6,10 @@
 // 手工录入路径用同一份字段清单（R35 的不变量"恢复的数据过和手工
 // 录入同样的规则"在插入层也成立），给表加字段不再需要改恢复循环。
 //
-// 恢复流程（接受 v1–v4——v1 缺项目费用、v1/v2 缺加油记录、v1–v3 缺
-// 自定义检测点，纯增量缺失按空读入，ADR 0010/0014/0021；其余版本拒收）：
+// 恢复流程（接受 v1–v5——v1 缺项目费用、v1/v2 缺加油记录、v1–v3 缺
+// 自定义检测点、v1–v4 检测点无 carId（归第一辆车）且缺刷新间隔/header
+// 与车辆总容积，纯增量缺失按空读入，ADR 0010/0014/0021/0022；其余版本
+// 拒收）：
 //  1. 版本校验；2. 事务外两层预校验（引用完整性 + 业务规则）；3. 单一
 //  大事务清业务表 → 逐行插入（id 全换新雪花，旧→新映射）；4. 应用车辆
 //  指向恢复出的第一辆车；5. 备份带全局加油设置时覆盖省份/油品偏好。
@@ -132,9 +134,9 @@ class BackupRepository {
     return const BackupCodec().encode(payload);
   }
 
-  /// 解码备份 JSON 字符串为 [BackupPayload]：版本 ∉ {1,2,3,4} 抛
-  /// UnsupportedError；v1/v2/v3 兼容读（纯增量缺失按空，ADR
-  /// 0010/0014/0021），含旧结构加油条目的 v3 条目解码即拒（ADR 0015）。
+  /// 解码备份 JSON 字符串为 [BackupPayload]：版本 ∉ {1,2,3,4,5} 抛
+  /// UnsupportedError；v1–v4 兼容读（纯增量缺失按空，ADR 0010/0014/
+  /// 0021/0022），含旧结构加油条目的 v3 条目解码即拒（ADR 0015）。
   /// 恢复编排从这取 payload，再交 [restoreBackupPayload] 落库。
   BackupPayload decodeBackupJson(String json) {
     return const BackupCodec().decode(json);
@@ -147,12 +149,12 @@ class BackupRepository {
   /// 表级唯一约束拦，撞上时翻译成 typed uniqueConstraint（预校验拦不住
   /// 的最后防线，恢复 UI 按 kind 弹"未写入任何数据"对话框，ADR 0009
   /// 2026-10-01 修订节）。
-  /// 检测点段重插说明：全局表不挂车、无引用重映射负担，行 id 重新
-  /// 生成雪花（条目不带 id，沿 fuelRecords 先例，ADR 0021）；恢复完成
-  /// 后内置三条由 bootstrap 幂等重建、自定义项随段存活（恢复/清空后
-  /// 的失效与 bootstrap 重灌触发见 providers.dart 的
-  /// invalidateAllAppDataProviders）。
-  /// 版本检查与 codec 一致：接受 v1–v4（ADR 0010/0014/0021 的纯增量兼容）。
+  /// 检测点段重插说明：每车一套，carId 经 carIdMap 重映射到恢复后的新
+  /// 雪花 id，行 id 重新生成雪花（条目不带 id / catalogKey，沿
+  /// fuelRecords 先例，ADR 0021 修订节）；恢复完成后内置三条由 bootstrap
+  /// 幂等重建、自定义项随段存活（恢复/清空后的失效与 bootstrap 重灌触发
+  /// 见 providers.dart 的 invalidateAllAppDataProviders）。
+  /// 版本检查与 codec 一致：接受 v1–v5（ADR 0010/0014/0021/0022 的纯增量兼容）。
   Future<void> restoreBackupPayload(BackupPayload payload) {
     if (!BackupCodec.supportedSchemaVersions.contains(payload.schemaVersion)) {
       throw UnsupportedError(

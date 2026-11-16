@@ -108,10 +108,12 @@ class _ProbeManagementSheetContentState
                         carId: carId,
                         probe: probesAsync.requireValue[index],
                       ),
-                      onToggle: () => setDiagnosticsProbeEnabled(
-                        ref,
-                        probesAsync.requireValue[index],
-                        !probesAsync.requireValue[index].enabled,
+                      onToggle: () => unawaited(
+                        _toggleProbe(
+                          context,
+                          ref,
+                          probesAsync.requireValue[index],
+                        ),
                       ),
                       onDelete: probesAsync.requireValue[index].isBuiltIn
                           ? null
@@ -138,6 +140,26 @@ class _ProbeManagementSheetContentState
         ],
       ],
     );
+  }
+
+  /// 启停检测点：动作层异常穿透，这里 toast 兜底（与 [_deleteProbe]
+  /// 同一接缝口径）。
+  Future<void> _toggleProbe(
+    BuildContext context,
+    WidgetRef ref,
+    DiagnosticsProbe probe,
+  ) async {
+    try {
+      await setDiagnosticsProbeEnabled(ref, probe, !probe.enabled);
+    } catch (error) {
+      if (context.mounted) {
+        showStatusOverlay(
+          context,
+          friendlyError(error),
+          StatusOverlayTone.error,
+        );
+      }
+    }
   }
 
   /// 删除自定义检测点：确认框 → 动作层删除+失效 → 失败 toast。

@@ -123,7 +123,8 @@ class FuelRepository {
     return rows.map(fuelRecordFromRow).toList();
   }
 
-  /// 新增加油记录。不联动车辆当前里程（保养记录是唯一写源，ADR 0014）。
+  /// 新增加油记录。不联动车辆当前里程（保养记录是常规写源，ECU 里程
+  /// 同步是第二写源，ADR 0014/0026）。
   /// 副作用：syncStatus 记 pendingUpdate、updatedAt 刷新（沿用加油域约定）。
   /// 返回新生成的雪花 id。
   Future<int> saveFuelRecord(domain.FuelRecord record) async {

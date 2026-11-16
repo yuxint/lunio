@@ -603,6 +603,10 @@ void main() {
     await repository.ensureBootstrapData();
     await repository.setPreferenceValue('developerModeEnabled', 'true');
     await repository.setPreferenceValue('diagnosticsEnabled', 'true');
+    await repository.setPreferenceValue(
+      LunioPreferences.obdOdometerAutoSyncKey,
+      'true',
+    );
     await pumpApp(tester, database: database);
     await gotoTab(tester, '我的');
     expect(find.text('进入诊断页'), findsOneWidget);
@@ -622,6 +626,13 @@ void main() {
     expect(find.text('车辆诊断'), findsNothing);
     expect(
       await testRepository(database).getPreferenceValue('diagnosticsEnabled'),
+      'false',
+    );
+    // ECU 里程自动同步同属开发者门控开关（入口在诊断页管理 sheet），
+    // 一并连带置 false，不留孤儿开关。
+    expect(
+      await testRepository(database)
+          .getPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey),
       'false',
     );
   });

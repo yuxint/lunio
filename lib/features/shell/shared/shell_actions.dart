@@ -195,10 +195,11 @@ Future<void> saveManualDate(WidgetRef ref, LocalDate? date) async {
   ref.read(preferencesEpochProvider.notifier).bump();
 }
 
-/// 开关开发者模式。关闭时连带关闭手动日期、加油预测与车辆诊断——后
-/// 三者的开关入口都只在开发者模式里可见，留着偏好就是"无入口的孤儿
-/// 开关"（加油预测还压着底部"加油"tab，诊断开关压着入口行）。这条
-/// 连带规则收在本函数，UI 不再各自记得写哪些 key。
+/// 开关开发者模式。关闭时连带关闭手动日期、加油预测、车辆诊断与 ECU
+/// 里程自动同步——后四者的开关入口都只在开发者模式里可见，留着偏好就
+/// 是"无入口的孤儿开关"（加油预测还压着底部"加油"tab，诊断开关压着
+/// 入口行，里程自动同步挂在诊断页的检测点管理 sheet）。这条连带规则
+/// 收在本函数，UI 不再各自记得写哪些 key。
 Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
   final preferences = ref.read(lunioPreferencesProvider);
   if (enabled) {
@@ -208,6 +209,7 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
     await preferences.saveManualDateOverride(null);
     await preferences.setFuelPredictionEnabled(false);
     await preferences.setDiagnosticsEnabled(false);
+    await preferences.setObdOdometerAutoSyncEnabled(false);
   }
   ref.read(preferencesEpochProvider.notifier).bump();
 }
@@ -222,8 +224,10 @@ Future<void> setDiagnosticsEnabled(WidgetRef ref, bool value) async {
 
 /// 启停检测点（诊断页行开关，票 05）：写库 → 逐出检测点列表 provider
 /// （写点直失效模型，同 parkingCountdown 先例，ADR 0021）。轮询快照
-/// getter（诊断页 `_enabledProbesSnapshot`）每轮开头读 provider 当前
-/// 值——启停下一轮生效、不打断当前轮（会话契约，ADR 0020）。
+/// getter（`DiagnosticsConnectionController._enabledProbesSnapshot`）每轮
+/// 开头读页面推入的最新检测点快照（不读 provider 的 AsyncValue.value，
+/// 失效后的读侧是陈旧值）——启停下一轮生效、不打断当前轮（会话契约，
+/// ADR 0020）。
 Future<void> setDiagnosticsProbeEnabled(
   WidgetRef ref,
   DiagnosticsProbe probe,
@@ -342,8 +346,8 @@ Future<void> notifyParkingCountdownExpired(WidgetRef ref) async {
 // ---- 加油 ----
 
 /// 保存加油记录（按 id 分新增/编辑）：写库 → bump 车辆数据纪元。加油
-/// 记录不联动车辆当前里程（保养记录是唯一写源，ADR 0014）。
-/// 确认框/关 sheet/toast 留调用方。
+/// 记录不联动车辆当前里程（保养记录是常规写源，ECU 里程同步是第二
+/// 写源，ADR 0014/0026）。确认框/关 sheet/toast 留调用方。
 Future<void> saveFuelRecord(WidgetRef ref, FuelRecord record) async {
   final repository = ref.read(fuelRepositoryProvider);
   if (record.id == null) {

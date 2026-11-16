@@ -276,8 +276,8 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 
 - 同一车辆同一天可以有多条加油记录，没有"同日查重"规则（与保养记录
   口径刻意相反）。
-- 加油记录不联动车辆当前里程：`cars.current_mileage_km` 的唯一写源是
-  保养记录（docs/adr/0014）。
+- 加油记录不联动车辆当前里程：`cars.current_mileage_km` 的常规写源是
+  保养记录，ECU 里程同步是第二写源（docs/adr/0014、docs/adr/0026）。
 - 列表读取固定按（日期、id）升序。
 - 费用统计口径：实付金额优先、没填取应付（实体 `effectiveCostCents`，
   docs/adr/0015）。
@@ -296,9 +296,9 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 - `name`：展示名（如"油量"）。
 - `command`：指令原文（如 `012F`、`ATRV`）。
 - `parse_type`：解析类型（`DiagnosticsParseType` 稳定 wire 值：
-  `fuelLevel`/`coolantTemp`/`rpm`/`speed`/`intakeTemp`/
-  `throttlePercent`/`engineLoad`/`moduleVoltage`/`voltageText`/
-  `rawHex`）。
+  `fuelLevel`/`coolantTemp`/`coolantTempAux`/`rpm`/`speed`/
+  `intakeTemp`/`mapPressure`/`throttlePercent`/`engineLoad`/
+  `moduleVoltage`/`odometer`/`voltageText`/`rawHex`）。
 - `enabled`：启停，默认 `true`。
 - `catalog_key`：内置标识，可空；非空 = 内置行（可编辑、不可删），
   空 = 自定义行（可增改删）。
@@ -324,9 +324,11 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 
 业务注意：
 
-- 内置三条种子（油量 `012F`/水温 `0105`/电压 `ATRV`）按车播种：新增
-  车辆时播种、bootstrap 按车补缺失；**只补缺失、不纠偏用户编辑**，
-  种子集合外内置 key 清理、自定义行不碰。
+- 内置三条种子（油量 `012F`/水温 `0167`（解析类型 `coolantTempAux`）/
+  电压 `ATRV`）按车播种：新增车辆时播种、bootstrap 按车补缺失；**只补
+  缺失、不纠偏用户编辑**，种子集合外内置 key 清理、自定义行不碰。
+  2026-11-16 起水温内置为 `0167`（本车 `0105` 不支持，ADR 0021 修订
+  节）；存量车库里已是 `0105` 的内置行由用户在 App 内手动编辑迁移。
 - 内置行可编辑（名称/指令/解析类型/刷新间隔/启停），不可删除；自定义
   行可增改删。核心值卡按 `catalogKey` 在当前应用车辆的检测点里定位。
 - 每个检测点自己的自动轮询间隔（默认 30 秒）；手动刷新立即轮询全部

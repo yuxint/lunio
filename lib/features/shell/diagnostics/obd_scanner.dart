@@ -26,6 +26,7 @@ abstract class ObdScanner {
   Future<void> start();
 
   /// 停止扫描（幂等，释放订阅与适配器扫描）。起始窗口内调用只置停扫
-  /// 旗，start 在检查点自行清理（不会扫出无人消费的结果）。
+  /// 旗，在途 start 在检查点自行清理（不会扫出无人消费的结果）；随后
+  /// 重开的 start 等它收尾后接管（不会被「start 在途」静默吞掉）。
   Future<void> stop();
 }

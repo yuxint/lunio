@@ -171,6 +171,42 @@ void main() {
       });
     });
 
+    test('起始窗口内 stop 后重开：新 start 等旧 attempt 收尾并接管', () {
+      fakeAsync((async) {
+        final radio = FakeObdRadio();
+        final scanner = BleObdScanner(radio: radio);
+        var firstStarted = false;
+        var secondStarted = false;
+        unawaited(scanner.start().then((_) => firstStarted = true));
+        async.flushMicrotasks();
+        expect(radio.startScanCalls, 0);
+
+        // 权限弹窗期间关 sheet 再重开：stop 作废在途 start，重开的
+        // start 不得被 _starting 门卫静默吞掉（旧实现两种 future 都
+        // 正常完成，但 startScan 永不发生——扫描 sheet 空转）。
+        unawaited(scanner.stop());
+        unawaited(scanner.start().then((_) => secondStarted = true));
+        async.flushMicrotasks();
+        expect(secondStarted, isFalse);
+
+        radio.emitAdapterState(RadioAdapterState.on);
+        async.flushMicrotasks();
+
+        expect(firstStarted, isTrue);
+        expect(secondStarted, isTrue);
+        expect(radio.startScanCalls, 1);
+        // 订阅只由接管的 attempt 建立一次（旧 attempt 在检查点就退出）。
+        expect(
+          radio.events.where((event) => event == 'listenScanResults'),
+          hasLength(1),
+        );
+
+        unawaited(scanner.stop());
+        async.flushMicrotasks();
+        expect(radio.stopScanCalls, 1);
+      });
+    });
+
     test('startScan 抛权限异常：类型化 permissionDenied + 半开清理', () {
       fakeAsync((async) {
         final radio = FakeObdRadio()..emitAdapterState(RadioAdapterState.on);

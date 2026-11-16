@@ -107,6 +107,33 @@ class _HangingConnectTransport implements OBDTransport {
   }
 }
 
+/// 写挂起的传输层桩（BLE 半开链路形态）：指定指令的 send 永不返回，
+/// 其余指令转发给内部 Mock（响应字节照常经同一条字节流到达）。
+class _HangingSendTransport implements OBDTransport {
+  _HangingSendTransport({required this.inner, required this.hangOn});
+
+  final MockObdTransport inner;
+  final String hangOn;
+
+  @override
+  Future<void> connect() => inner.connect();
+
+  @override
+  Future<void> send(List<int> bytes) {
+    final command = latin1.decode(bytes).trim();
+    if (command == hangOn) {
+      return Completer<void>().future;
+    }
+    return inner.send(bytes);
+  }
+
+  @override
+  Stream<Uint8List> get byteStream => inner.byteStream;
+
+  @override
+  Future<void> disconnect() => inner.disconnect();
+}
+
 DiagnosticsProbe makeProbe(
   int id,
   String command,
@@ -177,7 +204,7 @@ void main() {
       expect(await queue.next(), isA<Elm327Connected>());
       session.startPolling(enabledProbes: () => [
         makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
-        makeProbe(2, '0105', DiagnosticsParseType.coolantTemp),
+        makeProbe(2, '0167', DiagnosticsParseType.coolantTempAux),
         makeProbe(3, 'ATRV', DiagnosticsParseType.voltageText),
       ]);
       final first = await queue.next() as Elm327ProbeReading;
@@ -187,13 +214,13 @@ void main() {
       expect(first.probeId, 1);
       expect((first.reading as ObdValue).display, '37.6%');
       expect(second.probeId, 2);
-      expect((second.reading as ObdValue).display, '90℃');
+      expect((second.reading as ObdValue).display, '95℃');
       expect(third.probeId, 3);
       expect((third.reading as ObdValue).display, '11.2V');
       // 串行发送次序 = AT 序列 + 一轮启用项。
       expect(
         mock.sentCommands,
-        ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '012F', '0105', 'ATRV'],
+        ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '012F', '0167', 'ATRV'],
       );
       // 轮间停 1 秒调度拍（ADR 0023）：第 8 个延时请求 = 轮末一拍
       // （前 7 个是各指令的响应超时竞速，时长 5s；检测点间隔默认 30s，
@@ -235,6 +262,46 @@ void main() {
       final second = await queue.next() as Elm327ProbeReading;
       expect(second.probeId, 8);
       expect((second.reading as ObdValue).display, '90℃');
+      await session.dispose();
+    });
+
+    test('send 挂起时超时仍收尾：行级无数据、串行槽释放、暂停不锁死', () async {
+      final gate = _DelayGate();
+      final inner = MockObdTransport(
+        responses: mockObdCorpusDemoResponses(),
+        delay: (_) async {},
+      );
+      final transport = _HangingSendTransport(inner: inner, hangOn: '012F');
+      final session = Elm327Session(
+        transport: transport,
+        // 暂停轮询的 50ms 睡眠直接放行（只驱动超时与轮间拍门闩）。
+        delay: (d) => d == const Duration(milliseconds: 50)
+            ? Future<void>.value()
+            : gate.gate(d),
+      );
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+      session.startPolling(enabledProbes: () => [
+        makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
+      ]);
+      // 012F 的 send 永不返回：第 5 个门 = 它的响应超时竞速。
+      while (gate.requests.length < 5) {
+        await pumpEventQueue();
+      }
+      // 旧实现：超时错误被 completer.future.ignore() 吞掉、_frameWaiter
+      // 永占 —— pausePolling 死等、后续请求全部「串行违规」。
+      final pause = session.pausePolling();
+      gate.completeAt(4);
+      await pause.timeout(const Duration(seconds: 1));
+      final reading =
+          await queue.next().timeout(const Duration(seconds: 1))
+              as Elm327ProbeReading;
+      expect(reading.probeId, 1);
+      expect((reading.reading as ObdNoData).reason, '超时');
+      // 串行槽已释放：原始命令可发（旧实现这里抛「串行违规」）。
+      final frame = await session.sendRawCommand('ATRV');
+      expect(frame, contains('11.2V'));
       await session.dispose();
     });
 

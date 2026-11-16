@@ -1,18 +1,19 @@
 // 车辆诊断仓库（DiagnosticsRepository）：检测点表（diagnostics_probes，
-// ADR 0021）的唯一读写出口，外加内置三条种子的 bootstrap 幂等对账。
+// ADR 0021）的唯一读写出口，外加每车内置三条种子的 bootstrap 幂等对账。
 //
-// ≈ Java 里按域拆出的领域 Service：管一张全局表（不挂 carId——指令
-// 语义与车无关），与车辆/项目/记录核心域几乎无耦合；删除车辆不级联
-// 本表，本表写点不 bump 车辆数据纪元（providers.dart 的
-// diagnosticsProbesProvider 走"写点直失效"模型，同停车倒计时先例）。
+// ≈ Java 里按域拆出的领域 Service：管一张按车分组的表（挂 carId——指令
+// 语义与车无关，但不同车的可用指令可能不同，ADR 0021 修订节）；删除车辆
+// 由主仓库事务级联删除本表行；本表写点不 bump 车辆数据纪元
+// （providers.dart 的 diagnosticsProbesProvider 走"写点直失效"模型，同
+// 停车倒计时先例）。
 //
-// 对账语义（ADR 0021 决定 3，"目录式安全"）：
+// 对账语义（ADR 0021 修订节，"目录式安全"）：
 //  1. 删除"种子集合外仍带内置 key"的行（自定义行 catalogKey 为 null，
 //     不受影响）；
 //  2. 缺失补插（enabled 恒 true 落库）；
-//  3. 内置行漂移纠偏：只纠名称/指令/解析类型三列（内置只读，漂移即
-//     数据被外部改动），enabled 故意不比不写——启停是用户数据，对账
-//     不得重置。完整数据下重复对账 = 零写库（updatedAt 不动）。
+//  3. 只补缺失、不纠偏用户编辑：内置行可改名称/指令/解析类型/间隔/启停，
+//     对账不得把用户改动改回去。完整数据下重复对账 = 零写库
+//     （updatedAt 不动）。
 import 'package:drift/drift.dart';
 
 import '../../core/id/snowflake_id_generator.dart';
@@ -31,7 +32,8 @@ class DiagnosticsProbeSeed {
     required this.parseType,
   });
 
-  /// 稳定 catalogKey（bootstrap 对账标识，全库唯一约束兜底）。
+  /// 稳定 catalogKey（bootstrap 对账标识，{carId, catalogKey} 唯一约束
+  /// 兜底）。
   final String catalogKey;
 
   /// 展示名。

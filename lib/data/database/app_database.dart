@@ -263,7 +263,8 @@ class FuelPredictions extends Table {
 /// 与保养记录（maintenance_records）的两个关键差异（沿 ADR 0014）：
 ///  - **故意不设** {carId, date} 唯一约束：同一天加两次油（长途两箱）
 ///    合法，一天多条是常态而非脏数据；
-///  - 不联动车辆当前里程——保养记录是车辆里程的唯一写源。
+///  - 不联动车辆当前里程——保养记录是常规写源，ECU 里程同步是第二写源
+///    （ADR 0026）。
 /// carId 普通索引：加油卡按车拉流水是高频路径（与保养记录同先例）。
 @TableIndex(name: 'idx_fuel_records_car_id', columns: {#carId})
 @DataClassName('FuelRecordRow')

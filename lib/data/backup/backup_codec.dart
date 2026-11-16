@@ -77,7 +77,9 @@ class BackupPayload {
   });
 
   /// 备份契约版本（v1 = 无项目费用；v2 = 增项目费用，ADR 0010；
-  /// v3 = 增加油记录，ADR 0014；v4 = 增自定义检测点，ADR 0021）。
+  /// v3 = 增加油记录，ADR 0014；v4 = 增自定义检测点，ADR 0021；
+  /// v5 = 增车辆总容积与检测点 carId/刷新间隔/header，ADR 0021 修订节/
+  /// 0022）。
   final int schemaVersion;
   final List<Car> cars;
   final List<MaintenanceItem> maintenanceItems;
@@ -147,11 +149,12 @@ final class BackupCodec {
 
   /// 从 JSON 字符串解码（导入文件内容）。
   ///
-  /// 接受 v1/v2/v3/v4（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
+  /// 接受 v1–v5（见 supportedSchemaVersions），其他版本抛 UnsupportedError，
   /// UI 提示"不支持的备份文件"（ADR 0005：不做版本分支兼容；ADR 0010/0014/0021：
   /// 纯增量缺失按空读入——v1/v2 项目费用全空、加油记录为空，v1–v3 无自定义
-  /// 检测点）。引用完整性与业务规则（金额/里程非负等）由 Repository 的两层
-  /// 预校验在事务外负责（审查报告 R35），codec 只做结构解码。
+  /// 检测点，v4 检测点无 carId 归第一辆车）。引用完整性与业务规则（金额/里程
+  /// 非负等）由 Repository 的两层预校验在事务外负责（审查报告 R35），codec
+  /// 只做结构解码。
   BackupPayload decode(String json) {
     final map = jsonDecode(json) as Map<String, Object?>;
     final version = map['schemaVersion'] as int;
