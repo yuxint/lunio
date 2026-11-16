@@ -120,10 +120,14 @@ class _Harness {
       saveReading: (probeId, {required value, percent, required at}) async {
         saved.add((probeId, value, percent, at));
       },
+      onOdometerReading: odometerReadings.add,
       mockLink: mockLink,
     );
     addTearDown(controller.dispose);
   }
+
+  /// ECU 里程同步接缝捕获（ADR 0026 用例）。
+  final odometerReadings = <ObdValue>[];
 
   final FakeObdScanner scanner = FakeObdScanner();
   final RigGate chunkGate = RigGate();
@@ -420,7 +424,7 @@ void main() {
     test('有效读数写库、无数据不写、实时优先与持久化回退', () async {
       final h = _Harness(rememberedId: 'dev-1');
       final fuel = _probe(1, '012F', DiagnosticsParseType.fuelLevel);
-      final coolant = _probe(2, '0105', DiagnosticsParseType.coolantTemp);
+      final coolant = _probe(2, '0167', DiagnosticsParseType.coolantTempAux);
       final volt = _probe(
         3,
         'ATRV',
@@ -433,7 +437,7 @@ void main() {
       await h.driveChunks(2);
 
       expect(h.controller.state.readings[1]?.reading.display, '37.6%');
-      expect(h.controller.state.readings[2]?.reading.display, '90℃');
+      expect(h.controller.state.readings[2]?.reading.display, '95℃');
       expect(h.controller.state.readings.containsKey(3), isFalse);
       expect(h.mock.sentCommands, isNot(contains('ATRV')));
       expect(h.saved.map((row) => row.$1), unorderedEquals([1, 2]));
@@ -462,6 +466,26 @@ void main() {
       final snapshot = h.controller.readingFor(fallback);
       expect(snapshot?.reading.display, '50.0%');
       expect((snapshot?.reading as ObdValue?)?.percent, 50);
+    });
+
+    test('ECU 里程读数经接缝回调（ADR 0026）：kilometers 66068，无数据不回调', () async {
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        responses: {
+          ...rigStandardResponses(),
+          '01A6': rigResp('41 A6 00 0A 14 C8 \r\r>'),
+        },
+      );
+      h.controller.setProbes([
+        _probe(4, '01A6', DiagnosticsParseType.odometer),
+      ]);
+      await h.connectDirect();
+      await h.driveChunks(1);
+
+      expect(h.controller.state.readings[4]?.reading.display, '66,068 km');
+      expect(h.odometerReadings, hasLength(1));
+      expect(h.odometerReadings.single.kilometers, 66068);
+      expect(h.saved.single.$1, 4);
     });
 
     test('无数据读数不写库、不覆盖旧值（内存照显无数据）', () async {

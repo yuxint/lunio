@@ -115,6 +115,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     required this.readDeviceId,
     required this.rememberDevice,
     required this.saveReading,
+    required this.onOdometerReading,
     bool? mockLink,
   }) : mockLink = mockLink ?? obdMockLink;
 
@@ -140,6 +141,11 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     double? percent,
     required DateTime at,
   }) saveReading;
+
+  /// ECU 里程同步接缝（ADR 0026）：收到有效里程读数（ kilometers 非
+  /// null）时回调，静默自动写开关的读库与守卫在接缝实现里（页面装配）。
+  /// controller 不碰偏好与仓库。
+  final void Function(ObdValue reading) onOdometerReading;
 
   /// mock 回退链路（`--dart-define=LUNIO_OBD_MOCK=true` 或测试显式传
   /// false/true）：跳过设备记忆与扫描，直连演示设备。
@@ -551,6 +557,11 @@ class DiagnosticsConnectionController extends ChangeNotifier {
               at: at,
             ).catchError((_) {}),
           );
+        }
+        // ECU 里程同步（ADR 0026）：有效里程读数经接缝回调（静默自动
+        // 写的开关读库与守卫在接缝实现里，controller 不碰偏好与仓库）。
+        if (reading is ObdValue && reading.kilometers != null) {
+          onOdometerReading(reading);
         }
     }
   }

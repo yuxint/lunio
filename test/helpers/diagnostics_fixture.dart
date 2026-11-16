@@ -33,7 +33,8 @@ MockObdScript rigResp(String text) {
 }
 
 /// 标准应答表：AT 序列 + 内置三条一轮的语料值（油量 0x60 = 37.6%，
-/// 水温 0x82 = 90℃，电压 11.2V）。
+/// 水温 0167 = 95℃（11-16 实车语料 41 67 03 87 83，A 传感器），
+/// 电压 11.2V）。
 Map<String, MockObdScript> rigStandardResponses() {
   return {
     'ATZ': rigResp('\r\rELM327 v2.3\r\r>'),
@@ -41,8 +42,11 @@ Map<String, MockObdScript> rigStandardResponses() {
     'ATL0': rigResp('OK\r\r>'),
     'ATSP7': rigResp('OK\r\r>'),
     '012F': rigResp('41 2F 60 \r\r>'),
-    '0105': rigResp('41 05 82 \r\r>'),
+    '0167': rigResp('41 67 03 87 83 \r\r>'),
     'ATRV': rigResp('11.2V\r\r>'),
+    // 里程表 0x000A14C8/10 = 66,068 km（11-16 实车语料，仅 odometer
+    // 探针用例显式挂 01A6 探针时才被轮询）。
+    '01A6': rigResp('41 A6 00 0A 14 C8 \r\r>'),
   };
 }
 

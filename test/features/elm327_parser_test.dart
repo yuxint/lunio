@@ -118,6 +118,27 @@ void main() {
       expect(reading.display, '90℃');
     });
 
+    test('辅助水温 0167：41 67 03 87 83 → 95℃（第 2 字节−40，11-16 实车语料）', () {
+      final reading = parseProbeResponse(
+        command: '0167',
+        parseType: DiagnosticsParseType.coolantTempAux,
+        frameText: '41 67 03 87 83 \r\r',
+      ) as ObdValue;
+      expect(reading.celsius, 95);
+      expect(reading.display, '95℃');
+    });
+
+    test('辅助水温 0167：响应缺第 2 字节 → 无数据', () {
+      expect(
+        parseProbeResponse(
+          command: '0167',
+          parseType: DiagnosticsParseType.coolantTempAux,
+          frameText: '41 67 03 \r\r',
+        ),
+        isA<ObdNoData>(),
+      );
+    });
+
     test('电压文本 11.2V（ATRV 语料形态）', () {
       final reading = parseProbeResponse(
         command: 'ATRV',

@@ -274,6 +274,29 @@ Future<void> rememberObdDevice(WidgetRef ref, String deviceId) async {
   await ref.read(lunioPreferencesProvider).setLastObdDeviceId(deviceId);
 }
 
+/// ECU 里程同步（ADR 0026）：车辆里程的第二写源。守卫「只增不减」
+/// 单点收在本动作——ECU 值不大于当前里程即不写（返回 false）；写入
+/// 复用 [updateCar]（写库 + 逐出车辆族 provider；里程变化进应用车辆
+/// 数据束，提醒链自动重排）。确认式（行内「更新里程」确认框）与静默
+/// 自动写（管理 sheet 开关，默认关）共用同一写点。
+Future<bool> syncCarMileageFromEcu(WidgetRef ref, Car car, int ecuKm) async {
+  if (ecuKm <= car.currentMileageKm) {
+    return false;
+  }
+  await updateCar(ref, car.copyWith(currentMileageKm: ecuKm));
+  return true;
+}
+
+/// 开关 ECU 里程自动同步（ADR 0026，检测点管理 sheet 行开关）：偏好
+/// 门面 typed 写 → bump 偏好纪元（消费方经 obdOdometerAutoSyncProvider
+/// 自动重算）。
+Future<void> setObdOdometerAutoSync(WidgetRef ref, bool value) async {
+  await ref
+      .read(lunioPreferencesProvider)
+      .setObdOdometerAutoSyncEnabled(value);
+  ref.read(preferencesEpochProvider.notifier).bump();
+}
+
 /// 开关加油预测（底部"加油"tab 的显隐开关，AppShell watch 该 provider
 /// 实时增删 tab）。
 Future<void> setFuelPredictionEnabled(WidgetRef ref, bool value) async {

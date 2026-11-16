@@ -129,12 +129,11 @@ Future<ObdVerificationResult> runObdVerification({
   }
 
   emit(
-    'Lunio OBD 全量采集日志\n'
+    'Lunio OBD 一键检测日志\n'
     '车辆：$carLabel\n'
     '开始：${clock().toIso8601String()}\n'
-    '说明：标准 PID 由本车 0100/0120/0140/0160/0180/01A0/01C0/01E0 '
-    '能力位图自动枚举；09/06/DTC 标准读取；私有 DID 按 OBDb Honda '
-    'Civic 2022 supported_commands_by_ecu（北美数据，实车可能不同）；'
+    '说明：标准 PID 为内置与模板快照集经本车能力位图过滤（0100–01A0）；'
+    'DTC 03/07/0A 标准读取；私有 DID 只读 227029（油量交叉验证）；'
     '末尾 ATSH DB 33 F1 恢复。\n\n',
   );
 
@@ -152,7 +151,7 @@ Future<ObdVerificationResult> runObdVerification({
         supportFrames[command] = outcome.frame;
       }
     }
-    for (final command in buildStandardVerificationCommands(supportFrames)) {
+    for (final command in buildSnapshotVerificationCommands(supportFrames)) {
       await capture(command, abortOnFailure: true);
     }
     for (final group in obdVendorCommandGroups) {
@@ -176,7 +175,7 @@ Future<ObdVerificationResult> runObdVerification({
       ObdCommandError(:final error) => '恢复失败：$error',
       ObdCommandFailure(:final error) => '恢复失败：$error',
     };
-    emitLine('采集中止：$abortError（$restoreCopy）');
+    emitLine('检测中止：$abortError（$restoreCopy）');
   }
 
   return ObdVerificationResult(

@@ -76,22 +76,20 @@ void main() {
         'ATI': const _Frame('ELM327 v2.3\r\r'),
         'ATDPN': const _Frame('A6'),
         'ATRV': const _Frame('12.1V\r\r'),
-        // 0100 位图：bit0 = PID 0x01。
-        '0100': const _Frame('41 00 80 00 00 00\r\r'),
-        // 0900 位图：0x55 = PID 1/3/5/7。
-        '0900': const _Frame('49 00 55 00 00 00\r\r'),
+        // 0100 位图 = 本车实测三 ECU 帧：快照段内支持 04/0B/0C/0D/11。
+        '0100':
+            const _Frame('41 00 90 18 80 11\r41 00 B6 3C A8 13\r41 00 90 18 80 03\r\r'),
       });
 
       final result = await harness.run();
 
       expect(
         harness.blocks.first,
-        'Lunio OBD 全量采集日志\n'
+        'Lunio OBD 一键检测日志\n'
         '车辆：思域 2022\n'
         '开始：$_stamp\n'
-        '说明：标准 PID 由本车 0100/0120/0140/0160/0180/01A0/01C0/01E0 '
-        '能力位图自动枚举；09/06/DTC 标准读取；私有 DID 按 OBDb Honda '
-        'Civic 2022 supported_commands_by_ecu（北美数据，实车可能不同）；'
+        '说明：标准 PID 为内置与模板快照集经本车能力位图过滤（0100–01A0）；'
+        'DTC 03/07/0A 标准读取；私有 DID 只读 227029（油量交叉验证）；'
         '末尾 ATSH DB 33 F1 恢复。\n\n',
       );
       // 命令 / 响应块逐字（时间戳 + CR 归一）。
@@ -102,15 +100,14 @@ void main() {
         harness.sent.take(5).toList(),
         ['ATI', 'ATDPN', 'ATRV', 'ATSHDB33F1', '0100'],
       );
-      expect(harness.sent, containsAllInOrder(['0101']));
       expect(
         harness.sent,
-        containsAllInOrder(['0902', '0904', '0906', '0908']),
+        containsAllInOrder(['0104', '010B', '010C', '010D', '0111']),
       );
       expect(harness.sent, containsAllInOrder(['03', '07', '0A']));
       expect(
         harness.sent,
-        containsAllInOrder(['ATSHDA10F1', '222600']),
+        containsAllInOrder(['ATSHDA60F1', '227029']),
       );
       expect(harness.sent.last, 'ATSHDB33F1');
 
@@ -136,13 +133,13 @@ void main() {
     });
 
     test('链路失败中止整轮：后续命令不再发，恢复头仍尝试，中止行最后落', () async {
-      final harness = _Harness(script: {'222600': const _Failure()});
+      final harness = _Harness(script: {'227029': const _Failure()});
 
       final result = await harness.run();
 
       expect(result.aborted, isTrue);
       expect('${result.error}', contains('链路已断开'));
-      final failureIndex = harness.sent.indexOf('222600');
+      final failureIndex = harness.sent.indexOf('227029');
       expect(harness.sent.sublist(failureIndex + 1), ['ATSHDB33F1']);
       expect(
         harness.blocks,
@@ -152,14 +149,14 @@ void main() {
       );
       expect(
         harness.blocks.last,
-        '[$_stamp] 采集中止：Elm327SessionException: 链路已断开'
+        '[$_stamp] 检测中止：Elm327SessionException: 链路已断开'
         '（默认头已恢复）\n',
       );
     });
 
     test('中止后恢复头失败：中止行写明恢复失败', () async {
       final harness = _Harness(script: {
-        '222600': const _Failure(),
+        '227029': const _Failure(),
         'ATSHDB33F1': const _Timeout(),
       });
 
@@ -168,7 +165,7 @@ void main() {
       expect(result.aborted, isTrue);
       expect(
         harness.blocks.last,
-        '[$_stamp] 采集中止：Elm327SessionException: 链路已断开'
+        '[$_stamp] 检测中止：Elm327SessionException: 链路已断开'
         '（恢复失败：Elm327SessionException: 指令 ATSHDB33F1 等提示符超时）\n',
       );
     });
@@ -204,7 +201,7 @@ void main() {
     // 标准采集命令仍排在私有 DID 之前。
     expect(
       harness.sent.indexOf('03'),
-      lessThan(harness.sent.indexOf('ATSHDA10F1')),
+      lessThan(harness.sent.indexOf('ATSHDA60F1')),
     );
     expect(obdSupportQueries.every(harness.sent.contains), isTrue);
   });

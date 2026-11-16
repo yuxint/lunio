@@ -206,6 +206,15 @@ final diagnosticsEnabledProvider = FutureProvider<bool>((ref) {
   return ref.watch(lunioPreferencesProvider).getDiagnosticsEnabled();
 });
 
+/// ECU 里程自动同步开关（ADR 0026）：开关开时，诊断页轮询收到更大
+/// ECU 里程自动写入车辆里程（静默自动写档）；关时走行内「更新里程」
+/// 确认式。开关入口在检测点管理 sheet；默认关；不进备份。
+/// build 首行 watch 偏好纪元（ADR 0017）：写点 bump 后自动重算。
+final obdOdometerAutoSyncProvider = FutureProvider<bool>((ref) {
+  ref.watch(preferencesEpochProvider);
+  return ref.watch(lunioPreferencesProvider).getObdOdometerAutoSyncEnabled();
+});
+
 /// 某辆车的检测点列表（每车一套，ADR 0021 修订节）。内置三条种子由
 /// bootstrap 总入口按车幂等补齐，读侧显式 await bootstrap 再查表——
 /// 首启第一帧就能读到种子。

@@ -30,6 +30,7 @@ import '../../../core/widgets/lunio_components.dart';
 import '../../../data/repositories/diagnostics_repository.dart'
     show DiagnosticsRepository;
 import '../../../domain/entities/car.dart';
+import '../../../domain/entities/diagnostics_parse_type.dart';
 import '../../../domain/entities/diagnostics_probe.dart';
 import '../../../domain/rules/diagnostics_rules.dart';
 import '../shared/shell_shared.dart';
@@ -72,6 +73,8 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       saveReading: (probeId, {required value, percent, required at}) => ref
           .read(diagnosticsRepositoryProvider)
           .saveProbeReading(probeId, value: value, percent: percent, at: at),
+      onOdometerReading: (reading) =>
+          unawaited(_syncOdometerSilently(reading)),
     );
     // 首帧先渲染「未连接」，连接动作延到首帧之后启动——状态机起点状态
     // 真实可达（widget 测试能按序断言全状态序列）。
@@ -105,6 +108,71 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// UI port：关扫描 sheet（controller 主动关闭：点选成功/门禁失败）。
   void _closeScanSheet() {
     _scanSheetHandle?.close();
+  }
+
+  /// ECU 里程静默自动同步（ADR 0026）：controller 每收到有效里程读数
+  /// 回调一次。开关关（默认档）= 确认式，这里直接返回；开关开 = 读开
+  /// 关、当前应用车辆后守卫写入（守卫在动作层 syncCarMileageFromEcu）。
+  /// 失败降级不提示（静默档语义），下一轮轮询再试。
+  Future<void> _syncOdometerSilently(ObdValue reading) async {
+    final km = reading.kilometers;
+    if (km == null || !mounted) {
+      return;
+    }
+    final autoSync = await ref.read(obdOdometerAutoSyncProvider.future);
+    if (!autoSync || !mounted) {
+      return;
+    }
+    final car = await ref.read(appliedCarProvider.future);
+    if (car == null || !mounted) {
+      return;
+    }
+    await syncCarMileageFromEcu(ref, car, km);
+  }
+
+  /// 确认式里程同步（开关关 = 默认档）：确认框两值对照，确认后走动作
+  /// 层 [syncCarMileageFromEcu]（守卫「只增不减」在动作层兜底）。
+  Future<void> _confirmMileageSync(Car car, int ecuKm) async {
+    final confirmed = await showConfirmDialog(
+      context: context,
+      title: '更新车辆里程',
+      message:
+          'ECU 里程 ${formatNumber(ecuKm)} km 大于当前车辆里程 ${formatNumber(car.currentMileageKm)} km，更新为 ECU 读数？',
+      confirmLabel: '更新',
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final current = await ref.read(appliedCarProvider.future);
+    if (current == null || !mounted) {
+      return;
+    }
+    await syncCarMileageFromEcu(ref, current, ecuKm);
+  }
+
+  /// 检测点单行组装：读取快照每行取一次；里程同步确认入口按 ADR 0026
+  /// 只挂 odometer 探针行（开关关 = 确认式；开关开时静默写，不显入口）。
+  Widget _probeRow(DiagnosticsProbe probe, Car car) {
+    final snapshot = _connection.readingFor(probe);
+    final km = switch (snapshot?.reading) {
+      ObdValue(:final kilometers) => kilometers,
+      _ => null,
+    };
+    final autoSync = ref.watch(obdOdometerAutoSyncProvider).value ?? false;
+    final canSync = probe.parseType == DiagnosticsParseType.odometer &&
+        km != null &&
+        km > car.currentMileageKm &&
+        !autoSync;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: _ProbeRow(
+        probe: probe,
+        snapshot: snapshot,
+        onToggle: (value) => setDiagnosticsProbeEnabled(ref, probe, value),
+        mileageSyncAvailable: canSync,
+        onSyncMileage: canSync ? () => _confirmMileageSync(car, km) : null,
+      ),
+    );
   }
 
   /// 返回键（pushed 子页，LunioTopBar leading 位，费用统计页先例）。
@@ -201,16 +269,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         LunioSection(
           title: '检测点',
           children: [
-            for (final probe in probes)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _ProbeRow(
-                  probe: probe,
-                  snapshot: _connection.readingFor(probe),
-                  onToggle: (value) =>
-                      setDiagnosticsProbeEnabled(ref, probe, value),
-                ),
-              ),
+            for (final probe in probes) _probeRow(probe, appliedCar!),
             _AddProbeRow(
               onTap: () => showProbeManagementSheet(
                 context,
@@ -416,6 +475,8 @@ class _ProbeRow extends StatelessWidget {
     required this.probe,
     required this.snapshot,
     required this.onToggle,
+    this.mileageSyncAvailable = false,
+    this.onSyncMileage,
   });
 
   final DiagnosticsProbe probe;
@@ -425,6 +486,13 @@ class _ProbeRow extends StatelessWidget {
 
   /// 启停开关回调（动作层编排：写库 → 逐出检测点 provider）。
   final ValueChanged<bool> onToggle;
+
+  /// 里程同步确认入口显隐（ADR 0026：odometer 探针 + ECU > 车辆里程 +
+  /// 静默自动写开关关）。写点守卫在动作层，行内入口只是显隐。
+  final bool mileageSyncAvailable;
+
+  /// 确认式里程同步回调（null = 不显入口）。
+  final VoidCallback? onSyncMileage;
 
   @override
   Widget build(BuildContext context) {
@@ -477,6 +545,14 @@ class _ProbeRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
+        if (mileageSyncAvailable && onSyncMileage != null) ...[
+          SmallActionButton(
+            label: '更新里程',
+            primary: true,
+            onPressed: onSyncMileage,
+          ),
+          const SizedBox(width: 12),
+        ],
         Switch(value: probe.enabled, onChanged: onToggle),
       ],
     );

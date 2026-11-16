@@ -85,7 +85,7 @@ sealed class ObdReading {
 
 /// 有数据。
 final class ObdValue extends ObdReading {
-  const ObdValue({required this.display, this.percent, this.celsius});
+  const ObdValue({required this.display, this.percent, this.celsius, this.kilometers});
 
   @override
   final String display;
@@ -94,8 +94,12 @@ final class ObdValue extends ObdReading {
   /// 估算升数 = 百分比 × 油箱容积（story 10/11）。
   final double? percent;
 
-  /// 温度 ℃（仅 coolantTemp 解析类型有值）。
+  /// 温度 ℃（仅 coolantTemp/coolantTempAux 解析类型有值）。
   final int? celsius;
+
+  /// ECU 里程 km（仅 odometer 解析类型有值），供 ECU 里程同步守卫
+  /// （只增不减）比较，ADR 0026。
+  final int? kilometers;
 }
 
 /// 无数据（NO DATA / CAN ERROR 等错误行、响应不匹配、超时）。
@@ -211,6 +215,17 @@ ObdReading parseProbeResponse({
       // 水温 = A − 40 ℃（Mode 01 PID 0x05 标准公式）。
       final celsius = a - 40;
       return ObdValue(display: '$celsius℃', celsius: celsius);
+    case DiagnosticsParseType.coolantTempAux:
+      final data = _dataBytes(matched);
+      if (data == null || data.length < 2) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 水温 = 第 2 数据字节 − 40 ℃（Mode 01 PID 0x67：首字节是传感
+      // 器位图，温度自第 2 字节起，B−40 为 A 传感器。本车实测
+      // `41 67 03 87 83` → 95℃，与 CarScanner「冷却液温度 (A)」同源，
+      // 见 docs/car_obd_link/docs/全量采集分析-2026-11-16.md）。
+      final celsius = data[1] - 40;
+      return ObdValue(display: '$celsius℃', celsius: celsius);
     case DiagnosticsParseType.rpm:
       final data = _dataBytes(matched);
       if (data == null || data.length < 2) {
@@ -262,6 +277,20 @@ ObdReading parseProbeResponse({
       // 控制模块电压 = (A×256+B)/1000 V（Mode 01 PID 0x42）。
       final volts = ((data[0] << 8) | data[1]) / 1000;
       return ObdValue(display: '${volts.toStringAsFixed(2)}V');
+    case DiagnosticsParseType.odometer:
+      final data = _dataBytes(matched);
+      if (data == null || data.length < 4) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 里程 = (A×2^24+B×2^16+C×2^8+D)/10 km（Mode 01 PID 0xA6，11-16
+      // 实车语料 41 A6 00 0A 14 C8 → 66,068 km，与 CarScanner 里程互
+      // 证）。守卫比较用的 kilometers 取整数 km（÷10 后四舍五入）。
+      final raw = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+      final km = (raw / 10).round();
+      return ObdValue(
+        display: '${_formatThousands(km)} km',
+        kilometers: km,
+      );
     case DiagnosticsParseType.voltageText:
       // 电压文本：ATRV 响应即文本（语料 `11.2V\r\r>`），回显已去，整
       // 文本直接展示。
@@ -302,4 +331,19 @@ int? _firstDataByte(String? matched) {
 /// 公式类无数据的原因短语：无匹配行 vs 匹配行缺数据字节。
 String _noDataReason(String? matched, String command) {
   return matched == null ? '无 $command 响应行' : '响应缺数据字节';
+}
+
+/// 千分位（与 shared/formatters.dart 的 formatNumber 同格式；parser
+/// 是纯 Dart 模块不依赖 Flutter 侧模块，故内联同格式实现，单测锁格式）。
+String _formatThousands(int value) {
+  final digits = value.toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    buffer.write(digits[i]);
+    final remaining = digits.length - 1 - i;
+    if (remaining > 0 && remaining % 3 == 0) {
+      buffer.write(',');
+    }
+  }
+  return buffer.toString();
 }

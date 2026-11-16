@@ -5,6 +5,8 @@
 // 页面只保留实时读数列表（见 diagnostics_page.dart），配置入口在这里；
 // 表单仍走 probe_form.dart 的 showProbeFormSheet。
 // ignore_for_file: use_key_in_widget_constructors
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -77,6 +79,8 @@ class _ProbeManagementSheetContentState
             ),
           ],
         ),
+        const SizedBox(height: 12),
+        const _OdometerAutoSyncRow(),
         const SizedBox(height: 12),
         if (!probesAsync.hasValue && probesAsync.isLoading)
           const Padding(
@@ -162,6 +166,50 @@ class _ProbeManagementSheetContentState
         );
       }
     }
+  }
+}
+
+/// 「ECU 里程自动同步」开关行（ADR 0026）：开 = 诊断页轮询收到更大
+/// ECU 里程时静默写入车辆里程；关（默认）= 里程表行内「更新里程」
+/// 确认式。开关读写走动作层 setObdOdometerAutoSync（偏好纪元 bump）。
+class _OdometerAutoSyncRow extends ConsumerWidget {
+  const _OdometerAutoSyncRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
+    final enabled = ref.watch(obdOdometerAutoSyncProvider).value ?? false;
+    return LunioCard(
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'ECU 里程自动同步',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '开启后连接诊断时读到更大里程自动更新车辆里程',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: tokens.muted,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: enabled,
+            onChanged: (value) => unawaited(setObdOdometerAutoSync(ref, value)),
+          ),
+        ],
+      ),
+    );
   }
 }
 

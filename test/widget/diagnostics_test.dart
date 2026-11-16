@@ -20,7 +20,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/preferences/app_preferences.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
+import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
 import 'package:lunio/features/shell/diagnostics/ble_obd_errors.dart';
 import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
@@ -51,15 +53,18 @@ class _SlowDisconnectMock extends MockObdTransport {
   }
 }
 
-/// 播种应用车辆（可选油箱容积）并设为当前车：必须在 pumpApp 之前。
+/// 播种应用车辆（可选油箱容积与当前里程）并设为当前车：必须在 pumpApp
+/// 之前。[mileageKm] 不传走 builder 默认 10,000。
 Future<int> seedAppliedCar(
   AppDatabase database, {
   double? tankCapacity,
   double? totalTankCapacity,
+  int? mileageKm,
 }) async {
   final bundle = testRepository(database);
   final carId = await bundle.insertCarForTest(
     defaultCar(
+      currentMileageKm: mileageKm ?? 10000,
       tankCapacityLiters: tankCapacity,
       totalTankCapacityLiters: totalTankCapacity,
     ),
@@ -154,7 +159,7 @@ void main() {
       await rig.deliverChunks(tester);
       await rig.deliverChunks(tester);
       expect(find.text('37.6%'), findsNWidgets(2));
-      expect(find.text('90℃'), findsNWidgets(2));
+      expect(find.text('95℃'), findsNWidgets(2));
       expect(find.text('11.2V'), findsOneWidget);
       expect(find.text('已连接'), findsOneWidget);
       expect(find.text('未更新'), findsNothing);
@@ -241,9 +246,9 @@ void main() {
     testWidgets('行级无数据灰态：单条超时不连坐，其他行照常更新', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
-      // 0105 不在应答表 = Mock 默认静默脚本（不应答）→ 单条超时无数据。
+      // 0167 不在应答表 = Mock 默认静默脚本（不应答）→ 单条超时无数据。
       final rig = DiagnosticsRig(
-        responses: rigStandardResponses()..remove('0105'),
+        responses: rigStandardResponses()..remove('0167'),
       );
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
@@ -252,7 +257,7 @@ void main() {
       // 油量先到，水温在途（不应答）。
       await rig.advanceUntil(tester, find.text('37.6%'));
 
-      // 放行 0105 的 300ms 响应超时 → 行级无数据；串行轮询继续到电压。
+      // 放行 0167 的 300ms 响应超时 → 行级无数据；串行轮询继续到电压。
       await rig.completeProbeTimeout(tester);
       await rig.deliverChunks(tester);
 
@@ -394,11 +399,8 @@ void main() {
       final vendorCommands = obdVendorCommandGroups
           .expand((group) => group.commands)
           .toList();
-      expect(vendorCommands, contains('227029'));
-      expect(vendorCommands, contains('22267A'));
-      expect(vendorCommands, contains('222623'));
-      expect(vendorCommands, contains('222678'));
-      expect(obdVendorCommandGroups.first.header, 'DA10F1');
+      expect(vendorCommands, ['227029']);
+      expect(obdVendorCommandGroups.first.header, 'DA60F1');
 
       await leavePageAndFlush(tester);
     });
@@ -432,13 +434,13 @@ void main() {
       await tester.tap(debugSwitch);
       await tester.pumpAndSettle();
 
-      // 点采集：run module 同步吐出日志头与首条命令，随后挂在 ATI 请求
+      // 点检测：run module 同步吐出日志头与首条命令，随后挂在 ATI 请求
       // 上（静默脚本无字节）——这正是接线冒烟要锁的边。
-      await tester.tap(find.text('一键采集全部数据'));
+      await tester.tap(find.text('一键检测'));
       await tester.pump();
 
       final log = tester.widget<SelectableText>(find.byType(SelectableText)).data;
-      expect(log, contains('Lunio OBD 全量采集日志'));
+      expect(log, contains('Lunio OBD 一键检测日志'));
       expect(log, contains('> ATI'));
       expect(rig.mock.sentCommands, contains('ATI'));
 
@@ -956,7 +958,7 @@ void main() {
       await gotoTab(tester, '我的');
       await tester.pumpAndSettle();
 
-      // 开页前预写最后读数（昨天 08:00:00）：油量 37.6% / 水温 90℃。
+      // 开页前预写最后读数（昨天 08:00:00）：油量 37.6% / 水温 95℃。
       final diagnostics = testRepository(database).diagnosticsRepository;
       final fuelId = (await diagnostics.listProbes(await appliedCarId(database)))
           .firstWhere((p) => p.name == '油量')
@@ -972,7 +974,7 @@ void main() {
       );
       await diagnostics.saveProbeReading(
         coolantId,
-        value: '90℃',
+        value: '95℃',
         at: DateTime(2026, 11, 14, 8, 0, 0),
       );
 
@@ -983,7 +985,7 @@ void main() {
       expect(find.textContaining('08:00:00'), findsNWidgets(2));
       // 油量卡升数：37.6% × 50L = 18.8 升。
       expect(find.text('≈ 18.8 升'), findsOneWidget);
-      expect(find.text('90℃'), findsNWidgets(2)); // 行 + 水温卡
+      expect(find.text('95℃'), findsNWidgets(2)); // 行 + 水温卡
       await leavePageAndFlush(tester);
     });
 
@@ -1004,7 +1006,7 @@ void main() {
       // 连接成功进轮询：油量行显「无数据」（实时显示不受持久化口径影
       // 响），水温行显有效值。
       await rig.advanceUntil(tester, find.text('无数据'));
-      await rig.advanceUntil(tester, find.text('90℃'));
+      await rig.advanceUntil(tester, find.text('95℃'));
 
       // 库内口径：油量不写库（保持 null）、水温有效值已写。
       final diagnostics = testRepository(database).diagnosticsRepository;
@@ -1012,7 +1014,134 @@ void main() {
       final fuel = probes.firstWhere((p) => p.name == '油量');
       final coolant = probes.firstWhere((p) => p.name == '水温');
       expect(fuel.lastValue, isNull);
-      expect(coolant.lastValue, '90℃');
+      expect(coolant.lastValue, '95℃');
+      await leavePageAndFlush(tester);
+    });
+  });
+
+  group('ECU 里程同步（ADR 0026）', () {
+    /// 播种自定义里程表探针（默认夹具只种内置三条）。
+    Future<void> seedOdometerProbe(AppDatabase database) async {
+      await testRepository(database)
+          .diagnosticsRepository
+          .saveProbe(
+            DiagnosticsProbe(
+              carId: await appliedCarId(database),
+              name: '里程表',
+              command: '01A6',
+              parseType: DiagnosticsParseType.odometer,
+            ),
+          );
+    }
+
+    testWidgets('确认式：ECU 里程 > 车辆里程显行内入口，确认后写库', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedAppliedCar(database, mileageKm: 10000);
+      await seedDeveloperDiagnostics(database);
+      await seedOdometerProbe(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('66,068 km'));
+
+      // 确认式入口显形（10,000 < 66,068；开关默认关 = 确认档）。
+      expect(find.text('更新里程'), findsOneWidget);
+
+      // 确认框两值对照 → 确认 → 写库 + 入口消失。
+      await tester.tap(find.text('更新里程'));
+      await tester.pump();
+      expect(find.text('更新车辆里程'), findsOneWidget);
+      expect(find.textContaining('大于当前车辆里程'), findsOneWidget);
+      await tester.tap(find.text('更新').last);
+      await tester.pump();
+      await tester.pump();
+
+      final cars = await database.select(database.cars).get();
+      expect(cars.single.currentMileageKm, 66068);
+      expect(find.text('更新里程'), findsNothing);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('守卫：ECU 里程不大于车辆里程不显入口', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedAppliedCar(database, mileageKm: 70000);
+      await seedDeveloperDiagnostics(database);
+      await seedOdometerProbe(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('66,068 km'));
+
+      expect(find.text('更新里程'), findsNothing);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('静默自动写：开关开时读到更大里程直接落库、不弹窗', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedAppliedCar(database, mileageKm: 10000);
+      await seedDeveloperDiagnostics(database);
+      await seedOdometerProbe(database);
+      await testRepository(database).setPreferenceValue(
+        LunioPreferences.obdOdometerAutoSyncKey,
+        'true',
+      );
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('66,068 km'));
+
+      // 静默档：不显确认入口；静默写完成后车辆里程已落库。
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('更新里程'), findsNothing);
+      final cars = await database.select(database.cars).get();
+      expect(cars.single.currentMileageKm, 66068);
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('管理 sheet 开关行：默认关，打开后写偏好并重算', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await tester.ensureVisible(find.text('管理检测点'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('管理检测点'));
+      await tester.pumpAndSettle();
+      expect(find.text('ECU 里程自动同步'), findsOneWidget);
+      expect(
+        await testRepository(database).getPreferenceValue(
+          LunioPreferences.obdOdometerAutoSyncKey,
+        ),
+        isNull,
+      );
+
+      // 打开开关 → 偏好写入（纪元 bump 后 provider 重算）。
+      final syncSwitch = find.descendant(
+        of: find
+            .ancestor(
+              of: find.text('ECU 里程自动同步'),
+              matching: find.byType(Row),
+            )
+            .first,
+        matching: find.byType(Switch),
+      );
+      await tester.tap(syncSwitch);
+      await tester.pumpAndSettle();
+      expect(
+        await testRepository(database).getPreferenceValue(
+          LunioPreferences.obdOdometerAutoSyncKey,
+        ),
+        'true',
+      );
+
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
       await leavePageAndFlush(tester);
     });
   });

@@ -257,10 +257,10 @@ void main() {
         'probe:voltage',
       ]);
       expect(probes.map((p) => p.name).toList(), ['油量', '水温', '电压']);
-      expect(probes.map((p) => p.command).toList(), ['012F', '0105', 'ATRV']);
+      expect(probes.map((p) => p.command).toList(), ['012F', '0167', 'ATRV']);
       expect(probes.map((p) => p.parseType), [
         DiagnosticsParseType.fuelLevel,
-        DiagnosticsParseType.coolantTemp,
+        DiagnosticsParseType.coolantTempAux,
         DiagnosticsParseType.voltageText,
       ]);
       expect(probes.every((p) => p.enabled && p.isBuiltIn), isTrue);

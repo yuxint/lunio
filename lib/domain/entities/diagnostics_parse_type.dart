@@ -24,8 +24,13 @@ enum DiagnosticsParseType {
   /// 油量百分比（内置种子 `012F`）。
   fuelLevel('fuelLevel', '油量百分比'),
 
-  /// 温度（A−40 ℃，内置种子 `0105`）。
+  /// 温度（A−40 ℃，`0105`；本车不支持，保留作通用公式）。
   coolantTemp('coolantTemp', '温度（A−40）'),
+
+  /// 辅助水温（第 2 数据字节 − 40 ℃，内置种子 `0167`）。`0167` 响应
+  /// `41 67` 后首字节是传感器位图（本车实测 0x03），温度从第 2 字节起：
+  /// B−40 为 A 传感器、C−40 为 B 传感器；本探针取 B 传感器单值展示。
+  coolantTempAux('coolantTempAux', '水温（第 2 字节−40，适配 0167）'),
 
   /// 转速（`010C` 两字节 ÷4，rpm）。
   rpm('rpm', '转速'),
@@ -47,6 +52,10 @@ enum DiagnosticsParseType {
 
   /// 控制模块电压（`0142` 两字节 ÷1000，V）。
   moduleVoltage('moduleVoltage', '模块电压'),
+
+  /// 里程表（`01A6` 4 数据字节 ÷10 km，J1979 标准；11-16 实车语料
+  /// `41 A6 00 0A 14 C8` → 66,068 km，与 CarScanner 互证）。
+  odometer('odometer', '里程表（÷10 km）'),
 
   /// 电压文本（内置种子 `ATRV`，响应即文本）。
   voltageText('voltageText', '电压文本'),

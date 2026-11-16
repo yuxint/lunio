@@ -77,6 +77,11 @@ class LunioPreferences {
   /// 直连它、连不上再走扫描列表（消费在连接管理票，本票只落偏好通道）。
   static const lastObdDeviceIdKey = 'lastObdDeviceId';
 
+  /// ECU 里程自动同步开关（ADR 0026）。'true' 才算开，默认关；开关
+  /// 入口在检测点管理 sheet。备份本就不带任何偏好，本 key 不进备份，
+  /// 恢复备份后回落默认关。
+  static const obdOdometerAutoSyncKey = 'obdOdometerAutoSync';
+
   /// 停车倒计时（JSON，临时数据不进备份）。
   static const _parkingCountdownKey = 'parkingCountdown';
 
@@ -408,6 +413,17 @@ class LunioPreferences {
   /// 写上次连接的 OBD 适配器 device id（null = 清除）。
   Future<void> setLastObdDeviceId(String? deviceId) {
     return _writeRaw(lastObdDeviceIdKey, deviceId);
+  }
+
+  /// 读 ECU 里程自动同步开关（'true' 才算开，默认关，ADR 0026）。
+  Future<bool> getObdOdometerAutoSyncEnabled() async {
+    return await readRaw(obdOdometerAutoSyncKey) == 'true';
+  }
+
+  /// 写 ECU 里程自动同步开关（'true'/'false'）。只写库，失效
+  /// obdOdometerAutoSyncProvider 由调用方负责。
+  Future<void> setObdOdometerAutoSyncEnabled(bool enabled) {
+    return _writeRaw(obdOdometerAutoSyncKey, enabled ? 'true' : 'false');
   }
 
   // ---------------- 停车倒计时（临时偏好，不进备份）----------------

@@ -260,7 +260,7 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
               runSpacing: 8,
               children: [
                 SmallActionButton(
-                  label: '一键采集全部数据',
+                  label: '一键检测',
                   primary: true,
                   onPressed: enabled && _debugMode && !_busy
                       ? () => unawaited(_runVerification())

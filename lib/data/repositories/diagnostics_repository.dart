@@ -60,7 +60,11 @@ class DiagnosticsRepository {
   /// 检测点默认自动轮询间隔（秒，ADR 0023）。
   static const int defaultRefreshIntervalSeconds = 30;
 
-  /// 内置三条种子（ADR 0021 修订节）：油量/水温/电压。每辆车各一套，
+  /// 内置三条种子（ADR 0021 修订节）：油量/水温/电压。2026-11-16 起
+  /// 水温内置改 `0167`（本车 0105 不支持，全量采集分析见
+  /// docs/car_obd_link/docs/全量采集分析-2026-11-16.md）；存量车的
+  /// 内置行在库里已是 0105，由用户在 App 内手动编辑迁移，bootstrap
+  /// 不纠偏。每辆车各一套，
   /// 顺序即列表展示顺序；catalogKey 是稳定对账标识，只增不改（改名/
   /// 换 key = 对账目标集合变化，旧 key 行会被清理重建）。
   static const List<DiagnosticsProbeSeed> builtInProbeSeeds = [
@@ -73,8 +77,8 @@ class DiagnosticsRepository {
     DiagnosticsProbeSeed(
       catalogKey: builtInCoolantKey,
       name: '水温',
-      command: '0105',
-      parseType: domain.DiagnosticsParseType.coolantTemp,
+      command: '0167',
+      parseType: domain.DiagnosticsParseType.coolantTempAux,
     ),
     DiagnosticsProbeSeed(
       catalogKey: 'probe:voltage',
