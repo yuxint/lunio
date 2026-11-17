@@ -1,15 +1,17 @@
 // 我的页（/me）：个人中心。
 //
-// 结构：我的车辆（车辆列表 + 添加入口）/ 数据与工具（通知提醒、备份、
-// 恢复、清空数据、手动日期[开发者模式专属]、加油预测开关[开发者模式
-// 专属]、主题切换）/ 版本 footer。
+// 结构：我的车辆（车辆列表 + 添加入口）/ 数据与工具（设置入口行、
+// 备份、恢复、清空数据、进入诊断页[诊断开关开才显示]、手动日期[开发
+// 者模式专属]）/ 版本 footer。2026-11-16 拍板（ADR 0028）：通知提醒与
+// 主题模式、加油预测与车辆诊断开关迁往二级「设置」页
+// （settings_page.dart），加油预测与车辆诊断不再挂开发者门控；费用
+// 统计行删除（记录页头部汇总行是既有入口）。
 // 各行的逻辑分流：静态行在 settings_data.dart，通知/手动日期 sheet 在
-// settings_notifications.dart / settings_manual_date.dart；备份导出/恢复/
-// 清空的编排走动作层"备份与数据重置"分节（ADR 0007，2026-09-25 收编），
-// 本页只留成功/失败反馈薄壳（确认框也在动作层，取消静默）。
+// settings_notifications.dart / settings_manual_date.dart；备份导出/
+// 恢复/清空的编排走动作层"备份与数据重置"分节（ADR 0007，2026-09-25
+// 收编），本页只留成功/失败反馈薄壳（确认框也在动作层，取消静默）。
 //
-// 开发者模式彩蛋：版本号连点 5 次开关（关闭时连带清掉手动日期与
-// 加油预测偏好）。
+// 开发者模式彩蛋：版本号连点 5 次开关（关闭时连带清掉手动日期偏好）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api
 
 import 'package:flutter/material.dart';
@@ -18,7 +20,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/date/local_date.dart';
-import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/errors/lunio_error.dart';
@@ -26,7 +27,6 @@ import '../shared/shell_shared.dart';
 import 'maintenance_items.dart';
 import 'settings_data.dart';
 import 'settings_manual_date.dart';
-import 'settings_notifications.dart';
 import 'vehicles.dart';
 
 /// 我的页主组件。
@@ -59,12 +59,7 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
     final diagnosticsEnabled = ref
         .watch(diagnosticsEnabledProvider)
         .maybeWhen(data: (value) => value, orElse: () => false);
-    final fuelPredictionEnabled = ref
-        .watch(fuelPredictionEnabledProvider)
-        .maybeWhen(data: (value) => value, orElse: () => false);
     final manualDate = ref.watch(manualDatePreferenceProvider);
-    final notificationSettings = ref.watch(notificationSettingsProvider);
-    final themeMode = ref.watch(themeModePreferenceProvider);
     final today = ref
         .watch(effectiveTodayProvider)
         .maybeWhen(
@@ -106,25 +101,15 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
           title: '数据与工具',
           children: [
             ProfileSettingRow(
-              title: '费用统计',
-              subtitle: '总费用、项目占比、年度走势',
+              title: '设置',
+              subtitle: '通知提醒、主题模式、功能开关',
               trailingLabel: '查看',
-              onTap: () => context.push('/cost-stats'),
-            ),
-            ProfileSettingRow(
-              title: '通知提醒',
-              subtitle: notificationSettings.when(
-                loading: () => '读取中',
-                error: (error, stackTrace) => '读取失败',
-                data: notificationSettingsSubtitle,
-              ),
-              trailingLabel: '设置',
-              onTap: () => showNotificationSettingsSheet(context, ref),
+              onTap: () => context.push('/settings'),
             ),
             ProfileSettingRow(
               title: '备份数据',
               subtitle: '导出全部车辆、项目配置和保养记录',
-              trailingLabel: '导出',
+              trailingLabel: '备份',
               onTap: () => _exportBackup(context),
             ),
             ProfileSettingRow(
@@ -139,10 +124,19 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
               trailingLabel: '清空',
               onTap: () => _clearAllData(context),
             ),
+            // 车辆诊断转正（ADR 0028）：入口行移出开发者区块，诊断开关
+            // 开即显示在清空数据下方。
+            if (diagnosticsEnabled)
+              ProfileSettingRow(
+                title: '进入诊断页',
+                subtitle: '连接适配器、读取油量水温',
+                trailingLabel: '进入',
+                onTap: () => context.push('/diagnostics'),
+              ),
             if (developerMode.maybeWhen(
               data: (value) => value,
               orElse: () => false,
-            )) ...[
+            ))
               ProfileSettingRow(
                 title: '手动日期',
                 subtitle: manualDate.when(
@@ -154,38 +148,6 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
                 trailingLabel: '设置',
                 onTap: () => showManualDateSheet(context, ref),
               ),
-              _DeveloperSwitchRow(
-                title: '加油预测',
-                subtitle: fuelPredictionEnabled
-                    ? '开启 · 底部显示加油入口'
-                    : '关闭',
-                enabled: fuelPredictionEnabled,
-                onChanged: (value) =>
-                    _setFuelPredictionEnabled(context, value),
-              ),
-              _DeveloperSwitchRow(
-                title: '车辆诊断',
-                subtitle: '连接 OBD 读取油量水温等',
-                enabled: diagnosticsEnabled,
-                // 无 toast：入口行随开关即时显隐，本身就是可见反馈
-                // （加油预测开关的 toast 是因为效果在底部导航，离行远）。
-                onChanged: (value) => setDiagnosticsEnabled(ref, value),
-              ),
-              if (diagnosticsEnabled)
-                ProfileSettingRow(
-                  title: '进入诊断页',
-                  subtitle: '连接适配器、读取油量水温',
-                  trailingLabel: '进入',
-                  onTap: () => context.push('/diagnostics'),
-                ),
-            ],
-            ThemeModeSettingRow(
-              mode: themeMode.maybeWhen(
-                data: (value) => value,
-                orElse: () => ThemeMode.system,
-              ),
-              onChanged: (mode) => setThemeModePreference(ref, mode),
-            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -199,7 +161,6 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
       ],
     );
   }
-
   /// 版本号连点 5 次 → 切换开发者模式：
   /// 开 → 写 developerModeEnabled=true（"手动日期"设置行出现）；
   /// 关 → 同时清 manualDateEnabled / manualDate（回到系统日期）。
@@ -220,22 +181,6 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
         context,
         enabled ? '开发者模式已关闭' : '开发者模式已开启',
         StatusOverlayTone.info,
-      );
-    }
-  }
-
-  /// 加油预测开关：动作层写偏好 + 失效 provider。
-  /// AppShell watch 该 provider，底部"加油"tab 实时出现/消失（无需重启）。
-  Future<void> _setFuelPredictionEnabled(
-    BuildContext context,
-    bool value,
-  ) async {
-    await setFuelPredictionEnabled(ref, value);
-    if (context.mounted) {
-      showStatusOverlay(
-        context,
-        value ? '已开启，底部新增加油入口' : '已关闭加油预测',
-        StatusOverlayTone.success,
       );
     }
   }
@@ -302,52 +247,3 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   }
 }
 
-/// 开发者区块通用开关行（加油预测 / 车辆诊断共用）：标题 + 副标题 +
-/// 右侧 Switch。与 ProfileSettingRow 同款容器样式，但整行动作为开关
-/// 而非按钮；副标题形态由调用方给（前者随开关状态变化，后者固定用途
-/// 文案）。第三颗开发者开关出现时继续在这里收拢，不要再复刻第三个类。
-class _DeveloperSwitchRow extends StatelessWidget {
-  const _DeveloperSwitchRow({
-    required this.title,
-    required this.subtitle,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: tokens.surface,
-          borderRadius: BorderRadius.circular(tokens.radiusLarge),
-          border: Border.all(color: tokens.line),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 5),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Switch(value: enabled, onChanged: onChanged),
-          ],
-        ),
-      ),
-    );
-  }
-}

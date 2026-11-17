@@ -20,6 +20,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/shell/app_shell.dart';
 import '../features/shell/diagnostics/diagnostics_page.dart';
+import '../features/shell/profile/settings_page.dart';
 import '../features/shell/records/cost_stats_page.dart';
 
 /// 全局路由单例。修改主题偏好 → LunioApp 重建 → 复用同一个 router 实例
@@ -69,10 +70,17 @@ GoRouter buildAppRouter() {
       ),
       GoRoute(
         // 车辆诊断占位页（票 03）：同 pushed 子页形态，入口在"我的"页
-        // 开发者区块（开关打开才出现，路由本身常驻——未开开关没有入口
-        // 能 push 它，与 /fuel 的常驻路由同打法）。
+        // 「进入诊断页」行（诊断开关开才显示，ADR 0028）与提醒页油量
+        // 水温信息卡（已连接时，ADR 0027）。路由本身常驻，与 /fuel 的
+        // 常驻路由同打法。
         path: '/diagnostics',
         builder: (context, state) => const DiagnosticsPage(),
+      ),
+      GoRoute(
+        // 设置页（ADR 0028）：我的页的二级整合页面（通知提醒/主题模式/
+        // 功能开关），pushed 子页形态，入口在我的页「设置」行。
+        path: '/settings',
+        builder: (context, state) => const SettingsPage(),
       ),
     ],
   );

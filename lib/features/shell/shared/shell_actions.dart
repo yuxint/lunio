@@ -36,6 +36,7 @@ import '../../../domain/entities/maintenance_record.dart';
 import '../../../domain/entities/notification_settings.dart';
 import '../../../domain/entities/parking_countdown.dart';
 import '../../../domain/entities/sync_metadata.dart';
+import '../diagnostics/obd_runtime.dart';
 import '../reminders/notification_coordinator.dart';
 import '../reminders/notification_sync_controller.dart';
 import 'modal_feedback.dart';
@@ -195,11 +196,10 @@ Future<void> saveManualDate(WidgetRef ref, LocalDate? date) async {
   ref.read(preferencesEpochProvider.notifier).bump();
 }
 
-/// 开关开发者模式。关闭时连带关闭手动日期、加油预测、车辆诊断与 ECU
-/// 里程自动同步——后四者的开关入口都只在开发者模式里可见，留着偏好就
-/// 是"无入口的孤儿开关"（加油预测还压着底部"加油"tab，诊断开关压着
-/// 入口行，里程自动同步挂在诊断页的检测点管理 sheet）。这条连带规则
-/// 收在本函数，UI 不再各自记得写哪些 key。
+/// 开关开发者模式。2026-11-16 起加油预测、车辆诊断已转正到设置页
+/// （ADR 0028），关闭开发者模式不再连带清它们与 ECU 里程自动同步——
+/// 只清手动日期（手动日期行仍只在开发者模式里可见，ADR 0028 保留这
+/// 一层）。这条连带规则收在本函数，UI 不再各自记得写哪些 key。
 Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
   final preferences = ref.read(lunioPreferencesProvider);
   if (enabled) {
@@ -207,19 +207,22 @@ Future<void> setDeveloperModeEnabled(WidgetRef ref, bool enabled) async {
   } else {
     await preferences.setDeveloperModeEnabled(false);
     await preferences.saveManualDateOverride(null);
-    await preferences.setFuelPredictionEnabled(false);
-    await preferences.setDiagnosticsEnabled(false);
-    await preferences.setObdOdometerAutoSyncEnabled(false);
   }
   ref.read(preferencesEpochProvider.notifier).bump();
 }
 
-/// 开关车辆诊断（开发者模式工具页"车辆诊断"的显隐开关）：写偏好 +
-/// bump 偏好纪元（diagnosticsEnabledProvider 随纪元重算，入口行随它
-/// 显隐）。关开发者模式时的连带置 false 收在 [setDeveloperModeEnabled]。
+/// 开关车辆诊断（设置页"功能开关"分区，ADR 0028）：写偏好 + bump 偏好
+/// 纪元（diagnosticsEnabledProvider 随纪元重算，入口行随它显隐）。
+/// 关闭时的收尾：断开 App 级诊断连接（ADR 0027）——提醒页按钮与信息
+/// 卡随开关消失，连接不留给无人消费的空转轮询。
 Future<void> setDiagnosticsEnabled(WidgetRef ref, bool value) async {
   await ref.read(lunioPreferencesProvider).setDiagnosticsEnabled(value);
   ref.read(preferencesEpochProvider.notifier).bump();
+  if (!value) {
+    await ref
+        .read(obdConnectionControllerProvider)
+        .disconnectManually();
+  }
 }
 
 /// 启停检测点（诊断页行开关，票 05）：写库 → 逐出检测点列表 provider
@@ -270,12 +273,6 @@ Future<void> removeDiagnosticsProbe(
   final provider = diagnosticsProbesProvider(probe.carId);
   ref.invalidate(provider);
   await ref.read(provider.future);
-}
-
-/// 记住 OBD 适配器（票 07：扫描点选连接成功后写设备记忆）：偏好门面
-/// typed 写。无 provider 消费（连接时直读门面），无失效面。
-Future<void> rememberObdDevice(WidgetRef ref, String deviceId) async {
-  await ref.read(lunioPreferencesProvider).setLastObdDeviceId(deviceId);
 }
 
 /// ECU 里程同步（ADR 0026）：车辆里程的第二写源。守卫「只增不减」

@@ -99,10 +99,6 @@ class _Harness {
       delay: (d) => chunkGate.gate(d),
     );
     controller = DiagnosticsConnectionController(
-      ui: DiagnosticsConnectionUi(
-        openScanSheet: () => openCalls++,
-        closeScanSheet: () => closeCalls++,
-      ),
       sessionFactory: (deviceId) {
         deviceIds.add(deviceId);
         return Elm327Session(
@@ -120,9 +116,17 @@ class _Harness {
       saveReading: (probeId, {required value, percent, required at}) async {
         saved.add((probeId, value, percent, at));
       },
-      onOdometerReading: odometerReadings.add,
       mockLink: mockLink,
     );
+    // ADR 0027：UI 接缝与 ECU 里程回调改为挂载式接缝（App 级控制器，
+    // 页面 initState 挂载、dispose 摘除）；测试装具构造后立即挂上。
+    controller.attachUi(
+      DiagnosticsConnectionUi(
+        openScanSheet: () => openCalls++,
+        closeScanSheet: () => closeCalls++,
+      ),
+    );
+    controller.setOdometerSyncHandler(odometerReadings.add);
     addTearDown(controller.dispose);
   }
 
@@ -504,6 +508,99 @@ void main() {
 
       expect(h.controller.state.readings[1]?.reading, isA<ObdNoData>());
       expect(h.saved, isEmpty);
+    });
+  });
+  group('快速连接与作用域（ADR 0027）', () {
+    test('快速连接有记忆：直连成功、不开扫描', () async {
+      final h = _Harness(rememberedId: 'dev-1');
+      unawaited(h.controller.connectRemembered());
+      await h.driveChunks(4);
+      await h.pump();
+
+      expect(h.deviceIds, ['dev-1']);
+      expect(h.controller.state.phase, DiagnosticsConnectionPhase.connected);
+      expect(h.openCalls, 0);
+    });
+
+    test('快速连接失败（设备未扫到）：不落扫描、落断开错误文案', () async {
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        connectError: const BleObdTransportException(
+          BleObdLinkErrorKind.deviceNotFound,
+        ),
+      );
+      final ok = await h.controller.connectRemembered();
+      await h.pump();
+
+      expect(ok, isFalse);
+      expect(h.controller.state.phase, DiagnosticsConnectionPhase.disconnected);
+      expect(h.controller.state.statusError, isNotNull);
+      expect(h.openCalls, 0);
+    });
+
+    test('快速连接门禁失败（蓝牙关）：不落扫描、状态条文案', () async {
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        connectError: const BleObdTransportException(
+          BleObdLinkErrorKind.adapterOff,
+        ),
+      );
+      final ok = await h.controller.connectRemembered();
+      await h.pump();
+
+      expect(ok, isFalse);
+    });
+
+    test('快速连接无记忆：静默 false，无任何扫描动作', () async {
+      final h = _Harness(rememberedId: null);
+      final ok = await h.controller.connectRemembered();
+      await h.pump();
+
+      expect(ok, isFalse);
+      expect(
+        h.controller.state.phase,
+        DiagnosticsConnectionPhase.idle,
+      );
+    });
+
+    test('start 的 connected 守卫：已连接再调不重连（诊断页复用连接）', () async {
+      final h = _Harness(rememberedId: 'dev-1');
+      await h.connectDirect();
+      await h.connectDirect();
+
+      expect(h.deviceIds, ['dev-1']);
+      expect(h.controller.state.phase, DiagnosticsConnectionPhase.connected);
+    });
+
+    test('作用域换防：诊断页全量清单、退回提醒页只轮询核心两条', () async {
+      final h = _Harness(rememberedId: 'dev-1');
+      final fuel = _probe(1, '012F', DiagnosticsParseType.fuelLevel);
+      final coolant = _probe(2, '0167', DiagnosticsParseType.coolantTempAux);
+      final volt = _probe(3, 'ATRV', DiagnosticsParseType.voltageText);
+      h.controller.setProbes([fuel, coolant, volt]);
+      h.controller.setBackgroundProbes([fuel, coolant]);
+      h.controller.setDiagnosticsScope(true);
+      await h.connectDirect();
+      await h.driveChunks(3);
+
+      expect(
+        h.mock.sentCommands,
+        containsAll(['012F', '0167', 'ATRV']),
+      );
+
+      final consumed = h.mock.sentCommands.length;
+      h.controller.setDiagnosticsScope(false);
+      // 倒计时每秒一拍（timeGate 门闩 = 一拍）：放行满 30 拍跨过刷新
+      // 间隔，核心两条到期发指令、电压不到期不发（ADR 0027 换防）。
+      for (var i = 0; i < 35; i++) {
+        h.timeGate.completeAll();
+        await h.pump();
+      }
+      await h.driveChunks(2);
+
+      final tail = h.mock.sentCommands.skip(consumed).toList();
+      expect(tail, containsAll(['012F', '0167']));
+      expect(tail, isNot(contains('ATRV')));
     });
   });
 }

@@ -515,15 +515,16 @@ void main() {
         (tester) async {
       final database = await seedTwoCarsWithRecords();
       await pumpApp(tester, database: database);
-      await gotoTab(tester, '我的');
-      await tester.tap(find.text('查看'));
+      // 我的页费用统计行已删（ADR 0028）：入口改走记录页汇总行。
+      await gotoTab(tester, '记录');
+      await tester.tap(find.text('费用统计'));
       await pumpUntilFound(tester, find.text('总费用'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('返回'));
       await tester.pumpAndSettle();
       expect(find.text('总费用'), findsNothing);
-      // 回到我的页：费用统计设置行还在。
+      // 回到记录页：汇总行入口还在。
       expect(find.text('费用统计'), findsOneWidget);
     });
 
@@ -569,19 +570,6 @@ void main() {
       await gotoTab(tester, '记录');
       expect(find.text('今年保养'), findsNothing);
       expect(find.text('费用统计'), findsNothing);
-    });
-  });
-
-  group('我的页入口', () {
-    testWidgets('费用统计设置行进统计页', (tester) async {
-      final database = await seedTwoCarsWithRecords();
-      await pumpApp(tester, database: database);
-      await gotoTab(tester, '我的');
-      expect(find.text('费用统计'), findsOneWidget);
-
-      await tester.tap(find.text('查看'));
-      await pumpUntilFound(tester, find.text('总费用'));
-      expect(find.text('项目占比'), findsOneWidget);
     });
   });
 

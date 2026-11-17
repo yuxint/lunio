@@ -215,6 +215,15 @@ final obdOdometerAutoSyncProvider = FutureProvider<bool>((ref) {
   return ref.watch(lunioPreferencesProvider).getObdOdometerAutoSyncEnabled();
 });
 
+/// OBD 设备记忆（票 07 设备记忆）：上一次扫描点选连接成功的适配器标识。
+/// 提醒页「连接OBD」快速连接按钮的显隐依据（ADR 0027）。写点在 App 级
+/// 连接装配的 rememberDevice 接缝（obd_runtime.dart，写库后 bump 偏好
+/// 纪元，本 provider 重算、按钮即时出现）。
+final lastObdDeviceIdProvider = FutureProvider<String?>((ref) {
+  ref.watch(preferencesEpochProvider);
+  return ref.watch(lunioPreferencesProvider).getLastObdDeviceId();
+});
+
 /// 某辆车的检测点列表（每车一套，ADR 0021 修订节）。内置三条种子由
 /// bootstrap 总入口按车幂等补齐，读侧显式 await bootstrap 再查表——
 /// 首启第一帧就能读到种子。

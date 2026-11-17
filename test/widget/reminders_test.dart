@@ -11,10 +11,12 @@ import 'package:lunio/core/date/app_date_context.dart';
 
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/features/shell/reminders/obd_quick_connect.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_record.dart';
 import 'package:lunio/domain/entities/sync_metadata.dart';
 import '../helpers/builders.dart';
+import '../helpers/diagnostics_fixture.dart';
 import '../helpers/widget_app.dart';
 
 void main() {
@@ -863,5 +865,87 @@ void main() {
     expect(find.text('里程未调高'), findsNothing);
     expect(find.widgetWithText(FilledButton, '保存里程'), findsOneWidget);
     expect((await repository.listCars()).single.currentMileageKm, 10000);
+  });
+  group('OBD 快速连接（ADR 0027）', () {
+    /// 播种一辆车 + 诊断开关开 + 设备记忆 dev-1，泵起 App（提醒页首屏）。
+    Future<AppDatabase> seedReady() async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final repository = testRepository(database);
+      await repository.ensureBootstrapData();
+      final carId = await repository.insertCarForTest(defaultCar());
+      await repository.setAppliedCarId(carId);
+      await repository.setPreferenceValue('diagnosticsEnabled', 'true');
+      await repository.setPreferenceValue('lastObdDeviceId', 'dev-1');
+      return database;
+    }
+
+    /// 读「连接OBD」按钮的背景色（MaterialStateProperty 解析默认态）。
+    Color obdButtonBackground(WidgetTester tester) {
+      final button = tester.widget<TextButton>(
+        find.ancestor(
+          of: find.text('连接OBD'),
+          matching: find.byType(TextButton),
+        ),
+      );
+      return button.style!.backgroundColor!.resolve(const {})!;
+    }
+
+    testWidgets('无开关无记忆：按钮不显示', (tester) async {
+      await pumpApp(tester);
+      await createDefaultCar(tester);
+      expect(find.text('连接OBD'), findsNothing);
+    });
+
+    testWidgets('开关开 + 有记忆：按钮显示（白态），直连成功转绿 + 信息卡', (
+      tester,
+    ) async {
+      final database = await seedReady();
+      final rig = DiagnosticsRig();
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+
+      expect(find.text('连接OBD'), findsOneWidget);
+      // 白态（idle）：英雄卡「更新里程」同款白 16% 底。
+      expect(obdButtonBackground(tester), Colors.white.withValues(alpha: 0.16));
+
+      // 点击 → 直连 → 已连接：信息卡出现，读数是 rig 语料值。
+      await tester.tap(find.text('连接OBD'));
+      await rig.advanceUntil(tester, find.text('37.6%'));
+      // 水温指令还在字节门闩上：再放一拍收齐两条核心读数。
+      await rig.deliverChunks(tester);
+      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('95℃'), findsOneWidget);
+      expect(find.text('油量'), findsOneWidget);
+      expect(find.text('水温'), findsOneWidget);
+      expect(
+        obdButtonBackground(tester),
+        isNot(Colors.white.withValues(alpha: 0.16)),
+      );
+
+      // 绿态点击 = 断开：信息卡消失，按钮回白态。
+      await tester.tap(find.text('连接OBD'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(ObdReadingsCard), findsNothing);
+      expect(
+        obdButtonBackground(tester),
+        Colors.white.withValues(alpha: 0.16),
+      );
+    });
+
+    testWidgets('点击信息卡进诊断页（诊断页复用同一连接）', (tester) async {
+      final database = await seedReady();
+      final rig = DiagnosticsRig();
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await tester.tap(find.text('连接OBD'));
+      await rig.advanceUntil(tester, find.text('37.6%'));
+
+      await tester.tap(find.text('油量'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      // 诊断页在栈顶（检测点区标题唯一；连接复用，不再走扫描）。
+      expect(find.text('检测点'), findsOneWidget);
+      expect(find.text('已连接'), findsOneWidget);
+    });
   });
 }

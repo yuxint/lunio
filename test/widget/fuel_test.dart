@@ -18,37 +18,44 @@ import '../helpers/builders.dart';
 import '../helpers/widget_app.dart';
 
 void main() {
-  testWidgets('fuel prediction developer switch toggles fuel tab instantly', (
-    tester,
-  ) async {
+  testWidgets('fuel prediction switch toggles fuel tab instantly', (tester) async {
     final database = AppDatabase.inMemory();
     addTearDown(database.close);
     final repository = testRepository(database);
     await repository.ensureBootstrapData();
-    await repository.setPreferenceValue('developerModeEnabled', 'true');
     await pumpApp(tester, database: database);
 
+    // 加油预测开关已转正到设置页（ADR 0028，不经开发者模式）：我的页
+    // →「设置」行 → 功能开关分区。
     await gotoTab(tester, '我的');
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-    // 开发者模式打开后出现"加油预测"开关行；默认关闭，底部没有加油 tab。
-    // 区块内两颗 Switch（加油预测 + 车辆诊断，2026-11-13 票 03），加油
-    // 预测在第一颗。
     expect(find.text('加油预测'), findsOneWidget);
     expect(find.byType(Switch), findsNWidgets(2));
-    expect(find.text('加油'), findsNothing);
 
-    // 打开开关：底部导航实时出现加油 tab（无需重启 App）。
+    // 打开开关：返回我的页，底部导航实时出现加油 tab（无需重启 App）。
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('加油'), findsOneWidget);
 
-    // 再次关闭：加油 tab 消失，数据入口同步隐藏。
+    // 再开设置页关闭：加油 tab 消失，数据入口同步隐藏。
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('加油'), findsNothing);
   });
-
-
   testWidgets('fuel page shows fill cost tiers with capacity and mock price', (
     tester,
   ) async {

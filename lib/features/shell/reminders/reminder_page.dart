@@ -4,11 +4,13 @@
 //   1. LoadingPage / ErrorPage：应用车辆加载中/失败；
 //   2. 无车 → EmptyVehicleCard（"还没有车辆"+ 新增入口）；
 //      有车 → LunioHeroCard 大渐变卡（品牌车型 + 当前里程 + 到期概览，
-//      右上角"更新里程"打开快捷改里程 sheet，见文件末尾）；
-//   3. ReminderActionRow：新增保养记录 / 停车倒计时 两个按钮；
-//   4. 停车倒计时进行中 → ParkingCountdownCard（进度环 + 结束按钮）；
-//   5. ReminderList：分层清单（需要处理量规行 / 其余折叠，
-//      ADR 0018，见 reminder_list.dart）。
+//      右上角"更新里程"打开快捷改里程 sheet + 「连接OBD」快速连接胶囊
+//      按钮（ADR 0027，诊断开关开且有设备记忆才显示））；
+//   3. 已连接时英雄卡下方插油量水温信息卡（ObdReadingsCard，实时读数，
+//      点击进诊断页）；
+//   4. ReminderActionRow：新增保养记录 / 停车倒计时 两个按钮；
+//   5. 停车倒计时进行中 → ParkingCountdownCard（进度环 + 结束按钮）；
+//   6. ReminderList：平铺量规清单（ADR 0018 修订节，见 reminder_list.dart）。
 //
 // 性能（R11 修复后）：停车倒计时卡片内部 1s Timer 自刷新，
 // 页面本身不再有周期性重建；英雄卡"到期概览"只在数据变化时重算。
@@ -16,15 +18,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
+import '../../../data/repositories/diagnostics_repository.dart'
+    show DiagnosticsRepository;
 import '../../../domain/entities/car.dart';
 import '../../../domain/entities/reminder.dart';
 import '../../../domain/entities/sync_metadata.dart';
+import '../../../domain/entities/diagnostics_probe.dart';
+import '../diagnostics/diagnostics_connection_controller.dart';
+import '../diagnostics/elm327_parser.dart' show ObdValue;
+import '../diagnostics/obd_runtime.dart';
 import '../profile/vehicles.dart';
 import '../records/records_page.dart';
 import '../shared/shell_shared.dart';
+import 'obd_quick_connect.dart';
 import 'parking_countdown.dart';
 import 'reminder_list.dart';
 import 'reminder_rows.dart';
@@ -59,8 +70,18 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
       data: (value) => value.length > 1,
       orElse: () => false,
     );
-    // 到期概览指标：就绪时按分段渲染（超期/到期各自带语义浅调），
-    // loading/error 沿用纯文本。
+    // OBD 快速连接（ADR 0027）：App 级连接控制器 + 显隐两条件（诊断开
+    // 关开 + 有设备记忆）+ 后台核心检测点清单（轮询换防的数据源）。
+    final connection = ref.watch(obdConnectionControllerProvider);
+    final diagnosticsEnabled = ref
+        .watch(diagnosticsEnabledProvider)
+        .maybeWhen(data: (value) => value, orElse: () => false);
+    final lastObdDeviceId = ref
+        .watch(lastObdDeviceIdProvider)
+        .maybeWhen(data: (value) => value, orElse: () => null);
+    // 到期概览指标：就绪时按分段渲染（超期/到期染进度条同源的语义色，
+    // 2026-11-16 拍板接受渐变底对比度代价），loading/error 沿用纯文本。
+    final tokens = Theme.of(context).extension<LunioTokens>()!;
     final overviewMetric = reminderRows.when(
       loading: () => const LunioMetric(label: '到期概览', value: '计算中'),
       error: (error, stackTrace) =>
@@ -73,7 +94,7 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
             .map(
               (segment) => LunioMetricSegment(
                 segment.text,
-                color: _overviewSegmentColor(segment.status),
+                color: _overviewSegmentColor(segment.status, tokens),
               ),
             )
             .toList(),
@@ -94,20 +115,94 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
         children: [
           if (car == null)
             EmptyVehicleCard(onAdd: () => showAddCarSheet(context, ref))
-          else
-            LunioHeroCard(
-              title: '${car.brand} ${car.model}',
-              subtitle: '上路 ${car.roadDate} · 当前应用车辆',
-              actionLabel: '更新里程',
-              onAction: () => showQuickMileageUpdateSheet(context, ref, car),
-              metrics: [
-                LunioMetric(
-                  label: '当前里程',
-                  value: formatNumber(car.currentMileageKm),
-                ),
-                overviewMetric,
-              ],
+          else ...[
+            // 英雄卡与油量水温信息卡共享连接状态（按钮四态/卡片显隐/
+            // 读数刷新），ListenableBuilder 一处收口。
+            ListenableBuilder(
+              listenable: connection,
+              builder: (context, _) {
+                final state = connection.state;
+                final connected =
+                    state.phase == DiagnosticsConnectionPhase.connected;
+                // 后台核心清单换防（不触发通知的快照推入）：检测点数据
+                // 到位后把油量/水温两条推给连接控制器，轮询按作用域取用。
+                final carId = car.id;
+                final probesAsync = carId == null
+                    ? null
+                    : ref.watch(diagnosticsProbesProvider(carId));
+                final probes = probesAsync?.maybeWhen(
+                  data: (value) => value,
+                  orElse: () => null,
+                );
+                if (probes != null) {
+                  connection.setBackgroundProbes(
+                    _coreProbesOf(probes),
+                  );
+                }
+                final fuelProbe = probes == null
+                    ? null
+                    : _probeByCatalogKey(
+                        probes,
+                        DiagnosticsRepository.builtInFuelLevelKey,
+                      );
+                final coolantProbe = probes == null
+                    ? null
+                    : _probeByCatalogKey(
+                        probes,
+                        DiagnosticsRepository.builtInCoolantKey,
+                      );
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    LunioHeroCard(
+                      title: '${car.brand} ${car.model}',
+                      subtitle: '上路 ${car.roadDate} · 当前应用车辆',
+                      actionLabel: '更新里程',
+                      onAction: () =>
+                          showQuickMileageUpdateSheet(context, ref, car),
+                      secondaryAction: diagnosticsEnabled && lastObdDeviceId != null
+                          ? ObdQuickConnectButton(
+                              phase: state.phase,
+                              onTap: () =>
+                                  _handleObdConnectTap(context, connection),
+                            )
+                          : null,
+                      metrics: [
+                        LunioMetric(
+                          label: '当前里程',
+                          value: formatNumber(car.currentMileageKm),
+                        ),
+                        overviewMetric,
+                      ],
+                    ),
+                    if (connected &&
+                        fuelProbe != null &&
+                        coolantProbe != null) ...[
+                      const SizedBox(height: 12),
+                      ObdReadingsCard(
+                        fuelDisplay: switch (
+                            connection.liveReadingFor(fuelProbe)?.reading) {
+                          final ObdValue v => v.display,
+                          _ => null,
+                        },
+                        coolantDisplay: switch (
+                            connection.liveReadingFor(coolantProbe)?.reading) {
+                          final ObdValue v => v.display,
+                          _ => null,
+                        },
+                        updatedAt: _latestReadingAt(
+                          connection.liveReadingFor(fuelProbe),
+                          connection.liveReadingFor(coolantProbe),
+                        ),
+                        onRefresh: connection.requestImmediatePoll,
+                        onOpen: () => context.push('/diagnostics'),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
+          ],
           if (car != null) ...[
             const SizedBox(height: 12),
             ReminderActionRow(
@@ -132,26 +227,86 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
       ),
     );
   }
+
+  /// 「连接OBD」按钮点击（ADR 0027）：绿=断开；黄=无效果；白/红=直连
+  /// 设备记忆（不落扫描）。失败 toast 错误文案（Disconnected 事件经流
+  /// 递送，让一拍再读 statusError）。
+  Future<void> _handleObdConnectTap(
+    BuildContext context,
+    DiagnosticsConnectionController connection,
+  ) async {
+    final phase = connection.state.phase;
+    if (phase == DiagnosticsConnectionPhase.connected) {
+      await connection.disconnectManually();
+      return;
+    }
+    if (phase == DiagnosticsConnectionPhase.connecting ||
+        phase == DiagnosticsConnectionPhase.scanning) {
+      return;
+    }
+    final ok = await connection.connectRemembered();
+    if (!ok) {
+      await Future<void>.delayed(Duration.zero);
+      final error = connection.state.statusError;
+      if (context.mounted) {
+        showStatusOverlay(
+          context,
+          error ?? '连接失败，请重试',
+          StatusOverlayTone.error,
+        );
+      }
+    }
+  }
+
+  /// 按内置 catalogKey 定位检测点（与诊断页同一份 key 常量，单一事实源）。
+  DiagnosticsProbe? _probeByCatalogKey(
+    List<DiagnosticsProbe> probes,
+    String catalogKey,
+  ) {
+    for (final probe in probes) {
+      if (probe.catalogKey == catalogKey) {
+        return probe;
+      }
+    }
+    return null;
+  }
+
+  /// 后台核心清单：油量 + 水温两条（提醒页只轮询这两条，ADR 0027）。
+  List<DiagnosticsProbe> _coreProbesOf(List<DiagnosticsProbe> probes) {
+    return [
+      for (final probe in probes)
+        if (probe.catalogKey == DiagnosticsRepository.builtInFuelLevelKey ||
+            probe.catalogKey == DiagnosticsRepository.builtInCoolantKey)
+          probe,
+    ];
+  }
 }
 
-// ---------------- 到期概览的分段配色（方向稿 A） ----------------
+// ---------------- 到期概览的分段配色 ----------------
 
-// 渐变底上的语义浅调：ADR 0019 的语义三色按白底调校（较深的色调），
-// 直接放到主色渐变上对比度不足。这里用同色相的浅调常量——浅色（品牌
-// 蓝）与深色（青）两套渐变上都有足够对比度；不进 LunioTokens 是因为
-// token 会按明暗主题切换，而渐变底上需要的是明暗稳定的浅色。
-const Color _kOverviewDangerTint = Color(0xFFFECACA);
-const Color _kOverviewWarningTint = Color(0xFFFDE68A);
-
-/// 概览分段 → 颜色：danger/warning 染浅调，其余（中性段）走默认白。
-Color? _overviewSegmentColor(ReminderStatus? status) {
+/// 概览分段 → 颜色：danger/warning 染进度条同源的语义色（2026-11-16
+/// 拍板：值文案与项目提醒进度条颜色保持一致，接受浅色渐变底上对比度
+/// 下降的代价），其余（中性段）走默认白。
+Color? _overviewSegmentColor(ReminderStatus? status, LunioTokens tokens) {
   return switch (status) {
-    ReminderStatus.danger => _kOverviewDangerTint,
-    ReminderStatus.warning => _kOverviewWarningTint,
+    ReminderStatus.danger => tokens.danger,
+    ReminderStatus.warning => tokens.warning,
     _ => null,
   };
 }
 
+/// 两条核心读数快照里较新的读取时刻（信息卡「更新」时间；都无则 null）。
+DateTime? _latestReadingAt(ProbeReadingSnapshot? a, ProbeReadingSnapshot? b) {
+  final atA = a?.at;
+  final atB = b?.at;
+  if (atA == null) {
+    return atB;
+  }
+  if (atB == null) {
+    return atA;
+  }
+  return atA.isAfter(atB) ? atA : atB;
+}
 /// 两个主操作按钮的行：新增保养记录（打开记录表单 sheet）+
 /// 停车倒计时（倒计时进行中时禁用——必须先结束当前倒计时）。
 class ReminderActionRow extends StatelessWidget {

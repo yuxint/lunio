@@ -17,6 +17,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lunio/data/database/app_database.dart';
@@ -29,6 +30,7 @@ import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
 import 'package:lunio/features/shell/diagnostics/obd_verification_commands.dart';
+import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/widgets/lunio_components.dart';
 
 import '../helpers/builders.dart';
@@ -85,8 +87,9 @@ Future<int> appliedCarId(AppDatabase database) async {
 }
 
 /// 离开页面（点返回键）：每用例固定收尾。三次泵帧=pop 起始帧→转场
-/// 完成帧→路由移除帧（页面离树，State.dispose 启动会话释放链）；会话
-/// 定时全是门闩 Completer（非定时器），无需冲刷。
+/// 完成帧→路由移除帧（页面离树，State.dispose 只摘接缝与作用域，
+/// App 级连接保持，ADR 0027）；会话定时全是门闩 Completer（非定时
+/// 器），无需冲刷。
 Future<void> leavePageAndFlush(WidgetTester tester) async {
   await tester.tap(find.byTooltip('返回'));
   // 三拍时长泵：tap 回调在事件冲刷里触发 pop；转场动画进度随假时钟流
@@ -132,8 +135,9 @@ Future<void> openDiagnosticsPage(WidgetTester tester) async {
   // 不动它——不补这拍页面停在半滑入位，页内 tap 全部落空）。
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
-  // 页面已在栈顶（下层我的页 offstage，finder 默认跳过）。
-  expect(find.text('车辆诊断'), findsNWidgets(2));
+  // 页面已在栈顶（下层我的页 offstage，finder 默认跳过）。2026-11-16
+  // 起我的页不再有「车辆诊断」开关行（迁设置页），标题只有页面一处。
+  expect(find.text('车辆诊断'), findsOneWidget);
 }
 
 void main() {
@@ -340,7 +344,7 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('离开页面断开会话（dispose 链路到传输层，无泄漏）', (tester) async {
+    testWidgets('离开页面不断开连接（App 级连接保持，ADR 0027）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -350,13 +354,13 @@ void main() {
       await rig.advanceUntil(tester, find.text('37.6%'));
       expect(rig.mock.disconnectCalls, 0);
 
-      // 离开页面：dispose → 会话 dispose → transport.disconnect。
+      // 离开页面：只摘 UI 接缝与诊断作用域（轮询清单换回提醒页核心两
+      // 条），App 级连接保持——重连成本高，跨页共享是 ADR 0027 的目的。
       await leavePageAndFlush(tester);
-      expect(rig.mock.disconnectCalls, 1);
+      expect(rig.mock.disconnectCalls, 0);
       // 页面已退栈。
       expect(find.text('检测点'), findsNothing);
     });
-
     testWidgets('调试终端：暂停轮询后原始命令可发，验证脚本含私有 DID', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
@@ -977,6 +981,12 @@ void main() {
         value: '95℃',
         at: DateTime(2026, 11, 14, 8, 0, 0),
       );
+      // 直写仓库绕过了写点直失效（轮询落库写点已收在 App 级连接装配，
+      // obd_runtime.dart）：这里镜像动作层纪律手动逐出，进页才能读到
+      // 带最后读数的检测点清单。
+      ProviderScope.containerOf(
+        tester.element(find.byType(LunioPage).first),
+      ).invalidate(diagnosticsProbesProvider);
 
       await openDiagnosticsPage(tester);
 

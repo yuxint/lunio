@@ -329,6 +329,7 @@ class LunioHeroCard extends StatelessWidget {
     required this.metrics,
     this.actionLabel,
     this.onAction,
+    this.secondaryAction,
   });
 
   final String title;
@@ -336,6 +337,10 @@ class LunioHeroCard extends StatelessWidget {
   final List<LunioMetric> metrics;
   final String? actionLabel;
   final VoidCallback? onAction;
+
+  /// 顶行动作的右侧附加动作槽（提醒页「连接OBD」胶囊按钮用——按钮的
+  /// 底色与文字色随连接相位变化，与固定白胶囊形态不同，收 widget 槽）。
+  final Widget? secondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -398,6 +403,10 @@ class LunioHeroCard extends StatelessWidget {
                   ),
                   child: Text(actionLabel!),
                 ),
+              if (secondaryAction != null) ...[
+                const SizedBox(width: 8),
+                secondaryAction!,
+              ],
             ],
           ),
           const SizedBox(height: 16),

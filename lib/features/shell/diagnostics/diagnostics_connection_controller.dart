@@ -1,21 +1,31 @@
-// 诊断连接编排（GLOSSARY「诊断连接编排」词条）：从进入诊断页到断开适配器
-// 的整条连接流程的决策体——相位机、尝试代数、直连/扫描分流、扫描会话、
-// 取消与重连、最后读数合并与落库策略。plain-Dart 控制器，不碰 BuildContext；
-// 会话工厂、扫描器、设备记忆、读数落库与两个 UI 动作经构造注入（接法同
-// ProbeFormController / FuelRecordFormController 先例）。
+// 诊断连接编排（GLOSSARY「诊断连接编排」词条，ADR 0027）：诊断连接的
+// 整条流程决策体——相位机、尝试代数、直连/扫描分流、扫描会话、取消与
+// 重连、最后读数合并与落库策略。plain-Dart 控制器，不碰 BuildContext；
+// 会话工厂、扫描器、设备记忆、读数落库经构造注入，扫描 sheet 的开/关
+// （DiagnosticsConnectionUi）与 ECU 里程静默同步回调由诊断页经
+// attachUi / setOdometerSyncHandler 挂载、页面销毁时摘除。
 //
-// ≈ Java 的有状态 Service + 门面：页面 ≈ Controller，本类 ≈ 领域 Service，
-// DiagnosticsConnectionUi ≈ 回调接口（页面实现开/关扫描 sheet 两个 UI 动作）。
-// 会话仍是一次性对象：本类持有当前会话、页面只负责触发（进入 start、
-// 离开 dispose、按钮调对应方法）；重连 = 丢弃旧会话新建实例。
+// 生命周期归 App 级（ADR 0027，2026-11-16）：本类由 keepAlive provider
+// 持有（obd_runtime.dart 的 obdConnectionControllerProvider），提醒页
+// 「连接OBD」快速连接与诊断页共享同一连接——离诊断页不断开，进诊断页
+// 已连接则复用；轮询清单按作用域换防：诊断页在栈顶 = 全量启用清单，
+// 退回提醒页 = 核心两条（油量/水温）。会话仍是一次性对象：本类持有
+// 当前会话、调用方只负责触发（按钮/页面调对应方法）；重连 = 丢弃旧
+// 会话新建实例。
 //
-// 行为契约（从原 diagnostics_page.dart 原样迁入，逐条保留）：
+// ≈ Java 的有状态 Service + 门面：页面 ≈ Controller，本类 ≈ 领域
+// Service（App 级单例 Bean），DiagnosticsConnectionUi ≈ 回调接口（诊断
+// 页实现开/关扫描 sheet 两个 UI 动作）。
+//
+// 行为契约（票 04 迁入 + ADR 0027 增补）：
 //   - 直连：设备记忆命中 → 定向建链；无记忆 → 先过适配器门禁再开扫描 sheet；
+//   - 快速连接（connectRemembered）：只直连设备记忆，不落扫描——失败都
+//     落「已断开」错误文案，由调用方（提醒页）toast 反馈；
 //   - 扫描：点选即停扫并建链；失败在 sheet 内回填并恢复扫描；连接中关闭
 //     sheet = 取消本次连接（会话 dispose 收尾，迟到失败不改写相位）；
-//   - 门禁类失败（蓝牙关/不支持/权限）状态条渲染文案、不落扫描；
+//   - 门禁类失败（蓝牙关/适配器不支持/权限）状态条渲染文案、不落扫描；
 //   - 会话级失败（AT 超时等）状态条渲染错误文案，点选流同样回填恢复扫描；
-//   - 离开页面断开；首帧仍先渲染「未连接」，连接动作由页面首帧后触发；
+//   - 诊断页进入时已连接则复用（start 的 connected 守卫），离开不断开；
 //   - 最后读数：有效值写库（无数据不写不覆盖），实时值优先、持久化回退。
 import 'dart:async';
 
@@ -105,22 +115,18 @@ class DiagnosticsConnectionUi {
   final void Function() closeScanSheet;
 }
 
-/// 诊断连接编排控制器（职责与契约见文件头）。一次性对象：页面 initState
-/// 创建、dispose 释放；释放后所有命令静默返回。
+/// 诊断连接编排控制器（职责与契约见文件头）。App 级一次性对象（ADR
+/// 0027）：keepAlive provider 创建、provider onDispose 释放；诊断页只
+/// 挂/摘 UI 接缝与作用域，不创建不释放。释放后所有命令静默返回。
 class DiagnosticsConnectionController extends ChangeNotifier {
   DiagnosticsConnectionController({
-    required this.ui,
     required this.sessionFactory,
     required this.scanner,
     required this.readDeviceId,
     required this.rememberDevice,
     required this.saveReading,
-    required this.onOdometerReading,
     bool? mockLink,
   }) : mockLink = mockLink ?? obdMockLink;
-
-  /// 开/关扫描 sheet 的 UI 接缝（页面实现）。
-  final DiagnosticsConnectionUi ui;
 
   /// 会话工厂（每次连接新建会话 + 传输层；测试注入门闩夹具）。
   final ObdSessionFactory sessionFactory;
@@ -142,14 +148,19 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     required DateTime at,
   }) saveReading;
 
-  /// ECU 里程同步接缝（ADR 0026）：收到有效里程读数（ kilometers 非
-  /// null）时回调，静默自动写开关的读库与守卫在接缝实现里（页面装配）。
-  /// controller 不碰偏好与仓库。
-  final void Function(ObdValue reading) onOdometerReading;
-
   /// mock 回退链路（`--dart-define=LUNIO_OBD_MOCK=true` 或测试显式传
   /// false/true）：跳过设备记忆与扫描，直连演示设备。
   final bool mockLink;
+
+  /// 开/关扫描 sheet 的 UI 接缝（诊断页 attachUi 挂载、detachUi 摘除）。
+  /// null = 无诊断页在栈顶。扫描只从诊断页发起，快速连接不扫描。
+  DiagnosticsConnectionUi? _ui;
+
+  /// ECU 里程静默同步回调（ADR 0026，诊断页 setOdometerSyncHandler 挂
+  /// 载、摘除）：收到有效里程读数（kilometers 非 null）时回调，静默自动
+  /// 写开关的读库与守卫在接缝实现里。controller 不碰偏好与仓库；里程
+  /// 检测点只在诊断页作用域的全量清单里轮询，回调只在诊断页期间触发。
+  void Function(ObdValue reading)? _odometerHandler;
 
   // ---- 内部状态（对外只经 state 快照） ----
   DiagnosticsConnectionPhase _phase = DiagnosticsConnectionPhase.idle;
@@ -174,10 +185,18 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 连接时自增作废在途尝试，迟到的失败回填不再改写相位。
   int _connectAttempt = 0;
 
-  /// 最新检测点快照（页面 setProbes 推入；轮询快照 getter 读它——不读
-  /// provider 的 AsyncValue.value，invalidate 后读侧是陈旧值，启停会晚
-  /// 一轮生效）。
+  /// 最新检测点快照（诊断页 setProbes 推入的全量清单；轮询快照 getter
+  /// 读它——不读 provider 的 AsyncValue.value，invalidate 后读侧是陈旧
+  /// 值，启停会晚一轮生效）。
   List<DiagnosticsProbe> _probes = const [];
+
+  /// 诊断页作用域旗：true = 诊断页在栈顶，轮询用全量清单；false = 退回
+  /// 提醒页，轮询用 [_backgroundProbes] 核心清单（ADR 0027 作用域换防）。
+  bool _diagnosticsScope = false;
+
+  /// 后台核心清单（提醒页 setBackgroundProbes 推入的油量/水温两条；无
+  /// 诊断页作用域时轮询快照 getter 用它）。
+  List<DiagnosticsProbe> _backgroundProbes = const [];
 
   bool _disposed = false;
 
@@ -196,10 +215,22 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 当前会话（调试终端用；null = 未建链/已释放）。
   Elm327Session? get session => _session;
 
-  /// 推送最新检测点清单（页面数据分支调用；不触发通知——列表数据本身
+  /// 推送最新检测点清单（诊断页数据分支调用；不触发通知——列表数据本身
   /// 由 provider 驱动重建，读数合并用读取时计算）。
   void setProbes(List<DiagnosticsProbe> probes) {
     _probes = probes;
+  }
+
+  /// 推送后台核心清单（提醒页推入的油量/水温两条；无诊断页作用域时的
+  /// 轮询数据源。不触发通知，理由同 [setProbes]）。
+  void setBackgroundProbes(List<DiagnosticsProbe> probes) {
+    _backgroundProbes = probes;
+  }
+
+  /// 切换诊断页作用域（诊断页 initState 置 true、dispose 置 false）：
+  /// 轮询快照 getter 按它选数据源（ADR 0027 作用域换防）。
+  void setDiagnosticsScope(bool active) {
+    _diagnosticsScope = active;
   }
 
   /// 检测点快照取值（行列表与核心值卡共源）：实时读数优先（本会话最新
@@ -214,7 +245,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     if (value == null || at == null) {
       return null;
     }
-    // 重建快照：display + percent 足够渲染（水温/电压只显 display，
+    // 重建快照：display + percent 足够渲染（水温/值卡只显 display，
     // 油量卡升数估算用 percent）；celsius 不持久化，重建后不需要。
     return ProbeReadingSnapshot(
       reading: ObdValue(display: value, percent: probe.lastPercent),
@@ -222,12 +253,21 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     );
   }
 
+  /// 只取本会话实时读数（提醒页油量水温信息卡用；ADR 0027 拍板「不回
+  /// 退最后读数」——持久化快照只在诊断页展示，提醒页只信本轮连接拿到
+  /// 的值）。两者皆无返回 null。
+  ProbeReadingSnapshot? liveReadingFor(DiagnosticsProbe probe) {
+    return _readings[probe.id];
+  }
+
   /// 进页面自动连接与「重连」按钮的入口：mock 分支 → 演示设备；否则读
-  /// 设备记忆，命中直连、无记忆落扫描 sheet。
+  /// 设备记忆，命中直连、无记忆落扫描 sheet。已连接/连接中/扫描中直接
+  /// 返回（connected 守卫：App 级连接在诊断页进入时复用，不重连）。
   Future<void> start() async {
     if (_disposed ||
         _phase == DiagnosticsConnectionPhase.connecting ||
-        _phase == DiagnosticsConnectionPhase.scanning) {
+        _phase == DiagnosticsConnectionPhase.scanning ||
+        _phase == DiagnosticsConnectionPhase.connected) {
       return;
     }
     if (mockLink) {
@@ -243,6 +283,43 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       return;
     }
     await _connectToDevice(remembered);
+  }
+
+  /// 快速连接（提醒页「连接OBD」按钮）：只直连设备记忆，**不落扫描**。
+  /// 门禁类失败与设备/链路类失败都由会话层发 Disconnected 事件落「已断
+  /// 开」+ 错误文案，返回 false 供调用方 toast；成功返回 true。已在连
+  /// 接中/扫描中/已连接时返回当前连接态（无效果，调用方不 toast）。
+  Future<bool> connectRemembered() async {
+    if (_disposed) {
+      return false;
+    }
+    if (_phase == DiagnosticsConnectionPhase.connecting ||
+        _phase == DiagnosticsConnectionPhase.scanning) {
+      return false;
+    }
+    if (_phase == DiagnosticsConnectionPhase.connected) {
+      return true;
+    }
+    if (mockLink) {
+      final session = await _connectToDevice(
+        'mock-device',
+        allowScanFallback: false,
+      );
+      return session != null;
+    }
+    final remembered = await readDeviceId();
+    if (_disposed) {
+      return false;
+    }
+    // 按钮只在有设备记忆时显示；无记忆属防御分支，静默返回。
+    if (remembered == null) {
+      return false;
+    }
+    final session = await _connectToDevice(
+      remembered,
+      allowScanFallback: false,
+    );
+    return session != null;
   }
 
   /// 「选择设备」按钮与无记忆首用的扫描入口：先过适配器门禁（权限拒绝/
@@ -339,7 +416,24 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     _session?.requestImmediatePoll();
   }
 
-  /// 释放：停扫 + 撤扫描订阅 + 释放会话（离页断开）。幂等。
+  /// 挂载扫描 sheet 的 UI 接缝（诊断页 initState）。重复挂载以最后一次
+  /// 为准（诊断页是唯一挂载方，单实例不并发）。
+  void attachUi(DiagnosticsConnectionUi ui) {
+    _ui = ui;
+  }
+
+  /// 摘除 UI 接缝（诊断页 dispose）：摘除后扫描入口全走防御分支。
+  void detachUi() {
+    _ui = null;
+  }
+
+  /// 挂载 ECU 里程静默同步回调（诊断页 initState）；传 null 摘除。
+  void setOdometerSyncHandler(void Function(ObdValue reading)? handler) {
+    _odometerHandler = handler;
+  }
+
+  /// App 级释放（keepAlive provider onDispose；App 生命周期内不会触发，
+  /// 测试用）：停扫 + 撤扫描订阅 + 释放会话。幂等。
   @override
   void dispose() {
     if (_disposed) {
@@ -354,6 +448,14 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 开 sheet 的落地：置扫描中相位 + 订阅扫描结果 + 开 UI + 启动扫描。
   void _openScanSheetNow() {
     if (_disposed || _scanSheetOpen) {
+      return;
+    }
+    // UI 接缝未挂载（无诊断页在栈顶）时不开 sheet：扫描只从诊断页发起，
+    // 这里是防御分支——落可恢复的未连接态而不是崩溃。
+    final ui = _ui;
+    if (ui == null) {
+      _phase = DiagnosticsConnectionPhase.idle;
+      _notify();
       return;
     }
     _scanSheetOpen = true;
@@ -417,6 +519,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   Future<Elm327Session?> _connectToDevice(
     String deviceId, {
     BleObdScanEntry? picked,
+    bool allowScanFallback = true,
   }) async {
     final attempt = ++_connectAttempt;
     _phase = DiagnosticsConnectionPhase.connecting;
@@ -468,7 +571,11 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       if (!ble.kind.isGateError) {
         // 记忆直连的设备/链路类失败：落扫描 sheet。门禁类保持断开态
         // 错误文案，用户按文案去修系统状态，扫描也扫不出结果。
-        unawaited(openScan());
+        // 快速连接（allowScanFallback=false）不落扫描：失败交调用方
+        // toast，保持「连上一次那台」的语义（ADR 0027）。
+        if (allowScanFallback) {
+          unawaited(openScan());
+        }
       }
       return null;
     }
@@ -537,7 +644,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     }
     _scanSheetOpen = false;
     _cancelScanResources();
-    ui.closeScanSheet();
+    _ui?.closeScanSheet();
   }
 
   /// 撤扫描结果订阅 + 停扫（scanner 是共享单例，只停不释放）。
@@ -581,7 +688,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
         // ECU 里程同步（ADR 0026）：有效里程读数经接缝回调（静默自动
         // 写的开关读库与守卫在接缝实现里，controller 不碰偏好与仓库）。
         if (reading is ObdValue && reading.kilometers != null) {
-          onOdometerReading(reading);
+          _odometerHandler?.call(reading);
         }
     }
   }
@@ -592,7 +699,12 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     if (_disposed) {
       return const [];
     }
-    return _probes.where((probe) => probe.enabled).toList();
+    // background 未推入（提醒页从未挂载过，多见于测试直连场景）时
+    // 回退全量清单，避免「已连接但轮询空表」的空转连接。
+    final source = _diagnosticsScope || _backgroundProbes.isEmpty
+        ? _probes
+        : _backgroundProbes;
+    return source.where((probe) => probe.enabled).toList();
   }
 
   /// 释放会话与事件订阅（dispose/重连前调用，幂等）：会话与其订阅在

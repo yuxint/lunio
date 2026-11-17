@@ -147,11 +147,15 @@ void main() {
   ) async {
     await pumpApp(tester);
 
+    // 主题模式行已迁设置页（ADR 0028）：我的页 →「设置」行 → 设置页内切换。
     await gotoTab(tester, '我的');
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('深色'));
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('个人中心'), findsOneWidget);
+    expect(find.text('设置'), findsWidgets);
     expect(find.text('主题已切换'), findsNothing);
   });
 
@@ -160,10 +164,13 @@ void main() {
     await pumpApp(tester);
 
     await gotoTab(tester, '我的');
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('跟随系统'));
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('个人中心'), findsOneWidget);
+    expect(find.text('设置'), findsWidgets);
     expect(find.text('主题已切换'), findsNothing);
   });
 

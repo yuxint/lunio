@@ -52,7 +52,8 @@ class DiagnosticsPage extends ConsumerStatefulWidget {
 }
 
 class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
-  /// 连接编排控制器（一次性对象；页面 initState 创建、dispose 释放）。
+  /// 连接编排控制器（App 级，ADR 0027）：从 obdConnectionControllerProvider
+  /// 取唯一实例，页面只挂/摘接缝与作用域，不创建不释放。
   late final DiagnosticsConnectionController _connection;
 
   /// 扫描 sheet 句柄（非 null = sheet 在栈顶；onClosed 清空）。controller
@@ -62,24 +63,22 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   @override
   void initState() {
     super.initState();
-    _connection = DiagnosticsConnectionController(
-      ui: DiagnosticsConnectionUi(
+    _connection = ref.read(obdConnectionControllerProvider);
+    // 挂 UI 接缝（扫描 sheet 开/关）、ECU 里程静默同步回调与诊断作用域
+    // （轮询清单换全量启用清单）；页面销毁时全部摘除（ADR 0027 换防）。
+    _connection.attachUi(
+      DiagnosticsConnectionUi(
         openScanSheet: _showScanSheet,
         closeScanSheet: _closeScanSheet,
       ),
-      sessionFactory: ref.read(obdSessionFactoryProvider),
-      scanner: ref.read(obdScannerProvider),
-      readDeviceId: () =>
-          ref.read(lunioPreferencesProvider).getLastObdDeviceId(),
-      rememberDevice: (deviceId) => rememberObdDevice(ref, deviceId),
-      saveReading: (probeId, {required value, percent, required at}) => ref
-          .read(diagnosticsRepositoryProvider)
-          .saveProbeReading(probeId, value: value, percent: percent, at: at),
-      onOdometerReading: (reading) =>
-          unawaited(_syncOdometerSilently(reading)),
     );
+    _connection.setOdometerSyncHandler(
+      (reading) => unawaited(_syncOdometerSilently(reading)),
+    );
+    _connection.setDiagnosticsScope(true);
     // 首帧先渲染「未连接」，连接动作延到首帧之后启动——状态机起点状态
-    // 真实可达（widget 测试能按序断言全状态序列）。
+    // 真实可达（widget 测试能按序断言全状态序列）。已连接/连接中/扫描中
+    // 时 start 内部守卫直接返回（App 级连接复用，不重连）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_connection.start());
     });
@@ -87,7 +86,12 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
 
   @override
   void dispose() {
-    _connection.dispose();
+    // App 级连接不随页面销毁（ADR 0027）：只摘接缝与作用域，轮询清单
+    // 换回提醒页的核心两条（若连接还在，提醒页信息卡数据源接续）。
+    _connection
+      ..setOdometerSyncHandler(null)
+      ..detachUi()
+      ..setDiagnosticsScope(false);
     super.dispose();
   }
 
