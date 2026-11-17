@@ -330,7 +330,7 @@ enum LunioStatusColor {
         switch status {
         case "warning":
             // #B45309（到期/黄，ADR 0019 浅色对比度档）
-            return Color(red: 180 / 255, green: 83 / 255, blue: 9 / 255)
+            return Color(red: 245 / 255, green: 158 / 255, blue: 11 / 255)
         case "danger":
             // #DC2626（超期/红，ADR 0019 浅色对比度档）
             return Color(red: 220 / 255, green: 38 / 255, blue: 38 / 255)

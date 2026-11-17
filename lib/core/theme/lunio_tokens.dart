@@ -72,7 +72,8 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
   final double radiusXl; // 28（底部 sheet 顶部圆角）
 
   /// 浅色主题 token。语义三色用 ADR 0019 对比度档
-  /// （绿 #15803d / 黄 #b45309 / 红 #dc2626，文字级 ≥4.5:1）。
+  /// （绿 #15803d / 黄 #f59e0b / 红 #dc2626；2026-11-17 黄档按 ADR 0019
+/// 修订节回归 500 档 #f59e0b——观感优先，文字对比度取舍见该节）。
   static const light = LunioTokens(
     background: Color(0xfff6f7f9),
     surface: Color(0xffffffff),
@@ -89,7 +90,7 @@ class LunioTokens extends ThemeExtension<LunioTokens> {
     successSoft: Color(0xffdcfce7),
     secondary: Color(0xff475569),
     secondarySoft: Color(0xffe2e8f0),
-    warning: Color(0xffb45309),
+    warning: Color(0xfff59e0b),
     warningSoft: Color(0xfffef3c7),
     danger: Color(0xffdc2626),
     dangerSoft: Color(0xffffe2e2),

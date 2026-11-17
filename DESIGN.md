@@ -31,9 +31,9 @@ colors:
   success: "#15803d"
   success-container: "#dcfce7"
   on-success-container: "#15803d"
-  warning: "#b45309"
+  warning: "#f59e0b"
   warning-container: "#fef3c7"
-  on-warning-container: "#b45309"
+  on-warning-container: "#f59e0b"
   danger: "#dc2626"
   danger-container: "#fee2e2"
   on-danger-container: "#dc2626"
@@ -327,7 +327,7 @@ The palette is a restrained service-tool palette that separates brand color from
 - **Neutral Canvas (#f6f7f9):** The app background. It should read as a cool off-white, not pure white, beige, or cream.
 - **White Surface (#ffffff):** The main card and sheet surface. Use it for readable information containers and controls.
 - **Secondary Slate (#475569):** A secondary accent used sparingly for system variety and visual balance, not for primary actions.
-- **Warning Amber (#b45309):** Used only for due-soon maintenance states and cautionary progress ranges. The light-mode value is the ADR 0019 contrast tier (dark mode keeps its brighter tier).
+- **Warning Amber (#f59e0b):** Used only for due-soon maintenance states and cautionary progress ranges. Light and dark share the same 500-tier value since the ADR 0019 revision, 2026-11-17.
 - **Danger Red (#dc2626):** Used only for overdue states, destructive actions, critical warning badges, and the fuel price rising arrow on the fuel page. The light-mode value is the ADR 0019 contrast tier (dark mode keeps its brighter tier).
 
 The three semantic status colors also exist as by-value Swift constant copies inside the two iOS extensions (LunioStatusColor in `LunioWidgetsExtension/MaintenanceOverviewWidget.swift`, ParkingThemeColors.danger in `ParkingCountdownExtension/ParkingCountdownLiveActivity.swift`), because extension processes cannot read the Flutter theme. Any change to the light-tier values must keep those copies in sync; the contract test `test/core/semantic_color_contract_test.dart` parses both Swift sources and fails the regular `flutter test` run with the exact file paths and color values whenever a copy drifts from `LunioTokens.light`.
