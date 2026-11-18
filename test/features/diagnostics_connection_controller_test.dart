@@ -442,7 +442,7 @@ void main() {
       // 一轮只发两个启用项（电压停用）：两拍响应。
       await h.driveChunks(2);
 
-      expect(h.controller.state.readings[1]?.reading.display, '37.6%');
+      expect(h.controller.state.readings[1]?.reading.display, '38%');
       expect(h.controller.state.readings[2]?.reading.display, '95℃');
       expect(h.controller.state.readings.containsKey(3), isFalse);
       expect(h.mock.sentCommands, isNot(contains('ATRV')));
@@ -458,7 +458,7 @@ void main() {
         lastPercent: 1,
         lastReadingAt: h.fixedNow.subtract(const Duration(days: 1)),
       );
-      expect(h.controller.readingFor(persistedFuel)?.reading.display, '37.6%');
+      expect(h.controller.readingFor(persistedFuel)?.reading.display, '38%');
 
       // 持久化回退：无实时读数的行用最后有效值（油量百分比一并恢复）。
       final fallback = _probe(

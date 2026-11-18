@@ -187,14 +187,14 @@ void main() {
 
       await diagnostics.saveProbeReading(
         fuel.id!,
-        value: '37.6%',
+        value: '38%',
         percent: 37.6,
         at: DateTime(2026, 11, 14, 8, 0, 0),
       );
 
       final after = await diagnostics.listProbes(carId);
       final fuelAfter = after.firstWhere((p) => p.name == '油量');
-      expect(fuelAfter.lastValue, '37.6%');
+      expect(fuelAfter.lastValue, '38%');
       expect(fuelAfter.lastPercent, 37.6);
       expect(fuelAfter.lastReadingAt, DateTime(2026, 11, 14, 8, 0, 0));
       // 读数高频写不盖同步章：syncStatus/updatedAt/version 原样。

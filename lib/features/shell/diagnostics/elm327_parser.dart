@@ -214,9 +214,11 @@ ObdReading parseProbeResponse({
         return ObdNoData(_noDataReason(matched, command));
       }
       // 油量 = A × 100 / 255（实测 41 2F 60 → 96×100/255 = 37.6471%）。
+      // display 取整（2026-11-18 拍板：信息卡百分比保留整数），percent
+      // 保留精度供标定与染色计算。
       final percent = a * 100 / 255;
       return ObdValue(
-        display: '${percent.toStringAsFixed(1)}%',
+        display: '${percent.round()}%',
         percent: percent,
       );
     case DiagnosticsParseType.coolantTemp:

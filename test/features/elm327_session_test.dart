@@ -275,7 +275,7 @@ void main() {
       final third = await queue.next() as Elm327ProbeReading;
       // 一轮按序：油量 → 水温 → 电压（实车数值）。
       expect(first.probeId, 1);
-      expect((first.reading as ObdValue).display, '37.6%');
+      expect((first.reading as ObdValue).display, '38%');
       expect(second.probeId, 2);
       expect((second.reading as ObdValue).display, '95℃');
       expect(third.probeId, 3);
@@ -392,7 +392,7 @@ void main() {
           await queue.next().timeout(const Duration(seconds: 1))
               as Elm327ProbeReading;
       expect(reading.probeId, 1);
-      expect((reading.reading as ObdValue).display, '37.6%');
+      expect((reading.reading as ObdValue).display, '38%');
       // 串行槽已释放：原始命令可发。
       final frame = await session.sendRawCommand('ATRV');
       expect(frame, contains('11.2V'));
@@ -415,7 +415,7 @@ void main() {
         ],
       );
       final reading = await queue.next() as Elm327ProbeReading;
-      expect((reading.reading as ObdValue).display, '37.6%');
+      expect((reading.reading as ObdValue).display, '38%');
       // 读数事件后循环停在轮间延时（第 7 个延时请求）。
       while (gate.requests.length < 7) {
         await pumpEventQueue();

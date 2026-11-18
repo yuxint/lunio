@@ -105,7 +105,7 @@ void main() {
         frameText: '41 2F 60 \r\r',
       ) as ObdValue;
       expect(reading.percent!, closeTo(37.647, 0.001));
-      expect(reading.display, '37.6%');
+      expect(reading.display, '38%');
     });
 
     test('水温 41 05 82 → 90℃（A−40）', () {

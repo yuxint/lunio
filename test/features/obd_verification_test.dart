@@ -72,7 +72,7 @@ void main() {
   });
 
   group('buildSnapshotVerificationCommands', () {
-    test('本车日志位图：11 项快照全过 + DTC（2026-11-17 燃油修正转正）', () {
+    test('本车日志位图：7 项快照全过 + DTC（2026-11-18 信息卡内置去重）', () {
       final commands = buildSnapshotVerificationCommands(const {
         '0100': '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03 \r\r',
         '0120': '41 20 00 00 00 01 \r41 20 B0 07 A0 11 \r41 20 80 00 A0 01 \r\r',
@@ -82,15 +82,11 @@ void main() {
       });
       expect(commands, [
         '0104',
-        '0106',
-        '0107',
         '010B',
         '010C',
         '010D',
         '0111',
-        '012F',
         '0142',
-        '0167',
         '01A6',
         '03',
         '07',
@@ -102,15 +98,20 @@ void main() {
       final commands = buildSnapshotVerificationCommands(const {
         '0100': '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03 \r\r',
       });
-      expect(commands, ['0104', '0106', '0107', '010B', '010C', '010D', '0111', '03', '07', '0A']);
+      expect(commands, ['0104', '010B', '010C', '010D', '0111', '03', '07', '0A']);
     });
   });
 
   group('obdVendorCommandGroups', () {
-    test('2026-11-16 精简：只留 DA60F1 组的 227029（油量交叉验证）', () {
-      expect(obdVendorCommandGroups, hasLength(1));
-      expect(obdVendorCommandGroups.first.header, 'DA60F1');
-      expect(obdVendorCommandGroups.first.commands, ['227029']);
+    test('2026-11-18 三组：仪表段扩展 + TCM/ECM 候选段（全部只读）', () {
+      expect(obdVendorCommandGroups, hasLength(3));
+      expect(obdVendorCommandGroups[0].header, 'DA60F1');
+      expect(obdVendorCommandGroups[0].commands,
+          ['227029', '22702A', '227060', '227028', '227022']);
+      expect(obdVendorCommandGroups[1].header, 'DA1EF1');
+      expect(obdVendorCommandGroups[1].commands, ['222301']);
+      expect(obdVendorCommandGroups[2].header, 'DA10F1');
+      expect(obdVendorCommandGroups[2].commands, ['222666']);
     });
   });
 }

@@ -195,12 +195,12 @@ void main() {
 
       // 逐拍放行字节：连接完成 + 第一轮轮询，四张内置卡值 + 时间戳
       // （012F/0167/ATRV/0106/0107 串行，收满一轮共 5 条应答）。
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
       for (var i = 0; i < 4; i++) {
         await rig.deliverChunks(tester);
       }
       // 行列表撤销（ADR 0029）：每个值只在信息卡一处。
-      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('38%'), findsOneWidget);
       expect(find.text('95℃'), findsOneWidget);
       expect(find.text('11.2V'), findsOneWidget);
       // 燃油修正卡：LTFT（0107）大字 + 同卡右端 STFT（0106）小字。
@@ -232,8 +232,8 @@ void main() {
         rig.mock.sentCommands.where((command) => command == 'ATZ'),
         hasLength(2),
       );
-      await rig.advanceUntil(tester, find.text('37.6%'));
-      expect(find.text('37.6%'), findsOneWidget);
+      await rig.advanceUntil(tester, find.text('38%'));
+      expect(find.text('38%'), findsOneWidget);
 
       await leavePageAndFlush(tester);
     });
@@ -246,11 +246,11 @@ void main() {
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
 
       // 油量卡只有百分比大字：有容积也不算升数（可用/估算总油量行已
       // 随 estimateFuel 删除），页面任何位置不出现「升」字。
-      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('38%'), findsOneWidget);
       expect(find.textContaining('升'), findsNothing);
 
       await leavePageAndFlush(tester);
@@ -268,7 +268,7 @@ void main() {
       await openDiagnosticsPage(tester);
 
       // 油量先到，水温在途（不应答）。
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
 
       // 放行 0167 的 300ms 响应超时 → 无数据；串行轮询继续到电压。
       await rig.completeProbeTimeout(tester);
@@ -292,7 +292,7 @@ void main() {
       expect(find.text('超时'), findsNothing);
       expect(find.text('无数据'), findsNothing);
       // 其他卡不连坐：油量/电压值仍在，状态条仍是已连接。
-      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('38%'), findsOneWidget);
       expect(find.text('11.2V'), findsOneWidget);
       expect(find.text('已连接'), findsOneWidget);
 
@@ -306,7 +306,7 @@ void main() {
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
       expect(rig.mock.disconnectCalls, 0);
 
       // 离开页面：只摘 UI 接缝与诊断作用域（轮询清单换回提醒页核心两
@@ -324,7 +324,7 @@ void main() {
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
       // 收完第一轮余下四条（水温/电压/短期/长期），循环回到轮间睡眠拍
       // ——无在途请求时暂停才有确定边界（有在途请求时 pausePolling 会
       // 等它收尾，而静默脚本的在途请求只能靠 300ms 超时闩，门闩不放行
@@ -369,7 +369,16 @@ void main() {
       final vendorCommands = obdVendorCommandGroups
           .expand((group) => group.commands)
           .toList();
-      expect(vendorCommands, ['227029']);
+      // 2026-11-18 三组候选段（调研报告第六节）。
+      expect(vendorCommands, [
+        '227029',
+        '22702A',
+        '227060',
+        '227028',
+        '227022',
+        '222301',
+        '222666',
+      ]);
       expect(obdVendorCommandGroups.first.header, 'DA60F1');
 
       await leavePageAndFlush(tester);
@@ -382,7 +391,7 @@ void main() {
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
       // 收完第一轮余下四条，循环回到轮间睡眠拍（暂停边界理由见上一条）。
       for (var i = 0; i < 4; i++) {
         await rig.deliverChunks(tester);
@@ -641,7 +650,7 @@ void main() {
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
       // 收完第一轮余下四条，回到轮间睡眠拍（advanceRound 的前提）。
       for (var i = 0; i < 4; i++) {
         await rig.deliverChunks(tester);
@@ -1003,7 +1012,7 @@ void main() {
           .id!;
       await diagnostics.saveProbeReading(
         fuelId,
-        value: '37.6%',
+        value: '38%',
         percent: 37.6,
         at: DateTime(2026, 11, 14, 8, 0, 0),
       );
@@ -1022,7 +1031,7 @@ void main() {
       await openDiagnosticsPage(tester);
 
       // 卡：跨天时间带日期（M/d HH:mm:ss），两张有值的卡各一枚。
-      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('38%'), findsOneWidget);
       expect(find.textContaining('08:00:00'), findsNWidgets(2));
       expect(find.text('95℃'), findsOneWidget);
       // 电压/燃油修正从未有过有效值：灰态「—」+「未更新」（升数估算

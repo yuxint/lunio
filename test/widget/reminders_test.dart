@@ -910,10 +910,10 @@ void main() {
 
       // 点击 → 直连 → 已连接：信息卡出现，读数是 rig 语料值。
       await tester.tap(find.text('连接OBD'));
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
       // 水温指令还在字节门闩上：再放一拍收齐两条核心读数。
       await rig.deliverChunks(tester);
-      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('38%'), findsOneWidget);
       expect(find.text('95℃'), findsOneWidget);
       expect(find.text('油量'), findsOneWidget);
       expect(find.text('水温'), findsOneWidget);
@@ -938,7 +938,7 @@ void main() {
       final rig = DiagnosticsRig();
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await tester.tap(find.text('连接OBD'));
-      await rig.advanceUntil(tester, find.text('37.6%'));
+      await rig.advanceUntil(tester, find.text('38%'));
 
       await tester.tap(find.text('油量'));
       await tester.pump();

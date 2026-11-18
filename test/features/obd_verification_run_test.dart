@@ -88,9 +88,11 @@ void main() {
         'Lunio OBD 一键检测日志\n'
         '车辆：思域 2022\n'
         '开始：$_stamp\n'
-        '说明：标准 PID 为内置与模板快照集经本车能力位图过滤（0100–01A0）；'
-        'DTC 03/07/0A 标准读取；私有 DID 只读 227029（油量交叉验证）；'
-        '末尾 ATSH DB 33 F1 恢复。\n\n',
+        '说明：标准 PID 为模板快照集经本车能力位图过滤（0100–01A0，信息卡'
+        '内置四条已实时轮询不重复采）；DTC 03/07/0A 标准读取；私有 DID 三'
+        '段只读（仪表 227029/22702A/227060/227028/227022、TCM 222301 CVT '
+        '油温、ECM 222666 机油温度，候选验证）；末尾 ATSH DB 33 F1 恢复。'
+        '\n\n',
       );
       // 命令 / 响应块逐字（时间戳 + CR 归一）。
       expect(harness.blocks[1], '[$_stamp] > ATI\n');
@@ -107,8 +109,10 @@ void main() {
       expect(harness.sent, containsAllInOrder(['03', '07', '0A']));
       expect(
         harness.sent,
-        containsAllInOrder(['ATSHDA60F1', '227029']),
+        containsAllInOrder(['ATSHDA60F1', '227029', '22702A', '227060']),
       );
+      expect(harness.sent, containsAllInOrder(['ATSHDA1EF1', '222301']));
+      expect(harness.sent, containsAllInOrder(['ATSHDA10F1', '222666']));
       expect(harness.sent.last, 'ATSHDB33F1');
 
       expect(result.aborted, isFalse);

@@ -56,20 +56,27 @@ Set<int> decodeSupportedPids(
   return result;
 }
 
-/// 内置五条中的 mode 01 指令（镜像自 DiagnosticsRepository
-/// .builtInProbeSeeds；契约测试 test/features/obd_snapshot_contract_test
-/// .dart 锁同步——种子改指令时这里红灯提示）。2026-11-17 起内置含燃油
-/// 修正 0106/0107（ADR 0029）。
-const List<String> _builtInMode01Commands = ['012F', '0167', '0106', '0107'];
+/// 信息卡内置探针的 mode 01 指令（镜像自 DiagnosticsRepository
+/// .builtInProbeSeeds）：012F 油量 / 0167 水温 / 0106/0107 燃油修正。
+/// 2026-11-18 拍板：这四条已由信息卡实时轮询（每次连接 10s 一轮），
+/// 一键检测不再重复采集——快照集只收推荐模板；电压卡用 AT 文本响应
+/// （ATRV）本就不进 mode 01 快照。契约测试 test/features/
+/// obd_snapshot_contract_test.dart 锁这份排除清单——种子改指令时红灯。
+const List<String> _infoCardMode01Commands = ['012F', '0167', '0106', '0107'];
 
-/// 一键检测快照集：内置五条 + 推荐模板的全部 mode 01 指令，字典序。
-/// 过滤语义见 [buildSnapshotVerificationCommands]。
+/// 一键检测快照集：推荐模板的全部 mode 01 指令，字典序（2026-11-18
+/// 起不再含信息卡内置四条——数据已在信息卡固定展示，重复采集只拖长
+/// 序列）。过滤语义见 [buildSnapshotVerificationCommands]。
 final List<String> obdSnapshotCommands = _snapshotCommands();
 
 List<String> _snapshotCommands() {
-  final commands = <String>{..._builtInMode01Commands};
+  final commands = <String>{};
   for (final template in diagnosticsProbeTemplates) {
-    commands.add(normalizeObdCommand(template.command));
+    // 防御：模板与信息卡内置撞指令时仍排除（当前不撞，改模板时兜底）。
+    final normalized = normalizeObdCommand(template.command);
+    if (!_infoCardMode01Commands.contains(normalized)) {
+      commands.add(normalized);
+    }
   }
   final sorted = commands.toList()..sort();
   return List.unmodifiable(sorted);

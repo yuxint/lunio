@@ -132,9 +132,11 @@ Future<ObdVerificationResult> runObdVerification({
     'Lunio OBD 一键检测日志\n'
     '车辆：$carLabel\n'
     '开始：${clock().toIso8601String()}\n'
-    '说明：标准 PID 为内置与模板快照集经本车能力位图过滤（0100–01A0）；'
-    'DTC 03/07/0A 标准读取；私有 DID 只读 227029（油量交叉验证）；'
-    '末尾 ATSH DB 33 F1 恢复。\n\n',
+    '说明：标准 PID 为模板快照集经本车能力位图过滤（0100–01A0，信息卡'
+    '内置四条已实时轮询不重复采）；DTC 03/07/0A 标准读取；私有 DID 三'
+    '段只读（仪表 227029/22702A/227060/227028/227022、TCM 222301 CVT '
+    '油温、ECM 222666 机油温度，候选验证）；末尾 ATSH DB 33 F1 恢复。'
+    '\n\n',
   );
 
   Object? abortError;
