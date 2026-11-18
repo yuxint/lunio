@@ -63,6 +63,14 @@ class DiagnosticsRepository {
   /// 内置长期燃油修正 catalogKey（燃油修正卡主值定位用）。
   static const builtInLtftKey = 'probe:ltftBank1';
 
+  /// 内置 CVT 油温检测点 catalogKey（2026-11-18 实车验证转正，替换
+  /// 燃油修正卡的位置）。
+  static const builtInCvtTempKey = 'probe:cvtOilTemp';
+
+  /// 内置里程表检测点 catalogKey（2026-11-18 升内置：ECU 里程同步的
+  /// 数据源，「只要连接就在轮询清单里」——ADR 0026 修订节）。
+  static const builtInOdometerKey = 'probe:odometer';
+
   /// 构造时注入数据库连接。
   DiagnosticsRepository(this.database);
 
@@ -75,8 +83,8 @@ class DiagnosticsRepository {
   /// 打开 ≤10s 必有新鲜值。
   static const int defaultRefreshIntervalSeconds = 10;
 
-  /// 内置五条种子（ADR 0021 修订节 + 2026-11-17 ADR 0029）：油量/水温/
-  /// 电压/短期燃油修正/长期燃油修正。2026-11-16 起
+  /// 内置七条种子（ADR 0021 修订节 + ADR 0029 及修订节）：油量/水温/
+  /// 电压/短期燃油修正/长期燃油修正/CVT 油温/里程表。2026-11-16 起
   /// 水温内置改 `0167`（本车 0105 不支持，全量采集分析见
   /// docs/car_obd_link/docs/全量采集分析-2026-11-16.md）；存量车的
   /// 内置行在库里已是 0105，由用户在 App 内手动编辑迁移，bootstrap
@@ -117,6 +125,23 @@ class DiagnosticsRepository {
       name: '长期燃油修正',
       command: '0107',
       parseType: domain.DiagnosticsParseType.fuelTrimPercent,
+    ),
+    // CVT 油温（2026-11-18 实车验证转正）：私有 DID 多行帧，替换燃油
+    // 修正卡（探针保留、卡撤下）；阈值五段见 diagnostics_rules。
+    DiagnosticsProbeSeed(
+      catalogKey: builtInCvtTempKey,
+      name: 'CVT 油温',
+      command: '222301',
+      parseType: domain.DiagnosticsParseType.cvtOilTemp,
+    ),
+    // 里程表（2026-11-18 升内置，ADR 0026 修订节）：ECU 里程同步的
+    // 数据源——用户拍板「只要连接上（提醒页/诊断页）读到更大就更新」，
+    // 探针必须在默认轮询清单里。
+    DiagnosticsProbeSeed(
+      catalogKey: builtInOdometerKey,
+      name: '里程表',
+      command: '01A6',
+      parseType: domain.DiagnosticsParseType.odometer,
     ),
   ];
 

@@ -943,8 +943,8 @@ void main() {
       await tester.tap(find.text('油量'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      // 诊断页在栈顶（信息卡标题唯一；连接复用，不再走扫描）。
-      expect(find.text('燃油修正'), findsOneWidget);
+      // 诊断页在栈顶（CVT 油温卡标题唯一；连接复用，不再走扫描）。
+      expect(find.text('CVT 油温'), findsOneWidget);
       expect(find.text('已连接'), findsOneWidget);
     });
   });

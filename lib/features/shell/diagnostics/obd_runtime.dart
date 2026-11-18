@@ -7,13 +7,18 @@
 // 无线电面，ADR 0024）；transport 工厂 ≈ 每次调用 new 一个有状态
 // Service 实例（会话/传输层都是一次性对象）；scanner ≈ 单例 Bean；
 // 连接编排 ≈ App 级有状态单例 Bean（ADR 0027）。
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../shared/shell_shared.dart';
 import 'ble_obd_link.dart';
 import 'ble_obd_radio.dart';
 import 'diagnostics_connection_controller.dart';
+import 'obd_session_log.dart';
 import 'elm327_session.dart';
+import 'elm327_parser.dart';
 import 'mock_obd_transport.dart';
 import 'obd_radio.dart';
 import 'obd_scanner.dart';
@@ -73,6 +78,7 @@ final obdConnectionControllerProvider =
           await preferences.setLastObdDeviceId(deviceId);
           ref.read(preferencesEpochProvider.notifier).bump();
         },
+        sessionLogSink: ProductionObdSessionLogSink(),
         saveReading: (probeId, {required value, percent, required at}) async {
           await ref.read(diagnosticsRepositoryProvider).saveProbeReading(
                 probeId,
@@ -86,6 +92,36 @@ final obdConnectionControllerProvider =
           ref.invalidate(diagnosticsProbesProvider);
         },
       );
+      // ECU 里程静默同步（ADR 0026 修订节，2026-11-18）：**App 级常驻
+      // 回调**——只要连接着（提醒页背景三条含里程表/诊断页全量），读到
+      // 更大 ECU 里程且「ECU 里程自动同步」开关开（管理 sheet 行开关，
+      // 默认关）就守卫写入（只增不减在动作层）。确认式入口随页面接缝
+      // 一起取消（2026-11-18 拍板：App 级常驻后确认框会很吵）。
+      controller.setOdometerSyncHandler(
+        (reading) => unawaited(_syncEcuMileageSilently(ref, reading)),
+      );
       ref.onDispose(controller.dispose);
       return controller;
     });
+
+/// ECU 里程静默同步编排（App 级；读开关 → 读当前应用车 → 守卫写）。
+/// 失败降级不提示（静默档语义），下一轮轮询再试。
+Future<void> _syncEcuMileageSilently(Ref ref, ObdValue reading) async {
+  try {
+    final km = reading.kilometers;
+    if (km == null) {
+      return;
+    }
+    final autoSync = await ref.read(obdOdometerAutoSyncProvider.future);
+    if (!autoSync) {
+      return;
+    }
+    final car = await ref.read(appliedCarProvider.future);
+    if (car == null) {
+      return;
+    }
+    await syncCarMileageFromEcu(ref, car, km);
+  } catch (_) {
+    // 静默档语义：读偏好/读车/写库失败都不提示，下一轮轮询再试。
+  }
+}

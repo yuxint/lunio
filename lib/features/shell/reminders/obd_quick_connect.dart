@@ -11,9 +11,9 @@
 // ≈ Java 的纯 View 组件：无状态、无副作用，事件经回调上抛。
 import 'package:flutter/material.dart';
 
-import '../../../core/format/clock.dart';
 import '../../../core/theme/lunio_tokens.dart';
 import '../../../core/widgets/lunio_components.dart';
+import '../../../domain/rules/diagnostics_rules.dart';
 import '../shared/shell_shared.dart';
 import '../diagnostics/diagnostics_connection_controller.dart';
 
@@ -72,14 +72,15 @@ class ObdQuickConnectButton extends StatelessWidget {
 }
 
 /// 油量水温信息卡（英雄卡下方，仅已连接显示）：油量 + 水温两条核心读数
-/// + 刷新按钮 + 更新时间；点击整卡进诊断页。只显示实时读数（ADR 0027
-/// 拍板「不回退最后读数」），无实时读数显「—」。
+/// + 刷新按钮；点击整卡进诊断页。只显示实时读数（ADR 0027 拍板「不回
+/// 退最后读数」），无实时读数显「—」。字号与染色口径对齐诊断页信息卡
+/// （2026-11-18 拍板：值 headlineMedium、水温按色档染、无更新时间行）。
 class ObdReadingsCard extends StatelessWidget {
   const ObdReadingsCard({
     super.key,
     required this.fuelDisplay,
     required this.coolantDisplay,
-    required this.updatedAt,
+    required this.coolantTone,
     required this.onRefresh,
     required this.onOpen,
   });
@@ -90,8 +91,9 @@ class ObdReadingsCard extends StatelessWidget {
   /// 水温展示值（如「85°C」）；null = 无实时读数，显「—」。
   final String? coolantDisplay;
 
-  /// 更新时间（两条读数较新者的读取时刻；null = 都没有 → 不显时间行）。
-  final DateTime? updatedAt;
+  /// 水温色档（调用方按实时 celsius 经 DiagnosticsRules.coolantTempTone
+  /// 算好传入；null = 不染色）。染色口径与诊断页水温卡同一份规则。
+  final DiagnosticsReadingTone? coolantTone;
 
   final VoidCallback onRefresh;
   final VoidCallback onOpen;
@@ -106,45 +108,45 @@ class ObdReadingsCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: _ReadingBlock(label: '油量', value: fuelDisplay),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _ReadingBlock(label: '水温', value: coolantDisplay),
+                child: _ReadingBlock(
+                  label: '水温',
+                  value: coolantDisplay,
+                  tone: coolantTone,
+                ),
               ),
               IconButton(
                 tooltip: '立即刷新',
                 onPressed: onRefresh,
-                icon: const Icon(Icons.refresh, size: 20),
-                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.refresh, size: 26),
                 color: tokens.primary,
               ),
             ],
           ),
-          if (updatedAt != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              '更新 ${formatReadingTime(updatedAt!, now: DateTime.now())}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: tokens.muted,
-                  ),
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-/// 单条读数块：标签 + 值（大字，w800；无值灰「—」）。
+/// 单条读数块：标签 + 值（大字与诊断页信息卡同档 headlineMedium w800；
+/// 无值灰「—」；[tone] 非空时按色档染值色）。
 class _ReadingBlock extends StatelessWidget {
-  const _ReadingBlock({required this.label, required this.value});
+  const _ReadingBlock({
+    required this.label,
+    required this.value,
+    this.tone,
+  });
 
   final String label;
   final String? value;
+  final DiagnosticsReadingTone? tone;
 
   @override
   Widget build(BuildContext context) {
@@ -157,9 +159,16 @@ class _ReadingBlock extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           value ?? '—',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: value == null ? tokens.subtle : tokens.ink,
+                color: value == null
+                    ? tokens.subtle
+                    : switch (tone) {
+                        DiagnosticsReadingTone.normal => tokens.success,
+                        DiagnosticsReadingTone.warning => tokens.warning,
+                        DiagnosticsReadingTone.danger => tokens.danger,
+                        _ => tokens.ink,
+                      },
               ),
         ),
       ],

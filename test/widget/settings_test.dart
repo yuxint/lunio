@@ -578,9 +578,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     // 真页面在栈顶：三区渲染（状态条 + 信息卡 + 调试终端）。页面本
-    // 体用"燃油修正"卡标题钉住（唯一；下层我的页无同名行）。
+    // 体用"CVT 油温"卡标题钉住（唯一；下层我的页无同名行）。
     expect(find.text('车辆诊断'), findsOneWidget);
-    expect(find.text('燃油修正'), findsOneWidget);
+    expect(find.text('CVT 油温'), findsOneWidget);
     expect(find.text('油量'), findsOneWidget);
     expect(find.text('水温'), findsOneWidget);
     expect(find.text('电压'), findsOneWidget);

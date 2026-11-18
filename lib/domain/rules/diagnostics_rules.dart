@@ -1,9 +1,10 @@
 // 车辆诊断的业务规则（≈ Java 的计算/校验工具类，纯函数可测试）。
 //
-// 诊断信息卡染色口径（2026-11-17 拍板，ADR 0029）：
-// - 水温：<70 灰（冷车，非警告）→ 70-85 黄（未达最佳）→ 85-100 绿
-//   （最佳工作状态）→ >100 红（过热）。本车热车怠速实测 95℃（0167
-//   A 传感器），「>92 红」会让正常热车常亮红，绿区上限定 100。
+// 诊断信息卡染色口径（2026-11-17 拍板，ADR 0029；水温 2026-11-18 修订）：
+// - 水温（用户拍板「最佳=绿、向外浮动黄、再浮动红」模型）：<50 红
+//   （冷启动磨损窗口）→ 50-80 黄（升温中）→ 80-100 绿（最佳工作
+//   状态；一般汽油机最佳 85-95、本田 L15 社区共识 88-100，本车实测
+//   86/95℃）→ 100-105 黄（风扇启动区间缓冲）→ >105 红（真过热）。
 // - 电压（ATRV 电瓶电压口径）：<11.5 红（严重亏电）→ 11.5~14.8 绿
 //   （静置 12.4~12.6、充电 13.8~14.4 落绿区）→ >14.8 红（过充）。
 // - 燃油修正（染色基准 = LTFT 长期修正，STFT 秒级抖动不做基准）：
@@ -20,8 +21,7 @@
 // 协议解析不在这里——解析纯函数在 features/shell/diagnostics/
 // elm327_parser.dart（依赖 DiagnosticsParseType 实体，归诊断域模块）。
 
-/// 诊断信息卡读数色档（页面映射 LunioStatusTone）。muted = 冷车灰档
-/// （未达工作温度，非警告）。
+/// 诊断信息卡读数色档（页面映射 LunioStatusTone）。
 enum DiagnosticsReadingTone {
   /// 正常（绿）。
   normal,
@@ -31,25 +31,26 @@ enum DiagnosticsReadingTone {
 
   /// 危险（红）。
   danger,
-
-  /// 冷车灰档（水温 <70℃，未达工作温度；非警告）。
-  muted,
 }
 
 class DiagnosticsRules {
   DiagnosticsRules._();
 
-  /// 水温色档：<70 灰（冷车）→ 70-85 黄（未达最佳）→ 85-100 绿（最佳
-  /// 工作状态）→ >100 红（过热）。
+  /// 水温色档（2026-11-18 用户拍板五段）：<50 红（冷启动磨损窗口）→
+  /// 50-80 黄（升温中）→ 80-100 绿（最佳工作状态）→ 100-105 黄（风扇
+  /// 启动区间缓冲）→ >105 红（真过热）。
   static DiagnosticsReadingTone coolantTempTone(int celsius) {
-    if (celsius < 70) {
-      return DiagnosticsReadingTone.muted;
+    if (celsius < 50) {
+      return DiagnosticsReadingTone.danger;
     }
-    if (celsius < 85) {
+    if (celsius < 80) {
       return DiagnosticsReadingTone.warning;
     }
     if (celsius <= 100) {
       return DiagnosticsReadingTone.normal;
+    }
+    if (celsius <= 105) {
+      return DiagnosticsReadingTone.warning;
     }
     return DiagnosticsReadingTone.danger;
   }
@@ -63,6 +64,26 @@ class DiagnosticsRules {
     }
     if (volts <= 14.8) {
       return DiagnosticsReadingTone.normal;
+    }
+    return DiagnosticsReadingTone.danger;
+  }
+
+  /// CVT 油温色档（2026-11-18 用户拍板五段，与水温同「绿区浮动」模
+  /// 型）：<60 红 / 60-75 黄 / 75-95 绿（CVT 油液最佳润滑区间 70-90、
+  /// 本田城市工况常见 80-100）/ 95-115 黄 / >115 红（过热保护 ~120
+  /// 之前）。2026-11-18 实测热车怠速 104℃ 落黄。
+  static DiagnosticsReadingTone cvtOilTempTone(int celsius) {
+    if (celsius < 60) {
+      return DiagnosticsReadingTone.danger;
+    }
+    if (celsius < 75) {
+      return DiagnosticsReadingTone.warning;
+    }
+    if (celsius <= 95) {
+      return DiagnosticsReadingTone.normal;
+    }
+    if (celsius <= 115) {
+      return DiagnosticsReadingTone.warning;
     }
     return DiagnosticsReadingTone.danger;
   }

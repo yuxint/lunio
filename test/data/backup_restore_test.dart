@@ -363,7 +363,7 @@ void main() {
     // 车辆本身与本用例断言无关，播种只为库里有常规业务数据（贴近真实）。
     final (carId, _) = await repos.seedCarAndItem();
     final diagnostics = repos.diagnosticsRepository;
-    // 基准态：bootstrap 已灌内置五条 + 用户加了一个停用的自定义项
+    // 基准态：bootstrap 已灌内置七条 + 用户加了一个停用的自定义项
     // （启停是用户数据，备份往返应保留）。
     await repos.catalogRepository.ensureBootstrapData();
     final customId = await diagnostics.saveProbe(
@@ -414,7 +414,7 @@ void main() {
     await backupRepository.restoreBackupPayload(backup);
 
     // 恢复事务内：只重插自定义段（条目不带 id，行 id 重新生成雪花；
-    // 内置五条此刻不出现）。
+    // 内置七条此刻不出现）。
     final restoredRows = await database.select(database.diagnosticsProbes).get();
     expect(restoredRows, hasLength(1));
     expect(restoredRows.single.catalogKey, isNull);
@@ -431,8 +431,8 @@ void main() {
     final restoredCarRows = await database.select(database.cars).get();
     final restoredCarId = restoredCarRows.single.id;
     final probes = await restoredDiagnostics.listProbes(restoredCarId);
-    expect(probes, hasLength(6), reason: '5 内置 + 1 自定义');
-    expect(probes.where((probe) => probe.isBuiltIn), hasLength(5));
+    expect(probes, hasLength(8), reason: '7 内置 + 1 自定义');
+    expect(probes.where((probe) => probe.isBuiltIn), hasLength(7));
     final custom = probes.last;
     expect(custom.name, '进气温度');
     expect(custom.command, '010F');

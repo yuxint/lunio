@@ -404,7 +404,7 @@ Safe-area handling lives in `LunioPage` itself, so every pushed subpage is corre
 
 ### Diagnostics Info Cards (2026-11-17, ADR 0029)
 
-Two-segment card (title row with right-aligned timestamp + large value line), all cards equal height via IntrinsicHeight grid. Status is color-driven only, no small status text: coolant <70 gray (cold, not a warning) / 70-85 amber / 85-100 green / >100 red; battery voltage <11.5 red / 11.5-14.8 green / >14.8 red; fuel trim by LTFT +/-10 green / +/-10-15 amber / beyond +/-15 red; fuel level uncolored. Live "no data" never masks the persisted last value (old value + old timestamp); gray "no data" only when never had a valid reading.
+Two-segment card (title row with right-aligned timestamp + large value line), all cards equal height via IntrinsicHeight grid. Status is color-driven only, no small status text: coolant <50 red (cold-start wear window) / 50-80 amber / 80-100 green (optimal) / 100-105 amber (fan-range buffer) / >105 red; battery voltage <11.5 red / 11.5-14.8 green / >14.8 red; fuel trim by LTFT +/-10 green / +/-10-15 amber / beyond +/-15 red; fuel level uncolored. Live "no data" never masks the persisted last value (old value + old timestamp); gray "no data" only when never had a valid reading.
 
 ### Bottom Navigation
 

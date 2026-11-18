@@ -36,6 +36,7 @@ import 'ble_obd_errors.dart';
 import 'ble_scan_entries.dart';
 import 'elm327_parser.dart' show ObdReading, ObdValue;
 import 'elm327_session.dart';
+import 'obd_session_log.dart';
 import 'obd_runtime.dart';
 import 'obd_scanner.dart';
 
@@ -125,6 +126,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     required this.readDeviceId,
     required this.rememberDevice,
     required this.saveReading,
+    this.sessionLogSink,
     bool? mockLink,
   }) : mockLink = mockLink ?? obdMockLink;
 
@@ -151,6 +153,13 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// mock 回退链路（`--dart-define=LUNIO_OBD_MOCK=true` 或测试显式传
   /// false/true）：跳过设备记忆与扫描，直连演示设备。
   final bool mockLink;
+
+  /// 会话日志接缝（2026-11-18 拍板：单次连接的轮询读数记录为 JSONL
+  /// 文件，7 天/50 个双上限；null = 不记录，测试默认不传）。
+  final ObdSessionLogSink? sessionLogSink;
+
+  /// 当前连接的设备标识（建链时记录；会话日志 start 行用）。
+  String? _currentDeviceId;
 
   /// 开/关扫描 sheet 的 UI 接缝（诊断页 attachUi 挂载、detachUi 摘除）。
   /// null = 无诊断页在栈顶。扫描只从诊断页发起，快速连接不扫描。
@@ -231,6 +240,21 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 轮询快照 getter 按它选数据源（ADR 0027 作用域换防）。
   void setDiagnosticsScope(bool active) {
     _diagnosticsScope = active;
+  }
+
+  /// 按 id 找检测点（轮询读数落会话日志用；清单由页面/提醒页推入）。
+  DiagnosticsProbe? _probeById(int probeId) {
+    for (final probe in [..._probes, ..._backgroundProbes]) {
+      if (probe.id == probeId) {
+        return probe;
+      }
+    }
+    return null;
+  }
+
+  /// 一键检测日志落会话文件（调试面板调用；无会话记录时静默）。
+  void appendVerificationLog(String log) {
+    sessionLogSink?.onVerificationLog(log, DateTime.now());
   }
 
   /// 检测点快照取值（信息卡共源）：**实时有值优先**（本会话最新轮询）；
@@ -532,6 +556,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     if (_disposed || attempt != _connectAttempt) {
       return null;
     }
+    _currentDeviceId = deviceId;
     final session = sessionFactory(deviceId);
     _session = session;
     _sub = session.events.listen((event) => _onSessionEvent(session, event));
@@ -668,14 +693,24 @@ class DiagnosticsConnectionController extends ChangeNotifier {
         _phase = DiagnosticsConnectionPhase.connected;
         _statusError = null;
         _notify();
+        sessionLogSink?.onSessionStart(
+          DateTime.now(),
+          deviceId: _currentDeviceId,
+          mock: mockLink,
+        );
         session.startPolling(enabledProbes: _enabledProbesSnapshot);
       case Elm327Disconnected(:final cause):
         _phase = DiagnosticsConnectionPhase.disconnected;
         _statusError = _disconnectCopy(cause);
+        sessionLogSink?.onSessionEnd(DateTime.now(), reason: '$cause');
         _notify();
       case Elm327ProbeReading(:final probeId, :final reading, :final at):
         _readings[probeId] = ProbeReadingSnapshot(reading: reading, at: at);
         _notify();
+        final probe = _probeById(probeId);
+        if (probe != null) {
+          sessionLogSink?.onProbeReading(probe, reading, at);
+        }
         // 最后读数落库（只存有效值）：unawaited 交给事件循环，写失败
         // 不打断渲染链——读数是临时数据，下一轮轮询会再写。
         if (reading is ObdValue) {

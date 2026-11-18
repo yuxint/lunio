@@ -2,26 +2,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/domain/rules/diagnostics_rules.dart';
 
 void main() {
-  group('水温色档（2026-11-17 拍板口径）', () {
-    test('<70 灰（冷车，非警告）', () {
+  group('水温色档（2026-11-18 五段拍板）', () {
+    test('<50 红（冷启动磨损窗口）', () {
       expect(
-        DiagnosticsRules.coolantTempTone(69),
-        DiagnosticsReadingTone.muted,
+        DiagnosticsRules.coolantTempTone(49),
+        DiagnosticsReadingTone.danger,
       );
     });
-    test('70-85 黄（未达最佳）', () {
+    test('50-80 黄（升温中）', () {
       expect(
-        DiagnosticsRules.coolantTempTone(70),
+        DiagnosticsRules.coolantTempTone(50),
         DiagnosticsReadingTone.warning,
       );
       expect(
-        DiagnosticsRules.coolantTempTone(84),
+        DiagnosticsRules.coolantTempTone(79),
         DiagnosticsReadingTone.warning,
       );
     });
-    test('85-100 绿（最佳工作状态）', () {
+    test('80-100 绿（最佳工作状态）', () {
       expect(
-        DiagnosticsRules.coolantTempTone(85),
+        DiagnosticsRules.coolantTempTone(80),
         DiagnosticsReadingTone.normal,
       );
       expect(
@@ -33,9 +33,19 @@ void main() {
         DiagnosticsReadingTone.normal,
       );
     });
-    test('>100 红（过热）', () {
+    test('100-105 黄（风扇启动区间缓冲）', () {
       expect(
         DiagnosticsRules.coolantTempTone(101),
+        DiagnosticsReadingTone.warning,
+      );
+      expect(
+        DiagnosticsRules.coolantTempTone(105),
+        DiagnosticsReadingTone.warning,
+      );
+    });
+    test('>105 红（真过热）', () {
+      expect(
+        DiagnosticsRules.coolantTempTone(106),
         DiagnosticsReadingTone.danger,
       );
     });

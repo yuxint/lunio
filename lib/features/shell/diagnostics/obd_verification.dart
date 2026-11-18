@@ -56,17 +56,17 @@ Set<int> decodeSupportedPids(
   return result;
 }
 
-/// 信息卡内置探针的 mode 01 指令（镜像自 DiagnosticsRepository
-/// .builtInProbeSeeds）：012F 油量 / 0167 水温 / 0106/0107 燃油修正。
-/// 2026-11-18 拍板：这四条已由信息卡实时轮询（每次连接 10s 一轮），
-/// 一键检测不再重复采集——快照集只收推荐模板；电压卡用 AT 文本响应
-/// （ATRV）本就不进 mode 01 快照。**公开给契约测试对账**（2026-11-18
-/// 深审恢复护栏：种子改指令时契约测试红灯，0105→0167 历史形态）。
-const List<String> infoCardMode01Commands = [
+/// 已在轮询的内置探针指令（2026-11-18 更名：语义从「信息卡内置」扩
+/// 为「内置轮询中」，燃油修正探针保留轮询但卡已撤下）——一键检测不
+/// 重复采集。镜像自 DiagnosticsRepository.builtInProbeSeeds，**公开
+/// 给契约测试对账**（种子改指令时红灯，0105→0167 历史形态）。
+const List<String> pollingBuiltInCommands = [
   '012F',
   '0167',
   '0106',
   '0107',
+  '222301',
+  '01A6',
 ];
 
 /// 一键检测快照集：推荐模板的全部 mode 01 指令，字典序（2026-11-18
@@ -79,7 +79,7 @@ List<String> _snapshotCommands() {
   for (final template in diagnosticsProbeTemplates) {
     // 防御：模板与信息卡内置撞指令时仍排除（当前不撞，改模板时兜底）。
     final normalized = normalizeObdCommand(template.command);
-    if (!infoCardMode01Commands.contains(normalized)) {
+    if (!pollingBuiltInCommands.contains(normalized)) {
       commands.add(normalized);
     }
   }

@@ -16,9 +16,9 @@ class DiagnosticsProbeTemplate {
 }
 
 /// 第一批 6 项（2026-11-15 拍板）：转速/车速/进气压力/节气门/发动机
-/// 负荷/控制模块电压。第二批 1 项（2026-11-16 拍板）：里程表；原计划
-/// 的燃油修正/氧传感器系拍板不加（评估见 docs/car_obd_link/docs/
-/// 全量采集分析-2026-11-16.md）。
+/// 负荷/控制模块电压。第二批里程表 01A6 已于 2026-11-18 升内置探针
+/// （模板移除，ADR 0026 修订节）；原计划的燃油修正/氧传感器系拍板
+/// 不加（评估见 docs/car_obd_link/docs/全量采集分析-2026-11-16.md）。
 const List<DiagnosticsProbeTemplate> diagnosticsProbeTemplates = [
   DiagnosticsProbeTemplate(
     name: '转速',
@@ -49,10 +49,5 @@ const List<DiagnosticsProbeTemplate> diagnosticsProbeTemplates = [
     name: '控制模块电压',
     command: '0142',
     parseType: DiagnosticsParseType.moduleVoltage,
-  ),
-  DiagnosticsProbeTemplate(
-    name: '里程表',
-    command: '01A6',
-    parseType: DiagnosticsParseType.odometer,
   ),
 ];

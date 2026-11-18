@@ -35,6 +35,7 @@ import '../diagnostics/obd_runtime.dart';
 import '../profile/vehicles.dart';
 import '../records/records_page.dart';
 import '../shared/shell_shared.dart';
+import '../../../domain/rules/diagnostics_rules.dart';
 import 'obd_quick_connect.dart';
 import 'parking_countdown.dart';
 import 'reminder_list.dart';
@@ -189,10 +190,12 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
                           final ObdValue v => v.display,
                           _ => null,
                         },
-                        updatedAt: _latestReadingAt(
-                          connection.liveReadingFor(fuelProbe),
-                          connection.liveReadingFor(coolantProbe),
-                        ),
+                        coolantTone: switch (
+                            connection.liveReadingFor(coolantProbe)?.reading) {
+                          ObdValue(:final celsius?) =>
+                              DiagnosticsRules.coolantTempTone(celsius),
+                          _ => null,
+                        },
                         onRefresh: connection.requestImmediatePoll,
                         onOpen: () => context.push('/diagnostics'),
                       ),
@@ -270,12 +273,14 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
     return null;
   }
 
-  /// 后台核心清单：油量 + 水温两条（提醒页只轮询这两条，ADR 0027）。
+  /// 后台核心清单：油量 + 水温 + 里程表三条（2026-11-18 拍板：里程表
+  /// 升内置后进背景轮询，ECU 里程同步「只要连接就更新」，ADR 0026 修订节）。
   List<DiagnosticsProbe> _coreProbesOf(List<DiagnosticsProbe> probes) {
     return [
       for (final probe in probes)
         if (probe.catalogKey == DiagnosticsRepository.builtInFuelLevelKey ||
-            probe.catalogKey == DiagnosticsRepository.builtInCoolantKey)
+            probe.catalogKey == DiagnosticsRepository.builtInCoolantKey ||
+            probe.catalogKey == DiagnosticsRepository.builtInOdometerKey)
           probe,
     ];
   }
@@ -294,18 +299,6 @@ Color? _overviewSegmentColor(ReminderStatus? status, LunioTokens tokens) {
   };
 }
 
-/// 两条核心读数快照里较新的读取时刻（信息卡「更新」时间；都无则 null）。
-DateTime? _latestReadingAt(ProbeReadingSnapshot? a, ProbeReadingSnapshot? b) {
-  final atA = a?.at;
-  final atB = b?.at;
-  if (atA == null) {
-    return atB;
-  }
-  if (atB == null) {
-    return atA;
-  }
-  return atA.isAfter(atB) ? atA : atB;
-}
 /// 两个主操作按钮的行：新增保养记录（打开记录表单 sheet）+
 /// 停车倒计时（倒计时进行中时禁用——必须先结束当前倒计时）。
 class ReminderActionRow extends StatelessWidget {

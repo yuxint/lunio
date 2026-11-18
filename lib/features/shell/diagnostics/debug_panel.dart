@@ -26,6 +26,8 @@ class DiagnosticsDebugPanel extends StatefulWidget {
     required this.session,
     required this.connected,
     required this.carLabel,
+    this.onVerificationLog,
+    this.onOpenSessionLogs,
   });
 
   /// 当前会话（null = 未建链/已释放）。
@@ -35,7 +37,14 @@ class DiagnosticsDebugPanel extends StatefulWidget {
   final bool connected;
 
   /// 日志头部的车辆标识。
+  /// 车辆标签（一键检测日志头用）。
   final String carLabel;
+
+  /// 一键检测整段日志回调（2026-11-18 拍板：追加进当次会话日志文件）。
+  final void Function(String log)? onVerificationLog;
+
+  /// 打开会话日志列表 sheet（调试终端「会话日志」入口行）。
+  final VoidCallback? onOpenSessionLogs;
 
   @override
   State<DiagnosticsDebugPanel> createState() => _DiagnosticsDebugPanelState();
@@ -132,7 +141,7 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
       _log = '';
     });
     try {
-      await runObdVerification(
+      final result = await runObdVerification(
         carLabel: widget.carLabel,
         onLog: (block) {
           if (!mounted) {
@@ -152,6 +161,8 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
           }
         },
       );
+      // 整段日志落会话文件（2026-11-18 共识 7；无 sink 时静默）。
+      widget.onVerificationLog?.call(result.log);
     } finally {
       if (mounted) {
         setState(() => _busy = false);
@@ -205,6 +216,29 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
               ),
             ],
           ),
+          // 会话日志入口（2026-11-18 拍板）：展开区顶部，任何连接状态
+          // 可看（历史会话文件与连接状态无关）。
+          if (_expanded && widget.onOpenSessionLogs != null) ...[
+            const SizedBox(height: 8),
+            LunioTappableCard(
+              onTap: () => widget.onOpenSessionLogs?.call(),
+              child: Row(
+                children: [
+                  Icon(Icons.history, size: 18, color: tokens.muted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '会话日志',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right,
+                      size: 18, color: Colors.white24),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           if (_expanded) ...[
             const SizedBox(height: 8),
             const LunioInlineMessage(

@@ -47,12 +47,12 @@ void main() {
     await database.close();
   });
 
-  test('读侧 await bootstrap：首帧即读到该车内置五条种子', () async {
+  test('读侧 await bootstrap：首帧即读到该车内置七条种子', () async {
     final probes = await container.read(
       diagnosticsProbesProvider(carId).future,
     );
-    expect(probes, hasLength(5));
-    expect(probes.map((p) => p.name).toList(), ['油量', '水温', '电压', '短期燃油修正', '长期燃油修正']);
+    expect(probes, hasLength(7));
+    expect(probes.map((p) => p.name).toList(), ['油量', '水温', '电压', '短期燃油修正', '长期燃油修正', 'CVT 油温', '里程表']);
     expect(probes.every((p) => p.isBuiltIn), isTrue);
     expect(probes.every((p) => p.carId == carId), isTrue);
   });
@@ -61,7 +61,7 @@ void main() {
     final first = await container.read(
       diagnosticsProbesProvider(carId).future,
     );
-    expect(first, hasLength(5));
+    expect(first, hasLength(7));
     await diagnostics.saveProbe(
       DiagnosticsProbe(carId: carId, name: '进气温度', command: '010F'),
     );
@@ -76,7 +76,7 @@ void main() {
     final second = await container.read(
       diagnosticsProbesProvider(carId).future,
     );
-    expect(second, hasLength(6));
+    expect(second, hasLength(8));
     expect(second.last.name, '进气温度');
   });
 
@@ -84,7 +84,7 @@ void main() {
     final first = await container.read(
       diagnosticsProbesProvider(carId).future,
     );
-    expect(first, hasLength(5));
+    expect(first, hasLength(7));
     container.read(vehicleDataEpochProvider.notifier).bump();
     final second = await container.read(
       diagnosticsProbesProvider(carId).future,

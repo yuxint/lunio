@@ -35,7 +35,6 @@ import '../../../core/widgets/lunio_components.dart';
 import '../../../data/repositories/diagnostics_repository.dart'
     show DiagnosticsRepository;
 import '../../../domain/entities/car.dart';
-import '../../../domain/entities/diagnostics_parse_type.dart';
 import '../../../domain/entities/diagnostics_probe.dart';
 import '../../../domain/rules/diagnostics_rules.dart';
 import '../shared/shell_shared.dart';
@@ -44,6 +43,7 @@ import 'debug_panel.dart';
 import 'diagnostics_connection_controller.dart';
 import 'elm327_parser.dart' show ObdNoData, ObdValue;
 import 'obd_runtime.dart';
+import 'obd_session_log_sheet.dart';
 
 /// 车辆诊断页主组件。
 class DiagnosticsPage extends ConsumerStatefulWidget {
@@ -66,16 +66,14 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   void initState() {
     super.initState();
     _connection = ref.read(obdConnectionControllerProvider);
-    // 挂 UI 接缝（扫描 sheet 开/关）、ECU 里程静默同步回调与诊断作用域
-    // （轮询清单换全量启用清单）；页面销毁时全部摘除（ADR 0027 换防）。
+    // 挂 UI 接缝（扫描 sheet 开/关）与诊断作用域（轮询清单换全量启用
+    // 清单）；页面销毁时全部摘除（ADR 0027 换防）。ECU 里程静默同步
+    // 回调已提 App 级（runtime 装配，2026-11-18，不随页面挂摘）。
     _connection.attachUi(
       DiagnosticsConnectionUi(
         openScanSheet: _showScanSheet,
         closeScanSheet: _closeScanSheet,
       ),
-    );
-    _connection.setOdometerSyncHandler(
-      (reading) => unawaited(_syncOdometerSilently(reading)),
     );
     _connection.setDiagnosticsScope(true);
     // 首帧先渲染「未连接」，连接动作延到首帧之后启动——状态机起点状态
@@ -91,7 +89,6 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     // App 级连接不随页面销毁（ADR 0027）：只摘接缝与作用域，轮询清单
     // 换回提醒页的核心两条（若连接还在，提醒页信息卡数据源接续）。
     _connection
-      ..setOdometerSyncHandler(null)
       ..detachUi()
       ..setDiagnosticsScope(false);
     super.dispose();
@@ -116,62 +113,6 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// UI port：关扫描 sheet（controller 主动关闭：点选成功/门禁失败）。
   void _closeScanSheet() {
     _scanSheetHandle?.close();
-  }
-
-  /// ECU 里程静默自动同步（ADR 0026）：controller 每收到有效里程读数
-  /// 回调一次。开关关（默认档）= 确认式，这里直接返回；开关开 = 读开
-  /// 关、当前应用车辆后守卫写入（守卫在动作层 syncCarMileageFromEcu）。
-  /// 失败降级不提示（静默档语义），下一轮轮询再试。
-  Future<void> _syncOdometerSilently(ObdValue reading) async {
-    try {
-      final km = reading.kilometers;
-      if (km == null || !mounted) {
-        return;
-      }
-      final autoSync = await ref.read(obdOdometerAutoSyncProvider.future);
-      if (!autoSync || !mounted) {
-        return;
-      }
-      final car = await ref.read(appliedCarProvider.future);
-      if (car == null || !mounted) {
-        return;
-      }
-      await syncCarMileageFromEcu(ref, car, km);
-    } catch (_) {
-      // 静默档语义：读偏好/读车/写库失败都不提示，下一轮轮询再试。
-    }
-  }
-
-  /// 确认式里程同步（开关关 = 默认档）：确认框两值对照，确认后走动作
-  /// 层 [syncCarMileageFromEcu]（守卫「只增不减」在动作层兜底）。入口
-  /// 挂 odometer 探针通用卡（2026-11-17 ADR 0029：行列表撤销后确认式
-  /// 入口迁卡上；开关开时静默写，不显入口）。
-  Future<void> _confirmMileageSync(Car car, int ecuKm) async {
-    final confirmed = await showConfirmDialog(
-      context: context,
-      title: '更新车辆里程',
-      message:
-          'ECU 里程 ${formatNumber(ecuKm)} km 大于当前车辆里程 ${formatNumber(car.currentMileageKm)} km，更新为 ECU 读数？',
-      confirmLabel: '更新',
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
-    try {
-      final current = await ref.read(appliedCarProvider.future);
-      if (current == null || !mounted) {
-        return;
-      }
-      await syncCarMileageFromEcu(ref, current, ecuKm);
-    } catch (error) {
-      if (mounted) {
-        showStatusOverlay(
-          context,
-          friendlyError(error),
-          StatusOverlayTone.error,
-        );
-      }
-    }
   }
 
   /// 返回键（pushed 子页，LunioTopBar leading 位，费用统计页先例）。
@@ -256,6 +197,8 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
               _connection.state.phase == DiagnosticsConnectionPhase.connected,
           carLabel: '${appliedCar?.brand ?? ''} ${appliedCar?.model ?? ''}'
               .trim(),
+          onVerificationLog: _connection.appendVerificationLog,
+          onOpenSessionLogs: () => unawaited(showObdSessionLogSheet(context)),
         ),
       ],
     );
@@ -285,13 +228,9 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       probes,
       DiagnosticsRepository.builtInVoltageKey,
     );
-    final ltftProbe = _probeByCatalogKey(
+    final cvtProbe = _probeByCatalogKey(
       probes,
-      DiagnosticsRepository.builtInLtftKey,
-    );
-    final stftProbe = _probeByCatalogKey(
-      probes,
-      DiagnosticsRepository.builtInStftKey,
+      DiagnosticsRepository.builtInCvtTempKey,
     );
     final cards = <Widget>[
       if (fuelProbe != null && fuelProbe.enabled)
@@ -321,19 +260,16 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                 : DiagnosticsRules.batteryVoltageTone(v.volts!),
           ),
         ),
-      if (ltftProbe != null && ltftProbe.enabled)
+      if (cvtProbe != null && cvtProbe.enabled)
         _ReadingCard(
-          // 卡标题用短文案「燃油修正」（探针名「长期燃油修正」6 字在
-          // 半宽卡与右端时间戳同排会挤）。
-          title: '燃油修正',
-          snapshot: _connection.readingFor(ltftProbe),
+          title: cvtProbe.name,
+          snapshot: _connection.readingFor(cvtProbe),
           tone: _toneOf(
-            ltftProbe,
-            (v) => v.percent == null
+            cvtProbe,
+            (v) => v.celsius == null
                 ? null
-                : DiagnosticsRules.fuelTrimTone(v.percent!),
+                : DiagnosticsRules.cvtOilTempTone(v.celsius!),
           ),
-          sideValue: _sideText(stftProbe),
         ),
       ...probes
           .where((probe) =>
@@ -342,10 +278,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           .map(
             (probe) => _CustomProbeCard(
               probe: probe,
-              car: appliedCar,
               snapshot: _connection.readingFor(probe),
-              autoSyncOn: ref.watch(obdOdometerAutoSyncProvider).value ?? false,
-              onSyncMileage: (km) => unawaited(_confirmMileageSync(appliedCar!, km)),
             ),
           ),
     ];
@@ -384,19 +317,6 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       return null;
     }
     return valuePick(reading);
-  }
-
-  /// 燃油修正卡右端小字：STFT 探针启用且本会话有实时读数时显「短期
-  /// ±x.x%」；禁用/无读数返回 null（不显）。
-  String? _sideText(DiagnosticsProbe? stftProbe) {
-    if (stftProbe == null || !stftProbe.enabled) {
-      return null;
-    }
-    final live = _connection.liveReadingFor(stftProbe)?.reading;
-    if (live is! ObdValue) {
-      return null;
-    }
-    return '短期 ${live.display}';
   }
 
   /// 按内置 catalogKey 定位内置检测点（信息卡数据源；key 常量与种子
@@ -508,7 +428,6 @@ class _ReadingCard extends StatelessWidget {
     required this.title,
     required this.snapshot,
     this.tone,
-    this.sideValue,
   });
 
   /// 卡标题（内置卡显短标题：油量/水温/电压/燃油修正）。
@@ -521,8 +440,7 @@ class _ReadingCard extends StatelessWidget {
   /// _toneOf）；celsius/volts 不持久化，回退显示自然不染。
   final DiagnosticsReadingTone? tone;
 
-  /// 大字行右端次值小字（燃油修正卡的 STFT；null 不显）。
-  final String? sideValue;
+
 
   @override
   Widget build(BuildContext context) {
@@ -539,9 +457,6 @@ class _ReadingCard extends StatelessWidget {
             DiagnosticsReadingTone.normal => tokens.success,
             DiagnosticsReadingTone.warning => tokens.warning,
             DiagnosticsReadingTone.danger => tokens.danger,
-            // 冷车灰档（<70℃，未达工作温度，非警告）：显灰而非正文黑，
-            // 与「不染色」区分（2026-11-18 深审阻断修复）。
-            DiagnosticsReadingTone.muted => tokens.muted,
             _ => tokens.ink,
           };
     final valueLine = <Widget>[
@@ -556,13 +471,6 @@ class _ReadingCard extends StatelessWidget {
               ),
         ),
       ),
-      if (sideValue != null)
-        Text(
-          sideValue!,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: tokens.muted,
-              ),
-        ),
     ];
     return LunioCard(
       child: Column(
@@ -588,30 +496,17 @@ class _ReadingCard extends StatelessWidget {
   }
 }
 
-/// 自定义探针通用卡（2026-11-17 ADR 0029）：名称 + 当前值 + 时间 +
-/// odometer 探针的「更新里程」确认入口（ADR 0026 确认式同步的唯
-/// 一入口；开关开时静默写不显入口）。
+/// 自定义探针通用卡（2026-11-17 ADR 0029）：名称 + 当前值 + 时间。
+/// ECU 里程同步已 App 级静默（2026-11-18 修订节），卡上无确认入口。
 class _CustomProbeCard extends StatelessWidget {
   const _CustomProbeCard({
     required this.probe,
     required this.snapshot,
-    required this.autoSyncOn,
-    required this.onSyncMileage,
-    this.car,
   });
 
   final DiagnosticsProbe probe;
 
-  /// 卡上展示车（确认同步文案用；null = 无应用车，不显入口）。
-  final Car? car;
-
   final ProbeReadingSnapshot? snapshot;
-
-  /// ECU 里程静默自动写开关（开 = 不显确认入口）。
-  final bool autoSyncOn;
-
-  /// 确认式同步回调（参数 = ECU km）。
-  final ValueChanged<int> onSyncMileage;
 
   @override
   Widget build(BuildContext context) {
@@ -619,15 +514,6 @@ class _CustomProbeCard extends StatelessWidget {
     final snapshot = this.snapshot;
     final reading = snapshot?.reading;
     final isNoData = reading is ObdNoData || snapshot == null;
-    final km = switch (reading) {
-      ObdValue(:final kilometers) => kilometers,
-      _ => null,
-    };
-    final canSync = probe.parseType == DiagnosticsParseType.odometer &&
-        km != null &&
-        car != null &&
-        km > car!.currentMileageKm &&
-        !autoSyncOn;
     final timeText = snapshot == null
         ? '未更新'
         : formatReadingTime(snapshot.at, now: DateTime.now());
@@ -667,12 +553,6 @@ class _CustomProbeCard extends StatelessWidget {
                       ),
                 ),
               ),
-              if (canSync)
-                SmallActionButton(
-                  label: '更新里程',
-                  primary: true,
-                  onPressed: () => onSyncMileage(km),
-                ),
             ],
           ),
         ],

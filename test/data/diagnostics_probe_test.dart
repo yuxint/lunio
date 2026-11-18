@@ -78,7 +78,7 @@ void main() {
     test('saveProbe 新增自定义检测点并出现在列表自定义段', () async {
       final id = await diagnostics.saveProbe(customProbe());
       final probes = await diagnostics.listProbes(carId);
-      expect(probes, hasLength(6), reason: '5 内置 + 1 自定义');
+      expect(probes, hasLength(8), reason: '7 内置 + 1 自定义');
       final custom = probes.last;
       expect(custom.id, id);
       expect(custom.name, '进气温度');
@@ -142,7 +142,7 @@ void main() {
       expect(() => diagnostics.deleteProbe(42), throwsArgumentError);
       await diagnostics.deleteProbe(id);
       final probes = await diagnostics.listProbes(carId);
-      expect(probes, hasLength(5));
+      expect(probes, hasLength(7));
       expect(probes.where((p) => p.id == id), isEmpty);
     });
 
@@ -171,11 +171,13 @@ void main() {
         '电压',
         '短期燃油修正',
         '长期燃油修正',
+        'CVT 油温',
+        '里程表',
         '甲',
         '乙',
       ]);
-      expect(probes[5].id, firstId);
-      expect(probes[6].id, secondId);
+      expect(probes[7].id, firstId);
+      expect(probes[8].id, secondId);
     });
   });
 
@@ -216,7 +218,7 @@ void main() {
       final after = await diagnostics.listProbes(carId);
       final fuelAfter = after.firstWhere((p) => p.name == '油量');
       expect(fuelAfter.lastValue, isNull);
-      expect(after, hasLength(5));
+      expect(after, hasLength(7));
     });
 
     test('编辑检测点不丢最后读数（updateProbe 白名单写三业务字段）', () async {
@@ -249,25 +251,29 @@ void main() {
   });
 
   group('种子对账（经 bootstrap 总入口）', () {
-    test('首启插入五条内置种子（幂等对账并入 ensureBootstrapData）', () async {
+    test('首启插入七条内置种子（幂等对账并入 ensureBootstrapData）', () async {
       await repos.catalogRepository.ensureBootstrapData();
       final probes = await diagnostics.listProbes(carId);
-      expect(probes, hasLength(5));
+      expect(probes, hasLength(7));
       expect(probes.map((p) => p.catalogKey), [
         'probe:fuelLevel',
         'probe:coolantTemp',
         'probe:voltage',
         'probe:stftBank1',
         'probe:ltftBank1',
+        'probe:cvtOilTemp',
+        'probe:odometer',
       ]);
-      expect(probes.map((p) => p.name).toList(), ['油量', '水温', '电压', '短期燃油修正', '长期燃油修正']);
-      expect(probes.map((p) => p.command).toList(), ['012F', '0167', 'ATRV', '0106', '0107']);
+      expect(probes.map((p) => p.name).toList(), ['油量', '水温', '电压', '短期燃油修正', '长期燃油修正', 'CVT 油温', '里程表']);
+      expect(probes.map((p) => p.command).toList(), ['012F', '0167', 'ATRV', '0106', '0107', '222301', '01A6']);
       expect(probes.map((p) => p.parseType), [
         DiagnosticsParseType.fuelLevel,
         DiagnosticsParseType.coolantTempAux,
         DiagnosticsParseType.voltageText,
         DiagnosticsParseType.fuelTrimPercent,
         DiagnosticsParseType.fuelTrimPercent,
+        DiagnosticsParseType.cvtOilTemp,
+        DiagnosticsParseType.odometer,
       ]);
       expect(probes.every((p) => p.enabled && p.isBuiltIn), isTrue);
       expect(probes.every((p) => p.carId == carId), isTrue);
@@ -289,7 +295,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 5));
       await repos.catalogRepository.ensureBootstrapData();
       final after = await diagnostics.listProbes(carId);
-      expect(after, hasLength(5), reason: '不重插');
+      expect(after, hasLength(7), reason: '不重插');
       expect(
         after.map((p) => p.sync.updatedAt),
         before.map((p) => p.sync.updatedAt),
@@ -303,7 +309,7 @@ void main() {
       final id = await diagnostics.saveProbe(customProbe(name: '我的项'));
       await repos.catalogRepository.ensureBootstrapData();
       final probes = await diagnostics.listProbes(carId);
-      expect(probes, hasLength(6));
+      expect(probes, hasLength(8));
       final custom = probes.last;
       expect(custom.id, id);
       expect(custom.name, '我的项');
@@ -337,7 +343,7 @@ void main() {
       final customId = await diagnostics.saveProbe(customProbe(name: '保留我'));
       await repos.catalogRepository.ensureBootstrapData();
       final probes = await diagnostics.listProbes(carId);
-      expect(probes, hasLength(6), reason: 'stale 清掉，5 内置 + 1 自定义');
+      expect(probes, hasLength(8), reason: 'stale 清掉，7 内置 + 1 自定义');
       expect(probes.where((p) => p.catalogKey == 'probe:stale'), isEmpty);
       expect(probes.where((p) => p.id == customId), hasLength(1));
     });

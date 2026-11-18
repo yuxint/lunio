@@ -72,7 +72,7 @@ void main() {
   });
 
   group('buildSnapshotVerificationCommands', () {
-    test('本车日志位图：7 项快照全过 + DTC（2026-11-18 信息卡内置去重）', () {
+    test('本车日志位图：6 项快照全过 + DTC（01A6 升内置、燃油修正探针在轮询）', () {
       final commands = buildSnapshotVerificationCommands(const {
         '0100': '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03 \r\r',
         '0120': '41 20 00 00 00 01 \r41 20 B0 07 A0 11 \r41 20 80 00 A0 01 \r\r',
@@ -87,7 +87,6 @@ void main() {
         '010D',
         '0111',
         '0142',
-        '01A6',
         '03',
         '07',
         '0A',
@@ -111,7 +110,7 @@ void main() {
       expect(obdVendorCommandGroups[1].header, 'DA1EF1');
       expect(obdVendorCommandGroups[1].commands, ['222301']);
       expect(obdVendorCommandGroups[2].header, 'DA10F1');
-      expect(obdVendorCommandGroups[2].commands, ['222666']);
+      expect(obdVendorCommandGroups[2].commands, ['222666', '22261A', '22262A']);
     });
   });
 }

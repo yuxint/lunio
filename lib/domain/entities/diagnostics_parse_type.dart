@@ -67,6 +67,13 @@ enum DiagnosticsParseType {
   /// 电压文本（内置种子 `ATRV`，响应即文本）。
   voltageText('voltageText', '电压文本'),
 
+  /// CVT 油温（2026-11-18 实车验证转正，ADR 0029 修订节）：本田私有
+  /// DID `222301`（ATSH DA1EF1 物理寻址，TCM）。ISO-TP 多行帧（`N: `
+  /// 行编号），全部行的 hex 字节顺序拼接后 = `62 23 01` 头 + 数据区；
+  /// 温度 = 数据区第 26 字节（0 基）− 40。2026-11-18 实测布局交叉验证
+  /// 成功（转速槽 723 与 010C 一致）：热车怠速 104℃。
+  cvtOilTemp('cvtOilTemp', 'CVT 油温（222301）'),
+
   /// 原始 hex 兜底：未知指令的响应原文照显。
   rawHex('rawHex', '原始 hex');
 

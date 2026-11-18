@@ -319,6 +319,22 @@ ObdReading parseProbeResponse({
             '${trim >= 0 ? '+' : ''}${trim.toStringAsFixed(1)}%',
         percent: trim,
       );
+    case DiagnosticsParseType.cvtOilTemp:
+      // 私有 DID 多行帧：全部行的两位 hex token 顺序拼接（行编号
+      // `0:`–`8:` 与 ISO-TP 长度行 `027` 被 extractHexBytes 的长度/
+      // 形态过滤自动跳过），拼出的流 = `62 23 01` 头 + 数据区。
+      // 温度 = 数据区第 26 字节（0 基）− 40。2026-11-18 实车帧
+      // （热车怠速）实证：数据区 7-8 = 02 D3 = 723 rpm 与 010C 一致、
+      // 数据区 26 = 0x90 → 104℃。
+      final bytes = [for (final line in lines) ...extractHexBytes(line)];
+      if (bytes.length < 3 + 27 ||
+          bytes[0] != 0x62 ||
+          bytes[1] != 0x23 ||
+          bytes[2] != 0x01) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      final celsius = bytes[3 + 26] - 40;
+      return ObdValue(display: '$celsius℃', celsius: celsius);
     case DiagnosticsParseType.voltageText:
       // 电压文本：ATRV 响应即文本（语料 `11.2V\r\r>`），回显已去，整
       // 文本直接展示；能解析出数值时顺带填 volts 供电压卡染色
