@@ -161,7 +161,8 @@ class _Harness {
 
   Future<void> pump() => pumpEventQueue();
 
-  /// 发出 command 并逐拍放行 chunk 门闩（connect 的 AT 序列 = 4 条）。
+  /// 发出 command 并逐拍放行 chunk 门闩（connect 的 AT 序列 = 4 条 +
+  /// ECU 握手 0100，共 5 条）。
   Future<void> driveChunks(int count) async {
     for (var i = 0; i < count; i++) {
       await pump();
@@ -170,10 +171,11 @@ class _Harness {
     }
   }
 
-  /// 直连（记忆命中）到已连接：放行 4 条 AT 序列后等 Connected 事件落地。
+  /// 直连（记忆命中）到已连接：放行 4 条 AT 序列 + ECU 握手后等
+  /// Connected 事件落地。
   Future<void> connectDirect() async {
     unawaited(controller.start());
-    await driveChunks(4);
+    await driveChunks(5);
     await pump();
   }
 
@@ -307,7 +309,7 @@ void main() {
       await h.startScanning();
 
       await h.pick(_entry('dev-A'));
-      await h.driveChunks(4);
+      await h.driveChunks(5);
       await h.pump();
 
       expect(h.deviceIds, ['dev-A']);
@@ -395,7 +397,7 @@ void main() {
       unawaited(h.controller.openScan());
       await h.pump();
       await h.pick(_entry('dev-B'));
-      await h.driveChunks(4);
+      await h.driveChunks(5);
       await h.pump();
       expect(h.controller.state.phase, DiagnosticsConnectionPhase.connected);
       final connectedSession = h.controller.session;
@@ -514,7 +516,7 @@ void main() {
     test('快速连接有记忆：直连成功、不开扫描', () async {
       final h = _Harness(rememberedId: 'dev-1');
       unawaited(h.controller.connectRemembered());
-      await h.driveChunks(4);
+      await h.driveChunks(5);
       await h.pump();
 
       expect(h.deviceIds, ['dev-1']);

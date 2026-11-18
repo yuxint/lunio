@@ -49,12 +49,12 @@ class ProbeFormController {
         _now = now ?? DateTime.now,
         // 编辑回填：名称 trim（存量行可能有未 trim 形态）、指令回填
         // 原文（未归一的存量形态原样回显，提交时才归一）、解析类型/
-        // 刷新间隔回填原值。新增默认：解析类型原始 hex、间隔 30 秒。
+        // 刷新间隔回填原值。新增默认：解析类型原始 hex、间隔 10 秒（2026-11-17 拍板，与 DiagnosticsRepository.defaultRefreshIntervalSeconds 同值）。
         nameController = TextEditingController(text: probe?.name.trim() ?? ''),
         commandController =
             TextEditingController(text: probe?.command ?? ''),
         refreshIntervalController = TextEditingController(
-          text: (probe?.refreshIntervalSeconds ?? 30).toString(),
+          text: (probe?.refreshIntervalSeconds ?? 10).toString(),
         ),
         parseType = probe?.parseType ?? DiagnosticsParseType.rawHex;
 
@@ -80,7 +80,7 @@ class ProbeFormController {
   /// 指令原文输入框。
   final TextEditingController commandController;
 
-  /// 刷新间隔输入框（秒，ADR 0023）。默认 30，范围 5–3600。
+  /// 刷新间隔输入框（秒，ADR 0023）。默认取仓库默认常量（2026-11-17 起 10 秒），范围 5–3600。
   final TextEditingController refreshIntervalController;
 
   /// 解析类型选中项（新增默认 rawHex）。分段控件结构上必有选中项，

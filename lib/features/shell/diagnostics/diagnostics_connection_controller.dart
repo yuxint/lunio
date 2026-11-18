@@ -233,11 +233,14 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     _diagnosticsScope = active;
   }
 
-  /// 检测点快照取值（行列表与核心值卡共源）：实时读数优先（本会话最新
-  /// 轮询），页内还没有实时读数时回退持久化的最后读数。两者都无 = null。
+  /// 检测点快照取值（信息卡共源）：**实时有值优先**（本会话最新轮询）；
+  /// 实时「无数据」**不遮蔽**持久化最后值（2026-11-17 拍板，ADR 0029：
+  /// 再连接后轮询读到 NO DATA/超时，页面保留最后有效值+旧时间戳，不切
+  /// 灰态——只有明确数据值才覆盖显示）；实时无读数或无值时回退持久化
+  /// 最后读数。两者都无 = null（灰态「无数据」只在从未有过有效值时）。
   ProbeReadingSnapshot? readingFor(DiagnosticsProbe probe) {
     final live = _readings[probe.id];
-    if (live != null) {
+    if (live != null && live.reading is ObdValue) {
       return live;
     }
     final value = probe.lastValue;
@@ -245,8 +248,8 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     if (value == null || at == null) {
       return null;
     }
-    // 重建快照：display + percent 足够渲染（水温/值卡只显 display，
-    // 油量卡升数估算用 percent）；celsius 不持久化，重建后不需要。
+    // 重建快照：display + percent 足够渲染（信息卡只显 display 与
+    // percent 染色）；celsius/volts 不持久化，重建后不染色（ink 色）。
     return ProbeReadingSnapshot(
       reading: ObdValue(display: value, percent: probe.lastPercent),
       at: at,

@@ -56,12 +56,13 @@ Set<int> decodeSupportedPids(
   return result;
 }
 
-/// 内置三条中的 mode 01 指令（镜像自 DiagnosticsRepository
+/// 内置五条中的 mode 01 指令（镜像自 DiagnosticsRepository
 /// .builtInProbeSeeds；契约测试 test/features/obd_snapshot_contract_test
-/// .dart 锁同步——种子改指令时这里红灯提示）。
-const List<String> _builtInMode01Commands = ['012F', '0167'];
+/// .dart 锁同步——种子改指令时这里红灯提示）。2026-11-17 起内置含燃油
+/// 修正 0106/0107（ADR 0029）。
+const List<String> _builtInMode01Commands = ['012F', '0167', '0106', '0107'];
 
-/// 一键检测快照集：内置三条 + 推荐模板的全部 mode 01 指令，字典序。
+/// 一键检测快照集：内置五条 + 推荐模板的全部 mode 01 指令，字典序。
 /// 过滤语义见 [buildSnapshotVerificationCommands]。
 final List<String> obdSnapshotCommands = _snapshotCommands();
 

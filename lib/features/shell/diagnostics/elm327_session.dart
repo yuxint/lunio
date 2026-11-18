@@ -40,6 +40,15 @@ class Elm327TimeoutException extends Elm327SessionException {
       : super('指令 $command 等提示符超时');
 }
 
+/// ECU 握手失败（2026-11-17 拍板，ADR 0029）：适配器在线（AT 序列全部
+/// 成功）但 ECU 无响应——点火 OFF 时整车 CAN 总线休眠的典型形态（全量
+/// 采集日志实证：ATRV 有电压、PID 全 NO DATA）。用户口径：只有 ECU 连
+/// 上才算连接成功，只连了 ELM 不算。
+class Elm327EcuUnreachableException extends Elm327SessionException {
+  const Elm327EcuUnreachableException()
+      : super('适配器已连上，但 ECU 无响应（检查点火开关）');
+}
+
 /// 会话状态：idle（未连）→ connecting → connected → disconnected
 /// （终态）。
 enum Elm327SessionState { idle, connecting, connected, disconnected }
@@ -98,7 +107,7 @@ class Elm327Session {
   final Duration responseTimeout;
 
   /// 轮询调度拍（ADR 0023）：每个检测点自己的 [DiagnosticsProbe
-  /// .refreshIntervalSeconds] 按这个 1 秒拍倒计时，默认 30 秒。
+  /// .refreshIntervalSeconds] 按这个 1 秒拍倒计时，默认 10 秒（2026-11-17 起）。
   static const Duration pollTick = Duration(seconds: 1);
 
   static Future<void> _realDelay(Duration d) => Future<void>.delayed(d);
@@ -108,6 +117,12 @@ class Elm327Session {
   /// 必发不省略（实车验证：协议复位后发 PID 全 NO DATA）。发送前逐条
   /// 规整（normalizeObdCommand）。
   static const List<String> initSequence = ['ATZ', 'ATE0', 'ATL0', 'ATSP 7'];
+
+  /// ECU 握手探测指令（2026-11-17 拍板，ADR 0029）：OBD-II 法规强制的
+  /// 支持位图查询（0100），所有 OBD-II 车必响应——本车实测三 ECU 各回
+  /// 一行 `41 00 xx xx xx xx`。AT 序列成功只证明适配器在线，ECU 睡眠
+  /// （点火 OFF）时发 PID 会回 NO DATA/UNABLE TO CONNECT 或超时。
+  static const String ecuHandshakeCommand = '0100';
 
   final _events = StreamController<Elm327SessionEvent>.broadcast();
 
@@ -157,13 +172,14 @@ class Elm327Session {
     }
   }
 
-  /// 连接并跑完 AT 初始化序列。成功 → 状态 connected + 发
+  /// 连接并跑完 AT 初始化序列 + ECU 握手。成功 → 状态 connected + 发
   /// [Elm327Connected]；失败 → 状态 disconnected、发
   /// [Elm327Disconnected]，并上抛 [Elm327SessionException]（可辨识，
   /// 页面 await 处接状态条错误文案；事件与异常同源同因）。
   ///
   /// AT 序列逐条"发指令 → 等提示符帧"（每条成功 = 收到 `>`，不校验
-  /// banner/OK 内容——适配器差异大，内容校验脆弱）。
+  /// banner/OK 内容——适配器差异大，内容校验脆弱）。序列末尾追加
+  /// ECU 握手（[_verifyEcuHandshake]）：只有 ECU 也响应才算连接成功。
   Future<void> connect() async {
     if (_state != Elm327SessionState.idle) {
       throw StateError('connect() 只允许从 idle 进入（当前 $_state）');
@@ -186,6 +202,14 @@ class Elm327Session {
         await _request(normalizeObdCommand(command));
         _throwIfDisposed();
       }
+      await _verifyEcuHandshake();
+      _throwIfDisposed();
+    } on Elm327EcuUnreachableException {
+      // ECU 握手失败是可辨识失败：状态条文案直达（"适配器已连上，但
+      // ECU 无响应"），不归并进泛化的"AT 初始化序列失败"。
+      _markDisconnected(const Elm327EcuUnreachableException());
+      await _teardown();
+      rethrow;
     } catch (e) {
       _markDisconnected(e);
       await _teardown();
@@ -198,6 +222,31 @@ class Elm327Session {
     }
     _state = Elm327SessionState.connected;
     _emit(const Elm327Connected());
+  }
+
+  /// ECU 握手探测（2026-11-17 拍板，ADR 0029）：发 [ecuHandshakeCommand]
+  /// （0100），ECU 有任意非错误响应行才算 ECU 会话建立。判定口径：
+  /// - 超时（连 `>` 都没等到）= ECU 无响应；
+  /// - 帧到达但全部是错误关键词行（NO DATA / UNABLE TO CONNECT 等）=
+  ///   适配器在线但 ECU 睡着；
+  /// - 有非错误行（41 00 ...）= ECU 在线。
+  ///
+  /// 失败上抛 [Elm327EcuUnreachableException]，不自动重试（点火没开时
+  /// 重试无意义，用户点重连前先开点火）。
+  Future<void> _verifyEcuHandshake() async {
+    String frame;
+    try {
+      frame = await _request(Elm327Session.ecuHandshakeCommand);
+    } on Elm327TimeoutException {
+      throw const Elm327EcuUnreachableException();
+    }
+    final lines = obdFrameLines(
+      frame,
+      sentCommand: Elm327Session.ecuHandshakeCommand,
+    );
+    if (lines.isEmpty || lines.every(isObdErrorLine)) {
+      throw const Elm327EcuUnreachableException();
+    }
   }
 
   /// 启动串行轮询循环（要求 connected；已启动再调抛 StateError）。

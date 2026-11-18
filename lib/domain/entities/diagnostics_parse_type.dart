@@ -58,6 +58,12 @@ enum DiagnosticsParseType {
   /// `41 A6 00 0A 14 C8` → 66,068 km，与 CarScanner 互证）。
   odometer('odometer', '里程表（÷10 km）'),
 
+  /// 燃油修正（2026-11-17 拍板转正，ADR 0029）：`0106` 短期（STFT
+  /// Bank 1）/`0107` 长期（LTFT Bank 1），公式 (A−128)×100/128 %，
+  /// 可负。染色按 LTFT：±10% 内绿、±10~15% 黄、超 ±15% 红（2026-11-17
+  /// 用户拍板口径）。实时值同时填 [ObdValue.percent] 供卡片染色。
+  fuelTrimPercent('fuelTrimPercent', '燃油修正（%）'),
+
   /// 电压文本（内置种子 `ATRV`，响应即文本）。
   voltageText('voltageText', '电压文本'),
 

@@ -85,13 +85,20 @@ sealed class ObdReading {
 
 /// 有数据。
 final class ObdValue extends ObdReading {
-  const ObdValue({required this.display, this.percent, this.celsius, this.kilometers});
+  const ObdValue({
+    required this.display,
+    this.percent,
+    this.celsius,
+    this.kilometers,
+    this.volts,
+  });
 
   @override
   final String display;
 
-  /// 油量百分比（仅 fuelLevel 解析类型有值），0–100 保留精度供页面
-  /// 估算升数 = 百分比 × 油箱容积（story 10/11）。
+  /// 百分比数值：油量（0–100，story 10/11）或燃油修正（可负，±25 内，
+  /// 2026-11-17 拍板）——fuelLevel 与 fuelTrimPercent 解析类型填，供
+  /// 信息卡染色与（燃油修正）色档判定。
   final double? percent;
 
   /// 温度 ℃（仅 coolantTemp/coolantTempAux 解析类型有值）。
@@ -100,6 +107,11 @@ final class ObdValue extends ObdReading {
   /// ECU 里程 km（仅 odometer 解析类型有值），供 ECU 里程同步守卫
   /// （只增不减）比较，ADR 0026。
   final int? kilometers;
+
+  /// 电压数值 V（2026-11-17 拍板，ADR 0029）：voltageText（ATRV）解析
+  /// 成功时顺带解析文本数值填充；moduleVoltage 公式结果也填。供电压卡
+  /// 染色。不持久化，持久化回退重建时不染色（ink 色）。
+  final double? volts;
 }
 
 /// 无数据（NO DATA / CAN ERROR 等错误行、响应不匹配、超时）。
@@ -291,13 +303,29 @@ ObdReading parseProbeResponse({
         display: '${_formatThousands(km)} km',
         kilometers: km,
       );
+    case DiagnosticsParseType.fuelTrimPercent:
+      final a = _firstDataByte(matched);
+      if (a == null) {
+        return ObdNoData(_noDataReason(matched, command));
+      }
+      // 燃油修正 = (A−128)×100/128 %（Mode 01 PID 0x06 短期/0x07 长期，
+      // Bank 1）。本车 11-12 实测：0106 = −1.6%（A=0x7E）、0107 = 0%
+      // （A=0x80）。带符号 1 位小数展示，实时值填 percent 供染色。
+      final trim = (a - 128) * 100 / 128;
+      return ObdValue(
+        display:
+            '${trim >= 0 ? '+' : ''}${trim.toStringAsFixed(1)}%',
+        percent: trim,
+      );
     case DiagnosticsParseType.voltageText:
       // 电压文本：ATRV 响应即文本（语料 `11.2V\r\r>`），回显已去，整
-      // 文本直接展示。
+      // 文本直接展示；能解析出数值时顺带填 volts 供电压卡染色
+      //（2026-11-17 拍板，ADR 0029）。
       if (lines.isEmpty) {
         return ObdNoData('空响应');
       }
-      return ObdValue(display: lines.join(' '));
+      final text = lines.join(' ');
+      return ObdValue(display: text, volts: _parseVoltageText(text));
     case DiagnosticsParseType.rawHex:
       // 原始 hex 兜底（story 24"响应原文照显"）：回显剥除后的行全文
       // 照显——hex 形态（多 ECU 各行、多行帧编号 `0:`–`8:`）与文本形
@@ -331,6 +359,19 @@ int? _firstDataByte(String? matched) {
 /// 公式类无数据的原因短语：无匹配行 vs 匹配行缺数据字节。
 String _noDataReason(String? matched, String command) {
   return matched == null ? '无 $command 响应行' : '响应缺数据字节';
+}
+
+/// 从 ATRV 类文本响应解析电压数值（"11.2V" → 11.2）：取首个形如
+/// `x.yV` 的 token；解析失败返回 null（展示不受影响，仅不染色）。
+double? _parseVoltageText(String text) {
+  final match = RegExp(
+    r'(\d+(?:\.\d+)?)\s*V',
+    caseSensitive: false,
+  ).firstMatch(text);
+  if (match == null) {
+    return null;
+  }
+  return double.tryParse(match.group(1)!);
 }
 
 /// 千分位（与 shared/formatters.dart 的 formatNumber 同格式；parser

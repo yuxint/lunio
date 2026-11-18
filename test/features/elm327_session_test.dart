@@ -187,7 +187,7 @@ void main() {
       final session = Elm327Session(transport: mock, delay: gate.gate);
       await session.connect();
       expect(session.state, Elm327SessionState.connected);
-      expect(mock.sentCommands, ['ATZ', 'ATE0', 'ATL0', 'ATSP7']);
+      expect(mock.sentCommands, ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100']);
     });
 
     test('初始化超时：上抛 Elm327SessionException + 断开事件 + 终态', () async {
@@ -215,6 +215,41 @@ void main() {
       expect(session.state, Elm327SessionState.disconnected);
       final event = await queue.next();
       expect(event, isA<Elm327Disconnected>());
+      await session.dispose();
+    });
+
+    test('ECU 握手失败：AT 序列成功但 0100 全 NO DATA → 可辨识错误 + 断开', () async {
+      final gate = _DelayGate();
+      // AT 序列应答正常，0100 回 NO DATA（点火 OFF 总线休眠形态）。
+      final mock = MockObdTransport(
+        responses: {
+          'ATZ': resp('\r\rELM327 v2.3\r\r>'),
+          'ATE0': resp('OK\r\r>'),
+          'ATL0': resp('OK\r\r>'),
+          'ATSP7': resp('OK\r\r>'),
+          '0100': resp('NO DATA\r\r>'),
+        },
+        delay: (_) async {},
+      );
+      final session = Elm327Session(transport: mock, delay: gate.gate);
+      final queue = _EventQueue(session);
+      final connectFuture = session.connect();
+      connectFuture.ignore();
+      final event = await queue.next();
+      expect(event, isA<Elm327Disconnected>());
+      expect(session.state, Elm327SessionState.disconnected);
+      Object? caught;
+      try {
+        await connectFuture;
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, isA<Elm327EcuUnreachableException>());
+      expect(
+        (caught as Elm327SessionException).message,
+        '适配器已连上，但 ECU 无响应（检查点火开关）',
+      );
+      expect(mock.sentCommands, ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100']);
       await session.dispose();
     });
   });
@@ -248,12 +283,12 @@ void main() {
       // 串行发送次序 = AT 序列 + 一轮启用项。
       expect(
         mock.sentCommands,
-        ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '012F', '0167', 'ATRV'],
+        ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100', '012F', '0167', 'ATRV'],
       );
       // 轮间停 1 秒调度拍（ADR 0023）：第 8 个延时请求 = 轮末一拍
       // （前 7 个是各指令的响应超时竞速，时长 5s；检测点间隔默认 30s，
       // 倒计时按拍递减）。
-      expect(gate.requests.length, 8);
+      expect(gate.requests.length, 9);
       expect(gate.requests.last, Elm327Session.pollTick);
       await session.dispose();
     });
@@ -266,6 +301,7 @@ void main() {
           'ATE0': resp('OK\r\r>'),
           'ATL0': resp('OK\r\r>'),
           'ATSP7': resp('OK\r\r>'),
+          '0100': resp('41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>'),
           '019D': const MockObdScript.silent(),
           '0105': resp('41 05 82 \r\r>'),
         },
@@ -279,11 +315,11 @@ void main() {
         makeProbe(7, '019D', DiagnosticsParseType.rawHex),
         makeProbe(8, '0105', DiagnosticsParseType.coolantTemp),
       ]);
-      // 放行 019D 的响应超时（第 5 个延时请求）。
-      while (gate.requests.length < 5) {
+      // 放行 019D 的响应超时（第 6 个延时请求；第 5 个 = ECU 握手）。
+      while (gate.requests.length < 6) {
         await pumpEventQueue();
       }
-      gate.completeAt(4);
+      gate.completeAt(5);
       final first = await queue.next() as Elm327ProbeReading;
       expect(first.probeId, 7);
       expect(first.reading, isA<ObdNoData>());
@@ -313,14 +349,14 @@ void main() {
       session.startPolling(enabledProbes: () => [
         makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
       ]);
-      // 012F 的 send 永不返回：第 5 个门 = 它的响应超时竞速。
-      while (gate.requests.length < 5) {
+      // 012F 的 send 永不返回：第 6 个门 = 它的响应超时竞速（第 5 个 = ECU 握手）。
+      while (gate.requests.length < 6) {
         await pumpEventQueue();
       }
       // 旧实现：超时错误被 completer.future.ignore() 吞掉、_frameWaiter
       // 永占 —— pausePolling 死等、后续请求全部「串行违规」。
       final pause = session.pausePolling();
-      gate.completeAt(4);
+      gate.completeAt(5);
       await pause.timeout(const Duration(seconds: 1));
       final reading =
           await queue.next().timeout(const Duration(seconds: 1))
@@ -380,15 +416,15 @@ void main() {
       );
       final reading = await queue.next() as Elm327ProbeReading;
       expect((reading.reading as ObdValue).display, '37.6%');
-      // 读数事件后循环停在轮间延时（第 6 个延时请求）。
-      while (gate.requests.length < 6) {
+      // 读数事件后循环停在轮间延时（第 7 个延时请求）。
+      while (gate.requests.length < 7) {
         await pumpEventQueue();
       }
       session.stopPolling();
-      gate.completeAt(5);
+      gate.completeAt(6);
       await pumpEventQueue();
       // 检查点退出：不再发下一轮（变异目标：删轮末检查点 → 此断言失败）。
-      expect(mock.sentCommands.length, 5);
+      expect(mock.sentCommands.length, 6);
       await session.dispose();
     });
 
@@ -474,6 +510,7 @@ void main() {
           'ATE0': resp('OK\r\r>'),
           'ATL0': resp('OK\r\r>'),
           'ATSP7': resp('OK\r\r>'),
+          '0100': resp('41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>'),
           '012F': MockObdScript(
             chunks: [latin1.encode('41 2F 60 \r'), latin1.encode('\r>')],
             firstChunkDelay: const Duration(milliseconds: 209),
@@ -502,7 +539,7 @@ void main() {
       expect(session.state, Elm327SessionState.disconnected);
       // 轮询已退出：之后泵事件队列不再产生新发送。
       await pumpEventQueue();
-      expect(mock.sentCommands, ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '012F']);
+      expect(mock.sentCommands, ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100', '012F']);
       await session.dispose();
     });
 
@@ -570,6 +607,7 @@ void main() {
           'ATE0': resp('OK\r\r>'),
           'ATL0': resp('OK\r\r>'),
           'ATSP7': resp('OK\r\r>'),
+          '0100': resp('41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>'),
           '012F': const MockObdScript.silent(),
         },
         delay: (_) async {},
@@ -583,8 +621,8 @@ void main() {
           makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
         ],
       );
-      // 012F 在途（无声脚本）：第 5 个门 = 它的响应超时。
-      while (gate.requests.length < 5) {
+      // 012F 在途（无声脚本）：第 6 个门 = 它的响应超时（第 5 个 = ECU 握手）。
+      while (gate.requests.length < 6) {
         await pumpEventQueue();
       }
       // 在途窗口注入迟到的纯提示符碎片：过滤后不入队，在途请求继续等
@@ -593,7 +631,7 @@ void main() {
       mock.injectBytes(latin1.encode('\r>'));
       await pumpEventQueue();
       await pumpEventQueue();
-      gate.completeAt(4);
+      gate.completeAt(5);
       final first = await queue.next() as Elm327ProbeReading;
       expect((first.reading as ObdNoData).reason, '超时');
       await session.dispose();

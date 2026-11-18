@@ -1,5 +1,5 @@
 // 车辆诊断仓库（DiagnosticsRepository）：检测点表（diagnostics_probes，
-// ADR 0021）的唯一读写出口，外加每车内置三条种子的 bootstrap 幂等对账。
+// ADR 0021）的唯一读写出口，外加每车内置五条种子的 bootstrap 幂等对账。
 //
 // ≈ Java 里按域拆出的领域 Service：管一张按车分组的表（挂 carId——指令
 // 语义与车无关，但不同车的可用指令可能不同，ADR 0021 修订节）；删除车辆
@@ -54,15 +54,29 @@ class DiagnosticsRepository {
   /// 内置水温检测点 catalogKey（水温值卡定位用）。
   static const builtInCoolantKey = 'probe:coolantTemp';
 
+  /// 内置电压检测点 catalogKey（电压卡定位用，2026-11-17 ADR 0029）。
+  static const builtInVoltageKey = 'probe:voltage';
+
+  /// 内置短期燃油修正 catalogKey（燃油修正卡 STFT 小字定位用）。
+  static const builtInStftKey = 'probe:stftBank1';
+
+  /// 内置长期燃油修正 catalogKey（燃油修正卡主值定位用）。
+  static const builtInLtftKey = 'probe:ltftBank1';
+
   /// 构造时注入数据库连接。
   DiagnosticsRepository(this.database);
 
   final AppDatabase database;
 
-  /// 检测点默认自动轮询间隔（秒，ADR 0023）。
-  static const int defaultRefreshIntervalSeconds = 30;
+  /// 检测点默认自动轮询间隔（秒，ADR 0023）。2026-11-17 拍板 30→10：
+  /// 实测单条命令总线往返 ~120-200ms（一键检测 25 条全程约 3 秒），5
+  /// 条探针单轮 ~0.75s，10s 间隔总线占空比 ~7.5%，对 500k CAN 与 ECU
+  /// 都远在安全区；暖机期水温 ~0.1-0.3℃/s，10s 采样粒度足够，诊断页
+  /// 打开 ≤10s 必有新鲜值。
+  static const int defaultRefreshIntervalSeconds = 10;
 
-  /// 内置三条种子（ADR 0021 修订节）：油量/水温/电压。2026-11-16 起
+  /// 内置五条种子（ADR 0021 修订节 + 2026-11-17 ADR 0029）：油量/水温/
+  /// 电压/短期燃油修正/长期燃油修正。2026-11-16 起
   /// 水温内置改 `0167`（本车 0105 不支持，全量采集分析见
   /// docs/car_obd_link/docs/全量采集分析-2026-11-16.md）；存量车的
   /// 内置行在库里已是 0105，由用户在 App 内手动编辑迁移，bootstrap
@@ -83,14 +97,30 @@ class DiagnosticsRepository {
       parseType: domain.DiagnosticsParseType.coolantTempAux,
     ),
     DiagnosticsProbeSeed(
-      catalogKey: 'probe:voltage',
+      catalogKey: builtInVoltageKey,
       name: '电压',
       command: 'ATRV',
       parseType: domain.DiagnosticsParseType.voltageText,
     ),
+    // 燃油修正两条（2026-11-17 拍板转正，ADR 0029）：本车支持集含 06/
+    // 07（11-12 实测 0106 = −1.6%、0107 = 0%）。染色基准 = LTFT（卡
+    // 大字），STFT 为标题行右端小字；推翻 11-16「燃油修正不加」拍板，
+    // 理由已变（观察燃烧系统健康度）。存量车 bootstrap 自动补齐。
+    DiagnosticsProbeSeed(
+      catalogKey: builtInStftKey,
+      name: '短期燃油修正',
+      command: '0106',
+      parseType: domain.DiagnosticsParseType.fuelTrimPercent,
+    ),
+    DiagnosticsProbeSeed(
+      catalogKey: builtInLtftKey,
+      name: '长期燃油修正',
+      command: '0107',
+      parseType: domain.DiagnosticsParseType.fuelTrimPercent,
+    ),
   ];
 
-  /// 某辆车的检测点全量列表：内置三条在前（按种子声明顺序）、自定义
+  /// 某辆车的检测点全量列表：内置五条在前（按种子声明顺序）、自定义
   /// 按 id 升序（雪花 id 时间有序 = 创建顺序）。诊断页列表与轮询的
   /// "启用检测点"快照共用这一份读取。
   Future<List<domain.DiagnosticsProbe>> listProbes(int carId) async {
@@ -221,7 +251,7 @@ class DiagnosticsRepository {
   }
 
   /// 删除自定义检测点。内置行不可删（ArgumentError，防编程错误——
-  /// "内置三件套永远在、永远正确"，ADR 0021）；行不存在同样拒绝。
+  /// "内置五件套永远在、永远正确"，ADR 0021）；行不存在同样拒绝。
   Future<void> deleteProbe(int probeId) async {
     final row = await (database.select(
       database.diagnosticsProbes,
@@ -237,7 +267,7 @@ class DiagnosticsRepository {
     )..where((row) => row.id.equals(probeId))).go();
   }
 
-  /// 内置三条种子的幂等对账（ADR 0021 修订节，每车一套）。并入
+  /// 内置五条种子的幂等对账（ADR 0021 修订节，每车一套）。并入
   /// bootstrap 总入口（BuiltInCatalogRepository.ensureBootstrapData 注入
   /// 调用）：遍历所有车辆，逐车补缺失内置、清理种子外内置 key。
   /// **只补缺失，不纠偏用户编辑**——内置行可改名称/指令/解析类型/间隔，
@@ -251,7 +281,7 @@ class DiagnosticsRepository {
     });
   }
 
-  /// 给一辆车播种内置三条（新增车辆收尾调用；bootstrap 也经上面的全量
+  /// 给一辆车播种内置五条（新增车辆收尾调用；bootstrap 也经上面的全量
   /// 入口走到这里）。幂等：已有 key 不动。
   Future<void> seedBuiltInProbesForCar(int carId) {
     return database.transaction(() => _ensureBuiltInProbesForCar(carId));

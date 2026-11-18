@@ -339,7 +339,7 @@ class DiagnosticsProbes extends Table {
   /// null = 自定义行（可增改删）。
   TextColumn get catalogKey => text().nullable()();
 
-  /// 自动轮询间隔（秒，ADR 0023）：默认 30，范围 5–3600。
+  /// 自动轮询间隔（秒，ADR 0023）：默认 10（2026-11-17 拍板，30→10），范围 5–3600。
   IntColumn get refreshIntervalSeconds =>
       integer().withDefault(const Constant(30))();
 

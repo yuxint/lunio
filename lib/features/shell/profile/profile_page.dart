@@ -24,6 +24,7 @@ import '../../../core/widgets/lunio_components.dart';
 import '../../../domain/entities/car.dart';
 import '../../../domain/errors/lunio_error.dart';
 import '../shared/shell_shared.dart';
+import '../diagnostics/probe_management_sheet.dart';
 import 'maintenance_items.dart';
 import 'settings_data.dart';
 import 'settings_manual_date.dart';
@@ -91,6 +92,8 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
               onEdit: (car) => showEditCarSheet(context, ref, car),
               onManageItems: (car) =>
                   showMaintenanceItemsSheet(context, car: car),
+              onManageProbes: (car) =>
+                  showProbeManagementSheet(context, car: car),
               onApply: (carId) => applyCar(ref, carId),
               onDelete: (car) => deleteCar(context, ref, car),
             ),

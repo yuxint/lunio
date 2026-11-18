@@ -55,7 +55,7 @@ class DiagnosticsProbe {
   /// 内置不进备份、自定义项进备份段时不带本字段（ADR 0021 修订节）。
   final String? catalogKey;
 
-  /// 自动轮询间隔（秒，ADR 0023）：默认 30，范围 5–3600；手动刷新不受
+  /// 自动轮询间隔（秒，ADR 0023）：默认 10（2026-11-17 起），范围 5–3600；手动刷新不受
   /// 它限制。调度器按各条到期时间轮询。
   final int refreshIntervalSeconds;
 

@@ -7,14 +7,17 @@
 // diagnostics_connection_controller.dart（plain-Dart，构造注入会话工厂/
 // 扫描器/设备记忆/读数落库/ECU 里程回调与两个 UI 动作）。
 //
-// 四区布局（票 05 三区 + 调试终端）：
+// 三区布局（2026-11-17 拍板，ADR 0029：检测点行列表撤销、全员信息卡化）：
 //   1. 连接状态条：未连接/扫描中/连接中/已连接/已断开 + 错误文案；行尾
 //      动作按相位：已断开=重连、未连接/扫描中=选择设备、已连接=断开。
-//   2. 核心值卡：油量（百分比大字 + 双油量小字，ADR 0022）+ 水温；数据
-//      经 controller.readingFor 取（实时优先、持久化回退）。
-//   3. 检测点行列表：名称 + 当前值 + 最后更新时间 + 启停开关；无数据
-//      行级灰态不连坐；列表尾「管理检测点」打开项目式管理 sheet。
-//   4. 调试终端（debug_panel.dart，ADR 0023）：折叠展开，连接后可暂停
+//   2. 信息卡网格 2×2：油量 | 水温 / 电压 | 燃油修正（内置启用探针各
+//      对应一张固定卡；水温/电压/燃油修正按读数染语义色，油量不染；
+//      无小字状态行，状态全靠色档）。启用的自定义探针追加通用卡（名
+//      称+大字+时间，odometer 探针带「更新里程」确认入口）。显示语义：
+//      实时有值优先，实时无数据不遮蔽持久化最后值（只显旧值+旧时间，
+//      不染色），从未有过有效值才灰态「无数据」。启停与管理入口在
+//      「我的」页车辆卡的「检测点」按钮（诊断页不再有启停与管理行）。
+//   3. 调试终端（debug_panel.dart，ADR 0023）：折叠展开，连接后可暂停
 //      自动轮询、发原始命令、跑一键检测并复制日志。
 //
 // ≈ Java 的 View：State 只持有 controller 与扫描 sheet 句柄（UI 资源），
@@ -41,7 +44,6 @@ import 'debug_panel.dart';
 import 'diagnostics_connection_controller.dart';
 import 'elm327_parser.dart' show ObdNoData, ObdValue;
 import 'obd_runtime.dart';
-import 'probe_management_sheet.dart';
 
 /// 车辆诊断页主组件。
 class DiagnosticsPage extends ConsumerStatefulWidget {
@@ -141,7 +143,9 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   }
 
   /// 确认式里程同步（开关关 = 默认档）：确认框两值对照，确认后走动作
-  /// 层 [syncCarMileageFromEcu]（守卫「只增不减」在动作层兜底）。
+  /// 层 [syncCarMileageFromEcu]（守卫「只增不减」在动作层兜底）。入口
+  /// 挂 odometer 探针通用卡（2026-11-17 ADR 0029：行列表撤销后确认式
+  /// 入口迁卡上；开关开时静默写，不显入口）。
   Future<void> _confirmMileageSync(Car car, int ecuKm) async {
     final confirmed = await showConfirmDialog(
       context: context,
@@ -168,47 +172,6 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         );
       }
     }
-  }
-
-  /// 行启停开关：写库失败 toast 兜底（动作层异常穿透，调用点翻译）。
-  Future<void> _toggleProbe(DiagnosticsProbe probe, bool value) async {
-    try {
-      await setDiagnosticsProbeEnabled(ref, probe, value);
-    } catch (error) {
-      if (mounted) {
-        showStatusOverlay(
-          context,
-          friendlyError(error),
-          StatusOverlayTone.error,
-        );
-      }
-    }
-  }
-
-  /// 检测点单行组装：读取快照每行取一次；里程同步确认入口按 ADR 0026
-  /// 只挂 odometer 探针行（开关关 = 确认式；开关开时静默写，不显入口）。
-  Widget _probeRow(DiagnosticsProbe probe, Car car) {
-    final snapshot = _connection.readingFor(probe);
-    final km = switch (snapshot?.reading) {
-      ObdValue(:final kilometers) => kilometers,
-      _ => null,
-    };
-    final autoSync = ref.watch(obdOdometerAutoSyncProvider).value ?? false;
-    final canSync = probe.parseType == DiagnosticsParseType.odometer &&
-        km != null &&
-        km > car.currentMileageKm &&
-        !autoSync;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: _ProbeRow(
-        probe: probe,
-        snapshot: snapshot,
-        onToggle: (value) => unawaited(_toggleProbe(probe, value)),
-        mileageSyncAvailable: canSync,
-        onSyncMileage:
-            canSync ? () => unawaited(_confirmMileageSync(car, km)) : null,
-      ),
-    );
   }
 
   /// 返回键（pushed 子页，LunioTopBar leading 位，费用统计页先例）。
@@ -272,8 +235,40 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     return Scaffold(backgroundColor: tokens.background, body: body);
   }
 
-  /// 三区内容组装：状态条 → 核心值卡横排 → 检测点行列表。
+  /// 三区内容组装：状态条 → 信息卡网格 → 调试终端。
   Widget _buildContent(
+    BuildContext context,
+    List<DiagnosticsProbe> probes,
+    Car? appliedCar,
+  ) {
+    return LunioPage(
+      title: '车辆诊断',
+      leading: _backKey(),
+      bottomPadding: 24,
+      children: [
+        _buildStatusCard(context),
+        const SizedBox(height: 12),
+        _buildInfoCards(context, probes, appliedCar),
+        const SizedBox(height: 18),
+        DiagnosticsDebugPanel(
+          session: _connection.session,
+          connected:
+              _connection.state.phase == DiagnosticsConnectionPhase.connected,
+          carLabel: '${appliedCar?.brand ?? ''} ${appliedCar?.model ?? ''}'
+              .trim(),
+        ),
+      ],
+    );
+  }
+
+  /// 信息卡网格（2026-11-17 ADR 0029）：内置启用探针各对一张固定卡
+  /// （油量 | 水温 / 电压 | 燃油修正），启用的自定义探针追加通用卡；
+  /// 两张一行、IntrinsicHeight + Row stretch 等高（油量/水温卡高度不
+  /// 一致的历史问题在此根治：所有卡统一「标题+右端时间 | 大字」两段
+  /// 结构；滚动列表里 Row 自身拿到无界高度，必须先经 IntrinsicHeight
+  /// 定高才能 stretch）。启用探针的
+  /// 顺序保持 listProbes 的排序（内置按种子序、自定义按创建序）。
+  Widget _buildInfoCards(
     BuildContext context,
     List<DiagnosticsProbe> probes,
     Car? appliedCar,
@@ -286,44 +281,135 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       probes,
       DiagnosticsRepository.builtInCoolantKey,
     );
-    return LunioPage(
-      title: '车辆诊断',
-      leading: _backKey(),
-      bottomPadding: 24,
-      children: [
-        _buildStatusCard(context),
-        const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _buildFuelCard(context, fuelProbe, appliedCar)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildCoolantCard(context, coolantProbe)),
-          ],
+    final voltageProbe = _probeByCatalogKey(
+      probes,
+      DiagnosticsRepository.builtInVoltageKey,
+    );
+    final ltftProbe = _probeByCatalogKey(
+      probes,
+      DiagnosticsRepository.builtInLtftKey,
+    );
+    final stftProbe = _probeByCatalogKey(
+      probes,
+      DiagnosticsRepository.builtInStftKey,
+    );
+    final cards = <Widget>[
+      if (fuelProbe != null && fuelProbe.enabled)
+        _ReadingCard(
+          title: fuelProbe.name,
+          snapshot: _connection.readingFor(fuelProbe),
         ),
-        const SizedBox(height: 18),
-        LunioSection(
-          title: '检测点',
-          children: [
-            for (final probe in probes) _probeRow(probe, appliedCar!),
-            _AddProbeRow(
-              onTap: () => showProbeManagementSheet(
-                context,
-                car: appliedCar!,
-              ),
+      if (coolantProbe != null && coolantProbe.enabled)
+        _ReadingCard(
+          title: coolantProbe.name,
+          snapshot: _connection.readingFor(coolantProbe),
+          tone: _toneOf(
+            coolantProbe,
+            (v) => v.celsius == null
+                ? null
+                : DiagnosticsRules.coolantTempTone(v.celsius!),
+          ),
+        ),
+      if (voltageProbe != null && voltageProbe.enabled)
+        _ReadingCard(
+          title: voltageProbe.name,
+          snapshot: _connection.readingFor(voltageProbe),
+          tone: _toneOf(
+            voltageProbe,
+            (v) => v.volts == null
+                ? null
+                : DiagnosticsRules.batteryVoltageTone(v.volts!),
+          ),
+        ),
+      if (ltftProbe != null && ltftProbe.enabled)
+        _ReadingCard(
+          // 卡标题用短文案「燃油修正」（探针名「长期燃油修正」6 字在
+          // 半宽卡与右端时间戳同排会挤）。
+          title: '燃油修正',
+          snapshot: _connection.readingFor(ltftProbe),
+          tone: _toneOf(
+            ltftProbe,
+            (v) => v.percent == null
+                ? null
+                : DiagnosticsRules.fuelTrimTone(v.percent!),
+          ),
+          sideValue: _sideText(stftProbe),
+        ),
+      ...probes
+          .where((probe) =>
+              probe.enabled &&
+              probe.catalogKey == null)
+          .map(
+            (probe) => _CustomProbeCard(
+              probe: probe,
+              car: appliedCar,
+              snapshot: _connection.readingFor(probe),
+              autoSyncOn: ref.watch(obdOdometerAutoSyncProvider).value ?? false,
+              onSyncMileage: (km) => unawaited(_confirmMileageSync(appliedCar!, km)),
             ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        DiagnosticsDebugPanel(
-          session: _connection.session,
-          connected:
-              _connection.state.phase == DiagnosticsConnectionPhase.connected,
-          carLabel: '${appliedCar?.brand ?? ''} ${appliedCar?.model ?? ''}'
-              .trim(),
-        ),
+          ),
+    ];
+    return Column(
+      children: [
+        for (var i = 0; i < cards.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: 12),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: cards[i]),
+                if (i + 1 < cards.length) ...[
+                  const SizedBox(width: 12),
+                  Expanded(child: cards[i + 1]),
+                ],
+              ],
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  /// 读数色档判定：仅实时有效读数（含解析数值）才染色；回退显示与无
+  /// 数据不染（celsius/volts 不持久化，回退重建后自然为 null；燃油修
+  /// 正 percent 持久化、回退按旧值染）。数值缺失（[valuePick] 返回依
+  /// 赖字段为 null）时不染。
+  DiagnosticsReadingTone? _toneOf(
+    DiagnosticsProbe probe,
+    DiagnosticsReadingTone? Function(ObdValue) valuePick,
+  ) {
+    final live = _connection.liveReadingFor(probe)?.reading;
+    if (live is! ObdValue) {
+      return null;
+    }
+    return valuePick(live);
+  }
+
+  /// 燃油修正卡右端小字：STFT 探针启用且本会话有实时读数时显「短期
+  /// ±x.x%」；禁用/无读数返回 null（不显）。
+  String? _sideText(DiagnosticsProbe? stftProbe) {
+    if (stftProbe == null || !stftProbe.enabled) {
+      return null;
+    }
+    final live = _connection.liveReadingFor(stftProbe)?.reading;
+    if (live is! ObdValue) {
+      return null;
+    }
+    return '短期 ${live.display}';
+  }
+
+  /// 按内置 catalogKey 定位内置检测点（信息卡数据源；key 常量与种子
+  /// 对账共用一份，DiagnosticsRepository 单一事实源）。
+  DiagnosticsProbe? _probeByCatalogKey(
+    List<DiagnosticsProbe> probes,
+    String catalogKey,
+  ) {
+    for (final probe in probes) {
+      if (probe.catalogKey == catalogKey) {
+        return probe;
+      }
+    }
+    return null;
   }
 
   /// 状态条（第一区）：阶段徽标 + 说明文案；"已断开"追加错误文案与
@@ -408,221 +494,183 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       ),
     );
   }
-
-  /// 油量卡（第二区左）：百分比大字 + 双油量小字（ADR 0022）。可用油量
-  /// 用加满可加油量；总油量 = 储备 + 可用，总容积未填只显可用。容积未
-  /// 填只显百分比（story 11）；无读取/无数据显占位符。
-  Widget _buildFuelCard(
-    BuildContext context,
-    DiagnosticsProbe? fuelProbe,
-    Car? appliedCar,
-  ) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final snapshot = fuelProbe == null ? null : _connection.readingFor(fuelProbe);
-    final reading = snapshot?.reading;
-    // 油量百分比只认 fuelLevel 解析类型的值（无数据/未读取都显占位符）。
-    final percent = reading is ObdValue ? reading.percent : null;
-    final estimate = percent == null
-        ? null
-        : DiagnosticsRules.estimateFuel(
-            percent: percent,
-            tankCapacityLiters: appliedCar?.tankCapacityLiters,
-            totalTankCapacityLiters: appliedCar?.totalTankCapacityLiters,
-          );
-    return LunioCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('油量', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 6),
-          Text(
-            reading?.display ?? '—',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: reading is ObdNoData ? tokens.subtle : tokens.ink,
-                ),
-          ),
-          if (estimate != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              estimate.totalLiters == null
-                  ? '≈ ${estimate.usableLiters.toStringAsFixed(1)} 升'
-                  : '可用 ${estimate.usableLiters.toStringAsFixed(1)} 升 · '
-                      '估算总油量 ${estimate.totalLiters!.toStringAsFixed(1)} 升',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: tokens.muted,
-                  ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// 水温卡（第二区右）：温度大字。无读取/无数据显占位符（灰态）。
-  Widget _buildCoolantCard(
-    BuildContext context,
-    DiagnosticsProbe? coolantProbe,
-  ) {
-    final tokens = Theme.of(context).extension<LunioTokens>()!;
-    final snapshot =
-        coolantProbe == null ? null : _connection.readingFor(coolantProbe);
-    final reading = snapshot?.reading;
-    return LunioCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('水温', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 6),
-          Text(
-            reading?.display ?? '—',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: reading is ObdNoData ? tokens.subtle : tokens.ink,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 按内置 catalogKey 定位内置检测点（核心值卡数据源；key 常量与种
-  /// 子对账共用一份，DiagnosticsRepository 单一事实源）。
-  DiagnosticsProbe? _probeByCatalogKey(
-    List<DiagnosticsProbe> probes,
-    String catalogKey,
-  ) {
-    for (final probe in probes) {
-      if (probe.catalogKey == catalogKey) {
-        return probe;
-      }
-    }
-    return null;
-  }
 }
 
-/// 检测点行（第三区）：名称 + 当前值 + 最后更新时间 + 启停开关。无数据 =
-/// 行级灰态（值列灰字"无数据"），其他行照常更新，不连坐；未读取（连接后
-/// 还没轮到）显"—"与"未更新"。
-class _ProbeRow extends StatelessWidget {
-  const _ProbeRow({
-    required this.probe,
+/// 信息卡通用组件（2026-11-17 ADR 0029）：固定两段结构——标题行（标
+/// 题 + 右端最后更新时间）+ 大字值行，所有卡等高（Row stretch）。
+/// 显示语义与 [DiagnosticsPageState._confirmMileageSync] 同源：实时有
+/// 值优先、实时无数据不遮蔽持久化最后值（显示旧值+旧时间，不染色）、
+/// 从未有过有效值才灰态「无数据」。
+class _ReadingCard extends StatelessWidget {
+  const _ReadingCard({
+    required this.title,
     required this.snapshot,
-    required this.onToggle,
-    this.mileageSyncAvailable = false,
-    this.onSyncMileage,
+    this.tone,
+    this.sideValue,
   });
 
-  final DiagnosticsProbe probe;
+  /// 卡标题（内置卡显短标题：油量/水温/电压/燃油修正）。
+  final String title;
 
-  /// 最新读取快照（null = 未读取）。
+  /// 读取调用（实时优先、持久化回退；null = 从未有过有效值 → 灰态）。
   final ProbeReadingSnapshot? snapshot;
 
-  /// 启停开关回调（动作层编排：写库 → 逐出检测点 provider）。
-  final ValueChanged<bool> onToggle;
+  /// 色档（null = 不染色，ink 色）。只对实时有效读数判定（见
+  /// _toneOf）；celsius/volts 不持久化，回退显示自然不染。
+  final DiagnosticsReadingTone? tone;
 
-  /// 里程同步确认入口显隐（ADR 0026：odometer 探针 + ECU > 车辆里程 +
-  /// 静默自动写开关关）。写点守卫在动作层，行内入口只是显隐。
-  final bool mileageSyncAvailable;
-
-  /// 确认式里程同步回调（null = 不显入口）。
-  final VoidCallback? onSyncMileage;
+  /// 大字行右端次值小字（燃油修正卡的 STFT；null 不显）。
+  final String? sideValue;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final snapshot = this.snapshot;
     final reading = snapshot?.reading;
-    final isNoData = reading is ObdNoData;
-    final valueText = reading?.display ?? '—';
-    // 跨天读数带日期（今天 HH:mm:ss、非今天 M/d HH:mm:ss，2026-11-15）。
+    final isNoData = reading is ObdNoData || snapshot == null;
     final timeText = snapshot == null
         ? '未更新'
         : formatReadingTime(snapshot.at, now: DateTime.now());
-    final row = Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final valueColor = isNoData
+        ? tokens.subtle
+        : switch (tone) {
+            DiagnosticsReadingTone.normal => tokens.success,
+            DiagnosticsReadingTone.warning => tokens.warning,
+            DiagnosticsReadingTone.danger => tokens.danger,
+            _ => tokens.ink,
+          };
+    final valueLine = <Widget>[
+      Expanded(
+        child: Text(
+          reading?.display ?? '—',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: valueColor,
+              ),
+        ),
+      ),
+      if (sideValue != null)
+        Text(
+          sideValue!,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: tokens.muted,
+              ),
+        ),
+    ];
+    return LunioCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(probe.name, style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 2),
+              Text(title, style: Theme.of(context).textTheme.bodySmall),
+              const Spacer(),
               Text(
                 timeText,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: tokens.muted,
                     ),
               ),
-              if (reading is ObdNoData) ...[
-                const SizedBox(height: 2),
-                Text(
-                  reading.reason,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: tokens.subtle,
-                      ),
-                ),
-              ],
             ],
           ),
-        ),
-        const SizedBox(width: 12),
-        Flexible(
-          child: Text(
-            valueText,
-            textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: isNoData ? tokens.subtle : tokens.ink,
-                ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        if (mileageSyncAvailable && onSyncMileage != null) ...[
-          SmallActionButton(
-            label: '更新里程',
-            primary: true,
-            onPressed: onSyncMileage,
-          ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 6),
+          Row(children: valueLine),
         ],
-        Switch(value: probe.enabled, onChanged: onToggle),
-      ],
+      ),
     );
-    // 页面只负责实时读数；编辑/增删统一走管理 sheet（项目看齐）。
-    return LunioCard(child: row);
   }
 }
 
-/// 列表尾"管理检测点"行：打开项目式的检测点管理 sheet（新增/编辑/
-/// 启停/删除都在 sheet 内）。
-class _AddProbeRow extends StatelessWidget {
-  const _AddProbeRow({required this.onTap});
+/// 自定义探针通用卡（2026-11-17 ADR 0029）：名称 + 当前值 + 时间 +
+/// odometer 探针的「更新里程」确认入口（ADR 0026 确认式同步的唯
+/// 一入口；开关开时静默写不显入口）。
+class _CustomProbeCard extends StatelessWidget {
+  const _CustomProbeCard({
+    required this.probe,
+    required this.snapshot,
+    required this.autoSyncOn,
+    required this.onSyncMileage,
+    this.car,
+  });
 
-  final VoidCallback onTap;
+  final DiagnosticsProbe probe;
+
+  /// 卡上展示车（确认同步文案用；null = 无应用车，不显入口）。
+  final Car? car;
+
+  final ProbeReadingSnapshot? snapshot;
+
+  /// ECU 里程静默自动写开关（开 = 不显确认入口）。
+  final bool autoSyncOn;
+
+  /// 确认式同步回调（参数 = ECU km）。
+  final ValueChanged<int> onSyncMileage;
 
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
-    return LunioTappableCard(
-      onTap: onTap,
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tune, size: 18, color: tokens.muted),
-            const SizedBox(width: 6),
-            Text(
-              '管理检测点',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: tokens.muted,
-                  ),
-            ),
-          ],
-        ),
+    final snapshot = this.snapshot;
+    final reading = snapshot?.reading;
+    final isNoData = reading is ObdNoData || snapshot == null;
+    final km = switch (reading) {
+      ObdValue(:final kilometers) => kilometers,
+      _ => null,
+    };
+    final canSync = probe.parseType == DiagnosticsParseType.odometer &&
+        km != null &&
+        car != null &&
+        km > car!.currentMileageKm &&
+        !autoSyncOn;
+    final timeText = snapshot == null
+        ? '未更新'
+        : formatReadingTime(snapshot.at, now: DateTime.now());
+    return LunioCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  probe.name,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                timeText,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: tokens.muted,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  reading?.display ?? '—',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: isNoData ? tokens.subtle : tokens.ink,
+                      ),
+                ),
+              ),
+              if (canSync)
+                SmallActionButton(
+                  label: '更新里程',
+                  primary: true,
+                  onPressed: () => onSyncMileage(km),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

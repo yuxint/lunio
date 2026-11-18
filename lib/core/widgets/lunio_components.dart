@@ -325,7 +325,7 @@ class LunioHeroCard extends StatelessWidget {
   const LunioHeroCard({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.metrics,
     this.actionLabel,
     this.onAction,
@@ -333,7 +333,7 @@ class LunioHeroCard extends StatelessWidget {
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final List<LunioMetric> metrics;
   final String? actionLabel;
   final VoidCallback? onAction;
@@ -379,13 +379,15 @@ class LunioHeroCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleLarge
                           ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.76),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle!,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.76),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

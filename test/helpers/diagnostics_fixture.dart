@@ -32,18 +32,27 @@ MockObdScript rigResp(String text) {
   );
 }
 
-/// 标准应答表：AT 序列 + 内置三条一轮的语料值（油量 0x60 = 37.6%，
-/// 水温 0167 = 95℃（11-16 实车语料 41 67 03 87 83，A 传感器），
-/// 电压 11.2V）。
+/// 标准应答表：AT 序列 + ECU 握手 + 内置五条一轮的语料值（油量 0x60 =
+/// 37.6%，水温 0167 = 95℃（11-16 实车语料 41 67 03 87 83，A 传感器），
+/// 电压 11.2V，燃油修正 0106 = −1.6% / 0107 = +0.0%（11-12 实测））。
+/// 2026-11-17 起内置五条（ADR 0029：短期/长期燃油修正转正）——表里缺
+/// 条目的指令走 Mock 静默脚本（不应答），串行轮询会卡死在该条的超时上
+/// （后续探针全部不发），删条目前先想清楚要不要这个效果。
 Map<String, MockObdScript> rigStandardResponses() {
   return {
     'ATZ': rigResp('\r\rELM327 v2.3\r\r>'),
     'ATE0': rigResp('OK\r\r>'),
     'ATL0': rigResp('OK\r\r>'),
     'ATSP7': rigResp('OK\r\r>'),
+    // ECU 握手 0100（ADR 0029）：三 ECU 并发响应，摘自一键检测日志。
+    '0100': rigResp('41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>'),
     '012F': rigResp('41 2F 60 \r\r>'),
     '0167': rigResp('41 67 03 87 83 \r\r>'),
     'ATRV': rigResp('11.2V\r\r>'),
+    // 燃油修正两条（2026-11-17 ADR 0029 转正）：0106 A=0x7E → (126−128)
+    // ×100/128 = −1.6%；0107 A=0x80 → +0.0%。
+    '0106': rigResp('41 06 7E \r\r>'),
+    '0107': rigResp('41 07 80 \r\r>'),
     // 里程表 0x000A14C8/10 = 66,068 km（11-16 实车语料，仅 odometer
     // 探针用例显式挂 01A6 探针时才被轮询）。
     '01A6': rigResp('41 A6 00 0A 14 C8 \r\r>'),
@@ -151,18 +160,21 @@ class DiagnosticsRig {
     await tester.pump();
   }
 
-  /// 释放轮询拍进入下一轮：每检测点默认 30 秒间隔（ADR 0023），按
-  /// 1 秒拍推进 31 拍（第 30 拍把倒计时减到 0，第 31 拍触发下一轮）。
-  /// 仅当无在途请求（值已全部渲染）时调用；已完成请求的 300ms 超时
-  /// 闩无副作用放行。
+  /// 释放轮询拍进入下一轮：每检测点默认 10 秒间隔（2026-11-17 拍板
+  /// 30→10，DiagnosticsRepository.defaultRefreshIntervalSeconds 同值），
+  /// 按 1 秒拍推进 11 拍（第 10 拍把倒计时减到 0，第 11 拍触发下一轮）。
+  /// 拍数必须正好：多放行的拍会把下一轮首条在途请求的 300ms 超时闩一
+  /// 起放掉，误判行级无数据。仅当无在途请求（值已全部渲染）时调用；
+  /// 已完成请求的 300ms 超时闩无副作用放行。
   Future<void> advanceRound(WidgetTester tester) async {
-    for (var tick = 0; tick < 31; tick++) {
+    for (var tick = 0; tick < 11; tick++) {
       timeGate.completeAll();
       await tester.pump();
     }
   }
 
-  /// 逐拍推进直至 finder 出现（connect + 一轮 ≈ 7 拍，20 拍封顶防死循环）。
+  /// 逐拍推进直至 finder 出现（AT 序列含 ECU 握手 + 一轮 ≈ 10–11 拍，
+  /// 20 拍封顶防死循环）。
   Future<void> advanceUntil(
     WidgetTester tester,
     Finder finder,

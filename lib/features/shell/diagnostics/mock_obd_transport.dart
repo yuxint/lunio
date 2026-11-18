@@ -114,10 +114,12 @@ class MockObdTransport implements OBDTransport {
 
 /// 语料对齐的演示脚本表（票 05 模拟器演示用）：key = 规整指令文本。
 /// 形态全部取自实车日志：ATZ 横幅无回显、ATE0 自带最后一次回显、
-/// 012F 走 209ms 双通知分片、内置三条一轮的实车数值（油量 0x60 =
-/// 37.6%、水温 0167 = 95℃（41 67 03 87 83，A 传感器）、电压 11.2V），
+/// 012F 走 209ms 双通知分片、内置探针一轮的实车数值（油量 0x60 =
+/// 37.6%、水温 0167 = 95℃（41 67 03 87 83，A 传感器）、电压 11.2V、
+/// 燃油修正 0106 = −1.6% / 0107 = 0%，11-12 实测口径），
 /// 外加模板里程表 01A6（66,068 km，ADR 0026 两档演示用；不在内置
-/// 三条里、默认不轮询，启用模板探针后才有消费者）。
+/// 五条里、默认不轮询，启用模板探针后才有消费者）。
+/// ECU 握手 0100 摘自一键检测日志 20:30:22 真实帧（三 ECU 并发响应）。
 Map<String, MockObdScript> mockObdCorpusDemoResponses() {
   List<int> chunk(String text) => latin1.encode(text);
   MockObdScript instant(String text) => MockObdScript(
@@ -136,6 +138,14 @@ Map<String, MockObdScript> mockObdCorpusDemoResponses() {
     'ATSP7': instant('OK\r\r>'),
     '012F': MockObdScript(chunks: [chunk('41 2F 60 \r'), chunk('\r>')]),
     '0167': instant('41 67 03 87 83 \r\r>'),
+    // 燃油修正（2026-11-17 拍板转正）：本车 11-12 实测口径。
+    // 0106 A=0x7E → (126−128)×100/128 = −1.6%；0107 A=0x80 → 0%。
+    '0106': instant('41 06 7E \r\r>'),
+    '0107': instant('41 07 80 \r\r>'),
+    // ECU 握手探测（ADR 0029）：三 ECU 并发响应，摘自一键检测日志。
+    '0100': instant(
+      '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>',
+    ),
     '01A6': instant('41 A6 00 0A 14 C8 \r\r>'),
     'ATRV': instant('11.2V\r\r>'),
   };

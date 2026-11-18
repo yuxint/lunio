@@ -17,9 +17,11 @@ void main() {
     expect(obdSnapshotCommands, expected.toList()..sort());
   });
 
-  test('快照集含 9 项、含 0167 与 01A6（2026-11-16 口径）', () {
-    expect(obdSnapshotCommands, hasLength(9));
+  test('快照集含 11 项、含 0167 与 01A6（2026-11-17 燃油修正转正口径）', () {
+    expect(obdSnapshotCommands, hasLength(11));
     expect(obdSnapshotCommands, contains('0167'));
     expect(obdSnapshotCommands, contains('01A6'));
+    expect(obdSnapshotCommands, contains('0106'));
+    expect(obdSnapshotCommands, contains('0107'));
   });
 }

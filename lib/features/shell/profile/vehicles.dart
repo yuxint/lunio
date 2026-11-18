@@ -26,7 +26,8 @@ import '../shared/shell_shared.dart';
 import 'add_car_wizard.dart';
 
 /// 我的页车辆列表：空列表显示 EmptyVehicleCard；否则逐车渲染卡片
-/// （当前应用车辆高亮 + "当前"徽章），操作按钮：应用/编辑/项目/删除。
+/// （当前应用车辆高亮 + "当前"徽章），操作按钮：应用/编辑/项目/检测点/
+/// 删除（检测点入口 2026-11-17 ADR 0029 迁入，锚定该车进管理 sheet）。
 class VehicleList extends StatelessWidget {
   const VehicleList({
     required this.cars,
@@ -35,6 +36,7 @@ class VehicleList extends StatelessWidget {
     required this.onAdd,
     required this.onEdit,
     required this.onManageItems,
+    required this.onManageProbes,
     required this.onApply,
     required this.onDelete,
   });
@@ -45,6 +47,7 @@ class VehicleList extends StatelessWidget {
   final VoidCallback onAdd;
   final ValueChanged<Car> onEdit;
   final ValueChanged<Car> onManageItems;
+  final ValueChanged<Car> onManageProbes;
   final ValueChanged<int> onApply;
   final ValueChanged<Car> onDelete;
 
@@ -102,7 +105,11 @@ class VehicleList extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Row(
+                    // 5 个按钮一行放不下（屏宽 ~390dp 时溢出），改 Wrap
+                    // 允许换行、间距与原 Row 一致（2026-11-17 拍板）。
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         SmallActionButton(
                           label: selected ? '已应用' : '应用',
@@ -112,17 +119,20 @@ class VehicleList extends StatelessWidget {
                               ? null
                               : () => onApply(car.id!),
                         ),
-                        const SizedBox(width: 8),
                         SmallActionButton(
                           label: '编辑',
                           onPressed: () => onEdit(car),
                         ),
-                        const SizedBox(width: 8),
                         SmallActionButton(
                           label: '项目',
                           onPressed: () => onManageItems(car),
                         ),
-                        const SizedBox(width: 8),
+                        SmallActionButton(
+                          label: '检测点',
+                          onPressed: car.id == null
+                              ? null
+                              : () => onManageProbes(car),
+                        ),
                         SmallActionButton(
                           label: '删除',
                           danger: true,

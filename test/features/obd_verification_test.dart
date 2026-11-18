@@ -72,7 +72,7 @@ void main() {
   });
 
   group('buildSnapshotVerificationCommands', () {
-    test('本车日志位图：9 项快照全过 + DTC', () {
+    test('本车日志位图：11 项快照全过 + DTC（2026-11-17 燃油修正转正）', () {
       final commands = buildSnapshotVerificationCommands(const {
         '0100': '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03 \r\r',
         '0120': '41 20 00 00 00 01 \r41 20 B0 07 A0 11 \r41 20 80 00 A0 01 \r\r',
@@ -82,6 +82,8 @@ void main() {
       });
       expect(commands, [
         '0104',
+        '0106',
+        '0107',
         '010B',
         '010C',
         '010D',
@@ -100,7 +102,7 @@ void main() {
       final commands = buildSnapshotVerificationCommands(const {
         '0100': '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03 \r\r',
       });
-      expect(commands, ['0104', '010B', '010C', '010D', '0111', '03', '07', '0A']);
+      expect(commands, ['0104', '0106', '0107', '010B', '010C', '010D', '0111', '03', '07', '0A']);
     });
   });
 

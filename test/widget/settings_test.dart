@@ -577,12 +577,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // 真页面在栈顶：三区渲染（状态条 + 核心值卡 + 检测点区）。页面本
-    // 体用"检测点"区标题钉住（唯一；下层我的页无同名行）。
+    // 真页面在栈顶：三区渲染（状态条 + 信息卡 + 调试终端）。页面本
+    // 体用"燃油修正"卡标题钉住（唯一；下层我的页无同名行）。
     expect(find.text('车辆诊断'), findsOneWidget);
-    expect(find.text('检测点'), findsOneWidget);
-    expect(find.text('油量'), findsNWidgets(2));
-    expect(find.text('水温'), findsNWidgets(2));
+    expect(find.text('燃油修正'), findsOneWidget);
+    expect(find.text('油量'), findsOneWidget);
+    expect(find.text('水温'), findsOneWidget);
     expect(find.text('电压'), findsOneWidget);
 
     // 返回键（LunioTopBar leading 位）能回到我的页，路由稳定。
@@ -590,7 +590,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('检测点'), findsNothing);
+    // 「检测点」现在是我的页车辆卡常驻按钮（ADR 0029）：退栈后回到
+    // 我的页恰好一个；诊断页已不在栈上。
+    expect(find.text('检测点'), findsOneWidget);
     expect(find.text('进入诊断页'), findsOneWidget);
   });
 

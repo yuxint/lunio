@@ -156,7 +156,6 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
                   children: [
                     LunioHeroCard(
                       title: '${car.brand} ${car.model}',
-                      subtitle: '上路 ${car.roadDate} · 当前应用车辆',
                       actionLabel: '更新里程',
                       onAction: () =>
                           showQuickMileageUpdateSheet(context, ref, car),

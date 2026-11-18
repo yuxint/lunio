@@ -1,19 +1,34 @@
 // diagnostics 域 widget 测试（票 05 三区状态机 + 票 06 表单增改删，共享
-// 夹具 test/helpers/widget_app.dart 与 diagnostics_fixture.dart）：三区
-// 状态机全状态可达（未连接→连接中→已连接→已断开+错误+重连）、油量卡
-// 升数按容积估算/未填只显百分比、行级无数据灰态不连坐、启停下一轮生
-// 效且不打断当前轮、离开页面断开会话（无 pending timer 残留）；表单
-// 增改删（添加行进新增/自定义行进编辑/内置行守卫/删确认/行内校验）。
+// 夹具 test/helpers/widget_app.dart 与 diagnostics_fixture.dart）。
+// 2026-11-17 ADR 0029 卡化重构适配版：
+//  - 检测点行列表撤销，全员信息卡：内置四张（油量 | 水温 / 电压 |
+//    燃油修正，LTFT 大字 + 同卡右端 STFT 小字「短期 -1.6%」式），
+//    启用的自定义探针追加通用卡（odometer 卡带「更新里程」入口）——
+//    值渲染断言按卡计数（37.6% 等每值一处、时间戳 = 有读数的卡数）。
+//  - 显示回退语义：实时有值优先；实时无数据不遮蔽持久化最后值（显旧
+//    值+旧时间戳）；两者皆无 = 「—」灰态 + 「未更新」时间戳（页面不再
+//    出现「无数据」文案与行级「超时」reason）。
+//  - 油量升数估算（estimateFuel）删除：油量卡只有百分比大字，无升数行。
+//  - 启停与管理入口迁出诊断页：唯一入口 = 我的页车辆卡「检测点」按钮
+//    （openProbeManagementSheet）；启停下一轮生效用例改走 sheet。
+//  - 连接序列含 ECU 握手 0100；内置探针五条（短期/长期燃油修正转正）
+//    ⇒ 默认满一轮 5 条；默认刷新间隔 30→10 秒（advanceRound 11 拍）。
+//
+// 其余语义保持：三区状态机全状态可达（未连接→连接中→已连接→已断开+
+// 错误+重连）、单条超时不连坐、离开页面只摘作用域不断开 App 级连接
+// （ADR 0027，无 pending timer 残留）；表单增改删（添加进新增/自定义
+// 进编辑/内置守卫/删确认/行内校验）；BLE 连接流程；最后读数持久化；
+// ECU 里程同步两档（ADR 0026）。
 //
 // 时序全走门闩（夹具文件头的配方）：advanceUntil 逐拍放行字节至值出
 // 现；advanceRound 一拍时钟进下一轮。零真实定时器——用例收尾只泵帧
 // （pop 起始帧/移除帧），无 pending timer 排空负担。
 //
-// 导航一律走真实入口（我的页开发者区块"进入诊断页"行，context.push
-// 真入栈）——深链通道 pushRoute 是 go 语义无栈可弹，返回键用例测不了
-// （cost_stats 测试先例注释）。
+// 导航一律走真实入口（诊断页 = 我的页开发者区块「进入诊断页」行，
+// context.push 真入栈；管理 sheet = 我的页车辆卡「检测点」按钮）。
 //
-// 播种必须在 pumpApp 之前：装配后直写库不会触发 provider 失效。
+// 播种必须在 pumpApp 之前：装配后直写库不会触发 provider 失效（例外：
+// 最后读数持久化用例在装配后直写并手动逐出 family，见该用例注释）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -30,6 +45,7 @@ import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
 import 'package:lunio/features/shell/diagnostics/obd_verification_commands.dart';
+import 'package:lunio/features/shell/shared/shell_shared.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/widgets/lunio_components.dart';
 
@@ -140,6 +156,25 @@ Future<void> openDiagnosticsPage(WidgetTester tester) async {
   expect(find.text('车辆诊断'), findsOneWidget);
 }
 
+/// 打开检测点管理 sheet（2026-11-17 ADR 0029 起的真实入口）：我的页
+/// 车辆卡「检测点」按钮，锚定当前车进 sheet。诊断页已无入口行。
+Future<void> openProbeManagementSheet(WidgetTester tester) async {
+  await gotoTab(tester, '我的');
+  await tester.ensureVisible(find.text('检测点'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('检测点'));
+  await tester.pumpAndSettle();
+  expect(find.text('检测点管理'), findsOneWidget);
+}
+
+/// 管理 sheet 内的 finder 作用域：下层「我的」页车辆卡同样有「编辑/
+/// 删除」按钮，sheet 内定位一律收进 PrototypeSheetFrame 子树，避免
+/// 跨层串扰（ADR 0029 检测点入口迁车辆卡后新增的约束）。
+Finder inProbeSheet(Finder finder) => find.descendant(
+      of: find.byType(PrototypeSheetFrame),
+      matching: finder,
+    );
+
 void main() {
   group('三区状态机', () {
     testWidgets('未连接→连接中→已连接→读取值渲染→断开+重连', (tester) async {
@@ -158,16 +193,23 @@ void main() {
       await tester.pump();
       expect(find.text('连接中'), findsOneWidget);
 
-      // 逐拍放行字节：连接完成 + 第一轮轮询，三行值 + 卡值 + 时间戳。
+      // 逐拍放行字节：连接完成 + 第一轮轮询，四张内置卡值 + 时间戳
+      // （012F/0167/ATRV/0106/0107 串行，收满一轮共 5 条应答）。
       await rig.advanceUntil(tester, find.text('37.6%'));
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
-      expect(find.text('37.6%'), findsNWidgets(2));
-      expect(find.text('95℃'), findsNWidgets(2));
+      for (var i = 0; i < 4; i++) {
+        await rig.deliverChunks(tester);
+      }
+      // 行列表撤销（ADR 0029）：每个值只在信息卡一处。
+      expect(find.text('37.6%'), findsOneWidget);
+      expect(find.text('95℃'), findsOneWidget);
       expect(find.text('11.2V'), findsOneWidget);
+      // 燃油修正卡：LTFT（0107）大字 + 同卡右端 STFT（0106）小字。
+      expect(find.text('+0.0%'), findsOneWidget);
+      expect(find.text('短期 -1.6%'), findsOneWidget);
       expect(find.text('已连接'), findsOneWidget);
       expect(find.text('未更新'), findsNothing);
-      expect(find.textContaining('14:30:00'), findsNWidgets(3));
+      // 四张内置卡各一枚时间戳（行尾时间戳没了，时间只挂卡上）。
+      expect(find.textContaining('14:30:00'), findsNWidgets(4));
 
       // 断连：字节流注入 error → 状态条已断开 + 错误文案 + 重连按钮；
       // 连接级失败只上状态条、不弹窗（story 16）。
@@ -180,7 +222,9 @@ void main() {
       // 连接级失败只上状态条、不弹窗（story 16 显式断言）。
       expect(find.byType(Dialog), findsNothing);
 
-      // 重连：新会话 AT 序列重发（sentCommands 第二组 ATZ），回到已连接。
+      // 重连：新会话 AT 序列重发（sentCommands 第二组 ATZ），回到已连
+      // 接；controller 读数表不随会话重建清空（最后读数合并），油量卡
+      // 旧值保留显示。
       await tester.tap(find.text('重连'));
       await tester.pump();
       await rig.advanceUntil(tester, find.text('已连接'));
@@ -188,66 +232,31 @@ void main() {
         rig.mock.sentCommands.where((command) => command == 'ATZ'),
         hasLength(2),
       );
-      expect(find.text('37.6%'), findsNWidgets(2));
+      await rig.advanceUntil(tester, find.text('37.6%'));
+      expect(find.text('37.6%'), findsOneWidget);
 
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('油量卡：升数按容积估算（55L）', (tester) async {
+    testWidgets('油量卡只显百分比大字，无升数估算行（ADR 0029 删 estimateFuel）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
-      await seedAppliedCar(database, tankCapacity: 55);
+      await seedAppliedCar(database, tankCapacity: 55, totalTankCapacity: 60);
       final rig = DiagnosticsRig();
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('37.6%'));
 
-      // 容积 55L × 37.6% ≈ 20.7 升（story 10）。
-      expect(find.text('≈ 20.7 升'), findsOneWidget);
-
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('油量卡：双油量（可用 + 估算总油量，ADR 0022）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      await seedAppliedCar(
-        database,
-        tankCapacity: 55,
-        totalTankCapacity: 60,
-      );
-      final rig = DiagnosticsRig();
-      await seedDeveloperDiagnostics(database);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
-
-      // 可用 55 × 37.6% ≈ 20.7；储备 60−55=5；估算总 25.7。
-      expect(
-        find.text('可用 20.7 升 · 估算总油量 25.7 升'),
-        findsOneWidget,
-      );
-
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('油量卡：容积未填只显百分比、不显示升数（story 11）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      await seedDeveloperDiagnostics(database);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
-
-      // 没有升数行（不提示去填）。
+      // 油量卡只有百分比大字：有容积也不算升数（可用/估算总油量行已
+      // 随 estimateFuel 删除），页面任何位置不出现「升」字。
+      expect(find.text('37.6%'), findsOneWidget);
       expect(find.textContaining('升'), findsNothing);
 
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('行级无数据灰态：单条超时不连坐，其他行照常更新', (tester) async {
+    testWidgets('卡级无数据灰态：单条超时不连坐，其他卡照常更新', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       // 0167 不在应答表 = Mock 默认静默脚本（不应答）→ 单条超时无数据。
@@ -261,85 +270,31 @@ void main() {
       // 油量先到，水温在途（不应答）。
       await rig.advanceUntil(tester, find.text('37.6%'));
 
-      // 放行 0167 的 300ms 响应超时 → 行级无数据；串行轮询继续到电压。
+      // 放行 0167 的 300ms 响应超时 → 无数据；串行轮询继续到电压。
       await rig.completeProbeTimeout(tester);
       await rig.deliverChunks(tester);
 
-      // 水温行与水温卡都转无数据灰态（story 15）；行尾附原因（ADR 0023）。
-      expect(find.text('无数据'), findsNWidgets(2));
-      expect(find.text('超时'), findsOneWidget);
-      // 其他行不连坐：油量/电压值仍在，状态条仍是已连接。
-      expect(find.text('37.6%'), findsNWidgets(2));
+      // 水温卡灰态「—」+「未更新」（此探针从未有过有效值；实时无数据
+      // 不遮蔽持久化值——本用例无持久化值，落到灰态；ADR 0029 卡化后
+      // 不再有行级「超时」reason 文案，「无数据」文案也不再出现在卡上）。
+      final coolantCard = find.ancestor(
+        of: find.text('水温'),
+        matching: find.byType(LunioCard),
+      );
+      expect(
+        find.descendant(of: coolantCard, matching: find.text('—')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: coolantCard, matching: find.text('未更新')),
+        findsOneWidget,
+      );
+      expect(find.text('超时'), findsNothing);
+      expect(find.text('无数据'), findsNothing);
+      // 其他卡不连坐：油量/电压值仍在，状态条仍是已连接。
+      expect(find.text('37.6%'), findsOneWidget);
       expect(find.text('11.2V'), findsOneWidget);
       expect(find.text('已连接'), findsOneWidget);
-      // 无数据也是一次更新：行尾时间戳照常打点（story 14）。
-      expect(find.textContaining('14:30:00'), findsNWidgets(3));
-
-      await leavePageAndFlush(tester);
-    });
-
-    testWidgets('启停下一轮生效且不打断当前轮（开关+库+轮询三面对账）', (tester) async {
-      final database = AppDatabase.inMemory();
-      addTearDown(database.close);
-      final rig = DiagnosticsRig();
-      await seedDeveloperDiagnostics(database);
-      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await rig.advanceUntil(tester, find.text('37.6%'));
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
-
-      // 第一轮已发全部三条（内置序：油量/水温/电压）。
-      expect(rig.mock.sentCommands.where((c) => c == 'ATRV'), hasLength(1));
-
-      // 关电压行开关（第三行）：动作层写库 → 逐出 provider → 行开关
-      // 即时回落；下一轮快照读 provider 当前值，不再发 ATRV。
-      // 电压行的开关（按行定位）：裸 Switch finder 会把下层"我的"页
-      // 仍在树里的两个开发者开关一起数进来，at(2) 点到的是油量行。
-      final voltageSwitch = find.descendant(
-        of: find
-            .ancestor(of: find.text('电压'), matching: find.byType(LunioCard))
-            .first,
-        matching: find.byType(Switch),
-      );
-      await tester.tap(voltageSwitch);
-      // 写库（微任务）→ 逐出 → 重算（微任务）→ 数据分支重建：三拍覆盖。
-      await tester.pump();
-      await tester.pump();
-      await tester.pump();
-      expect(tester.widget<Switch>(voltageSwitch).value, isFalse);
-      await rig.advanceRound(tester);
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
-
-      expect(
-        rig.mock.sentCommands.where((c) => c == 'ATRV'),
-        hasLength(1),
-      );
-      expect(
-        rig.mock.sentCommands.where((c) => c == '012F'),
-        hasLength(greaterThanOrEqualTo(2)),
-      );
-      expect(
-        (await testRepository(database)
-                .diagnosticsRepository
-                .listProbes(await appliedCarId(database)))
-            .firstWhere((probe) => probe.command == 'ATRV')
-            .enabled,
-        isFalse,
-      );
-
-      // 重新打开：再进一轮，ATRV 恢复发送。
-      await tester.tap(voltageSwitch);
-      await tester.pump();
-      await rig.advanceRound(tester);
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
-      expect(
-        rig.mock.sentCommands.where((c) => c == 'ATRV'),
-        hasLength(greaterThanOrEqualTo(2)),
-      );
 
       await leavePageAndFlush(tester);
     });
@@ -358,8 +313,9 @@ void main() {
       // 条），App 级连接保持——重连成本高，跨页共享是 ADR 0027 的目的。
       await leavePageAndFlush(tester);
       expect(rig.mock.disconnectCalls, 0);
-      // 页面已退栈。
-      expect(find.text('检测点'), findsNothing);
+      // 页面已退栈（诊断页标题不在树上；下层我的页的「检测点」按钮
+      // 与页面无关，不再拿它当退栈标记——ADR 0029 后它是常驻入口）。
+      expect(find.text('车辆诊断'), findsNothing);
     });
     testWidgets('调试终端：暂停轮询后原始命令可发，验证脚本含私有 DID', (tester) async {
       final database = AppDatabase.inMemory();
@@ -369,9 +325,13 @@ void main() {
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('37.6%'));
-      // 收完第一轮余下两条，循环回到调度拍，暂停才有确定边界。
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
+      // 收完第一轮余下四条（水温/电压/短期/长期），循环回到轮间睡眠拍
+      // ——无在途请求时暂停才有确定边界（有在途请求时 pausePolling 会
+      // 等它收尾，而静默脚本的在途请求只能靠 300ms 超时闩，门闩不放行
+      // 就挂住 pumpAndSettle）。
+      for (var i = 0; i < 4; i++) {
+        await rig.deliverChunks(tester);
+      }
 
       await tester.ensureVisible(find.text('调试'));
       await tester.pumpAndSettle();
@@ -398,6 +358,12 @@ void main() {
       await tester.tap(find.text('发送'));
       await rig.deliverChunks(tester);
       await tester.pump();
+      // 原始命令真的发出去了：第一轮轮询的 ATRV 之外，又多一次手动发送
+      // （卡上 11.2V 是第一轮的值，不能证明手发成功，发送计数才算数）。
+      expect(
+        rig.mock.sentCommands.where((command) => command == 'ATRV'),
+        hasLength(greaterThanOrEqualTo(2)),
+      );
       expect(find.textContaining('11.2V'), findsWidgets);
 
       final vendorCommands = obdVendorCommandGroups
@@ -417,9 +383,10 @@ void main() {
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('37.6%'));
-      // 收完第一轮余下两条，循环回到调度拍，暂停才有确定边界。
-      await rig.deliverChunks(tester);
-      await rig.deliverChunks(tester);
+      // 收完第一轮余下四条，循环回到轮间睡眠拍（暂停边界理由见上一条）。
+      for (var i = 0; i < 4; i++) {
+        await rig.deliverChunks(tester);
+      }
 
       await tester.ensureVisible(find.text('调试'));
       await tester.pumpAndSettle();
@@ -438,8 +405,9 @@ void main() {
       await tester.tap(debugSwitch);
       await tester.pumpAndSettle();
 
-      // 点检测：run module 同步吐出日志头与首条命令，随后挂在 ATI 请求
-      // 上（静默脚本无字节）——这正是接线冒烟要锁的边。
+      // 点检测：run module 同步吐出日志头与首条命令（`> ATI` 行在 send
+      // 前落日志），随后挂在 ATI 请求上（静默脚本无字节）——这正是接
+      // 线冒烟要锁的边。
       await tester.tap(find.text('一键检测'));
       await tester.pump();
 
@@ -453,50 +421,44 @@ void main() {
   });
 
   group('表单增改删（票 06）', () {
-    testWidgets('增：合法提交落库，列表即时可见（写点直失效传导）', (tester) async {
+    testWidgets('增：合法提交落库，管理卡即时可见（写点直失效传导）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
 
-      // 列表尾"管理检测点" → 项目式管理 sheet → 新增表单。
-      await tester.ensureVisible(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      expect(find.text('检测点管理'), findsOneWidget);
-      await tester.tap(find.text('新增'));
+      // 入口已迁出诊断页（ADR 0029）：我的页车辆卡「检测点」按钮。
+      await openProbeManagementSheet(tester);
+      await tester.tap(inProbeSheet(find.text('新增')));
       await tester.pumpAndSettle();
       expect(find.text('新增检测点'), findsOneWidget);
       expect(find.text('仅用于读取类指令（如标准 PID 查询）'), findsOneWidget);
 
-      // 填名称与指令，保存（刷新间隔保持默认 30）。
+      // 填名称与指令，保存（刷新间隔保持默认 10，2026-11-17 拍板 30→10）。
       await tester.enterText(find.byType(TextField).at(0), '节气门');
       await tester.enterText(find.byType(TextField).at(1), '01 2f');
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
-      // 管理卡片与页面读数行即时可见 + 库里第 4 行。
-      expect(find.text('节气门'), findsWidgets);
+      // 管理卡即时可见 + 库里第 6 行（内置五条 + 自定义一条）。
+      expect(inProbeSheet(find.text('节气门')), findsOneWidget);
       final probes = await testRepository(database)
           .diagnosticsRepository
           .listProbes(await appliedCarId(database));
-      expect(probes, hasLength(4));
+      expect(probes, hasLength(6));
       expect(
         probes.last.command,
         '012F',
         reason: '保存前归一（大写 + 去空白），落库即发送文本',
       );
-      expect(probes.last.refreshIntervalSeconds, 30);
+      expect(probes.last.refreshIntervalSeconds, 10);
       expect(find.text('检测点已保存'), findsOneWidget);
 
       await drainToastTimer(tester);
-      // 关管理 sheet 再离开页面。
+      // 关管理 sheet（barrierDismissible 默认 true，点遮罩可关）。
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
-      await leavePageAndFlush(tester);
     });
 
     testWidgets('改：点自定义行进编辑表单，保存后列表与库同步更新', (tester) async {
@@ -517,14 +479,12 @@ void main() {
           .id!;
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
 
       // 管理 sheet → 自定义卡片（最后一张）编辑 → 表单回填。
-      await tester.ensureVisible(find.text('管理检测点'));
+      await openProbeManagementSheet(tester);
+      await tester.ensureVisible(inProbeSheet(find.text('编辑')).last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('编辑').last);
+      await tester.tap(inProbeSheet(find.text('编辑')).last);
       await tester.pumpAndSettle();
       expect(find.text('编辑检测点'), findsOneWidget);
       expect(find.text('仅用于读取类指令（如标准 PID 查询）'), findsOneWidget);
@@ -549,8 +509,8 @@ void main() {
       );
       await tester.tap(find.text('保存修改'));
       await tester.pumpAndSettle();
-      // 管理卡片 + 页面读数行都更新。
-      expect(find.text('进气压力'), findsWidgets);
+      // 管理卡更新，旧名消失。
+      expect(inProbeSheet(find.text('进气压力')), findsOneWidget);
       expect(find.text('节气门'), findsNothing);
       final updated = await repo.listProbes(carId);
       expect(updated.where((p) => p.name == '进气压力'), hasLength(1));
@@ -563,32 +523,29 @@ void main() {
         updated.firstWhere((p) => p.name == '进气压力').refreshIntervalSeconds,
         60,
       );
-      expect(find.textContaining('每 60 秒刷新'), findsOneWidget);
+      expect(inProbeSheet(find.textContaining('每 60 秒刷新')), findsOneWidget);
       expect(find.text('检测点已保存'), findsOneWidget);
       await drainToastTimer(tester);
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
-      await leavePageAndFlush(tester);
     });
 
-    testWidgets('内置卡片可编辑、无删除按钮（管理 sheet）', (tester) async {
+    testWidgets('内置卡片可编辑、无删除按钮（管理 sheet，内置五条）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
 
-      await tester.ensureVisible(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      expect(find.text('检测点管理'), findsOneWidget);
-      expect(find.text('内置'), findsNWidgets(3));
-      expect(find.text('删除'), findsNothing, reason: '内置不可删');
+      await openProbeManagementSheet(tester);
+      // 内置五条（油量/水温/电压/短期/长期，2026-11-17 ADR 0029 转正）。
+      expect(inProbeSheet(find.text('内置')), findsNWidgets(5));
+      expect(inProbeSheet(find.text('删除')), findsNothing, reason: '内置不可删');
 
       // 第三张内置卡片（电压）可进编辑表单。
-      await tester.tap(find.text('编辑').at(2));
+      await tester.ensureVisible(inProbeSheet(find.text('编辑')).at(2));
+      await tester.pumpAndSettle();
+      await tester.tap(inProbeSheet(find.text('编辑')).at(2));
       await tester.pumpAndSettle();
       expect(find.text('编辑检测点'), findsOneWidget);
       expect(
@@ -604,10 +561,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
-      await leavePageAndFlush(tester);
     });
 
-    testWidgets('删：确认后删除，列表与库同步移除', (tester) async {
+    testWidgets('删：确认后删除，管理卡与库同步移除', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -622,27 +578,26 @@ void main() {
       );
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
 
-      // 管理 sheet → 自定义卡片删除 → 确认框。
-      await tester.ensureVisible(find.text('管理检测点'));
+      // 管理 sheet → 自定义卡片删除 → 确认框。删除按钮收在 sheet 作用
+      // 域里点（下层我的页车辆卡也有「删除」，裸 finder 会点错层）。
+      await openProbeManagementSheet(tester);
+      await tester.ensureVisible(inProbeSheet(find.text('删除')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('删除'));
+      await tester.tap(inProbeSheet(find.text('删除')));
       await tester.pumpAndSettle();
       expect(find.text('删除检测点'), findsOneWidget);
       expect(find.text('确定删除 节气门？'), findsOneWidget);
 
-      // 确认删除：卡片/读数行消失、库行消失。
+      // 确认删除：确认框的「删除」在顶层路由（finder 顺序最后），卡片
+      // 消失、库行消失（剩内置五条）。
       await tester.tap(find.text('删除').last);
       await tester.pumpAndSettle();
       expect(find.text('节气门'), findsNothing);
       final probes = await repo.listProbes(carId);
-      expect(probes, hasLength(3));
+      expect(probes, hasLength(5));
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
-      await leavePageAndFlush(tester);
     });
 
     testWidgets('校验失败行内错误文案，不弹窗', (tester) async {
@@ -651,13 +606,9 @@ void main() {
       final rig = DiagnosticsRig();
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
 
-      await tester.ensureVisible(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('新增'));
+      await openProbeManagementSheet(tester);
+      await tester.tap(inProbeSheet(find.text('新增')));
       await tester.pumpAndSettle();
       // 名称与指令全空：保存 → 行内错误、sheet 留场、无弹窗。
       await tester.tap(find.text('保存'));
@@ -679,6 +630,86 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('sheet 内启停下一轮生效：禁用电压后不再发 ATRV，重开恢复', (
+      tester,
+    ) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('37.6%'));
+      // 收完第一轮余下四条，回到轮间睡眠拍（advanceRound 的前提）。
+      for (var i = 0; i < 4; i++) {
+        await rig.deliverChunks(tester);
+      }
+
+      // 第一轮已发全部五条（内置序：油量/水温/电压/短期/长期）。
+      expect(rig.mock.sentCommands.where((c) => c == 'ATRV'), hasLength(1));
+
+      // 页面已无启停开关（ADR 0029），唯一入口在管理 sheet：离页（作
+      // 用域换防、连接保持）→ 我的页车辆卡「检测点」开 sheet。
+      await leavePageAndFlush(tester);
+      await openProbeManagementSheet(tester);
+
+      // 关电压卡启停按钮（内置序第 3 张，「已启用」）：动作层写库 →
+      // 逐出 provider → 卡片按钮即时转「已禁用」；下一轮快照读
+      // provider 当前值，不再发 ATRV。
+      final voltageToggle = inProbeSheet(find.text('已启用')).at(2);
+      await tester.ensureVisible(voltageToggle);
+      await tester.pumpAndSettle();
+      await tester.tap(voltageToggle);
+      await tester.pumpAndSettle();
+      expect(find.text('已禁用'), findsOneWidget);
+      expect(
+        (await testRepository(database)
+                .diagnosticsRepository
+                .listProbes(await appliedCarId(database)))
+            .firstWhere((probe) => probe.command == 'ATRV')
+            .enabled,
+        isFalse,
+      );
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+
+      // 重进诊断页：App 级连接复用（connected 守卫不重连），advanceRound
+      // 放行轮询拍进下一轮——快照里没有电压，ATRV 不再发。
+      await openDiagnosticsPage(tester);
+      await rig.advanceRound(tester);
+      for (var i = 0; i < 4; i++) {
+        await rig.deliverChunks(tester);
+      }
+      expect(
+        rig.mock.sentCommands.where((c) => c == 'ATRV'),
+        hasLength(1),
+      );
+      expect(
+        rig.mock.sentCommands.where((c) => c == '012F'),
+        hasLength(greaterThanOrEqualTo(2)),
+      );
+
+      // 重新打开 sheet 启停回来：下一轮 ATRV 恢复发送。
+      await leavePageAndFlush(tester);
+      await openProbeManagementSheet(tester);
+      await tester.ensureVisible(find.text('已禁用'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('已禁用'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      await openDiagnosticsPage(tester);
+      await rig.advanceRound(tester);
+      for (var i = 0; i < 5; i++) {
+        await rig.deliverChunks(tester);
+      }
+      expect(
+        rig.mock.sentCommands.where((c) => c == 'ATRV'),
+        hasLength(greaterThanOrEqualTo(2)),
+      );
+
       await leavePageAndFlush(tester);
     });
   });
@@ -870,7 +901,7 @@ void main() {
       addTearDown(database.close);
       final rig = DiagnosticsRig();
       // 会话 A 的断开挂门闩：关闭 sheet 取消 A 后，A 的 teardown 会
-      // 停在传输层断开上；期间重开 sheet 并连接 B，旧 teardown 恢复时
+      // 停在传输层断开门闩上；期间重开 sheet 并连接 B，旧 teardown 恢复时
       // 只准取消 A 的订阅。
       final aDisconnectGate = Completer<void>();
       var sessionCount = 0;
@@ -947,12 +978,12 @@ void main() {
   });
 
   group('最后读数持久化（2026-11-15，ADR 0021 修订节）', () {
-    testWidgets('重进页面显最后读数：跨天带日期，油量卡升数恢复', (tester) async {
+    testWidgets('重进页面显最后读数：跨天带日期，无实时值的卡灰态「未更新」', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
       // 门禁失败阻断实时链路：页面停在已断开、无实时读数，持久化读数
-      // 成行/卡显示的唯一来源（隔离被测行为）。
+      // 成卡显示的唯一来源（隔离被测行为）。
       rig.scanner.gateError = const BleObdTransportException(
         BleObdLinkErrorKind.permissionDenied,
       );
@@ -990,12 +1021,14 @@ void main() {
 
       await openDiagnosticsPage(tester);
 
-      // 行：跨天时间带日期（M/d HH:mm:ss），两行同刻 → 两处。
-      expect(find.text('37.6%'), findsNWidgets(2)); // 行 + 油量卡
+      // 卡：跨天时间带日期（M/d HH:mm:ss），两张有值的卡各一枚。
+      expect(find.text('37.6%'), findsOneWidget);
       expect(find.textContaining('08:00:00'), findsNWidgets(2));
-      // 油量卡升数：37.6% × 50L = 18.8 升。
-      expect(find.text('≈ 18.8 升'), findsOneWidget);
-      expect(find.text('95℃'), findsNWidgets(2)); // 行 + 水温卡
+      expect(find.text('95℃'), findsOneWidget);
+      // 电压/燃油修正从未有过有效值：灰态「—」+「未更新」（升数估算
+      // 已删，油量卡不再有「≈ x 升」行可断言）。
+      expect(find.text('—'), findsNWidgets(2));
+      expect(find.text('未更新'), findsNWidgets(2));
       await leavePageAndFlush(tester);
     });
 
@@ -1005,7 +1038,7 @@ void main() {
       final rig = DiagnosticsRig(
         responses: {
           ...rigStandardResponses(),
-          // 油量本轮 NO DATA：行显灰字无数据，持久化层不写不覆盖。
+          // 油量本轮 NO DATA：卡显灰字，持久化层不写不覆盖。
           '012F': rigResp('NO DATA\r\r>'),
         },
       );
@@ -1013,10 +1046,28 @@ void main() {
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
 
-      // 连接成功进轮询：油量行显「无数据」（实时显示不受持久化口径影
-      // 响），水温行显有效值。
-      await rig.advanceUntil(tester, find.text('无数据'));
+      // 连接成功进轮询：油量 NO DATA（卡从未有过值 → 灰态），水温显
+      // 有效值；收满一轮让其余卡也落定。
       await rig.advanceUntil(tester, find.text('95℃'));
+      for (var i = 0; i < 3; i++) {
+        await rig.deliverChunks(tester);
+      }
+
+      // 卡侧：油量卡「—」+「未更新」，其余卡有值（NO DATA 不上卡，
+      // 「无数据」文案在 ADR 0029 卡化后不再出现）。
+      final fuelCard = find.ancestor(
+        of: find.text('油量'),
+        matching: find.byType(LunioCard),
+      );
+      expect(
+        find.descendant(of: fuelCard, matching: find.text('—')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: fuelCard, matching: find.text('未更新')),
+        findsOneWidget,
+      );
+      expect(find.text('无数据'), findsNothing);
 
       // 库内口径：油量不写库（保持 null）、水温有效值已写。
       final diagnostics = testRepository(database).diagnosticsRepository;
@@ -1027,10 +1078,72 @@ void main() {
       expect(coolant.lastValue, '95℃');
       await leavePageAndFlush(tester);
     });
+
+    testWidgets('实时无数据不遮蔽持久化最后值：显旧值+旧时间戳（2026-11-17 拍板）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      // 012F 不在应答表 = Mock 静默脚本 → 本轮油量超时无数据。
+      final rig = DiagnosticsRig(
+        responses: rigStandardResponses()..remove('012F'),
+      );
+      await seedAppliedCar(database);
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await gotoTab(tester, '我的');
+      await tester.pumpAndSettle();
+
+      // 开页前预写油量最后读数（昨天 08:00:00）：30%。
+      final diagnostics = testRepository(database).diagnosticsRepository;
+      final fuelId = (await diagnostics.listProbes(await appliedCarId(database)))
+          .firstWhere((p) => p.name == '油量')
+          .id!;
+      await diagnostics.saveProbeReading(
+        fuelId,
+        value: '30%',
+        percent: 30,
+        at: DateTime(2026, 11, 17, 8, 0, 0),
+      );
+      ProviderScope.containerOf(
+        tester.element(find.byType(LunioPage).first),
+      ).invalidate(diagnosticsProbesProvider);
+
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('已连接'));
+
+      // 放行 012F 的 300ms 超时 → 实时无数据：油量卡回退持久化最后值
+      // （旧值 + 旧时间戳，不切灰态）；水温照常更新，其他卡不连坐。
+      await rig.completeProbeTimeout(tester);
+      await rig.deliverChunks(tester);
+      final fuelCard = find.ancestor(
+        of: find.text('油量'),
+        matching: find.byType(LunioCard),
+      );
+      expect(
+        find.descendant(of: fuelCard, matching: find.text('30%')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: fuelCard, matching: find.textContaining('11/17 08:00:00')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: fuelCard, matching: find.text('—')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: fuelCard, matching: find.text('未更新')),
+        findsNothing,
+      );
+      expect(find.text('无数据'), findsNothing);
+      expect(find.text('95℃'), findsOneWidget);
+      expect(find.text('已连接'), findsOneWidget);
+
+      await leavePageAndFlush(tester);
+    });
   });
 
   group('ECU 里程同步（ADR 0026）', () {
-    /// 播种自定义里程表探针（默认夹具只种内置三条）。
+    /// 播种自定义里程表探针（默认夹具只种内置五条）。
     Future<void> seedOdometerProbe(AppDatabase database) async {
       await testRepository(database)
           .diagnosticsRepository
@@ -1044,7 +1157,7 @@ void main() {
           );
     }
 
-    testWidgets('确认式：ECU 里程 > 车辆里程显行内入口，确认后写库', (tester) async {
+    testWidgets('确认式：ECU 里程 > 车辆里程显卡上入口，确认后写库', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -1055,7 +1168,8 @@ void main() {
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('66,068 km'));
 
-      // 确认式入口显形（10,000 < 66,068；开关默认关 = 确认档）。
+      // 确认式入口显形（10,000 < 66,068；开关默认关 = 确认档）。入口
+      // 挂 odometer 自定义探针的通用卡上（ADR 0029 行列表撤销后迁卡）。
       expect(find.text('更新里程'), findsOneWidget);
 
       // 确认框两值对照 → 确认 → 写库 + 入口消失。
@@ -1143,11 +1257,10 @@ void main() {
       final rig = DiagnosticsRig();
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
-      await openDiagnosticsPage(tester);
-      await tester.ensureVisible(find.text('管理检测点'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('管理检测点'));
-      await tester.pumpAndSettle();
+
+      // 入口已不在诊断页（ADR 0029）：我的页车辆卡「检测点」按钮直接
+      // 开 sheet，无需进诊断页。
+      await openProbeManagementSheet(tester);
       expect(find.text('ECU 里程自动同步'), findsOneWidget);
       expect(
         await testRepository(database).getPreferenceValue(
@@ -1177,7 +1290,6 @@ void main() {
 
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
-      await leavePageAndFlush(tester);
     });
   });
 }
