@@ -37,7 +37,7 @@ class BackupRepository {
 
   /// 导出备份：4 张业务表 + 加油预测设置 + 加油记录 + 自定义检测点
   /// 全量读取（顺序查询拼 itemIds，无 N+1），组装 BackupPayload。
-  /// 不含偏好/停车倒计时/油价缓存与手填价/目录/内置检测点（内置三条
+  /// 不含偏好/停车倒计时/油价缓存与手填价/目录/内置检测点（内置五条
   /// 恢复后由 bootstrap 幂等重建，ADR 0021）。
   Future<BackupPayload> exportBackupPayload() async {
     final cars = (await database.select(database.cars).get())
@@ -77,7 +77,7 @@ class BackupRepository {
         .toList();
     final fuelRecordRows = await database.select(database.fuelRecords).get();
     final fuelRecords = fuelRecordRows.map(fuelRecordFromRow).toList();
-    // 检测点：段只导自定义项（catalogKey 为 null 的行），内置三条不进
+    // 检测点：段只导自定义项（catalogKey 为 null 的行），内置五条不进
     // 备份——恢复后由 bootstrap 幂等重建，对齐车型目录先例（ADR 0021）。
     // 启停是用户数据，自定义项停用态也导出。
     // carId 为 NULL 的孤儿行跳过：只可能来自「无车库升级 v6」的迁移
@@ -151,7 +151,7 @@ class BackupRepository {
   /// 2026-10-01 修订节）。
   /// 检测点段重插说明：每车一套，carId 经 carIdMap 重映射到恢复后的新
   /// 雪花 id，行 id 重新生成雪花（条目不带 id / catalogKey，沿
-  /// fuelRecords 先例，ADR 0021 修订节）；恢复完成后内置三条由 bootstrap
+  /// fuelRecords 先例，ADR 0021 修订节）；恢复完成后内置五条由 bootstrap
   /// 幂等重建、自定义项随段存活（恢复/清空后的失效与 bootstrap 重灌触发
   /// 见 providers.dart 的 invalidateAllAppDataProviders）。
   /// 版本检查与 codec 一致：接受 v1–v5（ADR 0010/0014/0021/0022 的纯增量兼容）。

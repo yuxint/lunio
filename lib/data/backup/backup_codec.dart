@@ -22,7 +22,7 @@
 // 仅为镜像库内预留列，恢复时由实体按 应付÷单价 重算（ADR 0015）。
 // diagnosticsProbes 条目不带自身 id / catalogKey：行 id 恢复时重新生成
 // 雪花（沿 fuelRecords 先例）；catalogKey 是内置标识，段只导自定义项
-// ——内置三条不进备份、恢复后由每车 bootstrap 幂等重建（ADR 0021
+// ——内置五条不进备份、恢复后由每车 bootstrap 幂等重建（ADR 0021
 // 修订节）。carId 是备份里的车辆 id，恢复时经 carIdMap 重映射；
 // refreshIntervalSeconds 是用户刷新规则，header 是私有 DID 预留。
 // enabled 是用户数据，随段导出往返保留。

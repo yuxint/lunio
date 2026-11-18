@@ -60,9 +60,14 @@ Set<int> decodeSupportedPids(
 /// .builtInProbeSeeds）：012F 油量 / 0167 水温 / 0106/0107 燃油修正。
 /// 2026-11-18 拍板：这四条已由信息卡实时轮询（每次连接 10s 一轮），
 /// 一键检测不再重复采集——快照集只收推荐模板；电压卡用 AT 文本响应
-/// （ATRV）本就不进 mode 01 快照。契约测试 test/features/
-/// obd_snapshot_contract_test.dart 锁这份排除清单——种子改指令时红灯。
-const List<String> _infoCardMode01Commands = ['012F', '0167', '0106', '0107'];
+/// （ATRV）本就不进 mode 01 快照。**公开给契约测试对账**（2026-11-18
+/// 深审恢复护栏：种子改指令时契约测试红灯，0105→0167 历史形态）。
+const List<String> infoCardMode01Commands = [
+  '012F',
+  '0167',
+  '0106',
+  '0107',
+];
 
 /// 一键检测快照集：推荐模板的全部 mode 01 指令，字典序（2026-11-18
 /// 起不再含信息卡内置四条——数据已在信息卡固定展示，重复采集只拖长
@@ -74,7 +79,7 @@ List<String> _snapshotCommands() {
   for (final template in diagnosticsProbeTemplates) {
     // 防御：模板与信息卡内置撞指令时仍排除（当前不撞，改模板时兜底）。
     final normalized = normalizeObdCommand(template.command);
-    if (!_infoCardMode01Commands.contains(normalized)) {
+    if (!infoCardMode01Commands.contains(normalized)) {
       commands.add(normalized);
     }
   }

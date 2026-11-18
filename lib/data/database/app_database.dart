@@ -354,8 +354,9 @@ class DiagnosticsProbes extends Table {
   /// 步章（syncStatus/updatedAt/version 不动）。
   TextColumn get lastValue => text().nullable()();
 
-  /// 最后读数的油量百分比（仅 fuelLevel 类有效值写，可空）：重进页面
-  /// 油量卡升数估算（百分比 × 油箱容积）不缺数据。
+  /// 最后读数的解析百分比（油量 fuelLevel / 燃油修正 fuelTrimPercent
+  /// 两类有效值写，可空）：重进页面油量卡百分比展示 + 燃油修正回退按
+  /// 旧值染色（ADR 0029 决定 4）。
   RealColumn get lastPercent => real().nullable()();
 
   /// 最后读数的时刻（ISO 8601 文本）。

@@ -3,7 +3,7 @@
 // 轮询；日志可复制交回分析。
 //
 // 一键检测是健康快照（2026-11-16 精简，ADR 0023 修订节）：快照集 ∩ 本车
-// 位图 + DTC + 只读 227029。私有 DID 本轮仍不进正常轮询；2026-11-16 定案
+// 位图 + DTC + 私有 DID 三段只读。私有 DID 本轮仍不进正常轮询；2026-11-16 定案
 // ——内置水温已切标准 PID 0167、227029 为表显刻度交叉验证不接产品卡片
 //（ADR 0021 修订节、ADR 0022 修订节）。
 // ignore_for_file: use_key_in_widget_constructors, library_private_types_in_public_api

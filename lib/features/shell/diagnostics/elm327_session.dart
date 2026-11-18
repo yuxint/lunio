@@ -59,7 +59,7 @@ sealed class Elm327SessionEvent {
   const Elm327SessionEvent();
 }
 
-/// 连接成功（AT 序列完成）。
+/// 连接成功（AT 序列完成 + ECU 握手 0100 有 41 00 数据行，ADR 0029）。
 final class Elm327Connected extends Elm327SessionEvent {
   const Elm327Connected();
 }
@@ -244,7 +244,13 @@ class Elm327Session {
       frame,
       sentCommand: Elm327Session.ecuHandshakeCommand,
     );
-    if (lines.isEmpty || lines.every(isObdErrorLine)) {
+    // 强正向判定（2026-11-18 深审）：必须匹配到 0100 的数据行（形如
+    // `41 00 ...`，matchResponseLine 按 service|0x40 + pid 提取）才算
+    // ECU 在线。弱正向（"存在非错误行"）会被 SEARCHING.../BUS INIT...
+    // 等过程行击穿；负向（"全是错误行"）会在过程行+错误行混合时漏判
+    // ——只有见到 ECU 的 0100 支持位图响应本身才算握手成功，其余一律
+    // 落「适配器已连上，但 ECU 无响应」。
+    if (matchResponseLine(lines, Elm327Session.ecuHandshakeCommand) == null) {
       throw const Elm327EcuUnreachableException();
     }
   }

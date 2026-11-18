@@ -252,6 +252,38 @@ void main() {
       expect(mock.sentCommands, ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100']);
       await session.dispose();
     });
+
+    test('ECU 握手过程行击穿守卫：SEARCHING... + UNABLE TO CONNECT 也判无响应', () async {
+      final gate = _DelayGate();
+      // 过程行 + 错误行混合：负向 lines.every(isObdErrorLine) 会被非错
+      // 误的过程行击穿（误判 connected），正向判定（有非错误行才算）
+      // 拦住——2026-11-18 深审边缘项回归守卫。
+      final mock = MockObdTransport(
+        responses: {
+          'ATZ': resp('\r\rELM327 v2.3\r\r>'),
+          'ATE0': resp('OK\r\r>'),
+          'ATL0': resp('ECU not detected\r\r>'),
+          'ATSP7': resp('OK\r\r>'),
+          '0100': resp('SEARCHING...\rUNABLE TO CONNECT\r\r>'),
+        },
+        delay: (_) async {},
+      );
+      final session = Elm327Session(transport: mock, delay: gate.gate);
+      final queue = _EventQueue(session);
+      final connectFuture = session.connect();
+      connectFuture.ignore();
+      final event = await queue.next();
+      expect(event, isA<Elm327Disconnected>());
+      expect(session.state, Elm327SessionState.disconnected);
+      Object? caught;
+      try {
+        await connectFuture;
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, isA<Elm327EcuUnreachableException>());
+      await session.dispose();
+    });
   });
 
   group('轮询编排', () {
@@ -285,8 +317,8 @@ void main() {
         mock.sentCommands,
         ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100', '012F', '0167', 'ATRV'],
       );
-      // 轮间停 1 秒调度拍（ADR 0023）：第 8 个延时请求 = 轮末一拍
-      // （前 7 个是各指令的响应超时竞速，时长 5s；检测点间隔默认 30s，
+      // 轮间停 1 秒调度拍（ADR 0023）：第 9 个延时请求 = 轮末一拍
+      // （前 8 个是各指令的响应超时竞速，时长 5s；间隔默认 10s，
       // 倒计时按拍递减）。
       expect(gate.requests.length, 9);
       expect(gate.requests.last, Elm327Session.pollTick);

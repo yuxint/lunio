@@ -370,19 +370,20 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     );
   }
 
-  /// 读数色档判定：仅实时有效读数（含解析数值）才染色；回退显示与无
-  /// 数据不染（celsius/volts 不持久化，回退重建后自然为 null；燃油修
-  /// 正 percent 持久化、回退按旧值染）。数值缺失（[valuePick] 返回依
-  /// 赖字段为 null）时不染。
+  /// 读数色档判定：实时有效读数优先；**持久化回退也染**（2026-11-18
+  /// 深审收敛口径：ADR 0029 决定 4「percent 持久化→回退按旧值染」以
+  /// 实现为准补齐）——燃油修正 percent 持久化，回退显旧值+旧色档；
+  /// 水温/电压 celsius/volts 不持久化，回退重建后数值为 null、自然不
+  /// 染（ink 色）。[valuePick] 返回 null（数值缺失）时不染。
   DiagnosticsReadingTone? _toneOf(
     DiagnosticsProbe probe,
     DiagnosticsReadingTone? Function(ObdValue) valuePick,
   ) {
-    final live = _connection.liveReadingFor(probe)?.reading;
-    if (live is! ObdValue) {
+    final reading = _connection.readingFor(probe)?.reading;
+    if (reading is! ObdValue) {
       return null;
     }
-    return valuePick(live);
+    return valuePick(reading);
   }
 
   /// 燃油修正卡右端小字：STFT 探针启用且本会话有实时读数时显「短期
@@ -498,9 +499,10 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
 
 /// 信息卡通用组件（2026-11-17 ADR 0029）：固定两段结构——标题行（标
 /// 题 + 右端最后更新时间）+ 大字值行，所有卡等高（Row stretch）。
-/// 显示语义与 [DiagnosticsPageState._confirmMileageSync] 同源：实时有
-/// 值优先、实时无数据不遮蔽持久化最后值（显示旧值+旧时间，不染色）、
-/// 从未有过有效值才灰态「无数据」。
+/// 显示语义与 DiagnosticsConnectionController.readingFor 同源：实时有
+/// 值优先、实时无数据不遮蔽持久化最后值（显示旧值+旧时间；色档按回退
+/// 值算，燃油修正 percent 持久化按旧值染、水温/电压数值不持久化自然
+/// 不染——见 [_toneOf]）、从未有过有效值才灰态「无数据」。
 class _ReadingCard extends StatelessWidget {
   const _ReadingCard({
     required this.title,
@@ -537,6 +539,9 @@ class _ReadingCard extends StatelessWidget {
             DiagnosticsReadingTone.normal => tokens.success,
             DiagnosticsReadingTone.warning => tokens.warning,
             DiagnosticsReadingTone.danger => tokens.danger,
+            // 冷车灰档（<70℃，未达工作温度，非警告）：显灰而非正文黑，
+            // 与「不染色」区分（2026-11-18 深审阻断修复）。
+            DiagnosticsReadingTone.muted => tokens.muted,
             _ => tokens.ink,
           };
     final valueLine = <Widget>[

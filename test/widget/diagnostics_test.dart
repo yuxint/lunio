@@ -4,7 +4,7 @@
 //  - 检测点行列表撤销，全员信息卡：内置四张（油量 | 水温 / 电压 |
 //    燃油修正，LTFT 大字 + 同卡右端 STFT 小字「短期 -1.6%」式），
 //    启用的自定义探针追加通用卡（odometer 卡带「更新里程」入口）——
-//    值渲染断言按卡计数（37.6% 等每值一处、时间戳 = 有读数的卡数）。
+//    值渲染断言按卡计数（38% 等每值一处、时间戳 = 有读数的卡数）。
 //  - 显示回退语义：实时有值优先；实时无数据不遮蔽持久化最后值（显旧
 //    值+旧时间戳）；两者皆无 = 「—」灰态 + 「未更新」时间戳（页面不再
 //    出现「无数据」文案与行级「超时」reason）。
@@ -47,6 +47,7 @@ import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
 import 'package:lunio/features/shell/diagnostics/obd_verification_commands.dart';
 import 'package:lunio/features/shell/shared/shell_shared.dart';
 import 'package:lunio/app/providers.dart';
+import 'package:lunio/core/theme/lunio_tokens.dart';
 import 'package:lunio/core/widgets/lunio_components.dart';
 
 import '../helpers/builders.dart';
@@ -252,6 +253,29 @@ void main() {
       // 随 estimateFuel 删除），页面任何位置不出现「升」字。
       expect(find.text('38%'), findsOneWidget);
       expect(find.textContaining('升'), findsNothing);
+
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('冷车水温染灰档（muted，2026-11-18 深审阻断回归守卫）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      // 0167 回冷车帧：41 67 03 3C 00 → (0x3C−40)=20℃ <70 → muted。
+      final rig = DiagnosticsRig(
+        responses: rigStandardResponses()
+          ..['0167'] = rigResp('41 67 03 3C 00 \r\r>'),
+      );
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('20℃'));
+
+      // 大字颜色 = tokens.muted（灰档），不是正文黑（ink）也不是警告黄。
+      final context = tester.element(find.text('20℃'));
+      final tokens = Theme.of(context).extension<LunioTokens>()!;
+      final color = tester.widget<Text>(find.text('20℃')).style?.color;
+      expect(color, tokens.muted);
+      expect(color, isNot(tokens.ink));
 
       await leavePageAndFlush(tester);
     });
@@ -1002,7 +1026,7 @@ void main() {
       await gotoTab(tester, '我的');
       await tester.pumpAndSettle();
 
-      // 开页前预写最后读数（昨天 08:00:00）：油量 37.6% / 水温 95℃。
+      // 开页前预写最后读数（昨天 08:00:00）：油量 38% / 水温 95℃。
       final diagnostics = testRepository(database).diagnosticsRepository;
       final fuelId = (await diagnostics.listProbes(await appliedCarId(database)))
           .firstWhere((p) => p.name == '油量')

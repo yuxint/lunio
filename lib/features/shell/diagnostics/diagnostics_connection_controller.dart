@@ -50,7 +50,7 @@ enum DiagnosticsConnectionPhase {
 }
 
 /// 单条检测点的读取快照（展示值 + 读取时刻）。行尾「最后更新时间」与
-/// 核心值卡共用；实时读数与持久化回退都用这一种形状。
+/// 信息卡共用；实时读数与持久化回退都用这一种形状。
 @immutable
 class ProbeReadingSnapshot {
   const ProbeReadingSnapshot({required this.reading, required this.at});
@@ -98,7 +98,7 @@ class DiagnosticsConnectionState {
 
   final DiagnosticsScanState scan;
 
-  /// 本会话实时读数表（键 = 检测点行 id）。
+  /// 本会话实时读数表（键 = 检测点 id）。
   final Map<int, ProbeReadingSnapshot> readings;
 }
 
