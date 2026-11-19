@@ -120,7 +120,7 @@ Future<void> _syncEcuMileageSilently(Ref ref, ObdValue reading) async {
     if (car == null) {
       return;
     }
-    await syncCarMileageFromEcu(ref, car, km);
+    await syncCarMileageFromEcu(ref, car.id!, km);
   } catch (_) {
     // 静默档语义：读偏好/读车/写库失败都不提示，下一轮轮询再试。
   }

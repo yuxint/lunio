@@ -100,4 +100,18 @@ class DiagnosticsRules {
     }
     return DiagnosticsReadingTone.danger;
   }
+
+  /// 从读数 display 文本解析数值（2026-11-19 拍板「回退染色」修复）：
+  /// celsius/volts 不持久化，进程重开/重连前显示库回退值时染色依据缺
+  /// 失落 ink 黑（深审确认的观感缺陷）。display 格式受解析器控制、格式
+  /// 稳定（'95℃'/'11.2V'），从文本解析数值即可恢复染色依据；解析失败
+  /// （null）返回 null、调用方不染兜底。
+  static double? parseDisplayNumber(String display, String unit) {
+    final text = display.trim();
+    if (!text.endsWith(unit)) {
+      return null;
+    }
+    final numberPart = text.substring(0, text.length - unit.length).trim();
+    return double.tryParse(numberPart);
+  }
 }

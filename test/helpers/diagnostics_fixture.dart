@@ -46,6 +46,10 @@ Map<String, MockObdScript> rigStandardResponses() {
     'ATE0': rigResp('OK\r\r>'),
     'ATL0': rigResp('OK\r\r>'),
     'ATSP7': rigResp('OK\r\r>'),
+    // 探针 header 切换应答（2026-11-18 深审修复，问题 3）：CVT 探针
+    // 轮询先 ATSH DA1EF1（物理寻址）再发 222301；调试退出恢复 DB33F1。
+    'ATSHDA1EF1': rigResp('OK\r\r>'),
+    'ATSHDB33F1': rigResp('OK\r\r>'),
     // ECU 握手 0100（ADR 0029）：三 ECU 并发响应，摘自一键检测日志。
     '0100': rigResp('41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>'),
     '012F': rigResp('41 2F 60 \r\r>'),
@@ -173,6 +177,29 @@ class DiagnosticsRig {
   Future<void> completeProbeTimeout(WidgetTester tester) async {
     timeGate.completeDuration(const Duration(milliseconds: 300));
     await tester.pump();
+  }
+
+  /// 排干在途应答（2026-11-18 深审修复后一轮含 CVT 切头 ATSH，命令数
+  /// 变长）：反复放行字节直到连续两拍无新命令（sentCommands 停止增长）
+  /// ——在飞的切头应答帧若不排干，迟到帧会错位污染重连会话/调试链路
+  /// 的帧对齐（旧会话共享 mock 广播流的测试专属现象，真机 BLE 重连是
+  /// 新字节流，不存在此污染）。
+  Future<void> drainPendingChunks(WidgetTester tester) async {
+    var quiet = 0;
+    var previous = -1;
+    for (var i = 0; i < 16; i++) {
+      await deliverChunks(tester);
+      final now = mock.sentCommands.length;
+      if (now == previous) {
+        quiet++;
+        if (quiet >= 2) {
+          return;
+        }
+      } else {
+        quiet = 0;
+      }
+      previous = now;
+    }
   }
 
   /// 释放轮询拍进入下一轮：每检测点默认 10 秒间隔（2026-11-17 拍板

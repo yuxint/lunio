@@ -19,6 +19,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/providers.dart';
 import '../../core/platform/native_system_ui.dart';
 import '../../core/theme/lunio_tokens.dart';
+import 'diagnostics/obd_runtime.dart';
 import 'fuel/fuel_page.dart';
 import 'fuel/fuel_prices.dart';
 import 'profile/profile_page.dart';
@@ -81,12 +82,15 @@ class _AppShellState extends ConsumerState<AppShell>
 
   /// 回到前台：清空应用内提醒签名（强制重新检查弹窗，实现"用户处理完
   /// 提醒离开再回来，若又到期会再次提醒"），并刷新导航 inset
-  /// （用户可能在系统设置里切了导航方式）。
+  /// （用户可能在系统设置里切了导航方式）。OBD 连接着时触发一次立即
+  /// 轮询（2026-11-19 拍板：后台期间 Dart 循环可能被系统挂起，回前台
+  /// 读数是后台遗留旧值，≤1 拍拿新鲜值；未连接时静默）。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _notificationSync.onAppResumed();
       _refreshAndroidSystemNavigationInset();
+      ref.read(obdConnectionControllerProvider).requestImmediatePoll();
     }
   }
 

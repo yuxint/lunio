@@ -114,6 +114,27 @@ void main() {
       );
       await recorder.close(at: at.add(const Duration(minutes: 1)));
     });
+
+    test('同秒两次 start：第二个文件名顺延 1 秒，不截断旧会话', () async {
+      final at = DateTime(2026, 11, 18, 20, 28, 30);
+      final first = ObdSessionLogRecorder(directory: tempDir);
+      await first.start(at: at, device: 'dev-1');
+      final second = ObdSessionLogRecorder(directory: tempDir);
+      await second.start(at: at, device: 'dev-2');
+      final names = [
+        for (final f in tempDir.listSync().whereType<File>())
+          f.uri.pathSegments.last,
+      ]..sort();
+      expect(names[0], 'session-20261118-202830.jsonl');
+      expect(names[1], 'session-20261118-202831.jsonl');
+      // 第一份文件未被截断：start 行的 device 仍是 dev-1。
+      final firstContent = await File(
+        '${tempDir.path}/session-20261118-202830.jsonl',
+      ).readAsString();
+      expect(firstContent, contains('"device":"dev-1"'));
+      await first.close(at: at);
+      await second.close(at: at);
+    });
   });
 
   group('store', () {
@@ -184,14 +205,26 @@ void main() {
         at.add(const Duration(seconds: 10)),
       );
       sink.onSessionEnd(at.add(const Duration(minutes: 5)), reason: '主动断开');
-      // 串行链完成后再断言。
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // 串行链完成后再断言（chainIdle 测试钩子，替代睡眠等待——睡眠
+      // 时长随机器负载抖动，深审非确定性修复）。
+      await sink.chainIdle;
       final entries = await store.list();
       expect(entries, hasLength(1));
       final content = await store.readContent(entries.single.fileName);
       expect(content, contains('"t":"start"'));
       expect(content, contains('"v":"95℃"'));
       expect(content, contains('"e":"disconnect"'));
+    });
+
+    test('currentRecordingFileName 跟随 start/close 翻转（删除保护数据源）', () async {
+      final sink = ProductionObdSessionLogSink(store: store);
+      final at = DateTime(2026, 11, 18, 20, 28, 30);
+      sink.onSessionStart(at, deviceId: 'dev-1');
+      await sink.chainIdle;
+      expect(sink.currentRecordingFileName, isNotNull);
+      sink.onSessionEnd(at, reason: '手动断开');
+      await sink.chainIdle;
+      expect(sink.currentRecordingFileName, isNull);
     });
   });
 }

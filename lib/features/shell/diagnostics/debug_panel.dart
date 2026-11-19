@@ -1,6 +1,7 @@
 // 诊断调试终端（ADR 0023）：自由 AT/PID 命令 + 一键检测脚本 + 原始
-// 响应日志。进入调试模式暂停自动轮询，退出恢复默认 29-bit 头并重启
-// 轮询；日志可复制交回分析。
+// 响应日志。2026-11-19 拍板改懒暂停：无显式调试开关，发原始命令前暂
+// 停自动轮询、命令返回即恢复；一键检测整段结束才恢复（避免轮询插队
+// 打断序列）。日志可复制/清空。
 //
 // 一键检测是健康快照（2026-11-16 精简，ADR 0023 修订节）：快照集 ∩ 本车
 // 位图 + DTC + 私有 DID 三段只读。私有 DID 本轮仍不进正常轮询；2026-11-16 定案
@@ -53,17 +54,15 @@ class DiagnosticsDebugPanel extends StatefulWidget {
 class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
   final _commandController = TextEditingController();
   bool _expanded = false;
-  bool _debugMode = false;
   bool _busy = false;
   String _log = '';
 
   @override
   void didUpdateWidget(covariant DiagnosticsDebugPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.session != widget.session ||
-        (!widget.connected && _debugMode)) {
-      _debugMode = false;
+    if (oldWidget.session != widget.session) {
       _busy = false;
+      _log = '';
     }
   }
 
@@ -73,54 +72,24 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
     super.dispose();
   }
 
-  Future<void> _setDebugMode(bool value) async {
-    final session = widget.session;
-    if (session == null) {
-      return;
-    }
-    if (value) {
-      setState(() => _busy = true);
-      await session.pausePolling();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _debugMode = true;
-        _busy = false;
-      });
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      // 退出调试恢复 29-bit 功能寻址头，再重启自动轮询。
-      await session.sendRawCommand('ATSH DB 33 F1');
-    } catch (_) {
-      // 适配器已断/恢复命令失败：轮询恢复后由正常链路错误处理。
-    }
-    session.resumePolling();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _debugMode = false;
-      _busy = false;
-    });
-  }
-
+  /// 原始命令（2026-11-19 拍板懒暂停）：先暂停自动轮询（等在途请求收
+  /// 尾），命令返回/失败即恢复——单条命令独占链路 1-2 秒，轮询让路。
   Future<void> _send() async {
     final session = widget.session;
     final command = _commandController.text.trim();
-    if (session == null || command.isEmpty || !_debugMode || _busy) {
+    if (session == null || command.isEmpty || _busy) {
       return;
     }
     setState(() => _busy = true);
     _append('> ${normalizeObdCommand(command)}');
+    await session.pausePolling();
     try {
       final frame = await session.sendRawCommand(command);
       _append(frame);
     } catch (error) {
       _append('ERROR: $error');
     } finally {
+      session.resumePolling();
       if (mounted) {
         setState(() => _busy = false);
       }
@@ -131,15 +100,19 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
   /// 日志格式 / 默认头恢复），本 widget 只清空日志、把日志块追加进
   /// `_log` 并持有 busy 生命周期。执行器 adapter 把会话异常翻译成
   /// run module 的结果分类：超时=继续，其余会话失败=中止。
+  /// 一键检测（2026-11-19 拍板）：先暂停自动轮询，**整段结束才恢复**
+  /// （27 条连续序列，按条恢复会被轮询插队打断）；完成写日志尾行 +
+  /// toast（完成态可感知），整段日志落会话文件。
   Future<void> _runVerification() async {
     final session = widget.session;
-    if (session == null || !_debugMode || _busy) {
+    if (session == null || _busy) {
       return;
     }
     setState(() {
       _busy = true;
       _log = '';
     });
+    await session.pausePolling();
     try {
       final result = await runObdVerification(
         carLabel: widget.carLabel,
@@ -161,9 +134,14 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
           }
         },
       );
+      _append('—— 一键检测完成 ——');
+      if (mounted) {
+        showStatusOverlay(context, '一键检测完成', StatusOverlayTone.success);
+      }
       // 整段日志落会话文件（2026-11-18 共识 7；无 sink 时静默）。
       widget.onVerificationLog?.call(result.log);
     } finally {
+      session.resumePolling();
       if (mounted) {
         setState(() => _busy = false);
       }
@@ -232,45 +210,20 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                   ),
-                  const Icon(Icons.chevron_right,
-                      size: 18, color: Colors.white24),
+                  Icon(Icons.chevron_right, size: 18, color: tokens.line),
                 ],
               ),
             ),
             const SizedBox(height: 8),
           ],
           if (_expanded) ...[
-            const SizedBox(height: 8),
-            const LunioInlineMessage(
-              message: 'ATSH/ATSP/ATCRA/ATD/ATZ 会改变适配器状态；mode 04 '
-                  '会清故障码。进入调试会暂停自动轮询，退出会恢复默认头'
-                  '并重启轮询。',
-              tone: LunioStatusTone.warning,
-            ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '调试模式（暂停自动轮询）',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-                Switch(
-                  value: _debugMode,
-                  onChanged: enabled && !_busy
-                      ? (value) => unawaited(_setDebugMode(value))
-                      : null,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _commandController,
-                    enabled: enabled && _debugMode && !_busy,
+                    enabled: enabled && !_busy,
                     textCapitalization: TextCapitalization.characters,
                     decoration: const InputDecoration(
                       labelText: '原始命令',
@@ -284,7 +237,7 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
                 SmallActionButton(
                   label: '发送',
                   primary: true,
-                  onPressed: enabled && _debugMode && !_busy
+                  onPressed: enabled && !_busy
                       ? () => unawaited(_send())
                       : null,
                 ),
@@ -298,7 +251,7 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
                 SmallActionButton(
                   label: '一键检测',
                   primary: true,
-                  onPressed: enabled && _debugMode && !_busy
+                  onPressed: enabled && !_busy
                       ? () => unawaited(_runVerification())
                       : null,
                 ),
@@ -306,6 +259,11 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
                   label: '复制日志',
                   secondary: true,
                   onPressed: _log.isEmpty ? null : () => unawaited(_copyLog()),
+                ),
+                SmallActionButton(
+                  label: '清空',
+                  secondary: true,
+                  onPressed: _log.isEmpty ? null : () => setState(() => _log = ''),
                 ),
               ],
             ),

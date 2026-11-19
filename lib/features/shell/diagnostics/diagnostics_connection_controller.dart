@@ -413,7 +413,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       // 连接中关闭 sheet = 取消本次连接（在途建链可能还要等 15 秒，
       // 不能把页面停在无 sheet 的「连接中」）。
       _connectAttempt++;
-      unawaited(_teardownSession());
+      unawaited(_teardownSession(reason: '取消连接'));
       _phase = DiagnosticsConnectionPhase.idle;
       _statusError = null;
       _notify();
@@ -435,7 +435,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     _phase = DiagnosticsConnectionPhase.idle;
     _statusError = null;
     _notify();
-    await _teardownSession();
+    await _teardownSession(reason: '手动断开');
   }
 
   /// 「立即刷新」按钮：手动轮询全部启用项（会话不持有时静默）。
@@ -552,7 +552,7 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     _phase = DiagnosticsConnectionPhase.connecting;
     _statusError = null;
     _notify();
-    await _teardownSession();
+    await _teardownSession(reason: '连接重建');
     if (_disposed || attempt != _connectAttempt) {
       return null;
     }
@@ -748,11 +748,20 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 释放会话与事件订阅（dispose/重连前调用，幂等）：会话与其订阅在
   /// 首行成对捕获，随后清空字段。dispose 可能长时间等待传输层断开，
   /// 期间新尝试可以创建新会话；续体只取消自己捕获的旧订阅。
-  Future<void> _teardownSession() async {
+  ///
+  /// 会话日志收尾（2026-11-18 深审修复）：收尾行不能只挂在链路自发掉
+  /// 线的 [Elm327Disconnected] 事件上——手动断开/重连清理/controller
+  /// 释放都走 dispose()，其首行置释放旗，触发的断开事件在 _emit 处丢
+  /// 弃，事件路径收不到。这里在释放会话前直调 sink（幂等：链路掉线
+  /// 路径事件已写过一次收尾行，recorder 已空，这次是空操作）。
+  Future<void> _teardownSession({String reason = '会话释放'}) async {
     final session = _session;
     final sub = _sub;
     _session = null;
     _sub = null;
+    if (session != null) {
+      sessionLogSink?.onSessionEnd(DateTime.now(), reason: reason);
+    }
     await session?.dispose();
     unawaited(sub?.cancel());
   }

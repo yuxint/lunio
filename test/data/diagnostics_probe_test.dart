@@ -347,5 +347,28 @@ void main() {
       expect(probes.where((p) => p.catalogKey == 'probe:stale'), isEmpty);
       expect(probes.where((p) => p.id == customId), hasLength(1));
     });
+    test('存量自定义同指令收编：自定义 01A6 被删、内置里程表接管（深审问题 7）', () async {
+      // 模拟旧安装：推荐模板批 2 曾含 01A6，存量车可能已有自定义 01A6。
+      // 裸插自定义行（catalogKey null）再跑对账，断言收编。
+      await database.into(database.diagnosticsProbes).insert(
+            diagnosticsProbeCompanion(
+              customProbe(
+                name: '里程表（模板）',
+                command: '01A6',
+                parseType: DiagnosticsParseType.odometer,
+              ),
+              777002,
+            ),
+          );
+      await repos.catalogRepository.ensureBootstrapData();
+      final probes = await diagnostics.listProbes(carId);
+      // 自定义 01A6 被收编删除，内置七条接管（无双倍轮询、无双卡）。
+      expect(probes, hasLength(7));
+      expect(probes.where((p) => p.command == '01A6'), hasLength(1));
+      expect(
+        probes.where((p) => p.command == '01A6').single.isBuiltIn,
+        isTrue,
+      );
+    });
   });
 }

@@ -1,5 +1,5 @@
 // 车辆诊断仓库（DiagnosticsRepository）：检测点表（diagnostics_probes，
-// ADR 0021）的唯一读写出口，外加每车内置五条种子的 bootstrap 幂等对账。
+// ADR 0021）的唯一读写出口，外加每车内置七条种子的 bootstrap 幂等对账。
 //
 // ≈ Java 里按域拆出的领域 Service：管一张按车分组的表（挂 carId——指令
 // 语义与车无关，但不同车的可用指令可能不同，ADR 0021 修订节）；删除车辆
@@ -30,6 +30,7 @@ class DiagnosticsProbeSeed {
     required this.name,
     required this.command,
     required this.parseType,
+    this.header,
   });
 
   /// 稳定 catalogKey（bootstrap 对账标识，{carId, catalogKey} 唯一约束
@@ -44,6 +45,11 @@ class DiagnosticsProbeSeed {
 
   /// 解析类型。
   final domain.DiagnosticsParseType parseType;
+
+  /// 请求头（2026-11-18 深审修复：轮询链路消费它先切 ATSH 再发指令；
+  /// 私有 DID 必须物理寻址，如 222301 须 ATSH DA1EF1）。null = 默认
+  /// 功能寻址头。
+  final String? header;
 }
 
 class DiagnosticsRepository {
@@ -133,6 +139,9 @@ class DiagnosticsRepository {
       name: 'CVT 油温',
       command: '222301',
       parseType: domain.DiagnosticsParseType.cvtOilTemp,
+      // 私有 DID 物理寻址（2026-11-18 深审修复，问题 3）：功能寻址头
+      // 下 222301 永久 NO DATA（实车日志：只在 ATSH DA1EF1 后应答）。
+      header: 'ATSH DA1EF1',
     ),
     // 里程表（2026-11-18 升内置，ADR 0026 修订节）：ECU 里程同步的
     // 数据源——用户拍板「只要连接上（提醒页/诊断页）读到更大就更新」，
@@ -145,7 +154,7 @@ class DiagnosticsRepository {
     ),
   ];
 
-  /// 某辆车的检测点全量列表：内置五条在前（按种子声明顺序）、自定义
+  /// 某辆车的检测点全量列表：内置七条在前（按种子声明顺序）、自定义
   /// 按 id 升序（雪花 id 时间有序 = 创建顺序）。诊断页列表与轮询的
   /// "启用检测点"快照共用这一份读取。
   Future<List<domain.DiagnosticsProbe>> listProbes(int carId) async {
@@ -292,7 +301,7 @@ class DiagnosticsRepository {
     )..where((row) => row.id.equals(probeId))).go();
   }
 
-  /// 内置五条种子的幂等对账（ADR 0021 修订节，每车一套）。并入
+  /// 内置七条种子的幂等对账（ADR 0021 修订节，每车一套）。并入
   /// bootstrap 总入口（BuiltInCatalogRepository.ensureBootstrapData 注入
   /// 调用）：遍历所有车辆，逐车补缺失内置、清理种子外内置 key。
   /// **只补缺失，不纠偏用户编辑**——内置行可改名称/指令/解析类型/间隔，
@@ -306,7 +315,7 @@ class DiagnosticsRepository {
     });
   }
 
-  /// 给一辆车播种内置五条（新增车辆收尾调用；bootstrap 也经上面的全量
+  /// 给一辆车播种内置七条（新增车辆收尾调用；bootstrap 也经上面的全量
   /// 入口走到这里）。幂等：已有 key 不动。
   Future<void> seedBuiltInProbesForCar(int carId) {
     return database.transaction(() => _ensureBuiltInProbesForCar(carId));
@@ -330,6 +339,28 @@ class DiagnosticsRepository {
       for (final row in rows)
         if (row.catalogKey != null) row.catalogKey!: row,
     };
+    // 存量自定义同指令收编（2026-11-18 深审修复，问题 7）：推荐模板
+    // 批 2 曾含 01A6，旧安装可能存在指令相同的自定义行；内置接管该指
+    // 令后不收编则每轮轮询发两次、诊断页双「里程表」卡（种子对账只按
+    // catalogKey 补缺，不按 command 去重）。口径 = 删自定义行让位内置
+    // （最后读数不迁移——最后读数本就不进备份、损失可接受）。0105→
+    // 0167 先例是「App 内手动编辑迁移」，与新内置接管已有指令是两回事，
+    // 两条口径并存。
+    final seedCommands = {
+      for (final seed in builtInProbeSeeds) seed.command.trim().toUpperCase(),
+    };
+    final duplicates = [
+      for (final row in rows)
+        if (row.catalogKey == null &&
+            seedCommands.contains(row.command.trim().toUpperCase()))
+          row,
+    ];
+    if (duplicates.isNotEmpty) {
+      await (database.delete(database.diagnosticsProbes)..where(
+            (row) => row.id.isIn(duplicates.map((r) => r.id).toList()),
+          ))
+          .go();
+    }
     for (final seed in builtInProbeSeeds) {
       if (rowByKey.containsKey(seed.catalogKey)) {
         continue;
@@ -345,6 +376,7 @@ class DiagnosticsRepository {
                 parseType: seed.parseType,
                 enabled: true,
                 catalogKey: seed.catalogKey,
+                header: seed.header,
                 refreshIntervalSeconds: defaultRefreshIntervalSeconds,
                 sync: SyncMetadata(
                   status: SyncStatus.synced,

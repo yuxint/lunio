@@ -205,9 +205,7 @@ void main() {
       // （012F/0167/ATRV/0106/0107/222301/01A6 串行，收满一轮共 7 条
       // 应答；01A6 读数不上卡——里程表内置探针无卡，仅供 ECU 里程同步）。
       await rig.advanceUntil(tester, find.text('38%'));
-      for (var i = 0; i < 6; i++) {
-        await rig.deliverChunks(tester);
-      }
+      await rig.drainPendingChunks(tester);
       // 行列表撤销（ADR 0029）：每个值只在信息卡一处。
       expect(find.text('38%'), findsOneWidget);
       expect(find.text('95℃'), findsOneWidget);
@@ -231,15 +229,16 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.text('已断开'), findsOneWidget);
-      expect(find.text('重连'), findsOneWidget);
       expect(find.text('蓝牙链路中断'), findsOneWidget);
-      // 连接级失败只上状态条、不弹窗（story 16 显式断言）。
+      // 连接级失败只上状态条、不弹窗（story 16 显式断言）；重连入口 =
+      // 整卡点击（2026-11-19 拍板），行尾无重连按钮。
+      expect(find.text('重连'), findsNothing);
       expect(find.byType(Dialog), findsNothing);
 
-      // 重连：新会话 AT 序列重发（sentCommands 第二组 ATZ），回到已连
-      // 接；controller 读数表不随会话重建清空（最后读数合并），油量卡
-      // 旧值保留显示。
-      await tester.tap(find.text('重连'));
+      // 重连（点状态卡）：新会话 AT 序列重发（sentCommands 第二组 ATZ），
+      // 回到已连接；controller 读数表不随会话重建清空（最后读数合并），
+      // 油量卡旧值保留显示。
+      await tester.tap(find.text('已断开'));
       await tester.pump();
       await rig.advanceUntil(tester, find.text('已连接'));
       expect(
@@ -366,27 +365,13 @@ void main() {
       // 回到轮间睡眠拍——无在途请求时暂停才有确定边界（有在途请求时
       // pausePolling 会等它收尾，而静默脚本的在途请求只能靠 300ms 超时
       // 闩，门闩不放行就挂住 pumpAndSettle）。
-      for (var i = 0; i < 6; i++) {
-        await rig.deliverChunks(tester);
-      }
+      await rig.drainPendingChunks(tester);
 
       await tester.ensureVisible(find.text('调试'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('展开'));
       await tester.pumpAndSettle();
-      expect(find.text('调试模式（暂停自动轮询）'), findsOneWidget);
-
-      final debugSwitch = find.descendant(
-        of: find
-            .ancestor(
-              of: find.text('调试模式（暂停自动轮询）'),
-              matching: find.byType(Row),
-            )
-            .first,
-        matching: find.byType(Switch),
-      );
-      await tester.tap(debugSwitch);
-      await tester.pumpAndSettle();
+      // 调试模式开关已删（2026-11-19 拍板懒暂停）：直接发原始命令。
 
       await tester.enterText(
         find.widgetWithText(TextField, '原始命令'),
@@ -432,30 +417,16 @@ void main() {
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('38%'));
       // 收完第一轮余下六条，循环回到轮间睡眠拍（暂停边界理由见上一条）。
-      for (var i = 0; i < 6; i++) {
-        await rig.deliverChunks(tester);
-      }
+      await rig.drainPendingChunks(tester);
 
       await tester.ensureVisible(find.text('调试'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('展开'));
       await tester.pumpAndSettle();
 
-      final debugSwitch = find.descendant(
-        of: find
-            .ancestor(
-              of: find.text('调试模式（暂停自动轮询）'),
-              matching: find.byType(Row),
-            )
-            .first,
-        matching: find.byType(Switch),
-      );
-      await tester.tap(debugSwitch);
-      await tester.pumpAndSettle();
-
-      // 点检测：run module 同步吐出日志头与首条命令（`> ATI` 行在 send
-      // 前落日志），随后挂在 ATI 请求上（静默脚本无字节）——这正是接
-      // 线冒烟要锁的边。
+      // 调试模式开关已删（2026-11-19 拍板懒暂停）；点检测：run module
+      // 同步吐出日志头与首条命令（`> ATI` 行在 send 前落日志），随后挂
+      // 在 ATI 请求上（静默脚本无字节）——这正是接线冒烟要锁的边。
       await tester.tap(find.text('一键检测'));
       await tester.pump();
 
@@ -692,9 +663,7 @@ void main() {
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('38%'));
       // 收完第一轮余下六条，回到轮间睡眠拍（advanceRound 的前提）。
-      for (var i = 0; i < 6; i++) {
-        await rig.deliverChunks(tester);
-      }
+      await rig.drainPendingChunks(tester);
 
       // 第一轮已发全部七条（内置序：油量/水温/电压/短期/长期/CVT 油温/
       // 里程表）。
@@ -730,9 +699,7 @@ void main() {
       // 油量/水温/短期/长期/CVT 油温/里程表）。
       await openDiagnosticsPage(tester);
       await rig.advanceRound(tester);
-      for (var i = 0; i < 6; i++) {
-        await rig.deliverChunks(tester);
-      }
+      await rig.drainPendingChunks(tester);
       expect(
         rig.mock.sentCommands.where((c) => c == 'ATRV'),
         hasLength(1),
@@ -930,7 +897,8 @@ void main() {
 
       // 点「断开」：会话释放（mock disconnect 恰一次）+ 落「未连接」
       //（手动断开非异常，不落红色「已断开」）+「选择设备」再入口。
-      await tester.tap(find.text('断开'));
+      // 断开动作移进状态卡点击（2026-11-19 拍板）。
+      await tester.tap(find.text('已连接'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('已连接'), findsNothing);
@@ -1238,9 +1206,7 @@ void main() {
       DiagnosticsRig rig,
     ) async {
       await rig.advanceUntil(tester, find.text('已连接'));
-      for (var i = 0; i < 7; i++) {
-        await rig.deliverChunks(tester);
-      }
+      await rig.drainPendingChunks(tester);
     }
 
     testWidgets('守卫：静默档 ECU 里程不大于车辆里程不写库（只增不减）', (tester) async {

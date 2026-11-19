@@ -118,11 +118,21 @@ class Elm327Session {
   /// 规整（normalizeObdCommand）。
   static const List<String> initSequence = ['ATZ', 'ATE0', 'ATL0', 'ATSP 7'];
 
-  /// ECU 握手探测指令（2026-11-17 拍板，ADR 0029）：OBD-II 法规强制的
-  /// 支持位图查询（0100），所有 OBD-II 车必响应——本车实测三 ECU 各回
-  /// 一行 `41 00 xx xx xx xx`。AT 序列成功只证明适配器在线，ECU 睡眠
-  /// （点火 OFF）时发 PID 会回 NO DATA/UNABLE TO CONNECT 或超时。
+  /// ECU 握手探测指令（2026-11-18 深审修复顺带补全被截断的注释）：OBD-II
+  /// 法规强制的支持位图查询（0100），所有 OBD-II 车必响应——本车实测三
+  /// ECU 各回一行 `41 00 xx xx xx xx`。AT 序列成功只证明适配器在线，
+  /// ECU 睡眠（点火 OFF）时发 PID 会回 NO DATA/UNABLE TO CONNECT 或超时。
   static const String ecuHandshakeCommand = '0100';
+
+  /// 默认功能寻址头（2026-11-18 深审修复）：ATSP 7（29-bit CAN）下适配
+  /// 器出厂默认头 = DB 33 F1（诊断仪功能寻址）。轮询/原始命令统一以它
+  /// 为「当前头」跟踪基准，探针带 header 时先切再发。
+  static const String defaultHeader = 'DB33F1';
+
+  /// 当前适配器请求头跟踪值（规整形态，无 ATSH 前缀；connect 重置为
+  /// [defaultHeader]）。轮询链路按探针 header 按需切换（见 _ensureHeader），
+  /// 调试终端 ATSH 原始命令经 sendRawCommand 登记，跟踪不脱钩。
+  String _activeHeader = defaultHeader;
 
   final _events = StreamController<Elm327SessionEvent>.broadcast();
 
@@ -188,6 +198,9 @@ class Elm327Session {
       throw const Elm327SessionException('会话已释放');
     }
     _state = Elm327SessionState.connecting;
+    // 头跟踪重置（会话一次性对象，重连 = 新实例；防御直连复用场景）：
+    // ATZ 复位后适配器回出厂默认功能寻址头。
+    _activeHeader = defaultHeader;
     try {
       await _transport.connect();
       _throwIfDisposed();
@@ -318,8 +331,21 @@ class Elm327Session {
     if (normalized.isEmpty) {
       throw ArgumentError('指令不能为空');
     }
-    return _request(normalized);
+    final future = _request(normalized);
+    // ATSH 原始命令登记跟踪头（2026-11-18 深审修复，问题 3）：调试
+    // ATSH 绕过轮询链路的 _ensureHeader，成功后登记防跟踪脱钩；失败
+    // （异常穿出）不登记——适配器状态未知，下一轮按需重切。
+    return future.then<String>((frame) {
+      final match = _atshPattern.firstMatch(normalized);
+      if (match != null) {
+        _activeHeader = match.group(1)!;
+      }
+      return frame;
+    });
   }
+
+  /// ATSH 原始命令匹配（规整后无空格形态，如 ATSHDA1EF1 / ATSHDB33F1）。
+  static final RegExp _atshPattern = RegExp(r'^ATSH([0-9A-F]+)$');
 
   Future<void> _poll(
     List<DiagnosticsProbe> Function() enabledProbes,
@@ -393,10 +419,17 @@ class Elm327Session {
 
   /// 单条检测点读取：值/无数据都发事件；链路级失败标记断开并返回
   /// false（整轮退出）。
+  ///
+  /// header 切换（2026-11-18 深审修复，问题 3）：探针带 header 时先
+  /// ATSH 切头再发指令，无 header 探针先恢复默认功能寻址头——否则
+  /// 222301（须 ATSH DA1EF1 物理寻址）在默认功能头下永久 NO DATA
+  /// （实车日志确认）。当前头一致时零开销跳过，普通 mode 01 探针零
+  /// 新增总线流量。头切换超时与指令超时同档：单条无数据、不连坐。
   Future<bool> _pollOne(DiagnosticsProbe probe) async {
     final probeId = probe.id!;
     final command = normalizeObdCommand(probe.command);
     try {
+      await _ensureHeader(_targetHeaderOf(probe));
       final frame = await _request(command);
       final reading = parseProbeResponse(
         command: command,
@@ -417,8 +450,8 @@ class Elm327Session {
       ));
       return true;
     } on Elm327SessionException {
-      // 链路/会话级失败（send 失败、断开中断）：整轮退出 + 断开事件，
-      // 连接级语义（story 16）。
+      // 链路/会话级失败（send 失败、断开中断、头切换链路失败）：整轮
+      // 退出 + 断开事件，连接级语义（story 16）。
       _markDisconnected(const Elm327SessionException('轮询中链路失败'));
       return false;
     } catch (e) {
@@ -431,6 +464,33 @@ class Elm327Session {
       ));
       return true;
     }
+  }
+
+  /// 探针目标头（规整形态）：probe.header 有值取其规整值（去空白+大
+  /// 写），否则默认功能寻址头（[defaultHeader]）。
+  String _targetHeaderOf(DiagnosticsProbe probe) {
+    final header = probe.header?.trim();
+    if (header == null || header.isEmpty) {
+      return defaultHeader;
+    }
+    var value = header.replaceAll(' ', '').toUpperCase();
+    // 兼容存成完整命令形态（ATSH DA1EF1）的 header 值：剥掉前缀只留头值。
+    if (value.startsWith('ATSH')) {
+      value = value.substring(4);
+    }
+    return value;
+  }
+
+  /// 确保适配器当前头 = target（2026-11-18 深审修复，问题 3）：一致零
+  /// 开销跳过；不一致发 ATSH 并登记跟踪值。失败（超时/链路失败）不登
+  /// 记——适配器状态未知，下一轮按需重切。ATSH 也经调试终端原始命令
+  /// 进来，sendRawCommand 成功后统一登记（防跟踪脱钩）。
+  Future<void> _ensureHeader(String target) async {
+    if (_activeHeader == target) {
+      return;
+    }
+    await _request('ATSH$target');
+    _activeHeader = target;
   }
 
   /// 可被手动刷新/暂停/停止提前唤醒的一秒睡眠。

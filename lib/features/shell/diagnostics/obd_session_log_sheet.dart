@@ -1,7 +1,8 @@
 // OBD 会话日志列表 sheet（2026-11-18 拍板）：调试终端的「会话日志」
 // 入口行打开；列表 = 会话文件（连接建立时刻命名）+ 读数条数 + 导出/
-// 删除；入口在调试终端（共识 6），导出走原生文件保存桥（复用备份
-// 导出的 exportJsonFile 通道，内容与文件名不受 JSON 限制）。
+// 删除。只读+按钮动作 sheet → showLunioModalSheet 只读出口（点遮罩/
+// 下滑/返回键三路可关，2026-11-19 拍板；此前误走编辑类出口且无关闭
+// 按钮，用户没有任何关闭途径——深审发现的唯一违规）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -12,36 +13,58 @@ import '../../../core/widgets/lunio_components.dart';
 import '../shared/shell_shared.dart';
 import 'obd_session_log.dart';
 
-/// 打开会话日志列表 sheet：load = 目录列表（form_sheet 装载管道，装载
-/// 失败 toast、sheet 不出现）。
-Future<void> showObdSessionLogSheet(BuildContext context) async {
-  await showLunioFormSheet<void, List<ObdSessionLogEntry>>(
-    context: context,
-    title: '会话日志',
-    load: (handle) =>
-        ObdSessionLogStore.production().then((s) => s.list()),
-    builder: (context, handle, entries) {
-      if (entries.isEmpty) {
-        return const LunioEmptyCard('暂无会话日志');
+/// 打开会话日志列表 sheet：装载失败 toast（与 form_sheet 装载语义同
+/// 源：sheet 不出现、错误轻提示）。[currentRecordingFileName] = 当前
+/// 正在记录的会话文件名（页面从 sink 取）：该条目显示「正在记录」并
+/// 禁用删除（删除路径与 recorder 追加写并发会破坏文件与句柄）。
+Future<void> showObdSessionLogSheet(
+  BuildContext context, {
+  String? currentRecordingFileName,
+}) async {
+  final List<ObdSessionLogEntry> entries;
+  try {
+    final store = await ObdSessionLogStore.production();
+    entries = await store.list();
+  } catch (_) {
+    if (context.mounted) {
+      showStatusOverlay(context, '装载失败', StatusOverlayTone.error);
       }
-      return Column(
-        children: [
-          for (final entry in entries) ...[
-            _SessionLogTile(entry: entry),
-            const SizedBox(height: 10),
-          ],
-          SizedBox(height: MediaQuery.of(context).padding.bottom),
-        ],
-      );
-    },
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
+  await showLunioModalSheet<void>(
+    context: context,
+    builder: (sheetContext) => PrototypeSheetFrame(
+      title: '会话日志',
+      child: entries.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: LunioEmptyCard('暂无会话日志'),
+            )
+          : Column(
+              children: [
+                for (final entry in entries) ...[
+                  _SessionLogTile(
+                    entry: entry,
+                    isCurrent: entry.fileName == currentRecordingFileName,
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                SizedBox(height: MediaQuery.of(sheetContext).padding.bottom),
+              ],
+            ),
+    ),
   );
 }
 
 /// 单个会话日志文件条目：名称 + 条数/大小 + 导出/删除。
 class _SessionLogTile extends StatelessWidget {
-  const _SessionLogTile({required this.entry});
+  const _SessionLogTile({required this.entry, required this.isCurrent});
 
   final ObdSessionLogEntry entry;
+  final bool isCurrent;
 
   @override
   Widget build(BuildContext context) {
@@ -60,8 +83,11 @@ class _SessionLogTile extends StatelessWidget {
                 Text(label, style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 2),
                 Text(
-                  '${entry.lineCount} 条记录 · '
-                  '${(entry.bytes / 1024).toStringAsFixed(1)} KB',
+                  isCurrent
+                      ? '${entry.lineCount} 条记录 · '
+                          '${(entry.bytes / 1024).toStringAsFixed(1)} KB · 正在记录'
+                      : '${entry.lineCount} 条记录 · '
+                          '${(entry.bytes / 1024).toStringAsFixed(1)} KB',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: tokens.muted,
                       ),
@@ -76,8 +102,8 @@ class _SessionLogTile extends StatelessWidget {
             color: tokens.primary,
           ),
           IconButton(
-            tooltip: '删除',
-            onPressed: () => unawaited(_delete(context)),
+            tooltip: isCurrent ? '正在记录，不可删除' : '删除',
+            onPressed: isCurrent ? null : () => unawaited(_delete(context)),
             icon: const Icon(Icons.delete_outline, size: 20),
             color: tokens.danger,
           ),

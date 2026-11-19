@@ -73,3 +73,8 @@
    App 级常驻后每次连接弹确认框会很吵；写不写完全由「ECU 里程自动
    同步」开关控制（管理 sheet 行开关，默认关）。守卫「只增不减」不变
    （动作层 syncCarMileageFromEcu，改收 Ref——唯一调用方是 runtime）。
+4. **只增不减守卫下沉到仓库条件 UPDATE**（2026-11-18 深审 TOCTOU 修复）：
+   旧口径「读车快照 → Dart 判 > → updateCar 全行写」在读-判-写窗口内
+   会被手动里程更新覆盖（TOCTOU 竞态）。新口径 = `updateCarMileageIfGreater`
+   条件 UPDATE（WHERE current_mileage_km < ecuKm），动作层只编排「条件
+   写 → 写了才 bump 车辆数据纪元」。

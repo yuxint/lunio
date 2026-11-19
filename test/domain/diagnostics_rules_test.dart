@@ -124,4 +124,19 @@ void main() {
       );
     });
   });
+
+  group('display 文本解析（2026-11-19 回退染色修复）', () {
+    test('水温/CVT/电压 display 格式解析成功', () {
+      expect(DiagnosticsRules.parseDisplayNumber('95℃', '℃'), 95.0);
+      expect(DiagnosticsRules.parseDisplayNumber('69℃', '℃'), 69.0);
+      expect(DiagnosticsRules.parseDisplayNumber('11.2V', 'V'), 11.2);
+    });
+
+    test('格式不符/非数值返回 null（不染兜底）', () {
+      expect(DiagnosticsRules.parseDisplayNumber('66,068 km', '℃'), isNull);
+      expect(DiagnosticsRules.parseDisplayNumber('95', '℃'), isNull);
+      expect(DiagnosticsRules.parseDisplayNumber('℃', '℃'), isNull);
+      expect(DiagnosticsRules.parseDisplayNumber('abc℃', '℃'), isNull);
+    });
+  });
 }

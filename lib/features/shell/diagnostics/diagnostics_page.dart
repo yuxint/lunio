@@ -198,7 +198,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           carLabel: '${appliedCar?.brand ?? ''} ${appliedCar?.model ?? ''}'
               .trim(),
           onVerificationLog: _connection.appendVerificationLog,
-          onOpenSessionLogs: () => unawaited(showObdSessionLogSheet(context)),
+          onOpenSessionLogs: () => unawaited(
+            showObdSessionLogSheet(
+              context,
+              currentRecordingFileName:
+                  _connection.sessionLogSink?.currentRecordingFileName,
+            ),
+          ),
         ),
       ],
     );
@@ -244,9 +250,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           snapshot: _connection.readingFor(coolantProbe),
           tone: _toneOf(
             coolantProbe,
-            (v) => v.celsius == null
-                ? null
-                : DiagnosticsRules.coolantTempTone(v.celsius!),
+            (v) {
+              final c = v.celsius ??
+                  DiagnosticsRules.parseDisplayNumber(v.display, '℃');
+              return c == null
+                  ? null
+                  : DiagnosticsRules.coolantTempTone(c.round());
+            },
           ),
         ),
       if (voltageProbe != null && voltageProbe.enabled)
@@ -255,9 +265,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           snapshot: _connection.readingFor(voltageProbe),
           tone: _toneOf(
             voltageProbe,
-            (v) => v.volts == null
-                ? null
-                : DiagnosticsRules.batteryVoltageTone(v.volts!),
+            (v) {
+              final volts = v.volts ??
+                  DiagnosticsRules.parseDisplayNumber(v.display, 'V');
+              return volts == null
+                  ? null
+                  : DiagnosticsRules.batteryVoltageTone(volts);
+            },
           ),
         ),
       if (cvtProbe != null && cvtProbe.enabled)
@@ -266,9 +280,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           snapshot: _connection.readingFor(cvtProbe),
           tone: _toneOf(
             cvtProbe,
-            (v) => v.celsius == null
-                ? null
-                : DiagnosticsRules.cvtOilTempTone(v.celsius!),
+            (v) {
+              final c = v.celsius ??
+                  DiagnosticsRules.parseDisplayNumber(v.display, '℃');
+              return c == null
+                  ? null
+                  : DiagnosticsRules.cvtOilTempTone(c.round());
+            },
           ),
         ),
       ...probes
@@ -306,8 +324,10 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
   /// 读数色档判定：实时有效读数优先；**持久化回退也染**（2026-11-18
   /// 深审收敛口径：ADR 0029 决定 4「percent 持久化→回退按旧值染」以
   /// 实现为准补齐）——燃油修正 percent 持久化，回退显旧值+旧色档；
-  /// 水温/电压 celsius/volts 不持久化，回退重建后数值为 null、自然不
-  /// 染（ink 色）。[valuePick] 返回 null（数值缺失）时不染。
+  /// 水温/电压 celsius/volts 不持久化，回退场景由 [valuePick] 内部从
+  /// display 文本解析兜底（DiagnosticsRules.parseDisplayNumber，2026-11-19
+  /// 拍板修复「进程重开回黑」）。[valuePick] 返回 null（解析也失败）时
+  /// 不染（ink 色）。
   DiagnosticsReadingTone? _toneOf(
     DiagnosticsProbe probe,
     DiagnosticsReadingTone? Function(ObdValue) valuePick,
@@ -333,8 +353,11 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     return null;
   }
 
-  /// 状态条（第一区）：阶段徽标 + 说明文案；"已断开"追加错误文案与
-  /// 手动重连按钮（连接级失败只上状态条、不弹窗）。
+  /// 状态条（第一区，2026-11-19 拍板改版）：整卡可点分派连接/断开/
+  /// 重连（相位矩阵：已连接=断开、已断开=重连、未连接=start、扫描中/
+  /// 连接中无动作），右侧行尾只留进行性动作：已连接=放大刷新按钮（与
+  /// 提醒页信息卡同一份样式：26 号 refresh 图标、primary 色）、未连接/
+  /// 扫描中=选择设备、连接中/已断开无行尾。
   Widget _buildStatusCard(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
     final state = _connection.state;
@@ -355,17 +378,25 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
       DiagnosticsConnectionPhase.connected => '已连接 · 正在轮询启用检测点',
       DiagnosticsConnectionPhase.disconnected => state.statusError ?? '连接已断开',
     };
-    // 行尾动作按钮（按相位显隐）：断开=重连；未连接/扫描中=选择设备
-    //（重开扫描 sheet 的再入口）；已连接=断开；连接中无动作。
-    final actionLabel = switch (state.phase) {
-      DiagnosticsConnectionPhase.disconnected => '重连',
-      DiagnosticsConnectionPhase.idle ||
-      DiagnosticsConnectionPhase.scanning =>
-        '选择设备',
-      DiagnosticsConnectionPhase.connected => '断开',
-      DiagnosticsConnectionPhase.connecting => null,
-    };
-    return LunioCard(
+    // 整卡点击分派（进行中相位无动作防误触，2026-11-19 拍板矩阵）。
+    void onCardTap() {
+      switch (state.phase) {
+        case DiagnosticsConnectionPhase.connected:
+          unawaited(_connection.disconnectManually());
+        case DiagnosticsConnectionPhase.disconnected:
+        case DiagnosticsConnectionPhase.idle:
+          unawaited(_connection.start());
+        case DiagnosticsConnectionPhase.scanning:
+        case DiagnosticsConnectionPhase.connecting:
+          break;
+      }
+    }
+
+    // 行尾动作（按相位显隐）：已连接=立即刷新（样式对齐提醒页信息卡
+    // IconButton refresh 26）；未连接/扫描中=选择设备（重开扫描 sheet
+    // 的再入口）；连接中/已断开无行尾（重连走整卡点击）。
+    return LunioTappableCard(
+      onTap: onCardTap,
       child: Row(
         children: [
           LunioStatusBadge(label: label, tone: tone),
@@ -383,22 +414,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
             IconButton(
               tooltip: '立即刷新',
               onPressed: _connection.requestImmediatePoll,
-              icon: const Icon(Icons.refresh, size: 20),
-              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.refresh, size: 26),
               color: tokens.primary,
             ),
-          if (actionLabel != null)
+          if (state.phase == DiagnosticsConnectionPhase.idle ||
+              state.phase == DiagnosticsConnectionPhase.scanning)
             TextButton(
-              onPressed: switch (state.phase) {
-                DiagnosticsConnectionPhase.disconnected =>
-                  () => unawaited(_connection.start()),
-                DiagnosticsConnectionPhase.connected =>
-                  () => unawaited(_connection.disconnectManually()),
-                _ => () => unawaited(_connection.openScan()),
-              },
-              // 紧凑行尾按钮（ProfileSettingRow 同款）——LunioSecondaryButton
-              // 的 FilledButton 带主题全宽 minimumSize，放进 Row 拿到无界
-              // 宽约束直接布局崩溃。
+              onPressed: () => unawaited(_connection.openScan()),
               style: TextButton.styleFrom(
                 backgroundColor: tokens.surface2,
                 foregroundColor: tokens.primary,
@@ -409,12 +431,13 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
                   side: BorderSide(color: tokens.line),
                 ),
               ),
-              child: Text(actionLabel),
+              child: const Text('选择设备'),
             ),
         ],
       ),
     );
   }
+
 }
 
 /// 信息卡通用组件（2026-11-17 ADR 0029）：固定两段结构——标题行（标

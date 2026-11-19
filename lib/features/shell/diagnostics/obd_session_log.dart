@@ -1,7 +1,8 @@
 // OBD 会话日志模块（2026-11-18 拍板）：单次 OBD 连接期间的轮询读数
 // 记录为 JSONL 文件（App 文档目录 obd_sessions/），支持列表/导出/删除，
-// 保留策略 = 7 天 + 50 个文件双上限、超限删最旧（清理时机 = App 启动
-// + 每次新建会话）。
+// 保留策略 = 7 天 + 50 个文件双上限、超限删最旧。清理时机 = 每次新
+// 建会话时顺带清理（2026-11-18 深审统一口径：长期不连接时过期文件
+// 留到下次连接清，不设 App 启动钩子）。
 //
 // ≈ Java 的按日滚动的本地日志 Service：每个会话一个文件（类似按天
 // 滚动），[ObdSessionLogStore] 是目录管家（列表/删除/清理），[ObdSess
@@ -21,6 +22,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../domain/entities/diagnostics_probe.dart';
@@ -77,7 +79,7 @@ class ObdSessionLogStore {
         continue;
       }
       final name = file.uri.pathSegments.last;
-      final startedAt = parseSessionFileName(name);
+      final startedAt = _parseSessionFileName(name);
       if (startedAt == null) {
         continue;
       }
@@ -116,7 +118,8 @@ class ObdSessionLogStore {
   }
 
   /// 保留策略清理（2026-11-18 拍板：7 天 + 50 个文件双上限，删最旧）。
-  /// 返回删除的文件数。清理时机 = App 启动 + 每次新建会话。
+  /// 返回删除的文件数。清理时机 = 每次新建会话时顺带清理（2026-11-18
+  /// 深审统一口径；长期不连接时过期文件留到下次连接清）。
   Future<int> cleanup({
     required DateTime now,
     int keepDays = 7,
@@ -148,7 +151,7 @@ class ObdSessionLogStore {
 
 /// 从文件名解析会话开始时刻（session-yyyyMMdd-HHmmss.jsonl；解析失败
 /// 返回 null，坏名文件列表时跳过、清理按时刻排序时沉底）。
-DateTime? parseSessionFileName(String fileName) {
+DateTime? _parseSessionFileName(String fileName) {
   final match =
       RegExp(r'^session-(\d{8})-(\d{6})\.jsonl$').firstMatch(fileName);
   if (match == null) {
@@ -175,13 +178,14 @@ class ObdSessionLogRecorder {
   final ObdSessionLogStore _store;
   File? _file;
 
-  /// 是否正在记录。
-  bool get isRecording => _file != null;
-
   /// 文件名（记录中才有；列表页「当前会话」指示用）。
   String? get fileName => _file?.uri.pathSegments.last;
 
   /// 会话开始：创建文件并写 start 行。重复 start 抛 StateError。
+  ///
+  /// 同秒冲突（2026-11-18 深审修复）：同名文件已存在（同秒重连）时顺
+  /// 延 1 秒重取文件名（至多 60 次），保持文件名可被 _parseSessionFileName
+  /// 解析；60 次仍冲突抛 StateError（极端场景，不静默截断旧会话）。
   Future<void> start({
     required DateTime at,
     String? device,
@@ -190,8 +194,21 @@ class ObdSessionLogRecorder {
     if (_file != null) {
       throw StateError('会话日志已在记录中');
     }
-    final name = 'session-${_stamp(at)}.jsonl';
-    final file = File('${_store._dir.path}/$name');
+    File? file;
+    var stamp = at;
+    for (var attempt = 0; attempt < 60; attempt++) {
+      final candidate = File(
+        '${_store._dir.path}/session-${_stamp(stamp)}.jsonl',
+      );
+      if (!candidate.existsSync()) {
+        file = candidate;
+        break;
+      }
+      stamp = stamp.add(const Duration(seconds: 1));
+    }
+    if (file == null) {
+      throw StateError('会话日志文件名冲突（同秒 60 次）');
+    }
     await file.writeAsString(
       jsonEncode({
         't': 'start',
@@ -279,11 +296,16 @@ abstract class ObdSessionLogSink {
 
   /// 一键检测整段日志（追加进当次会话文件）。
   void onVerificationLog(String log, DateTime at);
+
+  /// 当前正在记录的会话文件名（null = 无进行中会话）。列表页「正在记
+  /// 录」指示与删除保护用（2026-11-18 深审修复：sheet 可删正在记录的
+  /// 会话文件）。
+  String? get currentRecordingFileName;
 }
 
 /// 生产实现：内部持 [ObdSessionLogRecorder]（懒建目录），所有异步写经
-/// 内部 Future 链串行化（事件顺序 = 调用顺序）；首次会话前顺带跑保留
-/// 策略清理（7 天/50 个，用户拍板）。
+/// 内部 Future 链串行化（事件顺序 = 调用顺序）；每次新建会话时顺带跑
+/// 保留策略清理（7 天/50 个，2026-11-18 深审统一口径）。
 class ProductionObdSessionLogSink implements ObdSessionLogSink {
   ProductionObdSessionLogSink({ObdSessionLogStore? store})
       : _injectedStore = store;
@@ -292,6 +314,13 @@ class ProductionObdSessionLogSink implements ObdSessionLogSink {
   ObdSessionLogStore? _store;
   ObdSessionLogRecorder? _recorder;
   Future<void> _chain = Future.value();
+
+  /// 内部串行链句柄（测试等待落盘完成用，替代睡眠等待）。
+  @visibleForTesting
+  Future<void> get chainIdle => _chain;
+
+  @override
+  String? get currentRecordingFileName => _recorder?.fileName;
 
   Future<ObdSessionLogStore> _ensureStore() async {
     final injected = _injectedStore;

@@ -531,6 +531,55 @@ void main() {
     });
   });
 
+  group('轮询 header 切换（2026-11-18 深审修复，问题 3）', () {
+    test('带 header 探针先 ATSH 切头再发指令；无 header 探针切回默认头', () async {
+      final gate = _DelayGate();
+      final mock = MockObdTransport(
+        responses: {
+          'ATZ': resp('\r\rELM327 v2.3\r\r>'),
+          'ATE0': resp('OK\r\r>'),
+          'ATL0': resp('OK\r\r>'),
+          'ATSP7': resp('OK\r\r>'),
+          '0100': resp('41 00 90 18 80 11\r\r>'),
+          'ATSHDA1EF1': resp('OK\r\r>'),
+          'ATSHDB33F1': resp('OK\r\r>'),
+          '012F': resp('41 2F 60 \r\r>'),
+        },
+        delay: (_) async {},
+      );
+      final session = Elm327Session(transport: mock, delay: gate.gate);
+      await session.connect();
+      final cvt = DiagnosticsProbe(
+        id: 1,
+        carId: 1,
+        name: 'CVT',
+        command: '012F',
+        parseType: DiagnosticsParseType.fuelLevel,
+        header: 'ATSH DA1EF1',
+      );
+      final plain = DiagnosticsProbe(
+        id: 2,
+        carId: 1,
+        name: 'Plain',
+        command: '012F',
+        parseType: DiagnosticsParseType.fuelLevel,
+      );
+      session.startPolling(enabledProbes: () => [cvt, plain]);
+      // 等一轮完成（两条 + 两次 ATSH = 4 条命令）。
+      while (mock.sentCommands.length < 9) {
+        await pumpEventQueue();
+      }
+      expect(mock.sentCommands.sublist(5), [
+        'ATSHDA1EF1',
+        '012F',
+        'ATSHDB33F1',
+        '012F',
+      ]);
+      session.stopPolling();
+      await session.dispose();
+    });
+  });
+
   group('断开与链路丢失', () {
     test('disconnect 中断在途请求、事件与终态一致', () async {
       final gate = _DelayGate();

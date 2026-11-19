@@ -15,9 +15,10 @@ import 'package:lunio/features/shell/diagnostics/ble_obd_errors.dart';
 import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 import 'package:lunio/features/shell/diagnostics/diagnostics_connection_controller.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_parser.dart'
-    show ObdNoData, ObdValue;
+    show ObdNoData, ObdReading, ObdValue;
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
+import 'package:lunio/features/shell/diagnostics/obd_session_log.dart';
 import 'package:lunio/features/shell/diagnostics/obd_transport.dart';
 
 import '../helpers/diagnostics_fixture.dart';
@@ -63,6 +64,34 @@ class _HangingConnectTransport implements OBDTransport {
   }
 }
 
+/// 会话日志收尾用假件：只记账 onSessionEnd 调用（问题 1 用例）。
+class _RecordingSink implements ObdSessionLogSink {
+  _RecordingSink(this.ends);
+
+  final List<(DateTime, String?)> ends;
+
+  @override
+  void onSessionStart(DateTime at, {String? deviceId, bool mock = false}) {}
+
+  @override
+  void onProbeReading(
+    DiagnosticsProbe probe,
+    ObdReading reading,
+    DateTime at,
+  ) {}
+
+  @override
+  void onSessionEnd(DateTime at, {String? reason}) {
+    ends.add((at, reason));
+  }
+
+  @override
+  void onVerificationLog(String log, DateTime at) {}
+
+  @override
+  String? get currentRecordingFileName => null;
+}
+
 DiagnosticsProbe _probe(
   int id,
   String command,
@@ -93,6 +122,7 @@ class _Harness {
     bool mockLink = false,
     Map<String, MockObdScript>? responses,
     OBDTransport? transportOverride,
+    ObdSessionLogSink? sessionLogSink,
   }) {
     mock = MockObdTransport(
       responses: responses ?? rigStandardResponses(),
@@ -117,6 +147,7 @@ class _Harness {
         saved.add((probeId, value, percent, at));
       },
       mockLink: mockLink,
+      sessionLogSink: sessionLogSink,
     );
     // ADR 0027：UI 接缝与 ECU 里程回调改为挂载式接缝（App 级控制器，
     // 页面 initState 挂载、dispose 摘除）；测试装具构造后立即挂上。
@@ -605,4 +636,33 @@ void main() {
       expect(tail, isNot(contains('ATRV')));
     });
   });
+  group('会话日志收尾（2026-11-18 深审修复，问题 1）', () {
+    test('手动断开写收尾行（事件路径收不到 dispose 触发的断开事件）', () async {
+      final ends = <(DateTime, String?)>[];
+      final harness = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends),
+      );
+      await harness.connectDirect();
+      await harness.controller.disconnectManually();
+      await harness.pump();
+      expect(ends, hasLength(1));
+      expect(ends.single.$2, '手动断开');
+    });
+
+    test('链路自发掉线走事件路径写收尾，不与 teardown 路径互斥', () async {
+      final ends = <(DateTime, String?)>[];
+      final harness = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends),
+      );
+      await harness.connectDirect();
+      harness.mock.injectError(StateError('链路丢失'));
+      await harness.pump();
+      expect(ends, hasLength(1));
+      expect(ends.single.$2, contains('链路丢失'));
+    });
+  });
+
+
 }

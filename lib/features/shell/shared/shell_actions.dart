@@ -276,18 +276,19 @@ Future<void> removeDiagnosticsProbe(
 }
 
 /// ECU 里程同步（ADR 0026 + 2026-11-18 修订节）：车辆里程的第二写源。
-/// 守卫「只增不减」单点收在本动作——ECU 值不大于当前里程即不写（返回
-/// false）。**收 [Ref] 不收 WidgetRef**（唯一调用方 = App 级连接装配的
-/// 静默同步回调，ADR 0027 页面接缝无法常驻；写库 + 车辆数据纪元 bump
-/// 与 [updateCar] 同一序列，动作层注释锚点）。确认式入口已取消
+/// 只增不减守卫下沉到仓库条件 UPDATE（2026-11-18 深审 TOCTOU 修复：
+/// 读-判-写窗口内手动里程更新不再被旧快照覆盖），动作层只编排「条件写
+/// → 写了才 bump 车辆数据纪元」。**收 [Ref] 不收 WidgetRef**（唯一调用
+/// 方 = App 级连接装配的静默同步回调，ADR 0027 页面接缝无法常驻；
+/// AGENTS.md 动作层条款已注记此例外）。确认式入口已取消
 /// （2026-11-18 拍板：App 级常驻后确认框会很吵），开关唯一控制。
-Future<bool> syncCarMileageFromEcu(Ref ref, Car car, int ecuKm) async {
-  if (ecuKm <= car.currentMileageKm) {
+Future<bool> syncCarMileageFromEcu(Ref ref, int carId, int ecuKm) async {
+  final changed = await ref
+      .read(lunioRepositoryProvider)
+      .updateCarMileageIfGreater(carId, ecuKm);
+  if (!changed) {
     return false;
   }
-  await ref.read(lunioRepositoryProvider).updateCar(
-        car.copyWith(currentMileageKm: ecuKm),
-      );
   ref.read(vehicleDataEpochProvider.notifier).bump();
   return true;
 }

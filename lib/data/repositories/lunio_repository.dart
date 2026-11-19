@@ -147,6 +147,26 @@ class LunioRepository {
     );
   }
 
+  /// ECU 里程同步写点（ADR 0026 修订节，2026-11-18 深审 TOCTOU 修复）：
+  /// 条件 UPDATE——WHERE current_mileage_km < ecuKm，只增不减守卫下沉
+  /// 到 SQL，消除「读-判-写」窗口内手动里程更新被旧快照覆盖的竞态。
+  /// 返回是否实际写入。同步章记 pendingUpdate/updatedAt（沿用全库约定）；
+  /// version 不动（无真实同步后端，语义等价）。
+  Future<bool> updateCarMileageIfGreater(int carId, int ecuKm) async {
+    final affected = await (database.update(database.cars)
+          ..where((row) =>
+              row.id.equals(carId) &
+              row.currentMileageKm.isSmallerThanValue(ecuKm)))
+        .write(
+      CarsCompanion(
+        currentMileageKm: Value(ecuKm),
+        syncStatus: Value(SyncStatus.pendingUpdate.name),
+        updatedAt: Value(DateTime.now().toIso8601String()),
+      ),
+    );
+    return affected > 0;
+  }
+
   /// 读取当前应用车辆（提醒页/记录页展示的车）。
   ///
   /// 实现为点查（R31）：先按偏好 id 点查该车，命中直接用；未命中才
