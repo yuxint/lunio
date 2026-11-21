@@ -226,5 +226,49 @@ void main() {
       await sink.chainIdle;
       expect(sink.currentRecordingFileName, isNull);
     });
+
+    test('生命周期事件落 lifecycle 行（后台停摆归因，2026-11-20）', () async {
+      final sink = ProductionObdSessionLogSink(store: store);
+      final at = DateTime(2026, 11, 20, 7, 40, 41);
+      sink.onSessionStart(at, deviceId: 'dev-1');
+      sink.onAppLifecycle('paused', at.add(const Duration(seconds: 1)));
+      sink.onAppLifecycle('resumed', at.add(const Duration(minutes: 10)));
+      await sink.chainIdle;
+      final entries = await store.list();
+      final content = await store.readContent(entries.single.fileName);
+      expect(content, contains('"e":"lifecycle"'));
+      expect(content, contains('"s":"paused"'));
+      expect(content, contains('"s":"resumed"'));
+    });
+
+    test('无会话时生命周期事件静默丢弃（不建文件）', () async {
+      final sink = ProductionObdSessionLogSink(store: store);
+      sink.onAppLifecycle('paused', DateTime(2026, 11, 20, 7, 40, 41));
+      await sink.chainIdle;
+      expect(await store.list(), isEmpty);
+    });
+
+    test('油量门限拒绝落 fuel_gate 行（2026-11-21）', () async {
+      final sink = ProductionObdSessionLogSink(store: store);
+      final at = DateTime(2026, 11, 21, 8, 36, 44);
+      sink.onSessionStart(at, deviceId: 'dev-1');
+      sink.onFuelGateRejected(
+        probeName: '油量',
+        raw: 27,
+        held: 40,
+        samples: 3,
+        span: 13,
+        at: at.add(const Duration(seconds: 1)),
+      );
+      await sink.chainIdle;
+      final entries = await store.list();
+      final content = await store.readContent(entries.single.fileName);
+      expect(content, contains('"e":"fuel_gate"'));
+      expect(content, contains('"probe":"油量"'));
+      expect(content, contains('"raw":27.0'));
+      expect(content, contains('"held":40.0'));
+      expect(content, contains('"n":3'));
+      expect(content, contains('"span":13.0'));
+    });
   });
 }

@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_parser.dart';
+import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
 
 List<int> bytes(String text) => latin1.encode(text);
 
@@ -206,6 +207,24 @@ void main() {
         frameText: 'NO DATA\r41 2F 60 \r\r',
       ) as ObdValue;
       expect(reading.percent!, closeTo(37.647, 0.001));
+    });
+  });
+
+  group('演示语料自洽（2026-11-19 深审修复：切头接进轮询后补语料）', () {
+    test('演示语料 222301 帧解析出实车同源值 76℃', () {
+      final corpus = mockObdCorpusDemoResponses();
+      final frame = corpus['222301']!;
+      final text = frame.chunks.map(latin1.decode).join();
+      final reading = parseProbeResponse(
+        command: '222301',
+        parseType: DiagnosticsParseType.cvtOilTemp,
+        frameText: text,
+      );
+      expect(reading, isA<ObdValue>());
+      expect((reading as ObdValue).display, '76℃');
+      // 演示语料含切头应答（缺了演示模式 CVT 卡每轮静默超时）。
+      expect(corpus.containsKey('ATSHDA1EF1'), isTrue);
+      expect(corpus.containsKey('ATSHDB33F1'), isTrue);
     });
   });
 }

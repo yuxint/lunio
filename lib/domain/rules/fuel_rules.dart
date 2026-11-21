@@ -28,6 +28,13 @@ class FuelRules {
     for (var percent = 100; percent >= 0; percent -= percentStep) percent,
   ];
 
+  /// 仪表油量（`012F` 浮点百分比）→ 加油页剩余油量基准（ADR 0030）：
+  /// 四舍五入到整百分点，越界夹回 0–100。只取整与夹取，不做档位吸附
+  /// ——列表按 [percentStep] 就近取整展示，两处取整规则互不重复。
+  static int baselinePercentFromGauge(double gaugePercent) {
+    return gaugePercent.round().clamp(0, 100);
+  }
+
   /// 加满可加油量校验（Car.tankCapacityLiters，写库/恢复备份前调用）：
   /// null 合法（未填写）；有值时 1–999 升，最多四位小数。
   static void validateTankCapacity(double? liters) {

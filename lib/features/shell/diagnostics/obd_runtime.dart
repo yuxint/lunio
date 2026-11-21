@@ -12,6 +12,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../data/repositories/diagnostics_repository.dart';
+import '../../../domain/entities/diagnostics_probe.dart';
+import '../../../domain/rules/fuel_rules.dart';
 import '../shared/shell_shared.dart';
 import 'ble_obd_link.dart';
 import 'ble_obd_radio.dart';
@@ -65,7 +68,8 @@ final obdScannerProvider = Provider<ObdScanner>(
 /// 开；provider onDispose 释放（App 生命周期内不触发，测试用）。
 /// 会话工厂/扫描器/设备记忆/读数落库四条接缝在这里装配：设备记忆写点
 /// 顺带 bump 偏好纪元（lastObdDeviceIdProvider 重算，提醒页按钮即时
-/// 出现），读数落库直连诊断仓库写点。
+/// 出现），读数落库直连诊断仓库写点。ECU 里程与油量两条静默同步回调
+/// 也在这里装配（ADR 0026 / ADR 0030，共用「ECU 自动同步」开关）。
 final obdConnectionControllerProvider =
     Provider<DiagnosticsConnectionController>((ref) {
       final controller = DiagnosticsConnectionController(
@@ -94,11 +98,18 @@ final obdConnectionControllerProvider =
       );
       // ECU 里程静默同步（ADR 0026 修订节，2026-11-18）：**App 级常驻
       // 回调**——只要连接着（提醒页背景三条含里程表/诊断页全量），读到
-      // 更大 ECU 里程且「ECU 里程自动同步」开关开（管理 sheet 行开关，
+      // 更大 ECU 里程且「ECU 自动同步」开关开（管理 sheet 行开关，
       // 默认关）就守卫写入（只增不减在动作层）。确认式入口随页面接缝
       // 一起取消（2026-11-18 拍板：App 级常驻后确认框会很吵）。
       controller.setOdometerSyncHandler(
         (reading) => unawaited(_syncEcuMileageSilently(ref, reading)),
+      );
+      // ECU 油量静默同步（ADR 0030，2026-11-21）：与里程共用同一开关的
+      // App 级常驻回调——门限放行后的油量读数（即信息卡显示的那个整数
+      // 百分比）四舍五入写入当前应用车辆，加油页档位随之重定位。
+      controller.setFuelLevelSyncHandler(
+        (probe, reading) =>
+            unawaited(_syncEcuFuelPercentSilently(ref, probe, reading)),
       );
       ref.onDispose(controller.dispose);
       return controller;
@@ -121,6 +132,40 @@ Future<void> _syncEcuMileageSilently(Ref ref, ObdValue reading) async {
       return;
     }
     await syncCarMileageFromEcu(ref, car.id!, km);
+  } catch (_) {
+    // 静默档语义：读偏好/读车/写库失败都不提示，下一轮轮询再试。
+  }
+}
+
+/// ECU 油量静默同步编排（App 级，ADR 0030）：限定内置油量探针 → 读开关
+/// → 读当前应用车 → 四舍五入写剩余油量。自定义 `fuelLevel` 探针不写入，
+/// 保持单一写源；失败降级不提示，下一轮轮询再试。
+Future<void> _syncEcuFuelPercentSilently(
+  Ref ref,
+  DiagnosticsProbe probe,
+  ObdValue reading,
+) async {
+  try {
+    if (probe.catalogKey != DiagnosticsRepository.builtInFuelLevelKey) {
+      return;
+    }
+    final percent = reading.percent;
+    if (percent == null) {
+      return;
+    }
+    final autoSync = await ref.read(obdOdometerAutoSyncProvider.future);
+    if (!autoSync) {
+      return;
+    }
+    final car = await ref.read(appliedCarProvider.future);
+    if (car == null) {
+      return;
+    }
+    await syncFuelPercentFromEcu(
+      ref,
+      carId: car.id!,
+      percent: FuelRules.baselinePercentFromGauge(percent),
+    );
   } catch (_) {
     // 静默档语义：读偏好/读车/写库失败都不提示，下一轮轮询再试。
   }

@@ -16,12 +16,18 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lunio/data/repositories/diagnostics_repository.dart';
 import 'package:lunio/features/shell/diagnostics/ble_scan_entries.dart';
 import 'package:lunio/features/shell/diagnostics/elm327_session.dart';
 import 'package:lunio/features/shell/diagnostics/mock_obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_scanner.dart';
 import 'package:lunio/features/shell/diagnostics/obd_transport.dart';
 import 'package:lunio/features/shell/diagnostics/obd_runtime.dart';
+
+/// 一轮轮询需要的时钟拍数：默认间隔 + 1（最后一拍把倒计时清零、再一拍
+/// 触发下一轮）。跟 [DiagnosticsRepository.defaultRefreshIntervalSeconds]
+/// 绑死，改默认值时用例自动跟随，不用手抄数字。
+const int roundTicks = DiagnosticsRepository.defaultRefreshIntervalSeconds + 1;
 
 /// 即时应答脚本（单块，字节到达时机由 chunkGate 控）。
 MockObdScript rigResp(String text) {
@@ -34,12 +40,14 @@ MockObdScript rigResp(String text) {
 
 /// 标准应答表：AT 序列 + ECU 握手 + 内置七条一轮的语料值（油量 0x60 =
 /// 37.6%，水温 0167 = 95℃（11-16 实车语料 41 67 03 87 83，A 传感器），
-/// 电压 11.2V，燃油修正 0106 = −1.6% / 0107 = +0.0%（11-12 实测），
+/// 电压 0142 = 12.43V（11-19 一键检测三 ECU 帧，2026-11-20 起内置口径），
+/// 燃油修正 0106 = −1.6% / 0107 = +0.0%（11-12 实测），
 /// CVT 油温 222301 = 69℃（11-18 实车多行帧摘录，见下），里程表 01A6 =
 /// 66,068 km）。2026-11-18 起内置七条（ADR 0029 及修订节：CVT 油温/
 /// 里程表升内置）——表里缺条目的指令走 Mock 静默脚本（不应答），串行
 /// 轮询会卡死在该条的超时上（后续探针全部不发），删条目前先想清楚要
-/// 不要这个效果。
+/// 不要这个效果。ATRV 保留（调试终端用例手动发它；2026-11-20 起不再是
+/// 内置电压探针的指令）。
 Map<String, MockObdScript> rigStandardResponses() {
   return {
     'ATZ': rigResp('\r\rELM327 v2.3\r\r>'),
@@ -54,6 +62,9 @@ Map<String, MockObdScript> rigStandardResponses() {
     '0100': rigResp('41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03\r\r>'),
     '012F': rigResp('41 2F 60 \r\r>'),
     '0167': rigResp('41 67 03 87 83 \r\r>'),
+    // 电压（2026-11-20 换源 0142）：三 ECU 各回一行，首行 0x308E =
+    // 12.43V（11-19 07:58 一键检测日志原帧）。
+    '0142': rigResp('41 42 30 8E \r41 42 2F F8 \r41 42 30 1D\r\r>'),
     'ATRV': rigResp('11.2V\r\r>'),
     // 燃油修正两条（2026-11-17 ADR 0029 转正）：0106 A=0x7E → (126−128)
     // ×100/128 = −1.6%；0107 A=0x80 → +0.0%。
@@ -202,14 +213,13 @@ class DiagnosticsRig {
     }
   }
 
-  /// 释放轮询拍进入下一轮：每检测点默认 10 秒间隔（2026-11-17 拍板
-  /// 30→10，DiagnosticsRepository.defaultRefreshIntervalSeconds 同值），
-  /// 按 1 秒拍推进 11 拍（第 10 拍把倒计时减到 0，第 11 拍触发下一轮）。
-  /// 拍数必须正好：多放行的拍会把下一轮首条在途请求的 300ms 超时闩一
-  /// 起放掉，误判行级无数据。仅当无在途请求（值已全部渲染）时调用；
-  /// 已完成请求的 300ms 超时闩无副作用放行。
+  /// 释放轮询拍进入下一轮：每检测点默认 [roundTicks] 拍一拍（2026-11-21
+  /// 起默认间隔 60 秒，拍数 = 间隔 + 1：第 60 拍把倒计时减到 0，第 61 拍
+  /// 触发下一轮）。拍数必须正好：多放行的拍会把下一轮首条在途请求的
+  /// 300ms 超时闩一起放掉，误判行级无数据。仅当无在途请求（值已全部
+  /// 渲染）时调用；已完成请求的 300ms 超时闩无副作用放行。
   Future<void> advanceRound(WidgetTester tester) async {
-    for (var tick = 0; tick < 11; tick++) {
+    for (var tick = 0; tick < roundTicks; tick++) {
       timeGate.completeAll();
       await tester.pump();
     }

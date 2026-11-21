@@ -1,6 +1,6 @@
-// 加油预测领域规则测试：全量档位表、金额/油量计算、油价刷新判断、
-// 容积校验（Car 上）与加油预测实体校验。（满箱段油耗测试已随 ADR 0015
-// 模型重定义删除。）
+// 加油预测领域规则测试：全量档位表、OBD 油量取整（ADR 0030）、金额/油量
+// 计算、油价刷新判断、容积校验（Car 上）与加油预测实体校验。（满箱段
+// 油耗测试已随 ADR 0015 模型重定义删除。）
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/core/date/local_date.dart';
 import 'package:lunio/domain/entities/fuel_prediction.dart';
@@ -26,6 +26,21 @@ void main() {
 
     test('50% 的下标是 25（默认档定位用）', () {
       expect(FuelRules.allTierPercents.indexOf(50), 25);
+    });
+  });
+
+  group('FuelRules.baselinePercentFromGauge（ADR 0030 OBD 油量同步）', () {
+    test('四舍五入到整百分点：信息卡显示多少就写多少', () {
+      expect(FuelRules.baselinePercentFromGauge(37.6471), 38);
+      expect(FuelRules.baselinePercentFromGauge(23.1), 23);
+      expect(FuelRules.baselinePercentFromGauge(23.5), 24);
+      expect(FuelRules.baselinePercentFromGauge(50), 50);
+    });
+
+    test('越界夹回 0–100', () {
+      expect(FuelRules.baselinePercentFromGauge(-3.2), 0);
+      expect(FuelRules.baselinePercentFromGauge(100.4), 100);
+      expect(FuelRules.baselinePercentFromGauge(255), 100);
     });
   });
 

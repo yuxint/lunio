@@ -102,15 +102,19 @@ void main() {
   });
 
   group('obdVendorCommandGroups', () {
-    test('2026-11-18 三组：仪表段扩展 + TCM/ECM 候选段（全部只读）', () {
-      expect(obdVendorCommandGroups, hasLength(3));
+    test('2026-11-20 两组：仪表段扩展 + TCM 已转正（ECM 候选段撤除）', () {
+      expect(obdVendorCommandGroups, hasLength(2));
       expect(obdVendorCommandGroups[0].header, 'DA60F1');
       expect(obdVendorCommandGroups[0].commands,
           ['227029', '22702A', '227060', '227028', '227022']);
       expect(obdVendorCommandGroups[1].header, 'DA1EF1');
       expect(obdVendorCommandGroups[1].commands, ['222301']);
-      expect(obdVendorCommandGroups[2].header, 'DA10F1');
-      expect(obdVendorCommandGroups[2].commands, ['222666', '22261A', '22262A']);
+      // 机油温度候选（DA10F1 的 222666/22261A/22262A）本车恒回 NRC 31，
+      // 2026-11-20 起不再进这条只读快照链。
+      expect(
+        obdVendorCommandGroups.map((g) => g.header),
+        isNot(contains('DA10F1')),
+      );
     });
   });
 }

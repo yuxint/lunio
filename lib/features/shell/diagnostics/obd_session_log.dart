@@ -15,6 +15,20 @@
 //  {"t":"r","probe":"..","cmd":"..","v":null,"r":"超时","at":"ISO"}
 //  {"t":"e","e":"disconnect","at":"ISO","reason":".."}        事件
 //  {"t":"e","e":"verify","log":"..多行一键检测日志..","at":"ISO"}
+//  {"t":"e","e":"lifecycle","s":"paused","at":"ISO"}          应用生命周期
+//  {"t":"e","e":"fuel_gate","probe":"油量","raw":27.0,"held":40.0,
+//   "n":3,"span":13.0,"at":"ISO"}                            油量门限拒绝
+//
+// 生命周期行（2026-11-20 拍板）：诊断页/主壳层把 AppLifecycleState.name
+// 原样上报，用于归因轮询空档。三种空档的日志形态互斥——App 挂起：
+// paused/resumed 成对出现、中间无任何行；链路卡死：每条指令都有
+// 超时行（`"r":"超时"`）；调试终端独占链路：verify 段整段日志。没有
+// 生命周期行时无法区分前两者，这是本行的唯一目的。
+//
+// 油量门限行（2026-11-21 拍板）：`012F` 的原始值一律进读数行，被门限
+// 丢掉的那拍另记一行 fuel_gate（raw = 本拍原始值、held = 卡片保持值、
+// n/span = 当前窗口样本数与极差）。没有这一行时，日志里看起来「卡片
+// 跳了」而实际是「原始值跳了、卡片没动」，事后无法区分。
 //
 // 文件命名：session-<yyyyMMdd-HHmmss>.jsonl（连接建立时刻，用户拍板
 // 「以连接的日期时分秒来命名」）。
@@ -297,6 +311,23 @@ abstract class ObdSessionLogSink {
   /// 一键检测整段日志（追加进当次会话文件）。
   void onVerificationLog(String log, DateTime at);
 
+  /// 应用生命周期事件（2026-11-20）：`AppLifecycleState.name` 原样传
+  /// 入（resumed/inactive/hidden/paused/detached）。无会话时静默丢弃
+  /// ——同 [onProbeReading]，生命周期上报先于连接也照常调用。
+  void onAppLifecycle(String state, DateTime at);
+
+  /// 油量门限丢弃一拍（2026-11-21）：[raw] 本拍原始值、[held] 卡片保持
+  /// 值、[samples]/[span] 当前窗口状态。原始读数已经由 [onProbeReading]
+  /// 记过，本行只补「这一拍没被采用」的判定结果。
+  void onFuelGateRejected({
+    required String probeName,
+    required double raw,
+    required double? held,
+    required int samples,
+    required double? span,
+    required DateTime at,
+  });
+
   /// 当前正在记录的会话文件名（null = 无进行中会话）。列表页「正在记
   /// 录」指示与删除保护用（2026-11-18 深审修复：sheet 可删正在记录的
   /// 会话文件）。
@@ -379,6 +410,44 @@ class ProductionObdSessionLogSink implements ObdSessionLogSink {
       await _recorder?.appendEvent(
         event: 'verify',
         extra: {'log': log},
+        at: at,
+      );
+    });
+  }
+
+  @override
+  void onAppLifecycle(String state, DateTime at) {
+    // 读点收在闭包内（与 onProbeReading 同款）：排在本行的排队写按调用
+    // 顺序执行，start 之后才落盘的 paused 不会因句柄尚未赋值而丢失、
+    // close 之后排队的也不会复活已收尾的会话。
+    _enqueue(() async {
+      await _recorder?.appendEvent(
+        event: 'lifecycle',
+        extra: {'s': state},
+        at: at,
+      );
+    });
+  }
+
+  @override
+  void onFuelGateRejected({
+    required String probeName,
+    required double raw,
+    required double? held,
+    required int samples,
+    required double? span,
+    required DateTime at,
+  }) {
+    _enqueue(() async {
+      await _recorder?.appendEvent(
+        event: 'fuel_gate',
+        extra: {
+          'probe': probeName,
+          'raw': raw,
+          'held': held,
+          'n': samples,
+          'span': span,
+        },
         at: at,
       );
     });

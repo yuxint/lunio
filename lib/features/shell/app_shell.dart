@@ -85,8 +85,13 @@ class _AppShellState extends ConsumerState<AppShell>
   /// （用户可能在系统设置里切了导航方式）。OBD 连接着时触发一次立即
   /// 轮询（2026-11-19 拍板：后台期间 Dart 循环可能被系统挂起，回前台
   /// 读数是后台遗留旧值，≤1 拍拿新鲜值；未连接时静默）。
+  ///
+  /// 每个状态先记一行会话日志（2026-11-20）：OBD 轮询在后台被挂起时
+  /// 日志会出现分钟级空档，只有 paused/resumed 成对行才能把它与"链路
+  /// 卡死"区分开（后者每条指令都留超时行）。未连接时 sink 侧丢弃。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref.read(obdConnectionControllerProvider).logAppLifecycle(state.name);
     if (state == AppLifecycleState.resumed) {
       _notificationSync.onAppResumed();
       _refreshAndroidSystemNavigationInset();

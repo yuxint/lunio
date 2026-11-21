@@ -345,7 +345,7 @@ void main() {
     expect(encoded, isNot(contains('"diagnosticsProbes":[{"id"')));
     expect(encoded, isNot(contains('catalogKey')));
     expect(encoded, contains('"carId":1'));
-    expect(encoded, contains('"refreshIntervalSeconds":30'));
+    expect(encoded, contains('"refreshIntervalSeconds":60'));
 
     final decoded = codec.decode(encoded);
     expect(decoded.cars.single.totalTankCapacityLiters, 47);
@@ -356,7 +356,7 @@ void main() {
     expect(first.command, '010F');
     expect(first.parseType, DiagnosticsParseType.coolantTemp);
     expect(first.enabled, isTrue);
-    expect(first.refreshIntervalSeconds, 30);
+    expect(first.refreshIntervalSeconds, 60);
     expect(first.header, isNull);
     expect(first.id, isNull);
     expect(first.catalogKey, isNull);
@@ -364,14 +364,14 @@ void main() {
     expect(decoded.diagnosticsProbes.last.enabled, isFalse);
 
     // v4 备份兼容：检测点条目没有 carId/间隔/header，归第一辆车 +
-    // 缺省间隔 30、header null（ADR 0021 修订节）。
+    // 缺省间隔 60（2026-11-21 起；此前 30）、header null（ADR 0021 修订节）。
     final v4Json = encoded
         .replaceFirst(
           '"schemaVersion":${BackupCodec.currentSchemaVersion}',
           '"schemaVersion":4',
         )
         .replaceAll('"carId":1,', '')
-        .replaceAll('"refreshIntervalSeconds":30,', '')
+        .replaceAll('"refreshIntervalSeconds":60,', '')
         .replaceAll('"header":null,', '')
         .replaceFirst('"totalTankCapacityLiters":47.0,', '');
     final v4 = codec.decode(v4Json);
@@ -380,7 +380,7 @@ void main() {
     expect(v4.diagnosticsProbes, hasLength(2));
     expect(v4.diagnosticsProbes.every((p) => p.carId == 1), isTrue);
     expect(
-      v4.diagnosticsProbes.every((p) => p.refreshIntervalSeconds == 30),
+      v4.diagnosticsProbes.every((p) => p.refreshIntervalSeconds == 60),
       isTrue,
     );
     expect(v4.diagnosticsProbes.every((p) => p.header == null), isTrue);

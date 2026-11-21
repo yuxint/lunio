@@ -33,7 +33,7 @@
 // v4 只比 v3 多 diagnosticsProbes 字段，v1–v3 没有它就等于"没有自定义
 // 检测点"；v5 只比 v4 多 cars.totalTankCapacityLiters 与检测点的
 // carId/refreshIntervalSeconds/header。v1–v4 的检测点段没有 carId，
-// 恢复到第一辆车；缺省间隔 30、header/总容积 null。这不是 ADR 0005
+// 恢复到第一辆车；缺省间隔 60（2026-11-21 起；此前 30）、header/总容积 null。这不是 ADR 0005
 // 禁止的"旧字段语义变化回退"。除此之外的版本直接拒绝，不做字段回退。
 // 油价缓存与手填油价是临时数据，不进备份。
 //
@@ -411,7 +411,7 @@ final class BackupCodec {
       parseType: DiagnosticsParseType.byWire(json['parseType'] as String),
       enabled: json['enabled'] as bool,
       refreshIntervalSeconds:
-          (json['refreshIntervalSeconds'] as int?) ?? 30,
+          (json['refreshIntervalSeconds'] as int?) ?? 60,
       header: json['header'] as String?,
       sync: SyncMetadata.fromJson(
         (json['sync'] as Map).cast<String, Object?>(),

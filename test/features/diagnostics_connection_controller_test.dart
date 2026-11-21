@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lunio/data/repositories/diagnostics_repository.dart';
 import 'package:lunio/domain/entities/diagnostics_parse_type.dart';
 import 'package:lunio/domain/entities/diagnostics_probe.dart';
 import 'package:lunio/features/shell/diagnostics/ble_obd_errors.dart';
@@ -64,11 +65,24 @@ class _HangingConnectTransport implements OBDTransport {
   }
 }
 
-/// 会话日志收尾用假件：只记账 onSessionEnd 调用（问题 1 用例）。
+/// 会话日志假件：记账会话收尾、生命周期、油量门限拒绝与读数展示文本。
 class _RecordingSink implements ObdSessionLogSink {
-  _RecordingSink(this.ends);
+  _RecordingSink(this.ends,
+      {List<(DateTime, String)>? lifecycles,
+      List<String>? readings,
+      List<(double, double?, int, double?)>? fuelGateRejects})
+      : lifecycles = lifecycles ?? [],
+        readings = readings ?? [],
+        fuelGateRejects = fuelGateRejects ?? [];
 
   final List<(DateTime, String?)> ends;
+  final List<(DateTime, String)> lifecycles;
+
+  /// 每条读数落日志的展示文本（顺序 = 调用顺序）；无数据行记 '无数据'。
+  final List<String> readings;
+
+  /// 门限拒绝记录：(raw, held, samples, span)。
+  final List<(double, double?, int, double?)> fuelGateRejects;
 
   @override
   void onSessionStart(DateTime at, {String? deviceId, bool mock = false}) {}
@@ -78,7 +92,21 @@ class _RecordingSink implements ObdSessionLogSink {
     DiagnosticsProbe probe,
     ObdReading reading,
     DateTime at,
-  ) {}
+  ) {
+    readings.add(reading.display);
+  }
+
+  @override
+  void onFuelGateRejected({
+    required String probeName,
+    required double raw,
+    required double? held,
+    required int samples,
+    required double? span,
+    required DateTime at,
+  }) {
+    fuelGateRejects.add((raw, held, samples, span));
+  }
 
   @override
   void onSessionEnd(DateTime at, {String? reason}) {
@@ -87,6 +115,11 @@ class _RecordingSink implements ObdSessionLogSink {
 
   @override
   void onVerificationLog(String log, DateTime at) {}
+
+  @override
+  void onAppLifecycle(String state, DateTime at) {
+    lifecycles.add((at, state));
+  }
 
   @override
   String? get currentRecordingFileName => null;
@@ -153,16 +186,25 @@ class _Harness {
     // 页面 initState 挂载、dispose 摘除）；测试装具构造后立即挂上。
     controller.attachUi(
       DiagnosticsConnectionUi(
-        openScanSheet: () => openCalls++,
+        openScanSheet: () {
+          openCalls++;
+          return scanSheetOpenable;
+        },
         closeScanSheet: () => closeCalls++,
       ),
     );
     controller.setOdometerSyncHandler(odometerReadings.add);
+    controller.setFuelLevelSyncHandler(
+      (probe, reading) => fuelLevelReadings.add((probe, reading)),
+    );
     addTearDown(controller.dispose);
   }
 
   /// ECU 里程同步接缝捕获（ADR 0026 用例）。
   final odometerReadings = <ObdValue>[];
+
+  /// ECU 油量同步接缝捕获（ADR 0030 用例）。
+  final fuelLevelReadings = <(DiagnosticsProbe, ObdValue)>[];
 
   final FakeObdScanner scanner = FakeObdScanner();
   final RigGate chunkGate = RigGate();
@@ -189,6 +231,10 @@ class _Harness {
 
   int openCalls = 0;
   int closeCalls = 0;
+
+  /// openScanSheet 的返回值：false = 页面此刻开不了（栈顶被别的 sheet
+  /// 占着，如调试终端的会话日志 sheet）。
+  bool scanSheetOpenable = true;
 
   Future<void> pump() => pumpEventQueue();
 
@@ -312,6 +358,30 @@ void main() {
       expect(h.openCalls, 1);
       expect(h.scanner.gateCalls, 1);
       expect(h.controller.state.phase, DiagnosticsConnectionPhase.scanning);
+    });
+
+    test('页面开不了扫描 sheet（栈顶被别的 sheet 占着）：不叠加、撤销扫描', () async {
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        connectError: const BleObdTransportException(
+          BleObdLinkErrorKind.deviceNotFound,
+        ),
+      );
+      // 模拟「调试终端的会话日志 sheet 正开着」：UI 接缝回报开不了。
+      h.scanSheetOpenable = false;
+      unawaited(h.controller.start());
+      await h.pump();
+      await h.pump();
+
+      expect(h.openCalls, 1, reason: '尝试过开，被页面拒绝');
+      // 不叠加：相位回到可恢复的已断开 + 保留失败原因，扫描不启动。
+      expect(
+        h.controller.state.phase,
+        DiagnosticsConnectionPhase.disconnected,
+      );
+      expect(h.controller.state.statusError, isNotNull);
+      expect(h.scanner.startCalls, 0, reason: '没开 sheet 就不该起扫描');
+      expect(h.closeCalls, 0, reason: '没有 sheet 可关');
     });
 
     test('直连门禁失败（权限）：状态条文案、不落扫描', () async {
@@ -525,6 +595,25 @@ void main() {
       expect(h.saved.single.$1, 4);
     });
 
+    test('ECU 油量读数经接缝回调（ADR 0030）：带探针与百分比，非油量探针不回调', () async {
+      final h = _Harness(rememberedId: 'dev-1');
+      h.controller.setProbes([
+        _probe(1, '012F', DiagnosticsParseType.fuelLevel),
+        _probe(2, '0167', DiagnosticsParseType.coolantTempAux),
+      ]);
+      await h.connectDirect();
+      await h.driveChunks(2);
+
+      expect(h.fuelLevelReadings, hasLength(1));
+      expect(h.fuelLevelReadings.single.$1.id, 1);
+      expect(
+        h.fuelLevelReadings.single.$2.percent,
+        closeTo(37.6471, 0.0001),
+      );
+      // 门限放行值与落库值同源：接缝拿到的是卡片显示的那一条。
+      expect(h.fuelLevelReadings.single.$2.display, '38%');
+    });
+
     test('无数据读数不写库、不覆盖旧值（内存照显无数据）', () async {
       final h = _Harness(
         rememberedId: 'dev-1',
@@ -623,9 +712,14 @@ void main() {
 
       final consumed = h.mock.sentCommands.length;
       h.controller.setDiagnosticsScope(false);
-      // 倒计时每秒一拍（timeGate 门闩 = 一拍）：放行满 30 拍跨过刷新
-      // 间隔，核心两条到期发指令、电压不到期不发（ADR 0027 换防）。
-      for (var i = 0; i < 35; i++) {
+      // 倒计时每秒一拍（timeGate 门闩 = 一拍）：放行满一个刷新间隔，
+      // 核心两条到期发指令、电压不到期不发（ADR 0027 换防）。拍数跟默认
+      // 间隔常量走（2026-11-21 起 60 秒），改默认值时不用改这里。
+      for (
+        var i = 0;
+        i < DiagnosticsRepository.defaultRefreshIntervalSeconds + 5;
+        i++
+      ) {
         h.timeGate.completeAll();
         await h.pump();
       }
@@ -661,6 +755,103 @@ void main() {
       await harness.pump();
       expect(ends, hasLength(1));
       expect(ends.single.$2, contains('链路丢失'));
+    });
+
+    test('应用生命周期原样转交日志（后台停摆归因，2026-11-20）', () async {
+      final ends = <(DateTime, String?)>[];
+      final lifecycles = <(DateTime, String)>[];
+      final harness = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends, lifecycles: lifecycles),
+      );
+      // 未连接时调用是常态（壳层生命周期先于连接），必须零副作用不炸。
+      harness.controller.logAppLifecycle('paused');
+      await harness.connectDirect();
+      harness.controller.logAppLifecycle('paused');
+      harness.controller.logAppLifecycle('resumed');
+      await harness.pump();
+      // 字符串不做映射不改写：wire 值就是 AppLifecycleState.name。
+      expect(lifecycles.map((e) => e.$2), ['paused', 'paused', 'resumed']);
+    });
+  });
+
+  group('油量门限（2026-11-21 窗口聚合）', () {
+    test('窗口未满的拍不上卡：卡片与落库不动，原始值进日志且记门限行', () async {
+      final ends = <(DateTime, String?)>[];
+      final readings = <String>[];
+      final rejects = <(double, double?, int, double?)>[];
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(
+          ends,
+          readings: readings,
+          fuelGateRejects: rejects,
+        ),
+      );
+      final fuel = DiagnosticsProbe(
+        id: 1,
+        carId: 1,
+        name: '油量',
+        command: '012F',
+        parseType: DiagnosticsParseType.fuelLevel,
+        enabled: true,
+      );
+      h.controller.setProbes([fuel]);
+      await h.connectDirect();
+      await h.driveChunks(1);
+      expect(h.controller.state.readings[1]?.reading.display, '38%');
+
+      // 下一拍：0x30 = 48×100/255 = 18.8% → 展示取整 19%。窗口只有 2 拍
+      // （38 / 19），未满 3 拍 → 不上卡；用立即刷新触发，不必等满 60 拍。
+      h.mock.responses['012F'] = rigResp('41 2F 30 \r\r>');
+      h.controller.requestImmediatePoll();
+      await h.driveChunks(1);
+
+      expect(h.controller.state.readings[1]?.reading.display, '38%');
+      expect(h.saved, hasLength(1));
+      // 日志是「看到的全部」：被丢弃的 19% 必须留档，且另记一行门限判定。
+      expect(readings, ['38%', '19%']);
+      expect(rejects, hasLength(1));
+      expect(rejects.single.$1, closeTo(18.82, 0.01));
+      expect(rejects.single.$2, closeTo(37.65, 0.01));
+      expect(rejects.single.$3, 2);
+      expect(rejects.single.$4, closeTo(18.82, 0.01));
+    });
+
+    test('手动刷新直显原始值：不过门限、不计拒绝、落库跟着走', () async {
+      final ends = <(DateTime, String?)>[];
+      final readings = <String>[];
+      final rejects = <(double, double?, int, double?)>[];
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(
+          ends,
+          readings: readings,
+          fuelGateRejects: rejects,
+        ),
+      );
+      final fuel = DiagnosticsProbe(
+        id: 1,
+        carId: 1,
+        name: '油量',
+        command: '012F',
+        parseType: DiagnosticsParseType.fuelLevel,
+        enabled: true,
+      );
+      h.controller.setProbes([fuel]);
+      await h.connectDirect();
+      await h.driveChunks(1);
+      expect(h.controller.state.readings[1]?.reading.display, '38%');
+
+      // 自动轮询这一拍 19% 本会被门限挡下（窗口只 2 拍）；手动刷新要
+      // 「读到多少显示多少」，所以走 manual 分支直显。
+      h.mock.responses['012F'] = rigResp('41 2F 30 \r\r>');
+      h.controller.requestImmediatePoll(manual: true);
+      await h.driveChunks(1);
+
+      expect(h.controller.state.readings[1]?.reading.display, '19%');
+      expect(h.saved, hasLength(2), reason: '直显值同样落库，重进页面一致');
+      expect(rejects, isEmpty, reason: '手动刷新不算门限拒绝');
     });
   });
 

@@ -78,3 +78,12 @@
    会被手动里程更新覆盖（TOCTOU 竞态）。新口径 = `updateCarMileageIfGreater`
    条件 UPDATE（WHERE current_mileage_km < ecuKm），动作层只编排「条件
    写 → 写了才 bump 车辆数据纪元」。
+
+---
+
+## 修订节（2026-11-21，ADR 0030）：开关升为「ECU 自动同步」
+
+同一个偏好键 `obdOdometerAutoSync` 的开关现在管两件事：里程（本文）
+与加油页剩余油量（ADR 0030）。键不变、默认关、不进备份；管理 sheet
+文案改「ECU 自动同步」，副标题同时写里程与油量。里程侧的守卫、写点
+与 `Ref` 例外均不变。

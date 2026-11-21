@@ -293,8 +293,9 @@ Future<bool> syncCarMileageFromEcu(Ref ref, int carId, int ecuKm) async {
   return true;
 }
 
-/// 开关 ECU 里程自动同步（ADR 0026，检测点管理 sheet 行开关）：偏好
-/// 门面 typed 写 → bump 偏好纪元（消费方经 obdOdometerAutoSyncProvider
+/// 开关 ECU 自动同步（ADR 0026 + ADR 0030，检测点管理 sheet 行开关；键
+/// 沿用 `obdOdometerAutoSync`）：一个开关同时管里程与油量两条静默同步。
+/// 偏好门面 typed 写 → bump 偏好纪元（消费方经 obdOdometerAutoSyncProvider
 /// 自动重算）。
 Future<void> setObdOdometerAutoSync(WidgetRef ref, bool value) async {
   await ref
@@ -383,6 +384,27 @@ Future<void> saveFuelBaseline(
   if (changed) {
     ref.invalidate(appliedCarFuelPredictionProvider);
   }
+}
+
+/// ECU 油量同步（ADR 0030）：加油页剩余油量的第二写源，与里程同步共用
+/// 「ECU 自动同步」开关。**收 [Ref] 不收 WidgetRef**（唯一调用方 = App 级
+/// 连接装配的静默同步回调，例外同 [syncCarMileageFromEcu]，AGENTS.md
+/// 动作层条款已注记）。写库靠仓库同值 no-op 挡轮询重复；写了才单点失效
+/// appliedCarFuelPredictionProvider（档位卡是唯一读者，不牵动油价家族、
+/// 不 bump 车辆数据纪元）。失败不提示（静默档语义），下一轮轮询再试。
+Future<bool> syncFuelPercentFromEcu(
+  Ref ref, {
+  required int carId,
+  required int percent,
+}) async {
+  final changed = await ref
+      .read(fuelRepositoryProvider)
+      .saveFuelPrediction(FuelPrediction(carId: carId, fuelPercent: percent));
+  if (!changed) {
+    return false;
+  }
+  ref.invalidate(appliedCarFuelPredictionProvider);
+  return true;
 }
 
 /// 保存省份选择：写全局偏好 + bump 偏好纪元（加油域偏好派生 provider

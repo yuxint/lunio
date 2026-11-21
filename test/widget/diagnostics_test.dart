@@ -202,14 +202,15 @@ void main() {
       expect(find.text('连接中'), findsOneWidget);
 
       // 逐拍放行字节：连接完成 + 第一轮轮询，四张内置卡值 + 时间戳
-      // （012F/0167/ATRV/0106/0107/222301/01A6 串行，收满一轮共 7 条
+      // （012F/0167/0142/0106/0107/222301/01A6 串行，收满一轮共 7 条
       // 应答；01A6 读数不上卡——里程表内置探针无卡，仅供 ECU 里程同步）。
       await rig.advanceUntil(tester, find.text('38%'));
       await rig.drainPendingChunks(tester);
       // 行列表撤销（ADR 0029）：每个值只在信息卡一处。
       expect(find.text('38%'), findsOneWidget);
       expect(find.text('95℃'), findsOneWidget);
-      expect(find.text('11.2V'), findsOneWidget);
+      // 电压卡 2026-11-20 起读 0142（ECM 模块电压，首行 0x308E=12.43V）。
+      expect(find.text('12.43V'), findsOneWidget);
       // CVT 油温卡（燃油修正卡已撤下）：222301 多行帧 → 69℃（黄档）。
       expect(find.text('CVT 油温'), findsOneWidget);
       expect(find.text('69℃'), findsOneWidget);
@@ -329,7 +330,7 @@ void main() {
       expect(find.text('无数据'), findsNothing);
       // 其他卡不连坐：油量/电压值仍在，状态条仍是已连接。
       expect(find.text('38%'), findsOneWidget);
-      expect(find.text('11.2V'), findsOneWidget);
+      expect(find.text('12.43V'), findsOneWidget);
       expect(find.text('已连接'), findsOneWidget);
 
       await leavePageAndFlush(tester);
@@ -380,18 +381,19 @@ void main() {
       await tester.tap(find.text('发送'));
       await rig.deliverChunks(tester);
       await tester.pump();
-      // 原始命令真的发出去了：第一轮轮询的 ATRV 之外，又多一次手动发送
-      // （卡上 11.2V 是第一轮的值，不能证明手发成功，发送计数才算数）。
+      // 原始命令真的发出去了：内置电压探针 2026-11-20 起改发 0142，
+      // ATRV 不再出现在轮询里——手发这一次就是唯一一次（卡上 12.43V 是
+      // 轮询给的值，不能证明手发成功，发送计数才算数）。
       expect(
         rig.mock.sentCommands.where((command) => command == 'ATRV'),
-        hasLength(greaterThanOrEqualTo(2)),
+        hasLength(1),
       );
       expect(find.textContaining('11.2V'), findsWidgets);
 
       final vendorCommands = obdVendorCommandGroups
           .expand((group) => group.commands)
           .toList();
-      // 2026-11-18 三组候选段（调研报告第六节 + 机油温度备选两条拍板）。
+      // 2026-11-20 两组：仪表段 + TCM（ECM 机油温度候选段撤除）。
       expect(vendorCommands, [
         '227029',
         '22702A',
@@ -399,9 +401,6 @@ void main() {
         '227028',
         '227022',
         '222301',
-        '222666',
-        '22261A',
-        '22262A',
       ]);
       expect(obdVendorCommandGroups.first.header, 'DA60F1');
 
@@ -454,7 +453,7 @@ void main() {
       expect(find.text('新增检测点'), findsOneWidget);
       expect(find.text('仅用于读取类指令（如标准 PID 查询）'), findsOneWidget);
 
-      // 填名称与指令，保存（刷新间隔保持默认 10，2026-11-17 拍板 30→10）。
+      // 填名称与指令，保存（刷新间隔保持默认 60，2026-11-21 拍板 10→60）。
       await tester.enterText(find.byType(TextField).at(0), '节气门');
       await tester.enterText(find.byType(TextField).at(1), '01 2f');
       await tester.tap(find.text('保存'));
@@ -471,7 +470,7 @@ void main() {
         '012F',
         reason: '保存前归一（大写 + 去空白），落库即发送文本',
       );
-      expect(probes.last.refreshIntervalSeconds, 10);
+      expect(probes.last.refreshIntervalSeconds, 60);
       expect(find.text('检测点已保存'), findsOneWidget);
 
       await drainToastTimer(tester);
@@ -522,9 +521,11 @@ void main() {
 
       // 改名保存：列表与库同步更新。
       await tester.enterText(find.widgetWithText(TextField, '检测点名称'), '进气压力');
+      // 间隔改成 90 秒：默认已是 60，若用 60 则"每 60 秒刷新"在八张卡上
+      // 都成立，断言无法定位到被编辑的那张卡。
       await tester.enterText(
         find.widgetWithText(TextField, '刷新间隔'),
-        '60',
+        '90',
       );
       await tester.tap(find.text('保存修改'));
       await tester.pumpAndSettle();
@@ -540,9 +541,9 @@ void main() {
       );
       expect(
         updated.firstWhere((p) => p.name == '进气压力').refreshIntervalSeconds,
-        60,
+        90,
       );
-      expect(inProbeSheet(find.textContaining('每 60 秒刷新')), findsOneWidget);
+      expect(inProbeSheet(find.textContaining('每 90 秒刷新')), findsOneWidget);
       expect(find.text('检测点已保存'), findsOneWidget);
       await drainToastTimer(tester);
       await tester.tapAt(const Offset(20, 20));
@@ -652,7 +653,7 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('sheet 内启停下一轮生效：禁用电压后不再发 ATRV，重开恢复', (
+    testWidgets('sheet 内启停下一轮生效：禁用电压后不再发 0142，重开恢复', (
       tester,
     ) async {
       final database = AppDatabase.inMemory();
@@ -667,7 +668,7 @@ void main() {
 
       // 第一轮已发全部七条（内置序：油量/水温/电压/短期/长期/CVT 油温/
       // 里程表）。
-      expect(rig.mock.sentCommands.where((c) => c == 'ATRV'), hasLength(1));
+      expect(rig.mock.sentCommands.where((c) => c == '0142'), hasLength(1));
 
       // 页面已无启停开关（ADR 0029），唯一入口在管理 sheet：离页（作
       // 用域换防、连接保持）→ 我的页车辆卡「检测点」开 sheet。
@@ -676,7 +677,7 @@ void main() {
 
       // 关电压卡启停按钮（内置序第 3 张，「已启用」）：动作层写库 →
       // 逐出 provider → 卡片按钮即时转「已禁用」；下一轮快照读
-      // provider 当前值，不再发 ATRV。
+      // provider 当前值，不再发 0142。
       final voltageToggle = inProbeSheet(find.text('已启用')).at(2);
       await tester.ensureVisible(voltageToggle);
       await tester.pumpAndSettle();
@@ -687,7 +688,7 @@ void main() {
         (await testRepository(database)
                 .diagnosticsRepository
                 .listProbes(await appliedCarId(database)))
-            .firstWhere((probe) => probe.command == 'ATRV')
+            .firstWhere((probe) => probe.command == '0142')
             .enabled,
         isFalse,
       );
@@ -695,13 +696,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // 重进诊断页：App 级连接复用（connected 守卫不重连），advanceRound
-      // 放行轮询拍进下一轮——快照里没有电压，ATRV 不再发（余下六条：
+      // 放行轮询拍进下一轮——快照里没有电压，0142 不再发（余下六条：
       // 油量/水温/短期/长期/CVT 油温/里程表）。
       await openDiagnosticsPage(tester);
       await rig.advanceRound(tester);
       await rig.drainPendingChunks(tester);
       expect(
-        rig.mock.sentCommands.where((c) => c == 'ATRV'),
+        rig.mock.sentCommands.where((c) => c == '0142'),
         hasLength(1),
       );
       expect(
@@ -709,7 +710,7 @@ void main() {
         hasLength(greaterThanOrEqualTo(2)),
       );
 
-      // 重新打开 sheet 启停回来：下一轮 ATRV 恢复发送。
+      // 重新打开 sheet 启停回来：下一轮 0142 恢复发送。
       await leavePageAndFlush(tester);
       await openProbeManagementSheet(tester);
       await tester.ensureVisible(find.text('已禁用'));
@@ -724,7 +725,7 @@ void main() {
         await rig.deliverChunks(tester);
       }
       expect(
-        rig.mock.sentCommands.where((c) => c == 'ATRV'),
+        rig.mock.sentCommands.where((c) => c == '0142'),
         hasLength(greaterThanOrEqualTo(2)),
       );
 
@@ -1271,7 +1272,7 @@ void main() {
       // 入口已不在诊断页（ADR 0029）：我的页车辆卡「检测点」按钮直接
       // 开 sheet，无需进诊断页。
       await openProbeManagementSheet(tester);
-      expect(find.text('ECU 里程自动同步'), findsOneWidget);
+      expect(find.text('ECU 自动同步'), findsOneWidget);
       expect(
         await testRepository(database).getPreferenceValue(
           LunioPreferences.obdOdometerAutoSyncKey,
@@ -1283,7 +1284,7 @@ void main() {
       final syncSwitch = find.descendant(
         of: find
             .ancestor(
-              of: find.text('ECU 里程自动同步'),
+              of: find.text('ECU 自动同步'),
               matching: find.byType(Row),
             )
             .first,
@@ -1300,6 +1301,84 @@ void main() {
 
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
+    });
+  });
+
+  group('ECU 油量同步（ADR 0030，与里程共用开关）', () {
+    /// 逐拍泵帧直至剩余油量写为 [expected]（同步链：门限放行读数 →
+    /// runtime 回调 → 四舍五入 → 写 fuel_predictions），20 拍封顶。
+    Future<void> pumpUntilFuelPercent(
+      WidgetTester tester,
+      AppDatabase database,
+      int expected,
+    ) async {
+      for (var i = 0; i < 20; i++) {
+        final rows = await database.select(database.fuelPredictions).get();
+        if (rows.isNotEmpty && rows.single.fuelPercent == expected) {
+          return;
+        }
+        await tester.pump();
+      }
+      fail('20 拍内剩余油量未写到 $expected%——油量同步链有问题');
+    }
+
+    /// 逐拍泵帧直至内置油量探针落库（读数事件已处理，同步回调在跑）。
+    Future<void> pumpUntilFuelReadingSaved(
+      WidgetTester tester,
+      AppDatabase database,
+    ) async {
+      final diagnostics = testRepository(database).diagnosticsRepository;
+      for (var i = 0; i < 20; i++) {
+        final probes =
+            await diagnostics.listProbes(await appliedCarId(database));
+        if (probes.firstWhere((p) => p.name == '油量').lastValue != null) {
+          return;
+        }
+        await tester.pump();
+      }
+      fail('20 拍内油量读数未落库——轮询门闩或读数写点有问题');
+    }
+
+    testWidgets('开关开：门限放行的油量写入剩余油量（37.6471 → 38%）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedAppliedCar(database, tankCapacity: 40.487);
+      await seedDeveloperDiagnostics(database);
+      await testRepository(database).setPreferenceValue(
+        LunioPreferences.obdOdometerAutoSyncKey,
+        'true',
+      );
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('已连接'));
+      await rig.drainPendingChunks(tester);
+
+      // 信息卡显示 38%（37.6471 四舍五入），落库值同源。
+      await pumpUntilFuelPercent(tester, database, 38);
+      final row = (await database.select(database.fuelPredictions).get()).single;
+      expect(row.carId, await appliedCarId(database));
+      await leavePageAndFlush(tester);
+    });
+
+    testWidgets('开关关（默认）：油量读数不写剩余油量', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      await seedAppliedCar(database, tankCapacity: 40.487);
+      await seedDeveloperDiagnostics(database);
+      await pumpApp(tester, database: database, extraOverrides: rig.overrides);
+      await openDiagnosticsPage(tester);
+      await rig.advanceUntil(tester, find.text('已连接'));
+      await rig.drainPendingChunks(tester);
+      // 先确认读数事件确实到过（否则空等也能通过）。
+      await pumpUntilFuelReadingSaved(tester, database);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump();
+      }
+
+      expect(await database.select(database.fuelPredictions).get(), isEmpty);
+      await leavePageAndFlush(tester);
     });
   });
 }

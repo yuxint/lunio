@@ -79,8 +79,12 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
     // 首帧先渲染「未连接」，连接动作延到首帧之后启动——状态机起点状态
     // 真实可达（widget 测试能按序断言全状态序列）。已连接/连接中/扫描中
     // 时 start 内部守卫直接返回（App 级连接复用，不重连）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_connection.start());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _connection.start();
+      // 默认间隔 60s（2026-11-21 起）：已连接复用的情况下不复位倒计时，
+      // 进页面可能看到最多一分钟前的值。补一次立即轮询把首屏刷新拉齐
+      // （未连接时 start 刚连上、本就是零倒计时，这次调用是空转）。
+      _connection.requestImmediatePoll();
     });
   }
 
@@ -96,9 +100,16 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
 
   /// UI port：开扫描 sheet。sheet 数据来自 controller 的 state.scan（纯
   /// 渲染器），关闭（任何方式）回告 controller 收尾。
-  void _showScanSheet() {
+  ///
+  /// 返回 **false = 此刻开不了**：栈顶被别的 sheet 占着（调试终端的会话
+  /// 日志 sheet 走 showGeneralDialog 压了一条路由）。此时不叠加，交给
+  /// controller 撤销这次扫描、落可恢复态（2026-11-21 拍板）。
+  bool _showScanSheet() {
     if (_scanSheetHandle != null) {
-      return;
+      return true;
+    }
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) {
+      return false;
     }
     _scanSheetHandle = showBleScanSheet(
       context,
@@ -108,6 +119,7 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
         _connection.onScanSheetDismissed();
       },
     );
+    return true;
   }
 
   /// UI port：关扫描 sheet（controller 主动关闭：点选成功/门禁失败）。
@@ -413,7 +425,8 @@ class DiagnosticsPageState extends ConsumerState<DiagnosticsPage> {
           if (state.phase == DiagnosticsConnectionPhase.connected)
             IconButton(
               tooltip: '立即刷新',
-              onPressed: _connection.requestImmediatePoll,
+              // 手动刷新 = 直显当前状态（油量不过门限，2026-11-21 拍板）。
+              onPressed: () => _connection.requestImmediatePoll(manual: true),
               icon: const Icon(Icons.refresh, size: 26),
               color: tokens.primary,
             ),

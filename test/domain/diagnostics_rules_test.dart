@@ -58,7 +58,7 @@ void main() {
         DiagnosticsReadingTone.danger,
       );
     });
-    test('11.5~14.8 绿（静置/充电正常带）', () {
+    test('11.5~15.5 绿（静置/常充/冷车高充正常带）', () {
       expect(
         DiagnosticsRules.batteryVoltageTone(11.5),
         DiagnosticsReadingTone.normal,
@@ -72,13 +72,27 @@ void main() {
         DiagnosticsReadingTone.normal,
       );
       expect(
-        DiagnosticsRules.batteryVoltageTone(14.8),
+        DiagnosticsRules.batteryVoltageTone(14.66),
+        DiagnosticsReadingTone.normal,
+      );
+      // 11-21 早实测冷车高充 15.19~15.30（8 拍）——2026-11-21 上调上界
+      // 的原始动因，必须为绿。
+      expect(
+        DiagnosticsRules.batteryVoltageTone(15.3),
+        DiagnosticsReadingTone.normal,
+      );
+      expect(
+        DiagnosticsRules.batteryVoltageTone(15.5),
         DiagnosticsReadingTone.normal,
       );
     });
-    test('>14.8 红（过充）', () {
+    test('>15.5 红（过充）', () {
       expect(
-        DiagnosticsRules.batteryVoltageTone(14.9),
+        DiagnosticsRules.batteryVoltageTone(15.6),
+        DiagnosticsReadingTone.danger,
+      );
+      expect(
+        DiagnosticsRules.batteryVoltageTone(17.0),
         DiagnosticsReadingTone.danger,
       );
     });

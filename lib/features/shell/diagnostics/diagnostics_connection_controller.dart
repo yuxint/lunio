@@ -2,8 +2,9 @@
 // 整条流程决策体——相位机、尝试代数、直连/扫描分流、扫描会话、取消与
 // 重连、最后读数合并与落库策略。plain-Dart 控制器，不碰 BuildContext；
 // 会话工厂、扫描器、设备记忆、读数落库经构造注入，扫描 sheet 的开/关
-// （DiagnosticsConnectionUi）与 ECU 里程静默同步回调由诊断页经
-// attachUi / setOdometerSyncHandler 挂载、页面销毁时摘除。
+// （DiagnosticsConnectionUi）由诊断页经 attachUi 挂载；ECU 里程与油量
+// 静默同步回调（ADR 0026 / ADR 0030）经 setOdometerSyncHandler /
+// setFuelLevelSyncHandler 挂载，装配在 App 级连接 provider（obd_runtime）。
 //
 // 生命周期归 App 级（ADR 0027，2026-11-16）：本类由 keepAlive provider
 // 持有（obd_runtime.dart 的 obdConnectionControllerProvider），提醒页
@@ -31,11 +32,13 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../domain/entities/diagnostics_parse_type.dart';
 import '../../../domain/entities/diagnostics_probe.dart';
 import 'ble_obd_errors.dart';
 import 'ble_scan_entries.dart';
 import 'elm327_parser.dart' show ObdReading, ObdValue;
 import 'elm327_session.dart';
+import 'fuel_level_gate.dart';
 import 'obd_session_log.dart';
 import 'obd_runtime.dart';
 import 'obd_scanner.dart';
@@ -112,7 +115,11 @@ class DiagnosticsConnectionUi {
     required this.closeScanSheet,
   });
 
-  final void Function() openScanSheet;
+  /// 打开扫描 sheet。返回 **false = 页面此刻开不了**（栈顶被别的 sheet
+  /// 占着，例如调试终端的会话日志 sheet）——controller 据此撤销这次扫描，
+  /// 落在可恢复的未连接/已断开态，绝不叠加两个 sheet（2026-11-21 拍板）。
+  final bool Function() openScanSheet;
+
   final void Function() closeScanSheet;
 }
 
@@ -170,6 +177,11 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 写开关的读库与守卫在接缝实现里。controller 不碰偏好与仓库；里程
   /// 检测点只在诊断页作用域的全量清单里轮询，回调只在诊断页期间触发。
   void Function(ObdValue reading)? _odometerHandler;
+
+  /// ECU 油量静默同步回调（ADR 0030，App 级装配挂载）：收到门限放行后
+  /// 的有效油量读数时回调。开关读库、目标车选择与写库都在接缝实现里，
+  /// controller 不碰偏好与仓库。
+  void Function(DiagnosticsProbe probe, ObdValue reading)? _fuelLevelHandler;
 
   // ---- 内部状态（对外只经 state 快照） ----
   DiagnosticsConnectionPhase _phase = DiagnosticsConnectionPhase.idle;
@@ -250,6 +262,69 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// 油量门限（2026-11-20 起，2026-11-21 改为窗口聚合）：按探针 id 各一份，
+  /// 跨会话/跨作用域保留——熄火加油前后油量是连续的，重建门限反而会吃进
+  /// 一个新的晃动值。
+  final Map<int, FuelLevelGate> _fuelGates = {};
+
+  /// 过油量门限：返回要上卡的读数，null = 本拍丢弃。
+  ///
+  /// 只作用于 `fuelLevel` 解析类型的有效值（本车即内置 `012F`）；其他
+  /// 解析类型、无数据行、缺 percent 的读数原样放行。
+  ///
+  /// 语义（2026-11-21 二次修订）：最近 3 拍极差 ≤5 个点、且三拍严格全
+  /// 在卡片一侧 → 卡片更新为窗口中位数；否则保持现值并写一行
+  /// `fuel_gate` 日志（原始值已由调用方先记过读数行）。放行值可能不等于
+  /// 本拍原始值——窗口里带边缘值时，中位数比最新值更可信。
+  ///
+  /// 手动刷新（[requestImmediatePoll] 的 manual 分支）例外：直显原始值，
+  /// 不做任何平滑。
+  ObdReading? _gateFuelReading(
+    DiagnosticsProbe? probe,
+    ObdReading reading,
+    DateTime at,
+  ) {
+    if (probe == null ||
+        probe.id == null ||
+        probe.parseType != DiagnosticsParseType.fuelLevel ||
+        reading is! ObdValue ||
+        reading.percent == null) {
+      return reading;
+    }
+    final raw = reading.percent!;
+    final gate = _fuelGates.putIfAbsent(probe.id!, () {
+      // 用库里最后读数播种：页面重开时卡片显示的就是它，前两拍凑窗口
+      // 期间不至于空白。库值过期（熄火期间加过油）时由窗口聚合法在
+      // 第 3 拍纠正。
+      return FuelLevelGate()..seed(probe.lastPercent);
+    });
+    if (_manualPollBypass) {
+      // 手动刷新：读到多少显示多少，并把它定为新基准（清窗口重来），
+      // 否则随后的自动轮询会拿旧样本把刚显示的值顶回去。
+      _manualPollBypass = false;
+      gate.override(raw);
+      return reading;
+    }
+    final admitted = gate.admit(raw);
+    if (admitted == null) {
+      sessionLogSink?.onFuelGateRejected(
+        probeName: probe.name,
+        raw: raw,
+        held: gate.acceptedPercent,
+        samples: gate.windowSampleCount,
+        span: gate.windowSpan,
+        at: at,
+      );
+      return null;
+    }
+    if (admitted == raw) {
+      return reading;
+    }
+    // 中位数与原始值不同：按油量口径重建展示文本（与 parser 的格式一致：
+    // 取整百分比）。celsius/volts/kilometers 对油量探针恒为 null。
+    return ObdValue(display: '${admitted.round()}%', percent: admitted);
   }
 
   /// 一键检测日志落会话文件（调试面板调用；无会话记录时静默）。
@@ -438,9 +513,35 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     await _teardownSession(reason: '手动断开');
   }
 
-  /// 「立即刷新」按钮：手动轮询全部启用项（会话不持有时静默）。
-  void requestImmediatePoll() {
+  /// 「立即刷新」：手动轮询全部启用项（会话不持有时静默）。
+  ///
+  /// [manual] = 用户主动点了刷新按钮（诊断页状态条 / 提醒页信息卡）：
+  /// 用户拍板（2026-11-21）「我既然手动刷新，肯定是想知道当前的状态」，
+  /// 所以这一次油量读数直接上卡、不过门限（见 [_gateFuelReading]）。
+  /// 自动轮询与进页面/回前台补的那次不传，仍走门限。
+  void requestImmediatePoll({bool manual = false}) {
+    if (manual) {
+      _manualPollBypass = true;
+    }
     _session?.requestImmediatePoll();
+  }
+
+  /// 手动刷新的一次性放行旗：下一次油量读数直显并作为新基准。
+  ///
+  /// 一次性而不是时间窗：手动刷新的那一轮必然包含启用中的油量探针（种子
+  /// 顺序第一），读到就消费掉；油量探针被禁用时这面旗会留到下次启用，
+  /// 那一次直显一次——没有卡片可更新的期间本来也无副作用。
+  bool _manualPollBypass = false;
+
+  /// 应用生命周期上报（2026-11-20）：主壳层把 `AppLifecycleState.name`
+  /// 原样传进来，转交会话日志落一行 `lifecycle`。只做记账，不改连接
+  /// 状态、不触发轮询（resume 后的立即轮询仍由主壳层显式调
+  /// [requestImmediatePoll]）。无会话时 sink 侧静默丢弃。
+  ///
+  /// 收字符串而不是 Flutter 的 `AppLifecycleState`：本类刻意保持
+  /// plain-Dart（不 import Flutter），枚举到字符串的映射留在 UI 侧。
+  void logAppLifecycle(String state) {
+    sessionLogSink?.onAppLifecycle(state, DateTime.now());
   }
 
   /// 挂载扫描 sheet 的 UI 接缝（诊断页 initState）。重复挂载以最后一次
@@ -457,6 +558,15 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 挂载 ECU 里程静默同步回调（诊断页 initState）；传 null 摘除。
   void setOdometerSyncHandler(void Function(ObdValue reading)? handler) {
     _odometerHandler = handler;
+  }
+
+  /// 挂载 ECU 油量静默同步回调（ADR 0030，App 级装配挂载）；传 null 摘除。
+  /// 回调带探针：接缝侧按 catalogKey 限定内置油量探针，controller 不做
+  /// 该策略判断。
+  void setFuelLevelSyncHandler(
+    void Function(DiagnosticsProbe probe, ObdValue reading)? handler,
+  ) {
+    _fuelLevelHandler = handler;
   }
 
   /// App 级释放（keepAlive provider onDispose；App 生命周期内不会触发，
@@ -485,6 +595,9 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       _notify();
       return;
     }
+    // 失败原因先留着：页面开不了 sheet 时要把它还给状态条，否则「连接
+    // 失败 → 本该落扫描」这条链上用户看不到任何原因。
+    final previousError = _statusError;
     _scanSheetOpen = true;
     _scanEntries = const [];
     _connectingId = null;
@@ -508,7 +621,19 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       },
     );
     _notify();
-    ui.openScanSheet();
+    if (!ui.openScanSheet()) {
+      // 页面栈顶被别的 sheet 占着（会话日志 sheet 等）：不叠加，撤销这次
+      // 扫描并回到可恢复态。有失败原因的落「已断开 + 原因」，否则回「未
+      // 连接」——两种都能靠状态条整卡点击重新发起。
+      _scanSheetOpen = false;
+      _cancelScanResources();
+      _phase = previousError == null
+          ? DiagnosticsConnectionPhase.idle
+          : DiagnosticsConnectionPhase.disconnected;
+      _statusError = previousError;
+      _notify();
+      return;
+    }
     unawaited(_startScan());
   }
 
@@ -705,28 +830,46 @@ class DiagnosticsConnectionController extends ChangeNotifier {
         sessionLogSink?.onSessionEnd(DateTime.now(), reason: '$cause');
         _notify();
       case Elm327ProbeReading(:final probeId, :final reading, :final at):
-        _readings[probeId] = ProbeReadingSnapshot(reading: reading, at: at);
-        _notify();
         final probe = _probeById(probeId);
+        // 原始读数先入会话日志（2026-11-20）：日志记「看到的全部」，门限
+        // 只管「采用哪一个」——被丢掉的晃动值必须留档，否则事后无法判断
+        // 门限是否误杀。
         if (probe != null) {
           sessionLogSink?.onProbeReading(probe, reading, at);
         }
+        final admitted = _gateFuelReading(probe, reading, at);
+        if (admitted == null) {
+          // 丢弃：卡片快照、最后更新时间、库里的最后读数都不动（原始值
+          // 已入日志，门限判定另记 fuel_gate 行）。
+          return;
+        }
+        _readings[probeId] = ProbeReadingSnapshot(reading: admitted, at: at);
+        _notify();
         // 最后读数落库（只存有效值）：unawaited 交给事件循环，写失败
-        // 不打断渲染链——读数是临时数据，下一轮轮询会再写。
-        if (reading is ObdValue) {
+        // 不打断渲染链——读数是临时数据，下一轮轮询会再写。用 admitted
+        // 而不是原始 reading：门限放行的是哪一条，落库的就是哪一条。
+        if (admitted is ObdValue) {
           unawaited(
             saveReading(
               probeId,
-              value: reading.display,
-              percent: reading.percent,
+              value: admitted.display,
+              percent: admitted.percent,
               at: at,
             ).catchError((_) {}),
           );
         }
         // ECU 里程同步（ADR 0026）：有效里程读数经接缝回调（静默自动
         // 写的开关读库与守卫在接缝实现里，controller 不碰偏好与仓库）。
-        if (reading is ObdValue && reading.kilometers != null) {
-          _odometerHandler?.call(reading);
+        if (admitted is ObdValue && admitted.kilometers != null) {
+          _odometerHandler?.call(admitted);
+        }
+        // ECU 油量同步（ADR 0030）：门限放行后的油量读数经接缝回调。
+        // 门限丢弃的晃动值不在这里——卡片显示哪一条，同步就写哪一条。
+        if (probe != null &&
+            probe.parseType == DiagnosticsParseType.fuelLevel &&
+            admitted is ObdValue &&
+            admitted.percent != null) {
+          _fuelLevelHandler?.call(probe, admitted);
         }
     }
   }

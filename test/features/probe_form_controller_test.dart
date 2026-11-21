@@ -60,7 +60,7 @@ void main() {
     expect(harness.controller.nameController.text, isEmpty);
     expect(harness.controller.commandController.text, isEmpty);
     expect(harness.controller.parseType, DiagnosticsParseType.rawHex);
-    expect(harness.controller.refreshIntervalController.text, '10');
+    expect(harness.controller.refreshIntervalController.text, '60');
   });
 
   test('edit form backfills name, raw command and parse type', () {
@@ -143,7 +143,7 @@ void main() {
     expect(payload.carId, 1);
     expect(payload.catalogKey, isNull);
     expect(payload.parseType, DiagnosticsParseType.rawHex);
-    expect(payload.refreshIntervalSeconds, 10);
+    expect(payload.refreshIntervalSeconds, 60);
     expect(payload.enabled, isTrue);
     expect(payload.sync.status, SyncStatus.pendingCreate);
     expect(payload.sync.updatedAt, harness.fixedNow);
@@ -185,7 +185,7 @@ void main() {
     expect(payload!.name, template.name);
     expect(payload.command, template.command);
     expect(payload.parseType, template.parseType);
-    expect(payload.refreshIntervalSeconds, 10, reason: '模板不动间隔');
+    expect(payload.refreshIntervalSeconds, 60, reason: '模板不动间隔');
   });
 
   test('refresh interval rejects outside 5–3600 seconds', () {

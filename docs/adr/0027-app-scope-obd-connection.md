@@ -72,3 +72,21 @@
 2. **提醒页信息卡时间行删除**（2026-11-18 拍板）：ObdReadingsCard 删
    「更新时间」行、字号对齐诊断页、水温按五段色染色、刷新按钮居中放大
    （ADR 0029 修订节二的同批 UI 修正）。
+
+---
+
+## 修订节二（2026-11-21）：扫描 sheet 不与其它 sheet 叠加
+
+用户反馈：诊断页里打开调试终端的「会话日志」sheet 后，若此时连接失败，
+controller 会按回落逻辑再弹「选择适配器」——两个 sheet 叠在一起。
+
+1. **UI 接缝改为可拒绝**：`DiagnosticsConnectionUi.openScanSheet` 返回
+   `bool`。页面实现里先判 `ModalRoute.of(context)?.isCurrent`——栈顶被
+   别的路由占着（会话日志 sheet 走 `showGeneralDialog` 压了一条路由）
+   就返回 false。
+2. **controller 侧撤销而非等待**：`_openScanSheetNow` 收到 false 就停手：
+   清 `_scanSheetOpen`、取消扫描订阅与扫描、**不启动扫描**，相位落到
+   「有失败原因 → 已断开 + 原因；无原因 → 未连接」，两种都能靠状态条
+   整卡点击重新发起。失败原因在开 sheet 前先存下，回滚时还回去（否则
+   「连接失败 → 本该落扫描」这条链上用户看不到任何原因）。
+3. 覆盖：controller 单测「页面开不了扫描 sheet：不叠加、撤销扫描」。

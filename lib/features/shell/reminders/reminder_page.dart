@@ -196,7 +196,9 @@ class ReminderPreviewPageState extends ConsumerState<ReminderPreviewPage> {
                               DiagnosticsRules.coolantTempTone(celsius),
                           _ => null,
                         },
-                        onRefresh: connection.requestImmediatePoll,
+                        // 手动刷新 = 直显当前状态（油量不过门限，2026-11-21 拍板）。
+                        onRefresh: () =>
+                            connection.requestImmediatePoll(manual: true),
                         onOpen: () => context.push('/diagnostics'),
                       ),
                     ],

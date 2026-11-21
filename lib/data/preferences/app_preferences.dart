@@ -77,9 +77,9 @@ class LunioPreferences {
   /// 直连它、连不上再走扫描列表（消费在连接管理票，本票只落偏好通道）。
   static const lastObdDeviceIdKey = 'lastObdDeviceId';
 
-  /// ECU 里程自动同步开关（ADR 0026）。'true' 才算开，默认关；开关
-  /// 入口在检测点管理 sheet。备份本就不带任何偏好，本 key 不进备份，
-  /// 恢复备份后回落默认关。
+  /// ECU 自动同步开关（ADR 0026 里程 + ADR 0030 油量，一个开关管两件事；
+  /// 键名沿用历史命名）。'true' 才算开，默认关；开关入口在检测点管理
+  /// sheet。备份本就不带任何偏好，本 key 不进备份，恢复备份后回落默认关。
   static const obdOdometerAutoSyncKey = 'obdOdometerAutoSync';
 
   /// 停车倒计时（JSON，临时数据不进备份）。
@@ -415,13 +415,14 @@ class LunioPreferences {
     return _writeRaw(lastObdDeviceIdKey, deviceId);
   }
 
-  /// 读 ECU 里程自动同步开关（'true' 才算开，默认关，ADR 0026）。
+  /// 读 ECU 自动同步开关（'true' 才算开，默认关，ADR 0026；ADR 0030 起
+  /// 同一开关也管加油页油量同步）。
   Future<bool> getObdOdometerAutoSyncEnabled() async {
     return await readRaw(obdOdometerAutoSyncKey) == 'true';
   }
 
-  /// 写 ECU 里程自动同步开关（'true'/'false'）。只写库，失效
-  /// obdOdometerAutoSyncProvider 由调用方负责。
+  /// 写 ECU 自动同步开关（'true'/'false'）。键名沿用历史命名；只写库，
+  /// 失效 obdOdometerAutoSyncProvider 由调用方负责。
   Future<void> setObdOdometerAutoSyncEnabled(bool enabled) {
     return _writeRaw(obdOdometerAutoSyncKey, enabled ? 'true' : 'false');
   }

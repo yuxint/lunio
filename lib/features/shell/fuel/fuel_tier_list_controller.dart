@@ -118,7 +118,7 @@ class FuelTierListController {
   double get backToDefaultOffset => _defaultIndex * rowExtent;
 
   /// 已存档位 → 列表下标：null = 默认 50%；奇数等非档位值就近取整
-  /// （容错老数据）；越界夹回首尾档。
+  /// （OBD 同步按 1% 四舍五入写库，ADR 0030；也容错老数据）；越界夹回首尾档。
   static int indexForPercent(int? percent) {
     final value = percent ?? defaultPercent;
     return ((100 - value) / FuelRules.percentStep)

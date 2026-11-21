@@ -18,7 +18,7 @@ class DiagnosticsProbe {
     this.parseType = DiagnosticsParseType.rawHex,
     this.enabled = true,
     this.catalogKey,
-    this.refreshIntervalSeconds = 30,
+    this.refreshIntervalSeconds = 60,
     this.header,
     this.lastValue,
     this.lastPercent,
@@ -55,8 +55,8 @@ class DiagnosticsProbe {
   /// 内置不进备份、自定义项进备份段时不带本字段（ADR 0021 修订节）。
   final String? catalogKey;
 
-  /// 自动轮询间隔（秒，ADR 0023）：默认 10（2026-11-17 起），范围 5–3600；手动刷新不受
-  /// 它限制。调度器按各条到期时间轮询。
+  /// 自动轮询间隔（秒，ADR 0023）：默认 60（2026-11-21 起；此前 10），
+  /// 范围 5–3600；手动刷新不受它限制。调度器按各条到期时间轮询。
   final int refreshIntervalSeconds;
 
   /// 29-bit 物理头（如 `DA 60 F1`，私有 DID 预留，ADR 0023）。null =

@@ -51,7 +51,10 @@ enum DiagnosticsParseType {
   /// 发动机负荷（`0104` 首字节 ×100/255，%）。
   engineLoad('engineLoad', '发动机负荷（%）'),
 
-  /// 控制模块电压（`0142` 两字节 ÷1000，V）。
+  /// 控制模块电压（`0142` 两字节 ÷1000，V）。2026-11-20 起是内置电压
+  /// 卡的取数口径：由 ECU 直接测量供电轨、1mV 分辨率。原内置的 ATRV
+  /// （[voltageText]）是适配器自身 ADC 在 OBD 口取样，系统性低 0.8V，
+  /// 已降级为自定义项可选项。
   moduleVoltage('moduleVoltage', '模块电压'),
 
   /// 里程表（`01A6` 4 数据字节 ÷10 km，J1979 标准；11-16 实车语料
@@ -64,7 +67,10 @@ enum DiagnosticsParseType {
   /// 用户拍板口径）。实时值同时填 [ObdValue.percent] 供卡片染色。
   fuelTrimPercent('fuelTrimPercent', '燃油修正（%）'),
 
-  /// 电压文本（内置种子 `ATRV`，响应即文本）。
+  /// 电压文本（AT 命令如 `ATRV`，响应即文本）。2026-11-20 起不再作
+  /// 内置电压卡的取数口径（改 0142，见 [moduleVoltage]）：ATRV 在 OBD
+  /// 口取样且未经校准，实测比 ECU 自测电压低 0.75–0.85V。保留枚举值
+  /// 是因为 wire 值进备份契约，且自定义项仍可能用它读适配器侧电压。
   voltageText('voltageText', '电压文本'),
 
   /// CVT 油温（2026-11-18 实车验证转正，ADR 0029 修订节）：本田私有

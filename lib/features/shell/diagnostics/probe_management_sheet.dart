@@ -80,7 +80,7 @@ class _ProbeManagementSheetContentState
           ],
         ),
         const SizedBox(height: 12),
-        const _OdometerAutoSyncRow(),
+        const _EcuAutoSyncRow(),
         const SizedBox(height: 12),
         if (!probesAsync.hasValue && probesAsync.isLoading)
           const Padding(
@@ -191,11 +191,12 @@ class _ProbeManagementSheetContentState
   }
 }
 
-/// 「ECU 里程自动同步」开关行（ADR 0026）：开 = 诊断页轮询收到更大
-/// ECU 里程时静默写入车辆里程；关（默认）= 里程表行内「更新里程」
-/// 确认式。开关读写走动作层 setObdOdometerAutoSync（偏好纪元 bump）。
-class _OdometerAutoSyncRow extends ConsumerWidget {
-  const _OdometerAutoSyncRow();
+/// 「ECU 自动同步」开关行（ADR 0026 + ADR 0030）：开 = 任何连接状态下
+/// 读到数据就静默写入——更大 ECU 里程写入车辆里程（ADR 0026），
+/// 门限放行的油量写入加油页剩余油量（ADR 0030，当前应用车）。
+/// 开关读写走动作层 setObdOdometerAutoSync（偏好纪元 bump，键不变）。
+class _EcuAutoSyncRow extends ConsumerWidget {
+  const _EcuAutoSyncRow();
 
   /// 写偏好失败 toast 兜底（动作层异常穿透，调用点翻译；与本文件
   /// 行开关的 `_toggleProbe` 同一接缝口径）。
@@ -230,12 +231,12 @@ class _OdometerAutoSyncRow extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'ECU 里程自动同步',
+                  'ECU 自动同步',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '开启后连接诊断时读到更大里程自动更新车辆里程',
+                  '连接诊断时自动更新车辆里程与加油页剩余油量',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
