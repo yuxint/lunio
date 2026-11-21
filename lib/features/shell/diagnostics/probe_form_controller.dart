@@ -81,7 +81,8 @@ class ProbeFormController {
   /// 指令原文输入框。
   final TextEditingController commandController;
 
-  /// 刷新间隔输入框（秒，ADR 0023）。默认取仓库默认常量（2026-11-17 起 10 秒），范围 5–3600。
+  /// 刷新间隔输入框（秒，ADR 0023）。默认 60（2026-11-21 起，与
+  /// `DiagnosticsRepository.defaultRefreshIntervalSeconds` 同值），范围 5–3600。
   final TextEditingController refreshIntervalController;
 
   /// 解析类型选中项（新增默认 rawHex）。分段控件结构上必有选中项，

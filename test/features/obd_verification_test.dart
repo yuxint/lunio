@@ -72,7 +72,7 @@ void main() {
   });
 
   group('buildSnapshotVerificationCommands', () {
-    test('本车日志位图：6 项快照全过 + DTC（01A6 升内置、燃油修正探针在轮询）', () {
+    test('本车日志位图：5 项快照全过 + DTC（01A6/0142 升内置、燃油修正探针在轮询）', () {
       final commands = buildSnapshotVerificationCommands(const {
         '0100': '41 00 90 18 80 11 \r41 00 B6 3C A8 13 \r41 00 90 18 80 03 \r\r',
         '0120': '41 20 00 00 00 01 \r41 20 B0 07 A0 11 \r41 20 80 00 A0 01 \r\r',
@@ -86,7 +86,6 @@ void main() {
         '010C',
         '010D',
         '0111',
-        '0142',
         '03',
         '07',
         '0A',

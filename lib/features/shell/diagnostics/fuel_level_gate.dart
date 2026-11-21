@@ -34,6 +34,11 @@
 // Flutter 依赖，可直接单测。
 import 'dart:math';
 
+/// 油量读数的窗口聚合门限（有状态，跨采样保存最近 [windowSize] 拍）。
+///
+/// 用法：[seed] 播已知的最后读数 → 每拍 [admit]，返回放行值（卡片应
+/// 采用的值）或 null（本拍丢弃、保持现值）；用户手动刷新走 [override]
+/// 直接定基准并清窗。判据与参数依据见文件头注释。
 class FuelLevelGate {
   FuelLevelGate({this.windowSize = 3, this.spreadPercent = 5});
 

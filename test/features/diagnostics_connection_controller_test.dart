@@ -853,6 +853,72 @@ void main() {
       expect(h.saved, hasLength(2), reason: '直显值同样落库，重进页面一致');
       expect(rejects, isEmpty, reason: '手动刷新不算门限拒绝');
     });
+
+    test('手动刷新那一拍无数据：放行旗当拍消费，下一轮自动轮询仍走门限', () async {
+      final ends = <(DateTime, String?)>[];
+      final rejects = <(double, double?, int, double?)>[];
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends, fuelGateRejects: rejects),
+      );
+      final fuel = DiagnosticsProbe(
+        id: 1,
+        carId: 1,
+        name: '油量',
+        command: '012F',
+        parseType: DiagnosticsParseType.fuelLevel,
+        enabled: true,
+      );
+      h.controller.setProbes([fuel]);
+      await h.connectDirect();
+      await h.driveChunks(1);
+      expect(h.saved, hasLength(1));
+
+      // 手动刷新那一拍 ECU 回 NO DATA：旗必须当拍消费（2026-11-21 深审）。
+      h.mock.responses['012F'] = rigResp('NO DATA\r\r>');
+      h.controller.requestImmediatePoll(manual: true);
+      await h.driveChunks(1);
+      expect(rejects, isEmpty, reason: '无数据行不进拒绝日志');
+      expect(h.saved, hasLength(1));
+
+      // 下一轮自动轮询的 19% 仍在凑窗口，必须被门限挡下——旗不得漏过来。
+      h.mock.responses['012F'] = rigResp('41 2F 30 \r\r>');
+      h.controller.requestImmediatePoll();
+      await h.driveChunks(1);
+      expect(rejects, hasLength(1), reason: '放行旗漏到自动轮询就会被直显');
+      expect(h.saved, hasLength(1), reason: '被门限丢弃的拍不落库');
+    });
+
+    test('手动刷新后断开重连：放行旗不跨会话，重连首拍仍走门限', () async {
+      final ends = <(DateTime, String?)>[];
+      final rejects = <(double, double?, int, double?)>[];
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends, fuelGateRejects: rejects),
+      );
+      final fuel = DiagnosticsProbe(
+        id: 1,
+        carId: 1,
+        name: '油量',
+        command: '012F',
+        parseType: DiagnosticsParseType.fuelLevel,
+        enabled: true,
+      );
+      h.controller.setProbes([fuel]);
+      await h.connectDirect();
+      await h.driveChunks(1);
+      expect(h.saved, hasLength(1));
+
+      // 点刷新后立刻断开：那一轮没跑到，旗必须在 teardown 清掉。
+      h.controller.requestImmediatePoll(manual: true);
+      await h.controller.disconnectManually();
+
+      h.mock.responses['012F'] = rigResp('41 2F 30 \r\r>');
+      await h.connectDirect();
+      await h.driveChunks(1);
+      expect(rejects, hasLength(1), reason: '重连后的第一拍不得绕过门限');
+      expect(h.saved, hasLength(1));
+    });
   });
 
 

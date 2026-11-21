@@ -225,8 +225,8 @@ class DiagnosticsRig {
     }
   }
 
-  /// 逐拍推进直至 finder 出现（AT 序列含 ECU 握手 + 一轮 ≈ 10–11 拍，
-  /// 20 拍封顶防死循环）。
+  /// 逐拍推进直至 finder 出现（AT 序列含 ECU 握手；这里逐块递送、不等
+  /// 整轮，20 拍封顶防死循环）。
   Future<void> advanceUntil(
     WidgetTester tester,
     Finder finder,

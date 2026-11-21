@@ -4,9 +4,9 @@
 // 捞数据阶段结束：私有 DID 全量清单、09xx 车辆信息段、06xx 排放段裁掉，
 // 需要时从 git 历史恢复。
 //
-// 命令来源：SAE J1979 标准；快照集 = 内置三条 + 推荐模板的 mode 01
-// 指令（单一来源=种子/模板清单，本模块镜像内置指令 + 契约测试对账，
-// 纯 Dart 不依赖 data 层）。
+// 命令来源：SAE J1979 标准；快照集 = 推荐模板的 mode 01 指令减去
+// 「已在轮询的内置指令」（单一来源=模板清单 + 内置镜像清单，本模块
+// 镜像内置指令 + 契约测试对账，纯 Dart 不依赖 data 层）。
 import 'elm327_parser.dart'
     show normalizeObdCommand, obdFrameLines, extractHexBytes;
 import 'probe_templates.dart';
@@ -59,25 +59,28 @@ Set<int> decodeSupportedPids(
 /// 已在轮询的内置探针指令（2026-11-18 更名：语义从「信息卡内置」扩
 /// 为「内置轮询中」，燃油修正探针保留轮询但卡已撤下）——一键检测不
 /// 重复采集。镜像自 DiagnosticsRepository.builtInProbeSeeds，**公开
-/// 给契约测试对账**（种子改指令时红灯，0105→0167 历史形态）。
+/// 给契约测试对账**（种子改指令时红灯，0105→0167、ATRV→0142 历史形态）。
 const List<String> pollingBuiltInCommands = [
   '012F',
   '0167',
+  '0142',
   '0106',
   '0107',
   '222301',
   '01A6',
 ];
 
-/// 一键检测快照集：推荐模板的全部 mode 01 指令，字典序（2026-11-18
-/// 起不再含信息卡内置四条——数据已在信息卡固定展示，重复采集只拖长
-/// 序列）。过滤语义见 [buildSnapshotVerificationCommands]。
+/// 一键检测快照集：推荐模板里**不在轮询**的 mode 01 指令，字典序
+/// （2026-11-18 起不再含信息卡内置四条——数据已在信息卡固定展示，
+/// 重复采集只拖长序列；2026-11-21 电压种子换 0142 后，模板的
+/// 「控制模块电压」也由内置轮询覆盖，同样排除）。过滤语义见
+/// [buildSnapshotVerificationCommands]。
 final List<String> obdSnapshotCommands = _snapshotCommands();
 
 List<String> _snapshotCommands() {
   final commands = <String>{};
   for (final template in diagnosticsProbeTemplates) {
-    // 防御：模板与信息卡内置撞指令时仍排除（当前不撞，改模板时兜底）。
+    // 模板与内置轮询撞指令时排除（0142 就是活例，改模板/换种子时兜底）。
     final normalized = normalizeObdCommand(template.command);
     if (!pollingBuiltInCommands.contains(normalized)) {
       commands.add(normalized);

@@ -60,7 +60,7 @@ Future<void> createCar(
   final carId = await ref
       .read(lunioRepositoryProvider)
       .createCarWithMaintenanceItems(car, items);
-  // 每车一套检测点（ADR 0021 修订节）：建车收尾按车播种内置三条；失败
+  // 每车一套检测点（ADR 0021 修订节）：建车收尾按车播种内置七条；失败
   // 由 bootstrap 兜底补种，不让建车本身回滚。
   await ref
       .read(diagnosticsRepositoryProvider)

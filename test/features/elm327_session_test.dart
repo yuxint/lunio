@@ -318,7 +318,7 @@ void main() {
         ['ATZ', 'ATE0', 'ATL0', 'ATSP7', '0100', '012F', '0167', 'ATRV'],
       );
       // 轮间停 1 秒调度拍（ADR 0023）：第 9 个延时请求 = 轮末一拍
-      // （前 8 个是各指令的响应超时竞速，时长 5s；间隔默认 10s，
+      // （前 8 个是各指令的响应超时竞速，时长 5s；间隔取实体默认 60s，
       // 倒计时按拍递减）。
       expect(gate.requests.length, 9);
       expect(gate.requests.last, Elm327Session.pollTick);

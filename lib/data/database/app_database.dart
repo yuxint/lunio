@@ -339,7 +339,12 @@ class DiagnosticsProbes extends Table {
   /// null = 自定义行（可增改删）。
   TextColumn get catalogKey => text().nullable()();
 
-  /// 自动轮询间隔（秒，ADR 0023）：默认 10（2026-11-17 拍板，30→10），范围 5–3600。
+  /// 自动轮询间隔（秒，ADR 0023）：实体/表单默认 60（2026-11-21 起；
+  /// 此前 10），范围 5–3600。
+  ///
+  /// 列默认 `Constant(30)` 是 v6 DDL 的历史值，**不代表运行时默认**：
+  /// 所有写入路径（种子、表单、备份恢复）都显式赋值，SQLite 的列默认
+  /// 不会被用到；改它需要重建表，收益为零，故保留。
   IntColumn get refreshIntervalSeconds =>
       integer().withDefault(const Constant(30))();
 
@@ -414,7 +419,7 @@ class AppDatabase extends _$AppDatabase {
   /// 改表结构必须 +1，并在 onUpgrade 补增量分支（ADR 0005 及其
   /// 2026-09-20 修订）。改完跑 build_runner。
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   /// 迁移策略（ADR 0005，2026-09-20 修订）：纯增量变更（新增表/列）写
   /// onUpgrade 增量迁移，老库原地升级、存量数据保留——用户拍板"升级
@@ -479,6 +484,46 @@ class AppDatabase extends _$AppDatabase {
                 'DELETE FROM diagnostics_probes WHERE car_id IS NULL',
               );
             }
+          }
+          // v6 → v7：内置检测点内容一次性迁移（2026-11-21，ADR 0023 修订
+          // 节五 + ADR 0029 修订节四）。放在 schema 迁移而不是 bootstrap
+          // 对账，因为对账每次冷启动都跑：
+          //  - 一次性——用户之后手动改回 ATRV 或 10/30 秒不再被覆盖
+          //    （ADR 0021 修订节「bootstrap 只补缺失、不纠偏用户编辑」）；
+          //  - 覆盖真实存量——v6 迁移写下的 30 秒是 11-17 之前的旧默认，
+          //    只认 10 的判据会漏掉它们。
+          // 两条 UPDATE 都只动「值仍是上一代默认」的行。
+          if (from < 7) {
+            final now = DateTime.now().toIso8601String();
+            // 电压换源 ATRV → 0142：ATRV 在 OBD 口取样、系统性低于 ECU
+            // 自测 0.75–0.85V，真实 12.2V 被显示成 11.5V 正好压红区阈值
+            // （ADR 0029 修订节四）。旧读数是 ATRV 口径，一并清掉——留着
+            // 会让未连接时的电压卡把旧值当 ECM 电压展示（旧源偏低）。
+            await m.database.customStatement(
+              'UPDATE diagnostics_probes SET command = ?, parse_type = ?, '
+              'last_value = NULL, last_percent = NULL, last_reading_at = NULL, '
+              'sync_status = ?, updated_at = ? '
+              'WHERE catalog_key = ? AND UPPER(TRIM(command)) = ?',
+              [
+                '0142',
+                'moduleVoltage',
+                'pendingUpdate',
+                now,
+                'probe:voltage',
+                'ATRV',
+              ],
+            );
+            // 默认间隔 10 → 60（ADR 0023 修订节五）：10 是 11-17~11-21 的
+            // 默认，30 是更早的默认（v6 迁移与初版种子都写 30）。两者都
+            // 无法区分「用户手选」与「没改过」，一次性迁走是接受的代价；
+            // 迁完之后用户再改就稳定生效。自定义行不碰。
+            await m.database.customStatement(
+              'UPDATE diagnostics_probes SET refresh_interval_seconds = ?, '
+              'sync_status = ?, updated_at = ? '
+              'WHERE catalog_key IS NOT NULL '
+              'AND refresh_interval_seconds IN (10, 30)',
+              [60, 'pendingUpdate', now],
+            );
           }
         },
       );

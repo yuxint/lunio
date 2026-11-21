@@ -10,9 +10,9 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 
 ## 版本和升级策略（ADR 0005）
 
-- 当前数据库：`schemaVersion = 6`。
+- 当前数据库：`schemaVersion = 7`。
 - 全新安装走 `createAll` 建全部表，然后 bootstrap 从 asset
-  目录灌入车型目录与默认保养模板，并按车幂等对账写入内置三条检测点
+  目录灌入车型目录与默认保养模板，并按车幂等对账写入内置七条检测点
   种子（ADR 0021 修订节）。
 - 纯增量变更（新增表/列）走 `onUpgrade` 增量迁移，老库原地升级、
   存量数据保留：v2→v3 只建 `fuel_records` 表；v3→v4 建
@@ -27,6 +27,12 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
   认领），且备份导出实体要求 carId 必填，迁移重建后立即删除，不
   残留。读数三列原样保留。种子不在迁移里插，由 bootstrap 按车幂等
   对账写入。
+- v6→v7 无表结构变化，只做一次性的内置行内容迁移（2026-11-21）：
+  ① 内置电压行命令仍是 `ATRV` 时改写为 `0142`/`moduleVoltage` 并清空
+  读数三列（旧读数是 ATRV 口径，ADR 0029 修订节四）；② 内置行间隔
+  `10` 或 `30` 改 60（两代旧默认，ADR 0023 修订节五）。放在 schema
+  迁移而不是 bootstrap 对账，是为了只跑一次——用户之后手动改回
+  ATRV 或 10/30 不会被静默覆盖。自定义行一律不碰。
   ⚠ 迁移链纪律：`createTable` 永远建当前形态的表（含新列），"建表
   分支"与"加列分支"必须互斥（else-if），否则跨版本老库先建出含新
   列的表再加同名列会 duplicate column。v5→v6 同时把重复的
@@ -302,8 +308,9 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 - `enabled`：启停，默认 `true`。
 - `catalog_key`：内置标识，可空；非空 = 内置行（可编辑、不可删），
   空 = 自定义行（可增改删）。
-- `refresh_interval_seconds`：自动轮询间隔（秒），默认 `30`，范围
-  5–3600（ADR 0023）。
+- `refresh_interval_seconds`：自动轮询间隔（秒），默认 `60`（2026-11-21
+  起；列 DDL 默认仍是 v6 留下的 `30`，但所有写入路径显式赋值，运行时不
+  依赖列默认），范围 5–3600（ADR 0023）。
 - `header`：29-bit 物理头（如 `DA 60 F1`），可空；私有 DID 预留，
   本轮无 UI（ADR 0023）。
 - `last_value`：最后读数展示值文本，可空（2026-11-15 修订节：最后
@@ -324,14 +331,16 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 
 业务注意：
 
-- 内置三条种子（油量 `012F`/水温 `0167`（解析类型 `coolantTempAux`）/
-  电压 `ATRV`）按车播种：新增车辆时播种、bootstrap 按车补缺失；**只补
-  缺失、不纠偏用户编辑**，种子集合外内置 key 清理、自定义行不碰。
+- 内置七条种子（油量 `012F`/水温 `0167`（解析类型 `coolantTempAux`）/
+  电压 `0142`（`moduleVoltage`，2026-11-20 换源；此前 `ATRV`）/
+  短期与长期燃油修正 `0106`/`0107`/CVT 油温 `222301`/里程表 `01A6`）
+  按车播种：新增车辆时播种、bootstrap 按车补缺失；**只补缺失、不纠偏
+  用户编辑**，种子集合外内置 key 清理、自定义行不碰。
   2026-11-16 起水温内置为 `0167`（本车 `0105` 不支持，ADR 0021 修订
-  节）；存量车库里已是 `0105` 的内置行由用户在 App 内手动编辑迁移。
+  节）；电压换源与间隔调整走 v6→v7 schema 迁移一次性完成（见上）。
 - 内置行可编辑（名称/指令/解析类型/刷新间隔/启停），不可删除；自定义
   行可增改删。核心值卡按 `catalogKey` 在当前应用车辆的检测点里定位。
-- 每个检测点自己的自动轮询间隔（默认 30 秒）；手动刷新立即轮询全部
+- 每个检测点自己的自动轮询间隔（默认 60 秒，2026-11-21 起）；手动刷新立即轮询全部
   启用项；调试终端打开时暂停自动轮询。
 - 检测点写点不 bump 车辆数据纪元；列表 provider 按车 family 走"写点
   直失效"模型；删车事务级联删除该车检测点。
@@ -382,9 +391,9 @@ asset `schemaVersion` 当前为 `1`；数据库 `schemaVersion` 为 `6`
 ## 删除和恢复边界
 
 - 删除车辆在仓库事务里级联删除该车检测点（每车一套，ADR 0021 修订节）。
-- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录、检测点（含内置行）和车辆。清空后没有车，内置三条不再全局重灌；下次新增车辆时按车播种。
+- 清空数据会删除 `app_preferences`、记录项、记录、车辆内保养项目、加油预测设置、加油记录、检测点（含内置行）和车辆。清空后没有车，内置七条不再全局重灌；下次新增车辆时按车播种。
 - 清空数据不删除 `vehicle_models` 或 `vehicle_default_maintenance_items`；bootstrap 会按内置 JSON 目录同步车型和默认项目。
-- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点内置三条由每车 bootstrap 重建；自定义项由备份 `diagnosticsProbes` 段按 `carId` 重映射重插（ADR 0021 修订节，行 id 重新生成）。
+- 恢复备份是 replace-import：先清空当前业务数据（含加油记录与检测点），再恢复备份内容，失败整体回滚。检测点内置七条由每车 bootstrap 重建；自定义项由备份 `diagnosticsProbes` 段按 `carId` 重映射重插（ADR 0021 修订节，行 id 重新生成）。
 
 ## 备份契约边界
 
@@ -396,7 +405,7 @@ v2 只比 v1 多了记录条目里的 `itemCosts` 纯增量字段，v1 文件没
 数组，v1–v3 文件没有它就等于"没有自定义检测点"；v5 只比 v4 多了
 `cars.totalTankCapacityLiters` 与检测点条目的 `carId`/
 `refreshIntervalSeconds`/`header`，v1–v4 的检测点没有 `carId` 时恢复
-到第一辆车、缺省间隔 30、header/总容积 null。均按纯增量缺失读入
+到第一辆车、缺省间隔 60、header/总容积 null。均按纯增量缺失读入
 （docs/adr/0010 修订、docs/adr/0014、docs/adr/0021 修订节、
 docs/adr/0022）；除此之外的版本直接拒绝，不做旧版本字段回退
 （docs/adr/0005）。
@@ -413,7 +422,7 @@ docs/adr/0022）；除此之外的版本直接拒绝，不做旧版本字段回�
 - `fuelRecords`（加油流水：条目不带 id，恢复时重新生成雪花 ID）
 - `diagnosticsProbes`（v5，自定义检测点：条目 { carId, name, command,
   parseType, enabled, refreshIntervalSeconds, header, sync }，不带自身
-  id / catalogKey——内置三条不进备份、恢复后由每车 bootstrap 重建；
+  id / catalogKey——内置七条不进备份、恢复后由每车 bootstrap 重建；
   carId 恢复时重映射；启停/刷新间隔是用户数据，随段导出）
 
 备份不包含：

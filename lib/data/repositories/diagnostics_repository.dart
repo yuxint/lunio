@@ -92,11 +92,11 @@ class DiagnosticsRepository {
   /// 代价（已知并接受）：暖机期水温 ~0.1-0.3℃/s，60s 一拍意味着每次
   /// 更新会跳 6-18℃；诊断页进入时可能显示最多一分钟前的值——所以页面
   /// initState 补了一次 `requestImmediatePoll`（2026-11-21）。
+  ///
+  /// 存量迁移不在本文件：v6→v7 的 schema 迁移（`app_database.dart`）
+  /// 一次性把内置行的 10/30 秒改成本值——30 是 11-17 之前的默认，只认
+  /// 10 会漏掉它；放 schema 层保证只跑一次，用户之后手改不会被覆盖。
   static const int defaultRefreshIntervalSeconds = 60;
-
-  /// 上一代默认间隔（2026-11-17～11-21）：bootstrap 据此识别「用户没改过」
-  /// 的存量内置行并迁到新默认（同电压换源先例：只动仍是老默认值的行）。
-  static const int legacyDefaultRefreshIntervalSeconds = 10;
 
   /// 内置七条种子（ADR 0021 修订节 + ADR 0029 及修订节）：油量/水温/
   /// 电压/短期燃油修正/长期燃油修正/CVT 油温/里程表。2026-11-16 起
@@ -321,10 +321,10 @@ class DiagnosticsRepository {
   /// **只补缺失，不纠偏用户编辑**——内置行可改名称/指令/解析类型/间隔，
   /// 对账不得把用户改动改回去；自定义行不碰。
   ///
-  /// 唯一例外（2026-11-20，ADR 0029 修订节四）：内置电压行的命令仍是
-  /// `ATRV` 时改写为 `0142`。这不是纠偏偏好，是修读数缺陷——ATRV 在
-  /// OBD 口取样、系统性低于 ECU 自测 0.75–0.85V。判据只看命令值，因此
-  /// 刻意保留 ATRV 的用户也会被迁走（可事后手动改回），这是接受的代价。
+  /// 唯二的「旧值迁移」不在这里：电压 ATRV→0142（ADR 0029 修订节四）
+  /// 与默认间隔 10/30→60（ADR 0023 修订节五）都走 v6→v7 的 schema 迁移
+  /// （`app_database.dart`）。放 schema 层是为了只跑一次——放在对账里
+  /// 每次冷启动都会重放，用户手动改回 ATRV 或手选 10/30 秒会被静默覆盖。
   Future<void> ensureBuiltInProbes() async {
     final carRows = await database.select(database.cars).get();
     await database.transaction(() async {
@@ -379,45 +379,6 @@ class DiagnosticsRepository {
             (row) => row.id.isIn(duplicates.map((r) => r.id).toList()),
           ))
           .go();
-    }
-    // 内置行内容迁移（2026-11-20）：电压 ATRV → 0142。与 0105→0167 的
-    // 「用户手动编辑」先例口径不同——ATRV 不是偏好而是读数缺陷（系统性
-    // 低 0.8V 会把 12.2V 显示成红区），留着等于让存量车继续看错数。只
-    // 改「命令仍是老值」的行：用户自己改过就不再碰，重复执行无副作用。
-    final legacyVoltage = rowByKey[builtInVoltageKey];
-    if (legacyVoltage != null &&
-        legacyVoltage.command.trim().toUpperCase() == 'ATRV') {
-      await (database.update(
-        database.diagnosticsProbes,
-      )..where((row) => row.id.equals(legacyVoltage.id))).write(
-        DiagnosticsProbesCompanion(
-          command: const Value('0142'),
-          parseType: Value(domain.DiagnosticsParseType.moduleVoltage.wire),
-          syncStatus: Value(SyncStatus.pendingUpdate.name),
-          updatedAt: Value(DateTime.now().toIso8601String()),
-        ),
-      );
-    }
-    // 内置行间隔迁移（2026-11-21）：默认 10 → 60 秒。只动仍是上一代
-    // 默认值的内置行——用户改过的间隔（15/30/120…）保持不动，重复执行
-    // 无副作用；自定义行一律不碰（那是用户自己定的节奏）。
-    final legacyIntervalProbeIds = [
-      for (final row in rows)
-        if (row.catalogKey != null &&
-            row.refreshIntervalSeconds == legacyDefaultRefreshIntervalSeconds)
-          row.id,
-    ];
-    if (legacyIntervalProbeIds.isNotEmpty) {
-      await (database.update(database.diagnosticsProbes)..where(
-            (row) => row.id.isIn(legacyIntervalProbeIds),
-          ))
-          .write(
-        DiagnosticsProbesCompanion(
-          refreshIntervalSeconds: const Value(defaultRefreshIntervalSeconds),
-          syncStatus: Value(SyncStatus.pendingUpdate.name),
-          updatedAt: Value(DateTime.now().toIso8601String()),
-        ),
-      );
     }
     for (final seed in builtInProbeSeeds) {
       if (rowByKey.containsKey(seed.catalogKey)) {

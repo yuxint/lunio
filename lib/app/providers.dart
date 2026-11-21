@@ -225,7 +225,7 @@ final lastObdDeviceIdProvider = FutureProvider<String?>((ref) {
   return ref.watch(lunioPreferencesProvider).getLastObdDeviceId();
 });
 
-/// 某辆车的检测点列表（每车一套，ADR 0021 修订节）。内置三条种子由
+/// 某辆车的检测点列表（每车一套，ADR 0021 修订节）。内置七条种子由
 /// bootstrap 总入口按车幂等补齐，读侧显式 await bootstrap 再查表——
 /// 首启第一帧就能读到种子。
 /// 失效走"写点直失效"模型（同 [parkingCountdownProvider] 先例）：本

@@ -172,10 +172,10 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// null = 无诊断页在栈顶。扫描只从诊断页发起，快速连接不扫描。
   DiagnosticsConnectionUi? _ui;
 
-  /// ECU 里程静默同步回调（ADR 0026，诊断页 setOdometerSyncHandler 挂
-  /// 载、摘除）：收到有效里程读数（kilometers 非 null）时回调，静默自动
-  /// 写开关的读库与守卫在接缝实现里。controller 不碰偏好与仓库；里程
-  /// 检测点只在诊断页作用域的全量清单里轮询，回调只在诊断页期间触发。
+  /// ECU 里程静默同步回调（ADR 0026，App 级装配挂载、随 provider 释放）：
+  /// 收到有效里程读数（kilometers 非 null）时回调，静默自动写开关的读库
+  /// 与守卫在接缝实现里。controller 不碰偏好与仓库；回调在连接期间常驻
+  /// （提醒页背景清单与诊断页全量清单都生效），不随诊断页销毁摘除。
   void Function(ObdValue reading)? _odometerHandler;
 
   /// ECU 油量静默同步回调（ADR 0030，App 级装配挂载）：收到门限放行后
@@ -271,8 +271,9 @@ class DiagnosticsConnectionController extends ChangeNotifier {
 
   /// 过油量门限：返回要上卡的读数，null = 本拍丢弃。
   ///
-  /// 只作用于 `fuelLevel` 解析类型的有效值（本车即内置 `012F`）；其他
-  /// 解析类型、无数据行、缺 percent 的读数原样放行。
+  /// 只作用于 `fuelLevel` 解析类型（本车即内置 `012F`）；其他解析类型
+  /// 原样放行。无数据行、缺 percent 的读数不进门限，但**会消费掉手动
+  /// 刷新的一次性放行旗**——见 [_manualPollBypass]。
   ///
   /// 语义（2026-11-21 二次修订）：最近 3 拍极差 ≤5 个点、且三拍严格全
   /// 在卡片一侧 → 卡片更新为窗口中位数；否则保持现值并写一行
@@ -288,9 +289,15 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   ) {
     if (probe == null ||
         probe.id == null ||
-        probe.parseType != DiagnosticsParseType.fuelLevel ||
-        reading is! ObdValue ||
-        reading.percent == null) {
+        probe.parseType != DiagnosticsParseType.fuelLevel) {
+      return reading;
+    }
+    // 放行旗无论本拍是否有效都消费（2026-11-21 深审修复）：手动那一轮
+    // 若油量回 NO DATA/超时，旗子留着会让下一次**自动**轮询的晃动值
+    // 被当成「用户想看的值」直显、写 lastPercent 与 fuel_predictions。
+    final bypass = _manualPollBypass;
+    _manualPollBypass = false;
+    if (reading is! ObdValue || reading.percent == null) {
       return reading;
     }
     final raw = reading.percent!;
@@ -300,10 +307,9 @@ class DiagnosticsConnectionController extends ChangeNotifier {
       // 第 3 拍纠正。
       return FuelLevelGate()..seed(probe.lastPercent);
     });
-    if (_manualPollBypass) {
+    if (bypass) {
       // 手动刷新：读到多少显示多少，并把它定为新基准（清窗口重来），
       // 否则随后的自动轮询会拿旧样本把刚显示的值顶回去。
-      _manualPollBypass = false;
       gate.override(raw);
       return reading;
     }
@@ -529,8 +535,11 @@ class DiagnosticsConnectionController extends ChangeNotifier {
   /// 手动刷新的一次性放行旗：下一次油量读数直显并作为新基准。
   ///
   /// 一次性而不是时间窗：手动刷新的那一轮必然包含启用中的油量探针（种子
-  /// 顺序第一），读到就消费掉；油量探针被禁用时这面旗会留到下次启用，
-  /// 那一次直显一次——没有卡片可更新的期间本来也无副作用。
+  /// 顺序第一）。消费点收在 [_gateFuelReading] 的解析类型判断之后——
+  /// **无论那一拍是不是有效值都消费**（2026-11-21 深审修复：NO DATA/
+  /// 超时不再把旗子漏给下一轮自动轮询），断开/重连时由 [_teardownSession]
+  /// 清掉，不跨会话生效。油量探针被禁用时这面旗仍会留到下次启用，那一
+  /// 次直显一次——这是已知且接受的残余口径（没有读数事件可消费）。
   bool _manualPollBypass = false;
 
   /// 应用生命周期上报（2026-11-20）：主壳层把 `AppLifecycleState.name`
@@ -902,6 +911,9 @@ class DiagnosticsConnectionController extends ChangeNotifier {
     final sub = _sub;
     _session = null;
     _sub = null;
+    // 手动放行旗只属于「点刷新时那一个会话」：断开/重连/重建会话都作废，
+    // 否则一次没读到值的刷新会在下一个会话的第一拍直显并写库。
+    _manualPollBypass = false;
     if (session != null) {
       sessionLogSink?.onSessionEnd(DateTime.now(), reason: reason);
     }

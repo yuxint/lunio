@@ -331,100 +331,40 @@ void main() {
       expect(toggled.enabled, isFalse);
     });
 
-    test('存量车电压行 ATRV 迁到 0142（2026-11-20 换源，非用户偏好）', () async {
+    test('对账不纠偏内置行的命令与间隔（旧值迁移只在 schema v7 跑一次）', () async {
       await repos.catalogRepository.ensureBootstrapData();
-      final voltage = (await diagnostics.listProbes(
-        carId,
-      )).firstWhere((p) => p.catalogKey == 'probe:voltage');
-      // 模拟旧安装：电压行还是 ATRV + voltageText，名称间隔被用户改过。
+      final probes = await diagnostics.listProbes(carId);
+      final voltage = probes.firstWhere((p) => p.catalogKey == 'probe:voltage');
+      final coolant = probes.firstWhere(
+        (p) => p.catalogKey == 'probe:coolantTemp',
+      );
+      // 用户手动把电压改回 ATRV、把水温间隔手选成合法的 10 秒。
       await diagnostics.updateProbe(
         voltage.copyWith(
           command: 'ATRV',
           parseType: DiagnosticsParseType.voltageText,
-          name: '我的电压',
-          refreshIntervalSeconds: 60,
         ),
       );
-      await repos.catalogRepository.ensureBootstrapData();
-      final migrated = (await diagnostics.listProbes(
-        carId,
-      )).firstWhere((p) => p.catalogKey == 'probe:voltage');
-      expect(migrated.command, '0142');
-      expect(migrated.parseType, DiagnosticsParseType.moduleVoltage);
-      // 只动命令与解析类型：名称/间隔是用户数据，迁移不碰。
-      expect(migrated.name, '我的电压');
-      expect(migrated.refreshIntervalSeconds, 60);
-
-      // 幂等：再跑一次对账不再写库。
-      final stamp = migrated.sync.updatedAt;
-      await repos.catalogRepository.ensureBootstrapData();
-      final again = (await diagnostics.listProbes(
-        carId,
-      )).firstWhere((p) => p.catalogKey == 'probe:voltage');
-      expect(again.command, '0142');
-      expect(again.sync.updatedAt, stamp);
-    });
-
-    test('电压行已是新口径时不介入（用户自定义命名保留）', () async {
-      await repos.catalogRepository.ensureBootstrapData();
-      final voltage = (await diagnostics.listProbes(
-        carId,
-      )).firstWhere((p) => p.catalogKey == 'probe:voltage');
       await diagnostics.updateProbe(
-        voltage.copyWith(
-          command: '0142',
-          parseType: DiagnosticsParseType.moduleVoltage,
-          name: '电压（自选）',
-        ),
-      );
-      await repos.catalogRepository.ensureBootstrapData();
-      final after = (await diagnostics.listProbes(
-        carId,
-      )).firstWhere((p) => p.catalogKey == 'probe:voltage');
-      expect(after.name, '电压（自选）');
-      expect(after.command, '0142');
-    });
-
-    test('存量车内置行间隔 10 → 60 迁移（2026-11-21 默认值调整）', () async {
-      await repos.catalogRepository.ensureBootstrapData();
-      final before = await diagnostics.listProbes(carId);
-      // 模拟旧安装：内置行都是上一代默认 10 秒；其中水温行是用户改过的
-      // 15 秒，迁移不得覆盖。
-      for (final probe in before) {
-        await diagnostics.updateProbe(
-          probe.copyWith(refreshIntervalSeconds: 10),
-        );
-      }
-      final coolant = before.firstWhere(
-        (p) => p.catalogKey == 'probe:coolantTemp',
-      );
-      await diagnostics.updateProbe(
-        coolant.copyWith(refreshIntervalSeconds: 15),
+        coolant.copyWith(refreshIntervalSeconds: 10),
       );
 
       await repos.catalogRepository.ensureBootstrapData();
       final after = await diagnostics.listProbes(carId);
-      final untouched = after.where(
-        (p) => p.catalogKey != 'probe:coolantTemp',
-      );
+      final migrated = after.firstWhere((p) => p.catalogKey == 'probe:voltage');
       expect(
-        untouched.map((p) => p.refreshIntervalSeconds),
-        everyElement(DiagnosticsRepository.defaultRefreshIntervalSeconds),
-        reason: '仍是上一代默认值的行迁到新默认',
+        migrated.command,
+        'ATRV',
+        reason: 'ATRV→0142 是一次性 schema 迁移，bootstrap 对账不得重放',
       );
+      expect(migrated.parseType, DiagnosticsParseType.voltageText);
       expect(
         after
             .firstWhere((p) => p.catalogKey == 'probe:coolantTemp')
             .refreshIntervalSeconds,
-        15,
-        reason: '用户改过的间隔不被迁移覆盖',
+        10,
+        reason: '用户手选的 10 秒同样不被对账覆盖',
       );
-
-      // 幂等：再跑一次对账零写库。
-      final stamp = after.first.sync.updatedAt;
-      await repos.catalogRepository.ensureBootstrapData();
-      final again = await diagnostics.listProbes(carId);
-      expect(again.first.sync.updatedAt, stamp);
     });
 
     test('种子集合外的内置 key 行被清理，自定义行不受影响', () async {

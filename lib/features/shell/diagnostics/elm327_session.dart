@@ -107,7 +107,8 @@ class Elm327Session {
   final Duration responseTimeout;
 
   /// 轮询调度拍（ADR 0023）：每个检测点自己的 [DiagnosticsProbe
-  /// .refreshIntervalSeconds] 按这个 1 秒拍倒计时，默认 10 秒（2026-11-17 起）。
+  /// .refreshIntervalSeconds] 按这个 1 秒拍倒计时，默认 60 秒
+  /// （2026-11-21 起；此前 10）。
   static const Duration pollTick = Duration(seconds: 1);
 
   static Future<void> _realDelay(Duration d) => Future<void>.delayed(d);
