@@ -75,7 +75,7 @@ class RecordFormController {
   RecordFormController({
     required this.car,
     required List<MaintenanceItem> items,
-    required LocalDate initialDate,
+    required this.initialDate,
     MaintenanceRecord? record,
     required this.ui,
     required this.readRecords,
@@ -101,6 +101,9 @@ class RecordFormController {
 
   /// 所属车辆（草稿的 carId 与里程默认值取它）。
   final Car car;
+
+  /// 生效今天（页面注入）：新增默认日期与"不能未来"的上界。
+  final LocalDate initialDate;
 
   /// 编辑目标记录（null = 新增）。
   final MaintenanceRecord? record;
@@ -366,6 +369,13 @@ class RecordFormController {
   /// 错误文案。项目费用清单由费用控制器生成（全空草稿跳过；不一致是
   /// 合法数据不校验，ADR 0010）。
   MaintenanceRecord? _buildRecordDraft() {
+    // 新增时表单默认日期是生效今天；车辆上路日期在未来（预登记车）时
+    // 今天落在日期下界之外，picker 没有任何可选日期。此时直接拦住，
+    // 避免落一条早于上路日期的记录（编辑沿用原日期，不拦）。
+    if (!isEditing && car.roadDate.compareTo(initialDate) > 0) {
+      reportError('车辆上路日期在未来，暂不能添加保养记录');
+      return null;
+    }
     final mileage = int.tryParse(mileageController.text);
     // 总费用一次解析到位（元→分）：校验与落库都站在分上做，不再并行
     // 保留 double 解析；空/非法文本 → null 走"费用必须是非负数字"。

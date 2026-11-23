@@ -82,9 +82,10 @@ class _Script {
   RecordFormController build({
     MaintenanceRecord? editRecord,
     List<MaintenanceItem>? items,
+    Car? car,
   }) {
     return RecordFormController(
-      car: _car,
+      car: car ?? _car,
       items: items ?? [makeItem(1, '机油'), makeItem(2, '机滤')],
       initialDate: const LocalDate(2026, 5, 19),
       record: editRecord,
@@ -189,6 +190,29 @@ void main() {
 
       expect(form.recordDraft, isNotNull);
       expect(script.mileageAnswers, isEmpty);
+    });
+
+    test('新增时车辆上路日期在未来：拦截提交并报行内错误', () async {
+      // 预登记车允许上路日期晚于今天；此时表单默认日期（今天）落在
+      // 下界之外，picker 无任何可选日期。新增提交必须被拦住，避免写
+      // 入早于上路日期的记录。
+      final futureCar = Car(
+        id: 1,
+        brand: '本田',
+        model: '思域（燃油版）',
+        currentMileageKm: 12000,
+        roadDate: const LocalDate(2026, 6, 1),
+        sync: SyncMetadata(status: SyncStatus.synced, updatedAt: DateTime(2026)),
+      );
+      final script = _Script();
+      final form = script.build(car: futureCar)..toggleItem(1);
+      form.mileageController.text = '12000';
+      form.totalController.text = '100';
+
+      await form.goToIntervalStep();
+
+      expect(form.recordDraft, isNull);
+      expect(script.errors.last, '车辆上路日期在未来，暂不能添加保养记录');
     });
   });
 

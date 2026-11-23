@@ -48,9 +48,13 @@ class FakeDatePicker {
 
 /// 测试夹具：装配控制器 + 行内错误捕获 + 假日期选择器 + 固定时钟。
 class FuelFormHarness {
-  FuelFormHarness({FuelRecord? record, double? prefillUnitPrice}) {
+  FuelFormHarness({
+    FuelRecord? record,
+    double? prefillUnitPrice,
+    Car? car,
+  }) {
     controller = FuelRecordFormController(
-      car: testCar,
+      car: car ?? testCar,
       today: today,
       record: record,
       prefillUnitPrice: prefillUnitPrice,
@@ -83,6 +87,26 @@ final testCar = Car(
 );
 
 void main() {
+  test('新增时车辆上路日期在未来：拦截提交并报行内错误', () {
+    // 预登记车允许上路日期晚于今天；此时表单默认日期（今天）落在
+    // 下界之外，picker 无任何可选日期。新增提交必须被拦住，避免写
+    // 入早于上路日期的加油记录。
+    final futureCar = Car(
+      id: 77,
+      brand: '本田',
+      model: '22款思域',
+      currentMileageKm: 10000,
+      roadDate: const LocalDate(2026, 6, 1),
+      sync: testSync,
+    );
+    final harness = FuelFormHarness(car: futureCar);
+    harness.controller.unitPriceController.text = '8.15';
+    harness.controller.payableController.text = '300';
+
+    expect(harness.controller.submitPayload(), isNull);
+    expect(harness.reportedError, '车辆上路日期在未来，暂不能添加加油记录');
+  });
+
   test('unit price backfill prefers edit value over prefill and empty', () {
     // 优先级 1/3：编辑态回填记录自己的单价，忽略预填值；应付/实付
     // 同步回填，实付没填回空串。

@@ -164,6 +164,13 @@ class FuelRecordFormController {
   /// 的 now。容积由实体按应付÷单价自算（预留字段）。写库由 widget 经
   /// handle.submit → 动作层完成，本类不碰。
   FuelRecord? submitPayload() {
+    // 新增时表单默认日期是生效今天；车辆上路日期在未来（预登记车）时
+    // 今天落在日期下界之外，picker 没有任何可选日期。此时直接拦住，
+    // 避免落一条早于上路日期的加油记录（编辑沿用原日期，不拦）。
+    if (!isEditing && car.roadDate.compareTo(today) > 0) {
+      reportError('车辆上路日期在未来，暂不能添加加油记录');
+      return null;
+    }
     // 三个金额一次解析到位（元→分，trim/四舍五入/空与非法 = null 只有
     // parseMoneyCents 这一份实现）；实付空/非法 → null 即"未填"。
     final unitPriceCents = parseMoneyCents(unitPriceController.text);
