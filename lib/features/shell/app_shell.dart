@@ -112,16 +112,19 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final tokens = Theme.of(context).extension<LunioTokens>()!;
+    // 开关未就绪（首次加载 / 偏好纪元重算）时不能当成"已关闭"：
+    // 否则任何偏好写入都会把停在加油页的用户踢回 /me。只有明确读到
+    // false 才做兜底重定向。
     final fuelEnabled = ref
         .watch(fuelPredictionEnabledProvider)
-        .maybeWhen(data: (value) => value, orElse: () => false);
-    if (fuelEnabled) {
+        .maybeWhen<bool?>(data: (value) => value, orElse: () => null);
+    if (fuelEnabled == true) {
       ref.watch(fuelPriceControllerProvider);
     }
     // 兜底：加油 tab 只在开关打开时存在。开关关闭后若仍停在 /fuel
     // （如冷启动恢复了旧路由），渲染提醒页内容并跳回 /me。
     final selectedIndex = widget.selectedIndex;
-    final onDisabledFuel = selectedIndex == 2 && !fuelEnabled;
+    final onDisabledFuel = selectedIndex == 2 && fuelEnabled == false;
     final effectiveIndex = onDisabledFuel ? 0 : selectedIndex;
     if (onDisabledFuel) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -187,7 +190,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     context.go('/records');
                   },
                 ),
-                if (fuelEnabled) ...[
+                if (fuelEnabled == true) ...[
                   const SizedBox(width: 6),
                   _BottomNavItem(
                     icon: Icons.local_gas_station_outlined,

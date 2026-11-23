@@ -1,6 +1,9 @@
 // fuel 域 widget 测试（共享夹具见 test/helpers/widget_app.dart）。
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lunio/features/shell/app_shell.dart';
 
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/domain/entities/fuel_price.dart';
@@ -56,6 +59,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('加油'), findsNothing);
   });
+  testWidgets('fuel tab stays put when preference epoch bumps', (tester) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    final repository = testRepository(database);
+    await repository.ensureBootstrapData();
+    await repository.setPreferenceValue('fuelPredictionEnabled', 'true');
+    await repository.setPreferenceValue('fuelProvince', '湖北');
+    final carId = await repository.createCarWithMaintenanceItems(
+      defaultCar(tankCapacityLiters: 55),
+      [
+        defaultOilItem(
+          remindByTime: false,
+          timeIntervalMonths: null,
+          sortOrder: 0,
+        ),
+      ],
+    );
+    await repository.setAppliedCarId(carId);
+    await repository.saveFuelPrediction(
+      FuelPrediction(carId: carId, fuelPercent: 50),
+    );
+    await pumpApp(tester, database: database);
+    await gotoTab(tester, '加油');
+    expect(find.text('当前油价'), findsOneWidget);
+
+    // 偏好写入会 bump 偏好纪元（换省/改油品/手填价都走这条路）。
+    // 纪元变化让开关 provider 重算；加载态不能被当成"开关已关"。
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(AppShell)),
+    );
+    container.read(preferencesEpochProvider.notifier).bump();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('当前油价'), findsOneWidget);
+    expect(find.text('个人中心'), findsNothing);
+  });
+
   testWidgets('fuel page shows fill cost tiers with capacity and mock price', (
     tester,
   ) async {
