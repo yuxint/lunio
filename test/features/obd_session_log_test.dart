@@ -184,6 +184,21 @@ void main() {
       expect(deleted, 1);
       expect(await store.list(), hasLength(50));
     });
+
+    test('cleanup：恰好 7 天前的文件计入上限，不超 50', () async {
+      final now = DateTime(2026, 11, 18, 22, 0, 0);
+      final cutoff = now.subtract(const Duration(days: 7));
+      // 一个恰好落在 cutoff 的文件 + 50 个晚于 cutoff 的文件。7 天规则
+      // 用 isBefore(cutoff) 删除、恰好 7 天算保留；但它必须计入 50 个
+      // 文件上限，否则两轮都不管，总数会停在 51。
+      await seedSession(cutoff, 1);
+      for (var i = 0; i < 50; i++) {
+        await seedSession(cutoff.add(Duration(minutes: i + 1)), 1);
+      }
+      final deleted = await store.cleanup(now: now);
+      expect(deleted, 1);
+      expect(await store.list(), hasLength(50));
+    });
   });
 
   group('ProductionObdSessionLogSink', () {

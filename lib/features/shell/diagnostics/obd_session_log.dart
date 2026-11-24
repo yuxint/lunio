@@ -134,6 +134,9 @@ class ObdSessionLogStore {
   /// 保留策略清理（2026-11-18 拍板：7 天 + 50 个文件双上限，删最旧）。
   /// 返回删除的文件数。清理时机 = 每次新建会话时顺带清理（2026-11-18
   /// 深审统一口径；长期不连接时过期文件留到下次连接清）。
+  ///
+  /// 边界语义：开始时刻恰为 now - keepDays 的文件算「未过期」不删，
+  /// 但计入 50 个文件上限（两条规则互补、不重叠不落空）。
   Future<int> cleanup({
     required DateTime now,
     int keepDays = 7,
@@ -149,9 +152,11 @@ class ObdSessionLogStore {
         deleted++;
       }
     }
-    // 50 条上限：仍超限的按旧→新删。
+    // 50 条上限：仍超限的按旧→新删。过滤必须与上面的删除条件互补
+    // （!isBefore 含 cutoff 等号）：第一轮按 isBefore 删、恰好 7 天算保留，
+    // 这些文件若不在这里计数，就会既不删也不计入上限，总数可停在 51。
     final remaining = (await list())
-        .where((e) => e.startedAt.isAfter(cutoff))
+        .where((e) => !e.startedAt.isBefore(cutoff))
         .toList()
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     while (remaining.length > keepMax) {
