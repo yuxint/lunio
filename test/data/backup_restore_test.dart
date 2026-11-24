@@ -512,6 +512,51 @@ void main() {
     expect(await database.select(database.fuelRecords).get(), isEmpty);
   });
 
+  test('backup restore rejects diagnostics probe referencing missing car',
+      () async {
+    await repos.seedCarAndItem();
+    final backup = await backupRepository.exportBackupPayload();
+    // 备份 v5 的自定义检测点段带 carId：引用不存在的车辆时必须在事务外
+    // 被引用完整性预校验拒绝（与其余 5 类引用同一出口 typed
+    // backupInvalidData）。此前该段不在预校验里，直到事务内重映射才抛
+    // 裸 ArgumentError。
+    final invalid = BackupPayload(
+      schemaVersion: BackupCodec.currentSchemaVersion,
+      cars: backup.cars,
+      maintenanceItems: backup.maintenanceItems,
+      records: backup.records,
+      diagnosticsProbes: [
+        DiagnosticsProbe(
+          carId: backup.cars.single.id! + 999,
+          name: '进气温度',
+          command: '012F',
+          parseType: DiagnosticsParseType.fuelLevel,
+          refreshIntervalSeconds: 60,
+          sync: sync,
+        ),
+      ],
+    );
+
+    expect(
+      () => backupRepository.restoreBackupPayload(invalid),
+      throwsA(
+        isA<LunioErrorException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              LunioErrorKind.backupInvalidData,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              contains('检测点'),
+            ),
+      ),
+    );
+    // 预校验在事务外执行：原库数据未被清空，也没有依赖事务回滚兜底。
+    expect(await database.select(database.cars).get(), hasLength(1));
+  });
+
   test('backup restore rejects tampered business data before writing', () async {
     final (carId, itemId) = await repos.seedCarAndItem();
     final backup = await backupRepository.exportBackupPayload();

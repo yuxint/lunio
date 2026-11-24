@@ -387,7 +387,8 @@ class BackupRepository {
   /// 备份引用完整性校验（恢复前、事务外执行）：
   /// cars/items 的 id 齐全且不重复；每个 item 的 carsId 存在；
   /// 每条 record 的 carId 存在、每个 itemId 存在且与 record 同车
-  /// （跨车引用的备份直接拒绝）；加油预测设置与加油记录的 carId 存在。
+  /// （跨车引用的备份直接拒绝）；加油预测设置、加油记录与自定义检测点
+  /// 的 carId 存在。
   ///
   /// 与 [_validateBackupBusinessRules] 同一失败出口：检查体抛出的裸
   /// [ArgumentError] 在这里统一包装为 typed
@@ -454,6 +455,14 @@ class BackupRepository {
     for (final fuelRecord in payload.fuelRecords) {
       if (!carIds.contains(fuelRecord.carId)) {
         throw ArgumentError('Backup fuel record references missing car');
+      }
+    }
+    // 自定义检测点段（备份 v5）同样带 carId：必须在预校验里查，否则会
+    // 拖到事务内 carIdMap 重映射时才抛错（数据虽随事务回滚，但错误类型
+    // 已越过事务边界，且"恢复失败不写入任何数据"不再由预校验单独保证）。
+    for (final probe in payload.diagnosticsProbes) {
+      if (!carIds.contains(probe.carId)) {
+        throw ArgumentError('检测点「${probe.name}」引用了不存在的车辆');
       }
     }
   }
