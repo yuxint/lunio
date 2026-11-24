@@ -489,9 +489,24 @@ void main() {
       ],
     );
 
+    // 引用完整性失败与业务规则失败同一出口：typed backupInvalidData +
+    // 用户可读中文文案（ADR 0009 修订节「备份校验失败统一抛
+    // LunioErrorException」），不再是逃逸到 UI 的裸 ArgumentError。
     expect(
       () => backupRepository.restoreBackupPayload(orphanFuelRecord),
-      throwsArgumentError,
+      throwsA(
+        isA<LunioErrorException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              LunioErrorKind.backupInvalidData,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              startsWith('备份文件中存在无效数据'),
+            ),
+      ),
     );
     // 预校验在事务外执行：库未被改动（残留行一个都没有写入）。
     expect(await database.select(database.fuelRecords).get(), isEmpty);
@@ -914,7 +929,13 @@ void main() {
 
       expect(
         () => backupRepository.restoreBackupPayload(invalid),
-        throwsArgumentError,
+        throwsA(
+          isA<LunioErrorException>().having(
+            (error) => error.kind,
+            'kind',
+            LunioErrorKind.backupInvalidData,
+          ),
+        ),
       );
       expect(await database.select(database.cars).get(), hasLength(1));
     },
@@ -954,7 +975,19 @@ void main() {
       ],
     );
 
-    expect(() => backupRepository.restoreBackupPayload(invalid), throwsArgumentError);
+    expect(
+      () => backupRepository.restoreBackupPayload(invalid),
+      throwsA(
+        isA<LunioErrorException>().having(
+          (error) => error.kind,
+          'kind',
+          LunioErrorKind.backupInvalidData,
+        ),
+      ),
+    );
+
+    // 尾注：跨车引用与上一条「记录引用缺失车」同属引用完整性预校验，
+    // 失败出口同为 typed backupInvalidData（ADR 0009 修订节）。
   });
 
   test('clear all data removes local rows', () async {

@@ -388,7 +388,27 @@ class BackupRepository {
   /// cars/items 的 id 齐全且不重复；每个 item 的 carsId 存在；
   /// 每条 record 的 carId 存在、每个 itemId 存在且与 record 同车
   /// （跨车引用的备份直接拒绝）；加油预测设置与加油记录的 carId 存在。
+  ///
+  /// 与 [_validateBackupBusinessRules] 同一失败出口：检查体抛出的裸
+  /// [ArgumentError] 在这里统一包装为 typed
+  /// [LunioErrorException]（[LunioErrorKind.backupInvalidData]）
+  /// + 用户可读中文文案（ADR 0009 修订节）。此前该类错误直接上抛英文
+  /// ArgumentError，恢复 UI 落到泛化分支显示
+  /// 「恢复失败：Invalid argument(s): Backup ...」。
   void _validateBackupReferences(BackupPayload payload) {
+    try {
+      _ensureBackupReferences(payload);
+    } on ArgumentError catch (error) {
+      throw LunioErrorException(
+        LunioErrorKind.backupInvalidData,
+        '备份文件中存在无效数据（引用完整性）：${error.message}',
+      );
+    }
+  }
+
+  /// [_validateBackupReferences] 的实际检查体：只抛裸 [ArgumentError]，
+  /// 由上层统一翻译为 typed 错误（文案前缀只写一份）。
+  void _ensureBackupReferences(BackupPayload payload) {
     final carIds = payload.cars.map((car) => car.id).whereType<int>().toSet();
     final itemCarIds = <int, int>{};
     for (final item in payload.maintenanceItems) {
