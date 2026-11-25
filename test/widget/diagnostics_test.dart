@@ -40,6 +40,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -354,6 +355,46 @@ void main() {
       // 与页面无关，不再拿它当退栈标记——ADR 0029 后它是常驻入口）。
       expect(find.text('车辆诊断'), findsNothing);
     });
+    testWidgets('清空数据断开 App 级 OBD 连接（诊断开关随偏好清除）', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      final notificationCalls = <MethodCall>[];
+      final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+      try {
+        await seedDeveloperDiagnostics(database);
+        await pumpApp(
+          tester,
+          database: database,
+          extraOverrides: rig.overrides,
+        );
+        await openDiagnosticsPage(tester);
+        await rig.advanceUntil(tester, find.text('38%'));
+        expect(rig.mock.disconnectCalls, 0);
+
+        // 离页不断开（App 级连接保持，ADR 0027），连接此时无人可见。
+        await leavePageAndFlush(tester);
+        expect(rig.mock.disconnectCalls, 0);
+
+        // 清空数据删除全部偏好：diagnosticsEnabled 回默认关、
+        // lastObdDeviceId 清空，入口全部隐藏。连接必须一起释放，不能
+        // 继续无人消费地轮询（ADR 0027「关闭断开、不留给空转轮询」）。
+        await tester.tap(find.widgetWithText(TextButton, '清空'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, '清空'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('已清空数据'), findsOneWidget);
+        expect(rig.mock.disconnectCalls, 1);
+        final bundle = testRepository(database);
+        expect(await bundle.getPreferenceValue('diagnosticsEnabled'), isNull);
+        expect(await bundle.getPreferenceValue('lastObdDeviceId'), isNull);
+        await drainToastTimer(tester);
+      } finally {
+        cleanupNotifications();
+      }
+    });
+
     testWidgets('调试终端：暂停轮询后原始命令可发，验证脚本含私有 DID', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);

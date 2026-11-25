@@ -556,8 +556,13 @@ Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
 /// 代数（作废在途通知任务，R8）→ clearAllData 事务删 7 张表（业务
 /// 4 张 + 加油预测设置 + 加油记录 + 偏好）→ 撤实时活动 + 取消停车
 /// 停车族与保养/里程提醒族系统通知（偏好已删，残留通知必须
-/// 显式取消）→ invalidateAllAppDataProviders 全量刷新（bootstrap
-/// provider 失效后车型目录自动重灌）。
+/// 显式取消）→ 断开 App 级 OBD 连接 → invalidateAllAppDataProviders
+/// 全量刷新（bootstrap provider 失效后车型目录自动重灌）。
+///
+/// 断开 OBD 的理由与 [setDiagnosticsEnabled] 关闭时同一条（ADR 0027）：
+/// 偏好表被清后 diagnosticsEnabled 回到默认关、lastObdDeviceId 也没了，
+/// 提醒页按钮/信息卡与诊断入口全部隐藏；连接若留着就变成无人消费的
+/// 空转轮询（且设备记忆已删、无法从 UI 察觉）。
 Future<bool> clearAllData(BuildContext context, WidgetRef ref) async {
   final confirmed = await showConfirmDialog(
     context: context,
@@ -575,6 +580,9 @@ Future<bool> clearAllData(BuildContext context, WidgetRef ref) async {
       .runAllDataClear(
         () => ref.read(backupRepositoryProvider).clearAllData(),
       );
+  // 偏好已删 = 诊断开关已回到默认关：释放 App 级连接，语义与设置页
+  // 手动关开关（setDiagnosticsEnabled(false)）一致。
+  await ref.read(obdConnectionControllerProvider).disconnectManually();
   invalidateAllAppDataProviders(ref);
   return true;
 }
