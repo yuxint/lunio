@@ -557,6 +557,37 @@ void main() {
     expect(await database.select(database.cars).get(), hasLength(1));
   });
 
+  test('backup restore rejects total tank capacity smaller than usable',
+      () async {
+    // 裸插一辆"总容积 < 可用容积"的车（绕过表单/仓库校验，模拟被篡改的
+    // 备份来源），导出后再恢复：备份业务规则必须与手工录入同一套校验
+    // （ADR 0022，FuelRules.validateTotalTankCapacity），在事务外拒绝。
+    await repos.insertCarForTest(
+      defaultCar(tankCapacityLiters: 60, totalTankCapacityLiters: 47),
+    );
+    final backup = await backupRepository.exportBackupPayload();
+    expect(backup.cars.single.totalTankCapacityLiters, 47);
+
+    expect(
+      () => backupRepository.restoreBackupPayload(backup),
+      throwsA(
+        isA<LunioErrorException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              LunioErrorKind.backupInvalidData,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              startsWith('备份文件中存在无效数据'),
+            ),
+      ),
+    );
+    // 预校验在事务外执行：原库未被清空（不是靠事务回滚兜底）。
+    expect(await database.select(database.cars).get(), hasLength(1));
+  });
+
   test('backup restore rejects tampered business data before writing', () async {
     final (carId, itemId) = await repos.seedCarAndItem();
     final backup = await backupRepository.exportBackupPayload();

@@ -477,7 +477,15 @@ class BackupRepository {
   void _validateBackupBusinessRules(BackupPayload payload) {
     for (final car in payload.cars) {
       try {
+        // 与手工新增/编辑车辆同一套容积规则（lunio_repository 的
+        // createCar/updateCar）：可用容积 + 总容积，且总容积不得小于
+        // 可用容积（ADR 0022）。只查可用容积会放过篡改/损坏备份里的
+        // 非法总容积（如 47 < 可用 60）。
         FuelRules.validateTankCapacity(car.tankCapacityLiters);
+        FuelRules.validateTotalTankCapacity(
+          car.totalTankCapacityLiters,
+          usableCapacityLiters: car.tankCapacityLiters,
+        );
       } on ArgumentError catch (error) {
         throw LunioErrorException(
           LunioErrorKind.backupInvalidData,
