@@ -208,7 +208,9 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
   /// 恢复预校验拒绝（typed backupInvalidData——实体校验失败/同车同日
   /// 重复）弹对话框给 throw 点的具体原因；驱动层唯一约束冲突（预校验
   /// 拦不住的最后防线，恢复事务边界已包装成 typed uniqueConstraint，
-  /// 事务已回滚）按 kind 弹恢复场景的通用对话框；其余失败 toast。
+  /// 事务已回滚）按 kind 弹恢复场景的通用对话框；版本不支持（解码抛
+  /// UnsupportedError）弹「不支持的备份文件」（backup_codec.decode 的
+  /// 约定文案，ADR 0005）；其余失败 toast。
   /// 错误分类属 UI 反馈决策留页面。
   Future<void> _restoreBackup(BuildContext context) async {
     try {
@@ -227,6 +229,15 @@ class ProfilePreviewPageState extends ConsumerState<ProfilePreviewPage> {
           message: error.kind == LunioErrorKind.uniqueConstraint
               ? '恢复文件中的部分数据重复或冲突，本次恢复未写入任何数据。'
               : '${error.message}\n本次恢复未写入任何数据。',
+          tone: StatusOverlayTone.error,
+        );
+      } else if (error is UnsupportedError) {
+        // 解码层的版本拒绝是预期失败，文案见 backup_codec.decode 注释；
+        // 不把 UnsupportedError.toString() 的英文原文丢给用户。
+        await showMessageDialog(
+          context: context,
+          title: '恢复失败',
+          message: '不支持的备份文件\n本次恢复未写入任何数据。',
           tone: StatusOverlayTone.error,
         );
       } else {

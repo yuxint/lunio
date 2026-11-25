@@ -190,6 +190,34 @@ void main() {
   });
 
 
+  testWidgets('profile restore unsupported version shows documented message', (
+    tester,
+  ) async {
+    // 版本不支持属预期拒绝（backup_codec.decode 注释：UI 提示「不支持的
+    // 备份文件」，ADR 0005）；不能把 UnsupportedError 的英文 toString
+    // 直接丢给用户。
+    mockNativeFiles((call) async {
+      if (call.method == 'pickJsonFile') {
+        return '{"schemaVersion": 99}';
+      }
+      return null;
+    });
+    final database = await pumpApp(tester);
+    await createDefaultCar(tester);
+
+    await tester.tap(find.widgetWithText(TextButton, '恢复').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('恢复').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('恢复失败'), findsOneWidget);
+    expect(find.textContaining('不支持的备份文件'), findsOneWidget);
+    expect(find.textContaining('Unsupported'), findsNothing);
+    // 版本不支持在解码阶段即被拒：库未被清空。
+    expect(await database.select(database.cars).get(), hasLength(1));
+  });
+
+
   testWidgets('profile restore backup conflict shows one-button dialog', (
     tester,
   ) async {
