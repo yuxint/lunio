@@ -89,10 +89,10 @@ void main() {
         '车辆：思域 2022\n'
         '开始：$_stamp\n'
         '说明：标准 PID 为模板快照集经本车能力位图过滤（0100–01A0，轮询内'
-        '置七条不重复采）；DTC 03/07/0A 标准读取；私有 DID 两段只读（仪'
-        '表 227029/22702A/227060/227028/227022、TCM 222301 CVT 油温已转'
-        '正）；ECM 机油温度三候选（222666/22261A/22262A）本车恒回 NRC 31 '
-        '不支持，2026-11-20 起不再探测。末尾 ATSH DB 33 F1 恢复。'
+        '置七条不重复采）；DTC 03/07/0A 标准读取；私有 DID 两段只读（仪表 '
+        '227029/22702A/227028/227022、TCM 222301 一帧三量：转速/水温/CVT '
+        '油温）；227060 与 ECM 机油温度三候选（222666/22261A/22262A）本车 '
+        '恒回 NRC 31 不支持，已撤除。末尾 ATSH DB 33 F1 恢复。'
         '\n\n',
       );
       // 命令 / 响应块逐字（时间戳 + CR 归一）。
@@ -110,8 +110,10 @@ void main() {
       expect(harness.sent, containsAllInOrder(['03', '07', '0A']));
       expect(
         harness.sent,
-        containsAllInOrder(['ATSHDA60F1', '227029', '22702A', '227060']),
+        containsAllInOrder(['ATSHDA60F1', '227029', '22702A', '227028']),
       );
+      // 227060 与 222666 同一条 NRC 31，2026-11-21 撤除。
+      expect(harness.sent, isNot(contains('227060')));
       expect(harness.sent, containsAllInOrder(['ATSHDA1EF1', '222301']));
       // ECM 机油温度候选段 2026-11-20 撤除：不再发 DA10F1 与三条 DID
       // （本车三次一键检测恒回 7F 22 31，NRC requestOutOfRange）。

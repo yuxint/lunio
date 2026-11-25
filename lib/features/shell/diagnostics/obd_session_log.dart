@@ -11,13 +11,29 @@
 //
 // 行契约（JSONL，一行一个 JSON 对象）：
 //  {"t":"start","at":"ISO8601","device":"xx","mock":false}   会话头
-//  {"t":"r","probe":"水温","cmd":"0167","v":"95℃","at":"ISO"} 读数
-//  {"t":"r","probe":"..","cmd":"..","v":null,"r":"超时","at":"ISO"}
+//  {"t":"r","probe":"水温","cmd":"0167","hdr":"DB33F1",
+//   "v":"95℃","raw":"41 67 03 87 83","at":"ISO"}             读数
+//  {"t":"r","probe":"..","cmd":"..","hdr":"..","v":null,
+//   "r":"超时","at":"ISO"}                                    无数据
 //  {"t":"e","e":"disconnect","at":"ISO","reason":".."}        事件
+//  {"t":"e","e":"raw","cmd":"222666","hdr":"DA10F1",
+//   "resp":"7F 22 31","at":"ISO"}                     调试终端往返
 //  {"t":"e","e":"verify","log":"..多行一键检测日志..","at":"ISO"}
 //  {"t":"e","e":"lifecycle","s":"paused","at":"ISO"}          应用生命周期
 //  {"t":"e","e":"fuel_gate","probe":"油量","raw":27.0,"held":40.0,
 //   "n":3,"span":13.0,"at":"ISO"}                            油量门限拒绝
+//
+// 原始帧口径（2026-11-21 拍板「日志要原始的，不要解析好的」）：读数行的
+// `raw` 是提示符前的**完整帧文本**（多 ECU 多行、含 `0:` 行号原样，仅
+// CR/CRLF 归一为 LF、去尾部空白），`hdr` 是当时实际生效的请求头。解析
+// 值只服务卡片，原始字节才是事后复核的依据——没有 `raw` 时无法判断
+// 「解析错」还是「车没回」，也看不出帧是否被截断（实车出现过 37 字节
+// 的残缺 222301 帧，三个字段同时错）。超时没有帧，`raw` 缺省；NO DATA
+// 等错误响应照记原文。
+//
+// 调试终端往返（2026-11-21）单列 `e:"raw"` 行：轮询之外用户手发的每条
+// 命令都留痕，包括失败的（`err` 字段）。一键检测整段已由 `verify` 行
+// 承载，不再重复写 `raw` 行。
 //
 // 生命周期行（2026-11-20 拍板）：诊断页/主壳层把 AppLifecycleState.name
 // 原样上报，用于归因轮询空档。三种空档的日志形态互斥——App 挂起：
@@ -236,23 +252,57 @@ class ObdSessionLogRecorder {
   }
 
   /// 追加一条读数（值或无数据都记；无数据带原因 r）。
+  ///
+  /// [rawText] 是提示符前的完整帧文本（超时为 null），[header] 是当时
+  /// 生效的请求头——两者都进日志，卡片展示值只是它的一种解读。
   Future<void> appendReading({
     required String probeName,
     required String command,
     required String? display,
     required String? noDataReason,
     required DateTime at,
+    String? rawText,
+    String? header,
   }) async {
     final file = _file;
     if (file == null) {
       return;
     }
+    final raw = normalizeRawFrame(rawText);
     final line = jsonEncode({
       't': 'r',
       'probe': probeName,
       'cmd': command,
+      'hdr': header,
       'v': display,
       'r': ?noDataReason,
+      'raw': ?raw,
+      'at': at.toIso8601String(),
+    });
+    await file.writeAsString('$line\n', mode: FileMode.append);
+  }
+
+  /// 追加一条调试终端原始往返（2026-11-21）。失败时 [errorText] 非空、
+  /// [rawText] 为 null——「没回来」本身就是要查的现象。
+  Future<void> appendRawExchange({
+    required String command,
+    required String header,
+    required String? rawText,
+    required String? errorText,
+    required DateTime at,
+  }) async {
+    final file = _file;
+    if (file == null) {
+      return;
+    }
+    final raw = normalizeRawFrame(rawText);
+    final line = jsonEncode({
+      't': 'e',
+      'e': 'raw',
+      'cmd': command,
+      'hdr': header,
+      'resp': ?raw,
+      'err': ?errorText,
       'at': at.toIso8601String(),
     });
     await file.writeAsString('$line\n', mode: FileMode.append);
@@ -287,6 +337,20 @@ class ObdSessionLogRecorder {
   }
 }
 
+/// 原始帧文本归一：CRLF/CR → LF、去首尾空白。只动行分隔符与首尾空行
+/// （适配器在提示符后先吐 `\r\r`），不动任何字节内容与行序——行数与
+/// 行号（`0:`–`8:`）必须保留，它们是不完整帧的唯一外部信号。
+String? normalizeRawFrame(String? frameText) {
+  if (frameText == null) {
+    return null;
+  }
+  final normalized = frameText
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .trim();
+  return normalized.isEmpty ? null : normalized;
+}
+
 /// 时刻 → 文件名时间戳段（yyyyMMdd-HHmmss，本地时刻）。
 String _stamp(DateTime at) {
   String two(int v) => v.toString().padLeft(2, '0');
@@ -302,8 +366,25 @@ abstract class ObdSessionLogSink {
   /// 会话开始（连接成功）。
   void onSessionStart(DateTime at, {String? deviceId, bool mock = false});
 
-  /// 一条轮询读数（值或无数据都记）。
-  void onProbeReading(DiagnosticsProbe probe, ObdReading reading, DateTime at);
+  /// 一条轮询读数（值或无数据都记）。[rawText] 完整帧文本（超时 null），
+  /// [header] 当时生效的请求头——2026-11-21 起日志以原始帧为准。
+  void onProbeReading(
+    DiagnosticsProbe probe,
+    ObdReading reading,
+    DateTime at, {
+    String? rawText,
+    String? header,
+  });
+
+  /// 调试终端一次原始往返（2026-11-21）：[rawText] 无数据时 null、
+  /// [errorText] 失败时非空。一键检测不写本行（整段在 verify 行里）。
+  void onRawExchange({
+    required String command,
+    required String header,
+    required DateTime at,
+    String? rawText,
+    String? errorText,
+  });
 
   /// 会话结束（断开）。
   void onSessionEnd(DateTime at, {String? reason});
@@ -379,7 +460,13 @@ class ProductionObdSessionLogSink implements ObdSessionLogSink {
   }
 
   @override
-  void onProbeReading(DiagnosticsProbe probe, ObdReading reading, DateTime at) {
+  void onProbeReading(
+    DiagnosticsProbe probe,
+    ObdReading reading,
+    DateTime at, {
+    String? rawText,
+    String? header,
+  }) {
     _enqueue(() async {
       final recorder = _recorder;
       if (recorder == null) {
@@ -391,6 +478,27 @@ class ProductionObdSessionLogSink implements ObdSessionLogSink {
         command: probe.command,
         display: noData ? null : reading.display,
         noDataReason: noData ? reading.reason : null,
+        at: at,
+        rawText: rawText,
+        header: header,
+      );
+    });
+  }
+
+  @override
+  void onRawExchange({
+    required String command,
+    required String header,
+    required DateTime at,
+    String? rawText,
+    String? errorText,
+  }) {
+    _enqueue(() async {
+      await _recorder?.appendRawExchange(
+        command: command,
+        header: header,
+        rawText: rawText,
+        errorText: errorText,
         at: at,
       );
     });

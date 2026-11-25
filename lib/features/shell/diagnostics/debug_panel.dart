@@ -127,7 +127,11 @@ class _DiagnosticsDebugPanelState extends State<DiagnosticsDebugPanel> {
         },
         send: (command) async {
           try {
-            return ObdCommandFrame(await session.sendRawCommand(command));
+            // 一键检测整段日志（含全部往返）由 onVerificationLog 单独
+            // 写入会话文件，这里抑制逐条 raw 行，避免同一份数据写两遍。
+            return ObdCommandFrame(
+              await session.sendRawCommand(command, logExchange: false),
+            );
           } on Elm327TimeoutException catch (error) {
             return ObdCommandTimeout(error);
           } on Elm327SessionException catch (error) {

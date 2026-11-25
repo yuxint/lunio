@@ -838,13 +838,42 @@ class DiagnosticsConnectionController extends ChangeNotifier {
         _statusError = _disconnectCopy(cause);
         sessionLogSink?.onSessionEnd(DateTime.now(), reason: '$cause');
         _notify();
-      case Elm327ProbeReading(:final probeId, :final reading, :final at):
+      case Elm327RawExchange(
+          :final command,
+          :final header,
+          :final at,
+          :final frameText,
+          :final error
+        ):
+        // 调试终端往返（2026-11-21）：原样转交 sink，不做任何裁剪——
+        // 失败的往返同样留档（`err` 字段），「没回来」本身就是要查的现象。
+        sessionLogSink?.onRawExchange(
+          command: command,
+          header: header,
+          at: at,
+          rawText: frameText,
+          errorText: error == null ? null : '$error',
+        );
+      case Elm327ProbeReading(
+          :final probeId,
+          :final reading,
+          :final at,
+          :final frameText,
+          :final header
+        ):
         final probe = _probeById(probeId);
         // 原始读数先入会话日志（2026-11-20）：日志记「看到的全部」，门限
         // 只管「采用哪一个」——被丢掉的晃动值必须留档，否则事后无法判断
-        // 门限是否误杀。
+        // 门限是否误杀。2026-11-21 起连同原始帧与生效头一起记（日志以
+        // 原始字节为准，解析值只是它的一种解读）。
         if (probe != null) {
-          sessionLogSink?.onProbeReading(probe, reading, at);
+          sessionLogSink?.onProbeReading(
+            probe,
+            reading,
+            at,
+            rawText: frameText,
+            header: header,
+          );
         }
         final admitted = _gateFuelReading(probe, reading, at);
         if (admitted == null) {

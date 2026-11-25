@@ -393,11 +393,11 @@ void main() {
       final vendorCommands = obdVendorCommandGroups
           .expand((group) => group.commands)
           .toList();
-      // 2026-11-20 两组：仪表段 + TCM（ECM 机油温度候选段撤除）。
+      // 2026-11-21 两组：仪表段四条 + TCM（227060 与 ECM 机油温度候选段
+      // 均因恒回 NRC 31 撤除）。
       expect(vendorCommands, [
         '227029',
         '22702A',
-        '227060',
         '227028',
         '227022',
         '222301',

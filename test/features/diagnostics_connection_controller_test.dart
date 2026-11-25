@@ -65,15 +65,20 @@ class _HangingConnectTransport implements OBDTransport {
   }
 }
 
-/// 会话日志假件：记账会话收尾、生命周期、油量门限拒绝与读数展示文本。
+/// 会话日志假件：记账会话收尾、生命周期、油量门限拒绝、读数展示文本
+/// 与原始帧/头（2026-11-21 起日志以原始字节为准）。
 class _RecordingSink implements ObdSessionLogSink {
   _RecordingSink(this.ends,
       {List<(DateTime, String)>? lifecycles,
       List<String>? readings,
-      List<(double, double?, int, double?)>? fuelGateRejects})
+      List<(double, double?, int, double?)>? fuelGateRejects,
+      List<(String, String?, String?)>? rawReadings,
+      List<(String, String, String?, String?)>? rawExchanges})
       : lifecycles = lifecycles ?? [],
         readings = readings ?? [],
-        fuelGateRejects = fuelGateRejects ?? [];
+        fuelGateRejects = fuelGateRejects ?? [],
+        rawReadings = rawReadings ?? [],
+        rawExchanges = rawExchanges ?? [];
 
   final List<(DateTime, String?)> ends;
   final List<(DateTime, String)> lifecycles;
@@ -84,6 +89,12 @@ class _RecordingSink implements ObdSessionLogSink {
   /// 门限拒绝记录：(raw, held, samples, span)。
   final List<(double, double?, int, double?)> fuelGateRejects;
 
+  /// 读数原始帧记录：(probe, rawText, header)。
+  final List<(String, String?, String?)> rawReadings;
+
+  /// 调试终端往返记录：(cmd, header, rawText, errorText)。
+  final List<(String, String, String?, String?)> rawExchanges;
+
   @override
   void onSessionStart(DateTime at, {String? deviceId, bool mock = false}) {}
 
@@ -91,9 +102,23 @@ class _RecordingSink implements ObdSessionLogSink {
   void onProbeReading(
     DiagnosticsProbe probe,
     ObdReading reading,
-    DateTime at,
-  ) {
+    DateTime at, {
+    String? rawText,
+    String? header,
+  }) {
     readings.add(reading.display);
+    rawReadings.add((probe.name, rawText, header));
+  }
+
+  @override
+  void onRawExchange({
+    required String command,
+    required String header,
+    required DateTime at,
+    String? rawText,
+    String? errorText,
+  }) {
+    rawExchanges.add((command, header, rawText, errorText));
   }
 
   @override
@@ -164,7 +189,7 @@ class _Harness {
     controller = DiagnosticsConnectionController(
       sessionFactory: (deviceId) {
         deviceIds.add(deviceId);
-        return Elm327Session(
+        return lastSession = Elm327Session(
           transport: transportFactory?.call(deviceIds.length) ??
               transportOverride ??
               (connectError == null ? mock : _ThrowingTransport(connectError)),
@@ -212,6 +237,9 @@ class _Harness {
   final DateTime fixedNow = DateTime(2026, 5, 19, 14, 30, 0);
   late final MockObdTransport mock;
   late final DiagnosticsConnectionController controller;
+
+  /// 最近一次由工厂建出的会话（调试终端往返用例直接驱动它）。
+  Elm327Session? lastSession;
 
   /// 设备记忆当前值（用例可改：null = 无记忆首用）。
   String? rememberedId;
@@ -921,5 +949,54 @@ void main() {
     });
   });
 
+  group('原始帧落日志（2026-11-21）', () {
+    test('读数带完整帧与当时生效的物理头', () async {
+      final ends = <(DateTime, String?)>[];
+      final rawReadings = <(String, String?, String?)>[];
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends, rawReadings: rawReadings),
+      );
+      final cvt = DiagnosticsProbe(
+        id: 1,
+        carId: 1,
+        name: 'CVT 油温',
+        command: '222301',
+        parseType: DiagnosticsParseType.cvtOilTemp,
+        enabled: true,
+        header: 'ATSH DA1EF1',
+      );
+      h.controller.setProbes([cvt]);
+      await h.connectDirect();
+      // ATSH 切头 + 222301 两条。
+      await h.driveChunks(2);
 
+      final (probe, raw, header) = rawReadings.single;
+      expect(probe, 'CVT 油温');
+      expect(header, 'DA1EF1', reason: '日志必须记住当时的寻址头，否则复现不了');
+      expect(raw, contains('0: 62 23 01'));
+      // 完整帧原样保留行号：残缺帧（少行）只能靠这个信号识别。
+      expect(raw, contains('5: 00 00 FF FF 00 55 55'));
+    });
+
+    test('调试终端往返转交 sink：命令/头/原始帧三件套', () async {
+      final ends = <(DateTime, String?)>[];
+      final rawExchanges = <(String, String, String?, String?)>[];
+      final h = _Harness(
+        rememberedId: 'dev-1',
+        sessionLogSink: _RecordingSink(ends, rawExchanges: rawExchanges),
+      );
+      // 不设探针：轮询清单为空，链路只承载这一条手发命令。
+      await h.connectDirect();
+      final future = h.lastSession!.sendRawCommand('0142');
+      await h.driveChunks(1);
+      await future;
+
+      final (cmd, header, raw, error) = rawExchanges.single;
+      expect(cmd, '0142');
+      expect(header, 'DB33F1');
+      expect(raw, contains('41 42 30 8E'));
+      expect(error, isNull);
+    });
+  });
 }

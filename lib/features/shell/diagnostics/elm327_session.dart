@@ -78,6 +78,8 @@ final class Elm327ProbeReading extends Elm327SessionEvent {
     required this.probeId,
     required this.reading,
     required this.at,
+    this.frameText,
+    required this.header,
   });
 
   /// 检测点行 id（轮询快照来自库表，恒有 id）。
@@ -86,6 +88,37 @@ final class Elm327ProbeReading extends Elm327SessionEvent {
 
   /// 读取时间（story 14 行尾"最后更新时间"的数据源；注入时钟）。
   final DateTime at;
+
+  /// 提示符前的完整帧文本（多 ECU/多行帧原样，含 `0:` 行号）；
+  /// 超时等「没有帧」的情形为 null。会话日志的 `raw` 字段取它——
+  /// 2026-11-21 拍板「日志要原始的」：解析值只影响卡片，原始字节
+  /// 必须留档，否则离线无法复核解析是否误杀、帧是否完整。
+  final String? frameText;
+
+  /// 本条读取时实际生效的请求头（规整形态，无 ATSH 前缀）。私有 DID
+  /// 走物理寻址，事后分析必须知道当时的头，否则复现不了。
+  final String header;
+}
+
+/// 调试终端一次原始往返（2026-11-21）：命令 + 提示符前的完整帧 +
+/// 当时生效的头；失败时 [error] 非空、[frameText] 为 null。
+///
+/// 只用于落会话日志。一键检测整段已含全部往返，它的执行器传
+/// `logExchange: false` 抑制本事件，避免同一份数据写两遍。
+final class Elm327RawExchange extends Elm327SessionEvent {
+  const Elm327RawExchange({
+    required this.command,
+    required this.header,
+    required this.at,
+    this.frameText,
+    this.error,
+  });
+
+  final String command;
+  final String header;
+  final DateTime at;
+  final String? frameText;
+  final Object? error;
 }
 
 /// ELM327 会话控制器（职责与生命周期见文件头）。
@@ -324,7 +357,14 @@ class Elm327Session {
   /// 调试终端原始命令（ADR 0023）：规整后走与轮询同一条串行链路，
   /// 返回提示符前的完整帧文本。调用方应先 [pausePolling]，避免与自动
   /// 轮询抢占；未连接抛会话异常。
-  Future<String> sendRawCommand(String command) {
+  ///
+  /// [logExchange]（2026-11-21）：成功/失败都发一条 [Elm327RawExchange]
+  /// 供会话日志落盘。一键检测把整段日志（含全部往返）单独写入会话文件，
+  /// 它的执行器传 false 抑制，避免同一份数据写两遍。
+  Future<String> sendRawCommand(
+    String command, {
+    bool logExchange = true,
+  }) async {
     if (_state != Elm327SessionState.connected) {
       throw const Elm327SessionException('未连接');
     }
@@ -332,17 +372,36 @@ class Elm327Session {
     if (normalized.isEmpty) {
       throw ArgumentError('指令不能为空');
     }
-    final future = _request(normalized);
-    // ATSH 原始命令登记跟踪头（2026-11-18 深审修复，问题 3）：调试
-    // ATSH 绕过轮询链路的 _ensureHeader，成功后登记防跟踪脱钩；失败
-    // （异常穿出）不登记——适配器状态未知，下一轮按需重切。
-    return future.then<String>((frame) {
+    try {
+      final frame = await _request(normalized);
+      // ATSH 原始命令登记跟踪头（2026-11-18 深审修复，问题 3）：调试
+      // ATSH 绕过轮询链路的 _ensureHeader，成功后登记防跟踪脱钩；失败
+      // （异常穿出）不登记——适配器状态未知，下一轮按需重切。
       final match = _atshPattern.firstMatch(normalized);
       if (match != null) {
         _activeHeader = match.group(1)!;
       }
+      if (logExchange) {
+        _emit(Elm327RawExchange(
+          command: normalized,
+          header: _activeHeader,
+          at: _now(),
+          frameText: frame,
+        ));
+      }
       return frame;
-    });
+    } catch (error) {
+      // 失败也留档：调试时最想知道的恰恰是「这条为什么没回来」。
+      if (logExchange) {
+        _emit(Elm327RawExchange(
+          command: normalized,
+          header: _activeHeader,
+          at: _now(),
+          error: error,
+        ));
+      }
+      rethrow;
+    }
   }
 
   /// ATSH 原始命令匹配（规整后无空格形态，如 ATSHDA1EF1 / ATSHDB33F1）。
@@ -441,6 +500,8 @@ class Elm327Session {
         probeId: probeId,
         reading: reading,
         at: _now(),
+        frameText: frame,
+        header: _activeHeader,
       ));
       return true;
     } on Elm327TimeoutException {
@@ -448,6 +509,7 @@ class Elm327Session {
         probeId: probeId,
         reading: const ObdNoData('超时'),
         at: _now(),
+        header: _activeHeader,
       ));
       return true;
     } on Elm327SessionException {
@@ -462,6 +524,7 @@ class Elm327Session {
         probeId: probeId,
         reading: ObdNoData('读取失败：$e'),
         at: _now(),
+        header: _activeHeader,
       ));
       return true;
     }

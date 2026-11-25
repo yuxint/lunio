@@ -101,13 +101,19 @@ void main() {
   });
 
   group('obdVendorCommandGroups', () {
-    test('2026-11-20 两组：仪表段扩展 + TCM 已转正（ECM 候选段撤除）', () {
+    test('2026-11-21 两组：仪表段四条 + TCM 已转正（227060/ECM 段撤除）', () {
       expect(obdVendorCommandGroups, hasLength(2));
       expect(obdVendorCommandGroups[0].header, 'DA60F1');
       expect(obdVendorCommandGroups[0].commands,
-          ['227029', '22702A', '227060', '227028', '227022']);
+          ['227029', '22702A', '227028', '227022']);
       expect(obdVendorCommandGroups[1].header, 'DA1EF1');
       expect(obdVendorCommandGroups[1].commands, ['222301']);
+      // 227060（原以为的保养余量）四次一键检测恒回 7F 22 31，与 222666
+      // 同一条 NRC，2026-11-21 起与 ECM 段一起不进快照链。
+      expect(
+        obdVendorCommandGroups.expand((g) => g.commands),
+        isNot(contains('227060')),
+      );
       // 机油温度候选（DA10F1 的 222666/22261A/22262A）本车恒回 NRC 31，
       // 2026-11-20 起不再进这条只读快照链。
       expect(

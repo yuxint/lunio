@@ -94,6 +94,112 @@ void main() {
       expect(reading['r'], '超时');
     });
 
+    test('读数行带原始帧与生效头（2026-11-21）：CR 归一、行号保留', () async {
+      final at = DateTime(2026, 11, 21, 8, 23, 33);
+      final recorder = ObdSessionLogRecorder(directory: tempDir);
+      await recorder.start(at: at);
+      await recorder.appendReading(
+        probeName: 'CVT 油温',
+        command: '222301',
+        display: '24℃',
+        noDataReason: null,
+        at: at.add(const Duration(seconds: 1)),
+        // 真实帧形态：提示符后先来两个 CR 空行。
+        rawText:
+            '\r\r027\r\n0: 62 23 01 9E 48 AF \r\n1: 38 00 00 00 02 F2 00\r\r',
+        header: 'DA1EF1',
+      );
+      await recorder.close(at: at.add(const Duration(minutes: 1)));
+      final reading = jsonDecode(
+        tempDir.listSync().whereType<File>().single.readAsStringSync().split('\n')[1],
+      ) as Map<String, Object?>;
+      expect(reading['hdr'], 'DA1EF1');
+      // 只动行分隔符：行数、行号（0:/1:）与字节内容原样；行尾空白不
+      // 逐行裁剪（原始帧保真，分析侧自行 strip）。
+      final rawLines = (reading['raw'] as String).split('\n');
+      expect(rawLines, hasLength(3));
+      expect(rawLines[0], '027');
+      expect(rawLines[1].trimRight(), '0: 62 23 01 9E 48 AF');
+      expect(rawLines[2].trimRight(), '1: 38 00 00 00 02 F2 00');
+    });
+
+    test('无帧（超时）不写 raw 键；NO DATA 原文照记', () async {
+      final at = DateTime(2026, 11, 21, 8, 23, 33);
+      final recorder = ObdSessionLogRecorder(directory: tempDir);
+      await recorder.start(at: at);
+      await recorder.appendReading(
+        probeName: '油量',
+        command: '012F',
+        display: null,
+        noDataReason: '超时',
+        at: at.add(const Duration(seconds: 1)),
+        header: 'DB33F1',
+      );
+      await recorder.appendReading(
+        probeName: '油量',
+        command: '012F',
+        display: null,
+        noDataReason: '响应为错误行：NO DATA',
+        at: at.add(const Duration(seconds: 61)),
+        rawText: 'NO DATA\r\r',
+        header: 'DB33F1',
+      );
+      await recorder.close(at: at.add(const Duration(minutes: 2)));
+      final lines = tempDir
+          .listSync()
+          .whereType<File>()
+          .single
+          .readAsStringSync()
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .toList();
+      final timeout = jsonDecode(lines[1]) as Map<String, Object?>;
+      expect(timeout.containsKey('raw'), isFalse);
+      expect(timeout['r'], '超时');
+      final noData = jsonDecode(lines[2]) as Map<String, Object?>;
+      expect(noData['raw'], 'NO DATA');
+      expect(noData['r'], '响应为错误行：NO DATA');
+    });
+
+    test('调试终端往返落 e:raw 行：成功带 resp、失败带 err', () async {
+      final at = DateTime(2026, 11, 21, 8, 23, 33);
+      final recorder = ObdSessionLogRecorder(directory: tempDir);
+      await recorder.start(at: at);
+      await recorder.appendRawExchange(
+        command: '222666',
+        header: 'DA10F1',
+        rawText: '7F 22 31\r\r',
+        errorText: null,
+        at: at.add(const Duration(seconds: 1)),
+      );
+      await recorder.appendRawExchange(
+        command: '22261A',
+        header: 'DA10F1',
+        rawText: null,
+        errorText: 'Elm327TimeoutException: 响应超时',
+        at: at.add(const Duration(seconds: 6)),
+      );
+      await recorder.close(at: at.add(const Duration(minutes: 1)));
+      final lines = tempDir
+          .listSync()
+          .whereType<File>()
+          .single
+          .readAsStringSync()
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .toList();
+      final ok = jsonDecode(lines[1]) as Map<String, Object?>;
+      expect(ok['t'], 'e');
+      expect(ok['e'], 'raw');
+      expect(ok['cmd'], '222666');
+      expect(ok['hdr'], 'DA10F1');
+      expect(ok['resp'], '7F 22 31');
+      expect(ok.containsKey('err'), isFalse);
+      final failed = jsonDecode(lines[2]) as Map<String, Object?>;
+      expect(failed.containsKey('resp'), isFalse);
+      expect(failed['err'], contains('超时'));
+    });
+
     test('未 start 直接 append 静默；重复 start 抛 StateError', () async {
       final at = DateTime(2026, 11, 18, 20, 28, 30);
       final recorder = ObdSessionLogRecorder(directory: tempDir);

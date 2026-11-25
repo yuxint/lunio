@@ -74,6 +74,9 @@ class _EventQueue {
     _waiters.add(waiter);
     return waiter.future;
   }
+
+  /// 已缓冲但未被取走的事件数（「不该发生的事件」断言用）。
+  int get bufferedLength => _buffered.length;
 }
 
 /// 即时应答脚本（零延时单块）。
@@ -514,6 +517,8 @@ void main() {
       await session.pausePolling();
       final frame = await session.sendRawCommand('ATRV');
       expect(frame, contains('11.2V'));
+      // 手发命令同时产生一条原始往返事件（2026-11-21，供会话日志落盘）。
+      expect(await queue.next(), isA<Elm327RawExchange>());
       expect(
         mock.sentCommands.where((command) => command == '012F'),
         hasLength(1),
@@ -715,6 +720,89 @@ void main() {
       gate.completeAt(5);
       final first = await queue.next() as Elm327ProbeReading;
       expect((first.reading as ObdNoData).reason, '超时');
+      await session.dispose();
+    });
+  });
+
+  group('原始帧与调试往返（2026-11-21）', () {
+    test('读数事件带完整帧与当时生效的头', () async {
+      final gate = _DelayGate();
+      final session = Elm327Session(
+        transport: MockObdTransport(
+          responses: mockObdCorpusDemoResponses(),
+          delay: (_) async {},
+        ),
+        delay: gate.gate,
+      );
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+      session.startPolling(enabledProbes: () => [
+        makeProbe(1, '012F', DiagnosticsParseType.fuelLevel),
+      ]);
+      final reading = await queue.next() as Elm327ProbeReading;
+      // 原始帧原样带出（含分片残留的换行与空白），解析值只是它的一种解读。
+      expect(reading.frameText, contains('41 2F 60'));
+      expect(reading.header, 'DB33F1');
+      await session.dispose();
+    });
+
+    test('调试命令发原始往返事件；logExchange=false 抑制', () async {
+      final gate = _DelayGate();
+      final session = Elm327Session(
+        transport: MockObdTransport(
+          responses: mockObdCorpusDemoResponses(),
+          delay: (_) async {},
+        ),
+        delay: gate.gate,
+      );
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+
+      final frame = await session.sendRawCommand('0142');
+      expect(frame, contains('41 42'));
+      final exchange = await queue.next() as Elm327RawExchange;
+      expect(exchange.command, '0142');
+      expect(exchange.frameText, contains('41 42 30 8E'));
+      expect(exchange.error, isNull);
+
+      // 一键检测抑制逐条：整段日志由 verify 行承载，不重复写 raw 行。
+      await session.sendRawCommand('ATRV', logExchange: false);
+      await pumpEventQueue();
+      // 队列里没有第三条事件（若泄漏会在这里拿到 Elm327RawExchange）。
+      expect(queue.bufferedLength, 0);
+      await session.dispose();
+    });
+
+    test('调试命令失败也发往返事件：error 非空、无帧', () async {
+      final gate = _DelayGate();
+      final session = Elm327Session(
+        transport: MockObdTransport(
+          responses: mockObdCorpusDemoResponses(),
+          delay: (_) async {},
+        ),
+        delay: gate.gate,
+      );
+      final queue = _EventQueue(session);
+      await session.connect();
+      expect(await queue.next(), isA<Elm327Connected>());
+
+      // 222666 不在演示脚本里：静默不应答，等到超时竞速。
+      final before = gate.requests.length;
+      final future = session.sendRawCommand('222666');
+      while (gate.requests.length <= before) {
+        await pumpEventQueue();
+      }
+      gate.completeAt(before);
+      await expectLater(
+        future,
+        throwsA(isA<Elm327TimeoutException>()),
+      );
+      final exchange = await queue.next() as Elm327RawExchange;
+      expect(exchange.command, '222666');
+      expect(exchange.frameText, isNull);
+      expect(exchange.error, isA<Elm327TimeoutException>());
       await session.dispose();
     });
   });
