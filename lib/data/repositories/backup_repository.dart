@@ -472,10 +472,11 @@ class BackupRepository {
   }
 
   /// 备份业务规则校验（恢复前、事务外执行，R35）：
-  /// 项目过实体 validate、记录过 RecordRules.validateRecord、加油预测
-  /// 设置与加油记录过实体 validate——与手工录入走同一套规则，篡改过的
-  /// 备份（负金额/负里程/空项目/非法间隔）在开事务前就被拒绝，保证
-  /// "失败时未写入任何数据"；末段做保养记录的同车同日查重（跨行）。
+  /// 车辆校容积与里程、每车至少一个启用项目；项目过实体 validate、记录过
+  /// RecordRules.validateRecord、加油预测设置与加油记录过实体 validate
+  /// ——与手工录入走同一套规则，篡改过的备份（负金额/负里程/空项目/
+  /// 非法间隔）在开事务前就被拒绝，保证"失败时未写入任何数据"；末段做
+  /// 保养记录的同车同日查重（跨行）。
   /// 校验失败统一抛 LunioErrorException(backupInvalidData)（ADR 0009
   /// 修订节），message 即用户可读中文，恢复 UI 弹对话框展示。
   void _validateBackupBusinessRules(BackupPayload payload) {
@@ -511,6 +512,25 @@ class BackupRepository {
           LunioErrorKind.backupInvalidData,
           '备份文件中存在无效数据（保养项目「${item.name}」）：'
           '${error.message}',
+        );
+      }
+    }
+    // 每车至少一个启用项目：手工建车（createCarWithMaintenanceItems）、
+    // 停用/删除项目（_ensureCanDisableMaintenanceItem）三条路径都守这条，
+    // 备份恢复此前只逐条校验项目、不按车分组，篡改或损坏的备份能恢复出
+    // "零启用项目"的车——记录表单没有可选项目、提醒页进入空态，且没有
+    // 任何写入口会把它补回来。
+    final carIdsWithEnabledItem = <int>{
+      for (final item in payload.maintenanceItems)
+        if (item.enabled) item.carsId,
+    };
+    for (final car in payload.cars) {
+      final carId = car.id;
+      if (carId != null && !carIdsWithEnabledItem.contains(carId)) {
+        throw LunioErrorException(
+          LunioErrorKind.backupInvalidData,
+          '备份文件中存在无效数据（车辆「${car.brand} ${car.model}」）：'
+          '至少需要保留一个启用的保养项目',
         );
       }
     }

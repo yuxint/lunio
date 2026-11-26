@@ -50,7 +50,6 @@ void main() {
     },
   );
 
-
   testWidgets('profile backup exports json through native file saver', (
     tester,
   ) async {
@@ -84,7 +83,6 @@ void main() {
     expect(find.text('备份 JSON'), findsNothing);
   });
 
-
   testWidgets('profile backup cancel does not show success feedback', (
     tester,
   ) async {
@@ -102,7 +100,6 @@ void main() {
 
     expect(find.text('备份完成'), findsNothing);
   });
-
 
   testWidgets('profile restore confirms before picking a file', (tester) async {
     // 恢复成功后会显式取消系统通知；未 mock 的通道在测试里永不回包，
@@ -145,7 +142,6 @@ void main() {
     }
   });
 
-
   testWidgets('profile restore confirm cancel keeps current data', (
     tester,
   ) async {
@@ -168,7 +164,6 @@ void main() {
     expect(await database.select(database.cars).get(), hasLength(1));
   });
 
-
   testWidgets('profile restore file cancel keeps current data', (tester) async {
     var pickCallCount = 0;
     mockNativeFiles((call) async {
@@ -188,7 +183,6 @@ void main() {
     expect(pickCallCount, 1);
     expect(await database.select(database.cars).get(), hasLength(1));
   });
-
 
   testWidgets('profile restore unsupported version shows documented message', (
     tester,
@@ -216,7 +210,6 @@ void main() {
     // 版本不支持在解码阶段即被拒：库未被清空。
     expect(await database.select(database.cars).get(), hasLength(1));
   });
-
 
   testWidgets('profile restore backup conflict shows one-button dialog', (
     tester,
@@ -250,6 +243,12 @@ void main() {
                 roadDate: LocalDate.parse(existingCar.roadDate),
                 sync: sync,
               ),
+            ],
+            // 每车带一个启用项目：先过业务预校验，让重复车辆走到
+            // 事务里的唯一约束（本用例锁的是预校验拦不住的最后防线）。
+            maintenanceItems: [
+              defaultOilItem(carsId: 99).copyWith(id: 199),
+              defaultOilItem(carsId: 100).copyWith(id: 200),
             ],
           ),
         );
@@ -489,7 +488,6 @@ void main() {
     );
   });
 
-
   testWidgets('profile hides manual date behind developer mode', (
     tester,
   ) async {
@@ -522,7 +520,6 @@ void main() {
       isNull,
     );
   });
-
 
   testWidgets('settings page shows feature switches without developer mode', (
     tester,
@@ -664,12 +661,15 @@ void main() {
       'true',
     );
     expect(
-      await testRepository(database).getPreferenceValue('fuelPredictionEnabled'),
+      await testRepository(
+        database,
+      ).getPreferenceValue('fuelPredictionEnabled'),
       'true',
     );
     expect(
-      await testRepository(database)
-          .getPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey),
+      await testRepository(
+        database,
+      ).getPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey),
       'true',
     );
     // 诊断开关还开着 → 入口行保持。
@@ -741,7 +741,6 @@ void main() {
     }
   });
 
-
   testWidgets(
     'notification settings refresh system permission status on open',
     (tester) async {
@@ -784,7 +783,6 @@ void main() {
       }
     },
   );
-
 
   testWidgets('notification settings opens system notification settings', (
     tester,

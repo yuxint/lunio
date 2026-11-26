@@ -1158,6 +1158,12 @@ void main() {
           sync: sync,
         ),
       ],
+      // 每车带一个启用项目：满足业务预校验，让重复车辆一路走到事务里的
+      // {brand,model,roadDate} 唯一约束，继续锁"预校验拦不住的最后防线"。
+      maintenanceItems: [
+        defaultOilItem(carsId: 99).copyWith(id: 199),
+        defaultOilItem(carsId: 100).copyWith(id: 200),
+      ],
     );
 
     expect(
@@ -1194,4 +1200,34 @@ void main() {
     // 预校验在事务外执行：原库未被清空。
     expect(await database.select(database.cars).get(), hasLength(1));
   });
+
+  test(
+    'backup restore rejects a car without enabled maintenance items',
+    () async {
+      // 手工新增车辆、停用/删除项目三条路径都保证每车至少一个启用项目；
+      // 裸插（模拟被篡改/损坏的备份来源）导出后恢复必须被预校验拒绝，
+      // 否则会恢复出无法新建保养记录（表单无项目可选）的车。
+      await repos.insertCarForTest(defaultCar());
+      final backup = await backupRepository.exportBackupPayload();
+      expect(backup.maintenanceItems, isEmpty);
+
+      expect(
+        () => backupRepository.restoreBackupPayload(backup),
+        throwsA(
+          isA<LunioErrorException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                LunioErrorKind.backupInvalidData,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                allOf(startsWith('备份文件中存在无效数据'), contains('至少需要保留一个启用的保养项目')),
+              ),
+        ),
+      );
+      expect(await database.select(database.cars).get(), hasLength(1));
+    },
+  );
 }

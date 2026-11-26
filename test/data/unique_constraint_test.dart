@@ -40,11 +40,7 @@ void main() {
         throwsA(
           isA<LunioErrorException>()
               .having((e) => e.kind, 'kind', LunioErrorKind.uniqueConstraint)
-              .having(
-                (e) => e.message,
-                'message',
-                '这条数据已经保存过了',
-              ),
+              .having((e) => e.message, 'message', '这条数据已经保存过了'),
         ),
       );
     });
@@ -115,96 +111,107 @@ void main() {
       );
     });
 
-    test('createCarWithMaintenanceItems duplicate car becomes typed error',
-        () async {
-      // 先裸插一辆默认车（品牌/型号/上路日期三联即身份），再用同一组
-      // 身份走建车事务——撞 cars {brand,model,roadDate} 唯一约束。
-      await repos.insertCarForTest(defaultCar());
+    test(
+      'createCarWithMaintenanceItems duplicate car becomes typed error',
+      () async {
+        // 先裸插一辆默认车（品牌/型号/上路日期三联即身份），再用同一组
+        // 身份走建车事务——撞 cars {brand,model,roadDate} 唯一约束。
+        await repos.insertCarForTest(defaultCar());
 
-      await expectLater(
-        repository.createCarWithMaintenanceItems(
-          defaultCar(),
-          [defaultOilItem()],
-        ),
-        throwsA(
-          isA<LunioErrorException>().having(
-            (e) => e.kind,
-            'kind',
-            LunioErrorKind.uniqueConstraint,
+        await expectLater(
+          repository.createCarWithMaintenanceItems(defaultCar(), [
+            defaultOilItem(),
+          ]),
+          throwsA(
+            isA<LunioErrorException>().having(
+              (e) => e.kind,
+              'kind',
+              LunioErrorKind.uniqueConstraint,
+            ),
           ),
-        ),
-      );
-      // 事务整体回滚：不因先插车成功而留下半截数据（裸插那辆仍在）。
-      expect(await repository.listCars(), hasLength(1));
-    });
+        );
+        // 事务整体回滚：不因先插车成功而留下半截数据（裸插那辆仍在）。
+        expect(await repository.listCars(), hasLength(1));
+      },
+    );
 
-    test('updateMaintenanceItem rename to duplicate becomes typed error',
-        () async {
-      final (carId, firstItemId) = await repos.seedCarAndItem();
-      final secondItemId = await repository.saveMaintenanceItem(
-        defaultOilItem(carsId: carId, name: '机滤', sortOrder: 2),
-      );
-      final secondItem = (await repository.listMaintenanceItemsForCar(carId))
-          .firstWhere((item) => item.id == secondItemId);
+    test(
+      'updateMaintenanceItem rename to duplicate becomes typed error',
+      () async {
+        final (carId, firstItemId) = await repos.seedCarAndItem();
+        final secondItemId = await repository.saveMaintenanceItem(
+          defaultOilItem(carsId: carId, name: '机滤', sortOrder: 2),
+        );
+        final secondItem = (await repository.listMaintenanceItemsForCar(
+          carId,
+        )).firstWhere((item) => item.id == secondItemId);
 
-      await expectLater(
-        repository.updateMaintenanceItem(
-          secondItem.copyWith(name: '机油'),
-        ),
-        throwsA(
-          isA<LunioErrorException>().having(
-            (e) => e.kind,
-            'kind',
-            LunioErrorKind.uniqueConstraint,
+        await expectLater(
+          repository.updateMaintenanceItem(secondItem.copyWith(name: '机油')),
+          throwsA(
+            isA<LunioErrorException>().having(
+              (e) => e.kind,
+              'kind',
+              LunioErrorKind.uniqueConstraint,
+            ),
           ),
-        ),
-      );
-      expect(firstItemId, isNotNull);
-    });
+        );
+        expect(firstItemId, isNotNull);
+      },
+    );
 
-    test('restore payload-internal duplicate cars becomes typed error',
-        () async {
-      // 预校验只覆盖保养记录同车同日；payload 里两辆身份相同的车只能
-      // 靠表级唯一约束拦（恢复 UI 按 kind 弹"未写入任何数据"对话框的
-      // 那条路径）。
-      final (carId, _) = await repos.seedCarAndItem();
-      await preferences.setAppliedCarId(carId);
-      final invalid = BackupPayload(
-        schemaVersion: 1,
-        cars: [
-          Car(
-            id: 99,
-            brand: '本田',
-            model: '22款思域',
-            currentMileageKm: 12000,
-            roadDate: const LocalDate(2023, 8, 12),
-            sync: sync,
-          ),
-          Car(
-            id: 100,
-            brand: '本田',
-            model: '22款思域',
-            currentMileageKm: 13000,
-            roadDate: const LocalDate(2023, 8, 12),
-            sync: sync,
-          ),
-        ],
-      );
+    test(
+      'restore payload-internal duplicate cars becomes typed error',
+      () async {
+        // 预校验只覆盖保养记录同车同日；payload 里两辆身份相同的车只能
+        // 靠表级唯一约束拦（恢复 UI 按 kind 弹"未写入任何数据"对话框的
+        // 那条路径）。
+        final (carId, _) = await repos.seedCarAndItem();
+        await preferences.setAppliedCarId(carId);
+        final invalid = BackupPayload(
+          schemaVersion: 1,
+          cars: [
+            Car(
+              id: 99,
+              brand: '本田',
+              model: '22款思域',
+              currentMileageKm: 12000,
+              roadDate: const LocalDate(2023, 8, 12),
+              sync: sync,
+            ),
+            Car(
+              id: 100,
+              brand: '本田',
+              model: '22款思域',
+              currentMileageKm: 13000,
+              roadDate: const LocalDate(2023, 8, 12),
+              sync: sync,
+            ),
+          ],
+          // 每车带一个启用项目：先过备份业务预校验，让重复车辆一路走到
+          // 事务里的 {brand,model,roadDate} 唯一约束（本用例锁的正是
+          // 预校验拦不住、只能靠表级约束兜底的那条路径）。
+          maintenanceItems: [
+            defaultOilItem(carsId: 99).copyWith(id: 199),
+            defaultOilItem(carsId: 100).copyWith(id: 200),
+          ],
+        );
 
-      await expectLater(
-        backupRepository.restoreBackupPayload(invalid),
-        throwsA(
-          isA<LunioErrorException>().having(
-            (e) => e.kind,
-            'kind',
-            LunioErrorKind.uniqueConstraint,
+        await expectLater(
+          backupRepository.restoreBackupPayload(invalid),
+          throwsA(
+            isA<LunioErrorException>().having(
+              (e) => e.kind,
+              'kind',
+              LunioErrorKind.uniqueConstraint,
+            ),
           ),
-        ),
-      );
-      // 事务已回滚：库里还是原来那辆车、偏好未动。
-      expect(await database.select(database.cars).get(), hasLength(1));
-      expect(await preferences.getAppliedCarId(), carId);
-    });
+        );
+        // 事务已回滚：库里还是原来那辆车、偏好未动。
+        expect(await database.select(database.cars).get(), hasLength(1));
+        expect(await preferences.getAppliedCarId(), carId);
+      },
+    );
   });
 
   // ---------------- 后台 isolate 连接（生产执行器形态） ----------------
@@ -227,9 +234,7 @@ void main() {
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('lunio_unique_guard');
       database = AppDatabase.forExecutor(
-        NativeDatabase.createInBackground(
-          File('${tempDir.path}/lunio.sqlite'),
-        ),
+        NativeDatabase.createInBackground(File('${tempDir.path}/lunio.sqlite')),
       );
       repos = testRepository(database);
       repository = repos.repository;
@@ -240,49 +245,55 @@ void main() {
       tempDir.deleteSync(recursive: true);
     });
 
-    test('createCar duplicate becomes typed error through remote wrap',
-        () async {
-      await repos.insertCarForTest(defaultCar());
+    test(
+      'createCar duplicate becomes typed error through remote wrap',
+      () async {
+        await repos.insertCarForTest(defaultCar());
 
-      await expectLater(
-        repository.createCarWithMaintenanceItems(defaultCar(), [
-          defaultOilItem(),
-        ]),
-        throwsA(
-          isA<LunioErrorException>().having(
-            (e) => e.kind,
-            'kind',
-            LunioErrorKind.uniqueConstraint,
+        await expectLater(
+          repository.createCarWithMaintenanceItems(defaultCar(), [
+            defaultOilItem(),
+          ]),
+          throwsA(
+            isA<LunioErrorException>().having(
+              (e) => e.kind,
+              'kind',
+              LunioErrorKind.uniqueConstraint,
+            ),
           ),
-        ),
-      );
-      // 事务整体回滚：不因先插车成功而留下半截数据（裸插那辆仍在）。
-      expect(await repository.listCars(), hasLength(1));
-    });
+        );
+        // 事务整体回滚：不因先插车成功而留下半截数据（裸插那辆仍在）。
+        expect(await repository.listCars(), hasLength(1));
+      },
+    );
 
-    test('remote-wrapped non-unique sqlite error passes through unwrapped',
-        () async {
-      // 断言两件事：这条连接上异常确实以 DriftRemoteException 形态
-      // 到达（否则 isA 先败，说明缝挪了）；且 remoteCause 非唯一约束
-      // 冲突时不误译——"no such table"（结果码 1）原样透传。
-      await expectLater(
-        guardUniqueConstraint<void>(
-          () => database.customStatement('INSERT INTO no_such_table VALUES (1)'),
-        ),
-        throwsA(
-          isA<DriftRemoteException>()
-              .having(
-                (e) => e.remoteCause,
-                'remoteCause',
-                isA<SqliteException>(),
-              )
-              .having(
-                (e) => (e.remoteCause as SqliteException).resultCode,
-                'resultCode',
-                1,
-              ),
-        ),
-      );
-    });
+    test(
+      'remote-wrapped non-unique sqlite error passes through unwrapped',
+      () async {
+        // 断言两件事：这条连接上异常确实以 DriftRemoteException 形态
+        // 到达（否则 isA 先败，说明缝挪了）；且 remoteCause 非唯一约束
+        // 冲突时不误译——"no such table"（结果码 1）原样透传。
+        await expectLater(
+          guardUniqueConstraint<void>(
+            () => database.customStatement(
+              'INSERT INTO no_such_table VALUES (1)',
+            ),
+          ),
+          throwsA(
+            isA<DriftRemoteException>()
+                .having(
+                  (e) => e.remoteCause,
+                  'remoteCause',
+                  isA<SqliteException>(),
+                )
+                .having(
+                  (e) => (e.remoteCause as SqliteException).resultCode,
+                  'resultCode',
+                  1,
+                ),
+          ),
+        );
+      },
+    );
   });
 }
