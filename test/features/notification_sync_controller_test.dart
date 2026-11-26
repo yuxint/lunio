@@ -238,6 +238,28 @@ void main() {
     });
   });
 
+  group('system notification permission reconcile on resume', () {
+    testWidgets('resume reconciles the real switch when the pref is off',
+        (tester) async {
+      // 用户在系统设置里重新打开通知权限后回到 App：偏好还停在 false，
+      // 系统 lane 会按"关闭"直接取消调度。回前台必须对账一次系统真值
+      // （协调器注释与 onAppResumed 的职责），否则只有手动打开通知设置
+      // sheet 才能恢复。
+      mockAndroidNotifications();
+      await preferences.setSystemNotificationsEnabled(false);
+      await preferences.markSystemNotificationPermissionRequested();
+
+      final controller = await pumpHost(tester);
+      await tester.pumpAndSettle();
+      expect(await preferences.getSystemNotificationsEnabled(), isFalse);
+
+      controller.onAppResumed();
+      await tester.pumpAndSettle();
+
+      expect(await preferences.getSystemNotificationsEnabled(), isTrue);
+    });
+  });
+
   group('data reset in-flight guards (2026-09-24 中间态守卫)', () {
     late TestRepositories repos;
     late int carId;

@@ -467,7 +467,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 6.2 生命周期与跨零点刷新
 
-`app_shell.dart → didChangeAppLifecycleState`：resumed（回前台）转交 `_notificationSync.onAppResumed()`（失效应用内 lane 并立即重跑同步，强制重查弹窗）+ 刷新 Android 导航 inset。Android 三键导航 inset 适配在 `_refreshAndroidSystemNavigationInset`（requestId+mounted 双检查）。
+`app_shell.dart → didChangeAppLifecycleState`：resumed（回前台）转交 `_notificationSync.onAppResumed()`（对账系统通知真值——用户在系统设置里改过权限时回写偏好并触发重排；失效应用内 lane 并立即重跑同步，强制重查弹窗）+ 刷新 Android 导航 inset。Android 三键导航 inset 适配在 `_refreshAndroidSystemNavigationInset`（requestId+mounted 双检查）。
 
 **跨零点静默刷新**：`_AppShellState._scheduleMidnightDateRefresh`（initState 启动）排一个对准下一个 00:00:00 的 Timer，触发时 `ref.invalidate(effectiveTodayProvider)`（"今天"是 FutureProvider 只算一次，跨零点不失效会让提醒页到期概览/待关注项目、"我的"页车龄停在昨天）→ 各 watch 方自动重建（应用车辆数据束 watch 它，提醒页与两个同步控制器随之刷新；通知同步控制器经数据束静默重排系统通知）→ 重新排次日零点。App 在后台时 Timer 挂起，回前台瞬间补触发。手动日期开启时重算结果不变，无害。dispose 取消 Timer。
 

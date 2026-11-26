@@ -240,13 +240,19 @@ class NotificationSyncController {
     _subscriptions.clear();
   }
 
-  /// 回到前台：失效应用内 lane（强制重新检查弹窗，实现"用户处理完提醒
-  /// 离开再回来，若又到期会再次提醒"）、对账停车实时活动；失效入口自带
-  /// 一轮同步。
+  /// 回到前台：对账系统通知真值（用户在系统设置里改过权限）、失效应用内
+  /// lane（强制重新检查弹窗，实现"用户处理完提醒离开再回来，若又到期会
+  /// 再次提醒"）、对账停车实时活动；失效入口自带一轮同步。
+  ///
+  /// 系统权限对账必须走 [syncFromProviders] 之外的显式调用：偏好为 false
+  /// 时数据没变，各数据源订阅不会触发，系统 lane 又会按"关闭"直接取消
+  /// 调度——只靠数据变更永远补不回系统设置里的重新授权。写完偏好 bump
+  /// 纪元会自然触发下一轮同步，调度随新真值恢复。
   void onAppResumed() {
     if (_disposed) {
       return;
     }
+    _ensureInitialSystemNotificationPermission();
     syncParkingLiveActivity();
     _engine.invalidateInAppLane();
   }
