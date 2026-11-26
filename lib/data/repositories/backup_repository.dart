@@ -70,10 +70,11 @@ class BackupRepository {
         itemCostsByRecordId[row.id] ?? const [],
       );
     }).toList();
-    final fuelPredictionRows = await database.select(
-      database.fuelPredictions,
-    ).get();
-    final fuelPredictions = fuelPredictionRows.map(fuelPredictionFromRow)
+    final fuelPredictionRows = await database
+        .select(database.fuelPredictions)
+        .get();
+    final fuelPredictions = fuelPredictionRows
+        .map(fuelPredictionFromRow)
         .toList();
     final fuelRecordRows = await database.select(database.fuelRecords).get();
     final fuelRecords = fuelRecordRows.map(fuelRecordFromRow).toList();
@@ -164,161 +165,165 @@ class BackupRepository {
     _validateBackupReferences(payload);
     _validateBackupBusinessRules(payload);
 
-    return guardUniqueConstraint(() => database.transaction(() async {
-      await _clearRestorableDataInTransaction();
-      final carIdMap = <int, int>{};
-      final itemIdMap = <int, int>{};
-      int? firstRestoredCarId;
+    return guardUniqueConstraint(
+      () => database.transaction(() async {
+        await _clearRestorableDataInTransaction();
+        final carIdMap = <int, int>{};
+        final itemIdMap = <int, int>{};
+        int? firstRestoredCarId;
 
-      for (final car in payload.cars) {
-        final sourceId = car.id;
-        if (sourceId == null) {
-          throw ArgumentError('Backup car id is required');
+        for (final car in payload.cars) {
+          final sourceId = car.id;
+          if (sourceId == null) {
+            throw ArgumentError('Backup car id is required');
+          }
+          final carId = SnowflakeIdGenerator.instance.next();
+          await database.into(database.cars).insert(carCompanion(car, carId));
+          carIdMap[sourceId] = carId;
+          firstRestoredCarId ??= carId;
         }
-        final carId = SnowflakeIdGenerator.instance.next();
-        await database.into(database.cars).insert(carCompanion(car, carId));
-        carIdMap[sourceId] = carId;
-        firstRestoredCarId ??= carId;
-      }
 
-      for (final item in payload.maintenanceItems) {
-        final sourceId = item.id;
-        if (sourceId == null) {
-          throw ArgumentError('Backup maintenance item id is required');
-        }
-        final carId = carIdMap[item.carsId];
-        if (carId == null) {
-          throw ArgumentError('Backup maintenance item references missing car');
-        }
-        final itemId = SnowflakeIdGenerator.instance.next();
-        await database
-            .into(database.maintenanceItems)
-            .insert(
-              maintenanceItemCompanion(
-                // 备份里的 carsId 是旧库的车辆 id，重映射为新雪花 id。
-                item.copyWith(carsId: carId),
-                itemId,
-              ),
-            );
-        itemIdMap[sourceId] = itemId;
-      }
-
-      for (final record in payload.records) {
-        final carId = carIdMap[record.carId];
-        if (carId == null) {
-          throw ArgumentError(
-            'Backup maintenance record references missing car',
-          );
-        }
-        final recordId = SnowflakeIdGenerator.instance.next();
-        await database
-            .into(database.maintenanceRecords)
-            .insert(
-              // 备份里的 carId 是旧库的车辆 id，主表与关联表一样重映射
-              // 为新雪花 id（漏换会让恢复出的记录挂到不存在的旧 id 下，
-              // 公开查询查不到）。
-              maintenanceRecordCompanion(record, recordId, carId: carId),
-            );
-        final costsByItemId = <int, RecordItemCost>{
-          for (final cost in record.itemCosts) cost.itemId: cost,
-        };
-        for (final itemId in RecordRules.uniqueItemIds(record.itemIds)) {
-          final mappedItemId = itemIdMap[itemId];
-          if (mappedItemId == null) {
+        for (final item in payload.maintenanceItems) {
+          final sourceId = item.id;
+          if (sourceId == null) {
+            throw ArgumentError('Backup maintenance item id is required');
+          }
+          final carId = carIdMap[item.carsId];
+          if (carId == null) {
             throw ArgumentError(
-              'Backup maintenance record references missing item',
+              'Backup maintenance item references missing car',
             );
           }
-          // 项目费用按备份里的旧 itemId 取值，随行恢复（金额本身不需要
-          // 重映射，只有 itemId 要换成新雪花 id）。"材料/工时有值但项目
-          // 费用为空"的旧备份条目（不变量落地前版本导出的备份文件）由
-          // companion 内置 normalize 补齐（数据不变量，2026-09-20 落地、
-          // 2026-09-25 收编为写 seam 单点），恢复不把违规数据带进新库。
-          final cost = costsByItemId[itemId];
+          final itemId = SnowflakeIdGenerator.instance.next();
           await database
-              .into(database.maintenanceRecordItems)
+              .into(database.maintenanceItems)
               .insert(
-                maintenanceRecordItemCompanion(
-                  id: SnowflakeIdGenerator.instance.next(),
-                  recordId: recordId,
-                  carId: carId,
-                  itemId: mappedItemId,
-                  date: record.date,
-                  cost: cost,
+                maintenanceItemCompanion(
+                  // 备份里的 carsId 是旧库的车辆 id，重映射为新雪花 id。
+                  item.copyWith(carsId: carId),
+                  itemId,
+                ),
+              );
+          itemIdMap[sourceId] = itemId;
+        }
+
+        for (final record in payload.records) {
+          final carId = carIdMap[record.carId];
+          if (carId == null) {
+            throw ArgumentError(
+              'Backup maintenance record references missing car',
+            );
+          }
+          final recordId = SnowflakeIdGenerator.instance.next();
+          await database
+              .into(database.maintenanceRecords)
+              .insert(
+                // 备份里的 carId 是旧库的车辆 id，主表与关联表一样重映射
+                // 为新雪花 id（漏换会让恢复出的记录挂到不存在的旧 id 下，
+                // 公开查询查不到）。
+                maintenanceRecordCompanion(record, recordId, carId: carId),
+              );
+          final costsByItemId = <int, RecordItemCost>{
+            for (final cost in record.itemCosts) cost.itemId: cost,
+          };
+          for (final itemId in RecordRules.uniqueItemIds(record.itemIds)) {
+            final mappedItemId = itemIdMap[itemId];
+            if (mappedItemId == null) {
+              throw ArgumentError(
+                'Backup maintenance record references missing item',
+              );
+            }
+            // 项目费用按备份里的旧 itemId 取值，随行恢复（金额本身不需要
+            // 重映射，只有 itemId 要换成新雪花 id）。"材料/工时有值但项目
+            // 费用为空"的旧备份条目（不变量落地前版本导出的备份文件）由
+            // companion 内置 normalize 补齐（数据不变量，2026-09-20 落地、
+            // 2026-09-25 收编为写 seam 单点），恢复不把违规数据带进新库。
+            final cost = costsByItemId[itemId];
+            await database
+                .into(database.maintenanceRecordItems)
+                .insert(
+                  maintenanceRecordItemCompanion(
+                    id: SnowflakeIdGenerator.instance.next(),
+                    recordId: recordId,
+                    carId: carId,
+                    itemId: mappedItemId,
+                    date: record.date,
+                    cost: cost,
+                  ),
+                );
+          }
+        }
+
+        await _preferences.setAppliedCarId(firstRestoredCarId);
+        await _ensureAppliedCarInTransaction();
+        // 备份带全局加油设置（省份/油品）时恢复；没带（用户没改过）则
+        // 保持用户当前的省份/油品不动。
+        final fuelPreference = payload.fuelPrediction;
+        if (fuelPreference != null) {
+          await _preferences.writeRawAll({
+            LunioPreferences.fuelProvinceKey: fuelPreference.province,
+            LunioPreferences.fuelGradeKey: fuelPreference.gradeCode,
+          });
+        }
+        // 每车加油设置：按新车辆 id 重插（车辆本身已换成新雪花 id）。
+        // 容积是 cars 条目的字段（随车恢复），这里只插剩余油量。
+        for (final prediction in payload.fuelPredictions) {
+          final carId = carIdMap[prediction.carId];
+          if (carId == null) {
+            throw ArgumentError(
+              'Backup fuel prediction references missing car',
+            );
+          }
+          await database
+              .into(database.fuelPredictions)
+              .insert(
+                fuelPredictionCompanion(
+                  prediction.copyWith(carId: carId),
+                  SnowflakeIdGenerator.instance.next(),
                 ),
               );
         }
-      }
 
-      await _preferences.setAppliedCarId(firstRestoredCarId);
-      await _ensureAppliedCarInTransaction();
-      // 备份带全局加油设置（省份/油品）时恢复；没带（用户没改过）则
-      // 保持用户当前的省份/油品不动。
-      final fuelPreference = payload.fuelPrediction;
-      if (fuelPreference != null) {
-        await _preferences.writeRawAll({
-          LunioPreferences.fuelProvinceKey: fuelPreference.province,
-          LunioPreferences.fuelGradeKey: fuelPreference.gradeCode,
-        });
-      }
-      // 每车加油设置：按新车辆 id 重插（车辆本身已换成新雪花 id）。
-      // 容积是 cars 条目的字段（随车恢复），这里只插剩余油量。
-      for (final prediction in payload.fuelPredictions) {
-        final carId = carIdMap[prediction.carId];
-        if (carId == null) {
-          throw ArgumentError(
-            'Backup fuel prediction references missing car',
-          );
+        // 加油记录：与加油预测同一套重映射——备份里的 carId 换成新雪花
+        // id，行 id 重新生成（备份条目不带 id，ADR 0014）。
+        for (final fuelRecord in payload.fuelRecords) {
+          final carId = carIdMap[fuelRecord.carId];
+          if (carId == null) {
+            throw ArgumentError('Backup fuel record references missing car');
+          }
+          await database
+              .into(database.fuelRecords)
+              .insert(
+                fuelRecordCompanion(
+                  fuelRecord.copyWith(carId: carId),
+                  SnowflakeIdGenerator.instance.next(),
+                ),
+              );
         }
-        await database
-            .into(database.fuelPredictions)
-            .insert(
-              fuelPredictionCompanion(
-                prediction.copyWith(carId: carId),
-                SnowflakeIdGenerator.instance.next(),
-              ),
-            );
-      }
 
-      // 加油记录：与加油预测同一套重映射——备份里的 carId 换成新雪花
-      // id，行 id 重新生成（备份条目不带 id，ADR 0014）。
-      for (final fuelRecord in payload.fuelRecords) {
-        final carId = carIdMap[fuelRecord.carId];
-        if (carId == null) {
-          throw ArgumentError('Backup fuel record references missing car');
-        }
-        await database
-            .into(database.fuelRecords)
-            .insert(
-              fuelRecordCompanion(
-                fuelRecord.copyWith(carId: carId),
-                SnowflakeIdGenerator.instance.next(),
-              ),
+        // 自定义检测点（备份 v5，ADR 0021 修订节）：每车一套，carId 经
+        // carIdMap 重映射到恢复后的新雪花 id；行 id 重新生成雪花（条目
+        // 不带 id，沿 fuelRecords 先例）。catalogKey 显式清一次：decode
+        // 产物恒为 null，这里兜住手拼 payload，防止内置 key 走漏成
+        // "种子外内置行"被对账清掉。
+        for (final probe in payload.diagnosticsProbes) {
+          final carId = carIdMap[probe.carId];
+          if (carId == null) {
+            throw ArgumentError(
+              'Backup diagnostics probe references missing car',
             );
-      }
-
-      // 自定义检测点（备份 v5，ADR 0021 修订节）：每车一套，carId 经
-      // carIdMap 重映射到恢复后的新雪花 id；行 id 重新生成雪花（条目
-      // 不带 id，沿 fuelRecords 先例）。catalogKey 显式清一次：decode
-      // 产物恒为 null，这里兜住手拼 payload，防止内置 key 走漏成
-      // "种子外内置行"被对账清掉。
-      for (final probe in payload.diagnosticsProbes) {
-        final carId = carIdMap[probe.carId];
-        if (carId == null) {
-          throw ArgumentError(
-            'Backup diagnostics probe references missing car',
-          );
+          }
+          await database
+              .into(database.diagnosticsProbes)
+              .insert(
+                diagnosticsProbeCompanion(
+                  probe.copyWith(catalogKey: null, carId: carId),
+                  SnowflakeIdGenerator.instance.next(),
+                ),
+              );
         }
-        await database
-            .into(database.diagnosticsProbes)
-            .insert(
-              diagnosticsProbeCompanion(
-                probe.copyWith(catalogKey: null, carId: carId),
-                SnowflakeIdGenerator.instance.next(),
-              ),
-            );
-      }
-    }));
+      }),
+    );
   }
 
   /// 清空数据（"我的"页入口）：事务内删 8 张表（4 张业务表
@@ -371,8 +376,7 @@ class BackupRepository {
   Future<void> _ensureAppliedCarInTransaction() async {
     final rows = await (database.select(
       database.cars,
-    )..orderBy([(row) => OrderingTerm.asc(row.id)]))
-        .get();
+    )..orderBy([(row) => OrderingTerm.asc(row.id)])).get();
     final cars = rows.map(carFromRow).toList();
     final storedCarId = await _preferences.getAppliedCarId();
     final resolvedCarId = AppliedCarRules.resolveAppliedCarId(
@@ -486,10 +490,15 @@ class BackupRepository {
           car.totalTankCapacityLiters,
           usableCapacityLiters: car.tankCapacityLiters,
         );
+        // 里程非负与手工录入门禁（CarFormController）同一口径：
+        // Car 实体本身没有 validate，不在这里拦，负里程会随恢复直接进库。
+        if (car.currentMileageKm < 0) {
+          throw ArgumentError('当前里程不能为负数');
+        }
       } on ArgumentError catch (error) {
         throw LunioErrorException(
           LunioErrorKind.backupInvalidData,
-          '备份文件中存在无效数据（车辆「${car.brand} ${car.model}」油箱容积）：'
+          '备份文件中存在无效数据（车辆「${car.brand} ${car.model}」）：'
           '${error.message}',
         );
       }

@@ -63,134 +63,138 @@ void main() {
     await database.close();
   });
 
-  test('backup restore keeps record item costs with remapped item ids',
-      () async {
-    final (carId, oilId) = await repos.seedCarAndItem();
-    final filterId = await repos.saveItem(carId, '机滤', 2);
-    await repository.saveMaintenanceRecord(
-      defaultRecord(
-        carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: [oilId, filterId],
-        itemCosts: [
-          RecordItemCost(
-            itemId: oilId,
-            materialCents: 15000,
-            laborCents: 8000,
-            costCents: 23000,
-          ),
-          RecordItemCost(itemId: filterId, costCents: 5000),
-        ],
-        costCents: 28000,
-        mileageKm: 12000,
-      ),
-    );
-
-    final backup = await backupRepository.exportBackupPayload();
-    // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
-    await database.close();
-    database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    await backupRepository.restoreBackupPayload(backup);
-
-    final restoredCar = (await database.select(database.cars).get()).single;
-    final restoredItems = await repository.listMaintenanceItemsForCar(
-      restoredCar.id,
-    );
-    final restoredRecords = await repository.listMaintenanceRecordsForCar(
-      restoredCar.id,
-    );
-    expect(restoredRecords, hasLength(1));
-    // itemId 已重映射、金额原样保留（项目费用为准，不做推导修正）。
-    final costs = restoredRecords.single.itemCosts;
-    expect(costs, hasLength(2));
-    expect(
-      costs.map((cost) => cost.itemId).toSet(),
-      restoredItems.map((item) => item.id).toSet(),
-    );
-    expect(
-      costs.map((cost) => cost.costCents).toSet(),
-      {23000, 5000},
-    );
-    final oilCost = costs.firstWhere((cost) => cost.costCents == 23000);
-    expect(oilCost.materialCents, 15000);
-    expect(oilCost.laborCents, 8000);
-  });
-
   test(
-      'backup restore normalizes item costs missing cost field (invariant)',
-      () async {
-    final (carId, oilId) = await repos.seedCarAndItem();
-    // 违规形态存量行：材料/工时有值、项目费用为空（不变量落地前写入的
-    // 历史数据）。直插播种模拟——写 seam（关联行 companion）2026-09-25
-    // 起单点补齐，经仓库保存已造不出违规行；而备份文件可能来自旧版本
-    // 导出，修复点在恢复，不把违规数据带进新库。
-    const legacyRecordId = 990001;
-    await database.into(database.maintenanceRecords).insert(
-      maintenanceRecordCompanion(
+    'backup restore keeps record item costs with remapped item ids',
+    () async {
+      final (carId, oilId) = await repos.seedCarAndItem();
+      final filterId = await repos.saveItem(carId, '机滤', 2);
+      await repository.saveMaintenanceRecord(
         defaultRecord(
           carId: carId,
           date: const LocalDate(2026, 5, 19),
-          itemIds: [oilId],
+          itemIds: [oilId, filterId],
           itemCosts: [
             RecordItemCost(
               itemId: oilId,
               materialCents: 15000,
               laborCents: 8000,
+              costCents: 23000,
             ),
+            RecordItemCost(itemId: filterId, costCents: 5000),
           ],
-          costCents: 23000,
+          costCents: 28000,
           mileageKm: 12000,
         ),
-        legacyRecordId,
-      ),
-    );
-    await database.into(database.maintenanceRecordItems).insert(
-      // 裸 companion 绕过写 seam：还原"项目费用为空"的违规形态
-      // （costCents 留空 = NULL）。
-      MaintenanceRecordItemsCompanion.insert(
-        id: const Value(990002),
-        maintenanceRecordId: legacyRecordId,
-        carId: carId,
-        itemId: oilId,
-        date: const LocalDate(2026, 5, 19).toString(),
-        materialCostCents: const Value(15000),
-        laborCostCents: const Value(8000),
-      ),
-    );
+      );
 
-    final backup = await backupRepository.exportBackupPayload();
-    // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
-    await database.close();
-    database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    await backupRepository.restoreBackupPayload(backup);
+      final backup = await backupRepository.exportBackupPayload();
+      // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
+      await database.close();
+      database = AppDatabase.inMemory();
+      preferences = LunioPreferences(database);
+      backupRepository = BackupRepository(database, preferences);
+      fuelRepository = FuelRepository(database, preferences);
+      repository = LunioRepository(
+        database,
+        preferences: preferences,
+        fuel: fuelRepository,
+      );
+      await backupRepository.restoreBackupPayload(backup);
 
-    final restoredCar = (await database.select(database.cars).get()).single;
-    final restoredRecords = await repository.listMaintenanceRecordsForCar(
-      restoredCar.id,
-    );
-    expect(restoredRecords, hasLength(1));
-    final cost = restoredRecords.single.itemCosts.single;
-    // 恢复时按"材料+工时"补齐项目费用（2026-09-20 数据不变量）。
-    expect(cost.materialCents, 15000);
-    expect(cost.laborCents, 8000);
-    expect(cost.costCents, 23000);
-  });
+      final restoredCar = (await database.select(database.cars).get()).single;
+      final restoredItems = await repository.listMaintenanceItemsForCar(
+        restoredCar.id,
+      );
+      final restoredRecords = await repository.listMaintenanceRecordsForCar(
+        restoredCar.id,
+      );
+      expect(restoredRecords, hasLength(1));
+      // itemId 已重映射、金额原样保留（项目费用为准，不做推导修正）。
+      final costs = restoredRecords.single.itemCosts;
+      expect(costs, hasLength(2));
+      expect(
+        costs.map((cost) => cost.itemId).toSet(),
+        restoredItems.map((item) => item.id).toSet(),
+      );
+      expect(costs.map((cost) => cost.costCents).toSet(), {23000, 5000});
+      final oilCost = costs.firstWhere((cost) => cost.costCents == 23000);
+      expect(oilCost.materialCents, 15000);
+      expect(oilCost.laborCents, 8000);
+    },
+  );
+
+  test(
+    'backup restore normalizes item costs missing cost field (invariant)',
+    () async {
+      final (carId, oilId) = await repos.seedCarAndItem();
+      // 违规形态存量行：材料/工时有值、项目费用为空（不变量落地前写入的
+      // 历史数据）。直插播种模拟——写 seam（关联行 companion）2026-09-25
+      // 起单点补齐，经仓库保存已造不出违规行；而备份文件可能来自旧版本
+      // 导出，修复点在恢复，不把违规数据带进新库。
+      const legacyRecordId = 990001;
+      await database
+          .into(database.maintenanceRecords)
+          .insert(
+            maintenanceRecordCompanion(
+              defaultRecord(
+                carId: carId,
+                date: const LocalDate(2026, 5, 19),
+                itemIds: [oilId],
+                itemCosts: [
+                  RecordItemCost(
+                    itemId: oilId,
+                    materialCents: 15000,
+                    laborCents: 8000,
+                  ),
+                ],
+                costCents: 23000,
+                mileageKm: 12000,
+              ),
+              legacyRecordId,
+            ),
+          );
+      await database
+          .into(database.maintenanceRecordItems)
+          .insert(
+            // 裸 companion 绕过写 seam：还原"项目费用为空"的违规形态
+            // （costCents 留空 = NULL）。
+            MaintenanceRecordItemsCompanion.insert(
+              id: const Value(990002),
+              maintenanceRecordId: legacyRecordId,
+              carId: carId,
+              itemId: oilId,
+              date: const LocalDate(2026, 5, 19).toString(),
+              materialCostCents: const Value(15000),
+              laborCostCents: const Value(8000),
+            ),
+          );
+
+      final backup = await backupRepository.exportBackupPayload();
+      // 换新内存库恢复（车辆/项目 id 全部重映射为新雪花 id）。
+      await database.close();
+      database = AppDatabase.inMemory();
+      preferences = LunioPreferences(database);
+      backupRepository = BackupRepository(database, preferences);
+      fuelRepository = FuelRepository(database, preferences);
+      repository = LunioRepository(
+        database,
+        preferences: preferences,
+        fuel: fuelRepository,
+      );
+      await backupRepository.restoreBackupPayload(backup);
+
+      final restoredCar = (await database.select(database.cars).get()).single;
+      final restoredRecords = await repository.listMaintenanceRecordsForCar(
+        restoredCar.id,
+      );
+      expect(restoredRecords, hasLength(1));
+      final cost = restoredRecords.single.itemCosts.single;
+      // 恢复时按"材料+工时"补齐项目费用（2026-09-20 数据不变量）。
+      expect(cost.materialCents, 15000);
+      expect(cost.laborCents, 8000);
+      expect(cost.costCents, 23000);
+    },
+  );
   test('backup export and restore round-trips database content', () async {
     final (carId, itemId) = await repos.seedCarAndItem();
     await preferences.setAppliedCarId(carId);
@@ -358,88 +362,92 @@ void main() {
     );
   });
 
-  test('backup restore re-inserts custom probes and bootstrap rebuilds built-ins',
-      () async {
-    // 车辆本身与本用例断言无关，播种只为库里有常规业务数据（贴近真实）。
-    final (carId, _) = await repos.seedCarAndItem();
-    final diagnostics = repos.diagnosticsRepository;
-    // 基准态：bootstrap 已灌内置七条 + 用户加了一个停用的自定义项
-    // （启停是用户数据，备份往返应保留）。
-    await repos.catalogRepository.ensureBootstrapData();
-    final customId = await diagnostics.saveProbe(
-      DiagnosticsProbe(
-        carId: carId,
-        name: '进气温度',
-        command: '010F',
-        parseType: DiagnosticsParseType.coolantTemp,
-        enabled: false,
-      ),
-    );
-    // 最后读数是设备派生临时数据：先写一笔读数，验证它不进备份。
-    await diagnostics.saveProbeReading(
-      customId,
-      value: '42℃',
-      at: DateTime(2026, 11, 14, 8),
-    );
+  test(
+    'backup restore re-inserts custom probes and bootstrap rebuilds built-ins',
+    () async {
+      // 车辆本身与本用例断言无关，播种只为库里有常规业务数据（贴近真实）。
+      final (carId, _) = await repos.seedCarAndItem();
+      final diagnostics = repos.diagnosticsRepository;
+      // 基准态：bootstrap 已灌内置七条 + 用户加了一个停用的自定义项
+      // （启停是用户数据，备份往返应保留）。
+      await repos.catalogRepository.ensureBootstrapData();
+      final customId = await diagnostics.saveProbe(
+        DiagnosticsProbe(
+          carId: carId,
+          name: '进气温度',
+          command: '010F',
+          parseType: DiagnosticsParseType.coolantTemp,
+          enabled: false,
+        ),
+      );
+      // 最后读数是设备派生临时数据：先写一笔读数，验证它不进备份。
+      await diagnostics.saveProbeReading(
+        customId,
+        value: '42℃',
+        at: DateTime(2026, 11, 14, 8),
+      );
 
-    // 导出只带自定义项：payload 与 JSON 双重确认（内置不进备份，ADR 0021；
-    // 最后读数不进备份，2026-11-15 修订节）。
-    final backup = await backupRepository.exportBackupPayload();
-    expect(backup.diagnosticsProbes, hasLength(1));
-    expect(backup.diagnosticsProbes.single.name, '进气温度');
-    expect(backup.diagnosticsProbes.single.lastValue, isNull);
-    final backupJson = const BackupCodec().encode(backup);
-    expect(backupJson, isNot(contains('catalogKey')));
-    expect(backupJson, isNot(contains('lastValue')));
+      // 导出只带自定义项：payload 与 JSON 双重确认（内置不进备份，ADR 0021；
+      // 最后读数不进备份，2026-11-15 修订节）。
+      final backup = await backupRepository.exportBackupPayload();
+      expect(backup.diagnosticsProbes, hasLength(1));
+      expect(backup.diagnosticsProbes.single.name, '进气温度');
+      expect(backup.diagnosticsProbes.single.lastValue, isNull);
+      final backupJson = const BackupCodec().encode(backup);
+      expect(backupJson, isNot(contains('catalogKey')));
+      expect(backupJson, isNot(contains('lastValue')));
 
-    // 换新内存库恢复（模拟换机重装：检测点表全空）。
-    await database.close();
-    database = AppDatabase.inMemory();
-    preferences = LunioPreferences(database);
-    backupRepository = BackupRepository(database, preferences);
-    fuelRepository = FuelRepository(database, preferences);
-    repository = LunioRepository(
-      database,
-      preferences: preferences,
-      fuel: fuelRepository,
-    );
-    final restoredDiagnostics = DiagnosticsRepository(database);
-    catalogRepository = BuiltInCatalogRepository(
-      database,
-      loadBuiltInVehicleCatalog: () async => builtInCatalog,
-      // 生产装配（providers.dart）把检测点种子对账并入 bootstrap 总入口；
-      // 测试镜像同一接线，恢复后的种子重建经同一条路径发生。
-      ensureProbes: () => restoredDiagnostics.ensureBuiltInProbes(),
-    );
-    await backupRepository.restoreBackupPayload(backup);
+      // 换新内存库恢复（模拟换机重装：检测点表全空）。
+      await database.close();
+      database = AppDatabase.inMemory();
+      preferences = LunioPreferences(database);
+      backupRepository = BackupRepository(database, preferences);
+      fuelRepository = FuelRepository(database, preferences);
+      repository = LunioRepository(
+        database,
+        preferences: preferences,
+        fuel: fuelRepository,
+      );
+      final restoredDiagnostics = DiagnosticsRepository(database);
+      catalogRepository = BuiltInCatalogRepository(
+        database,
+        loadBuiltInVehicleCatalog: () async => builtInCatalog,
+        // 生产装配（providers.dart）把检测点种子对账并入 bootstrap 总入口；
+        // 测试镜像同一接线，恢复后的种子重建经同一条路径发生。
+        ensureProbes: () => restoredDiagnostics.ensureBuiltInProbes(),
+      );
+      await backupRepository.restoreBackupPayload(backup);
 
-    // 恢复事务内：只重插自定义段（条目不带 id，行 id 重新生成雪花；
-    // 内置七条此刻不出现）。
-    final restoredRows = await database.select(database.diagnosticsProbes).get();
-    expect(restoredRows, hasLength(1));
-    expect(restoredRows.single.catalogKey, isNull);
-    expect(restoredRows.single.name, '进气温度');
-    expect(restoredRows.single.command, '010F');
-    expect(restoredRows.single.enabled, isFalse);
-    expect(restoredRows.single.lastValue, isNull, reason: '读数不随备份恢复');
-    expect(restoredRows.single.id, isNot(customId));
+      // 恢复事务内：只重插自定义段（条目不带 id，行 id 重新生成雪花；
+      // 内置七条此刻不出现）。
+      final restoredRows = await database
+          .select(database.diagnosticsProbes)
+          .get();
+      expect(restoredRows, hasLength(1));
+      expect(restoredRows.single.catalogKey, isNull);
+      expect(restoredRows.single.name, '进气温度');
+      expect(restoredRows.single.command, '010F');
+      expect(restoredRows.single.enabled, isFalse);
+      expect(restoredRows.single.lastValue, isNull, reason: '读数不随备份恢复');
+      expect(restoredRows.single.id, isNot(customId));
 
-    // 恢复完成后种子重建（生产路径：恢复动作失效全量 provider，bootstrap
-    // 重跑 ensureBootstrapData → ensureBuiltInProbes）且自定义项存活：
-    // 3 内置回到库 + 自定义项业务字段原样保留。
-    await catalogRepository.ensureBootstrapData();
-    final restoredCarRows = await database.select(database.cars).get();
-    final restoredCarId = restoredCarRows.single.id;
-    final probes = await restoredDiagnostics.listProbes(restoredCarId);
-    expect(probes, hasLength(8), reason: '7 内置 + 1 自定义');
-    expect(probes.where((probe) => probe.isBuiltIn), hasLength(7));
-    final custom = probes.last;
-    expect(custom.name, '进气温度');
-    expect(custom.command, '010F');
-    expect(custom.parseType, DiagnosticsParseType.coolantTemp);
-    expect(custom.enabled, isFalse);
-    expect(custom.catalogKey, isNull);
-  });
+      // 恢复完成后种子重建（生产路径：恢复动作失效全量 provider，bootstrap
+      // 重跑 ensureBootstrapData → ensureBuiltInProbes）且自定义项存活：
+      // 3 内置回到库 + 自定义项业务字段原样保留。
+      await catalogRepository.ensureBootstrapData();
+      final restoredCarRows = await database.select(database.cars).get();
+      final restoredCarId = restoredCarRows.single.id;
+      final probes = await restoredDiagnostics.listProbes(restoredCarId);
+      expect(probes, hasLength(8), reason: '7 内置 + 1 自定义');
+      expect(probes.where((probe) => probe.isBuiltIn), hasLength(7));
+      final custom = probes.last;
+      expect(custom.name, '进气温度');
+      expect(custom.command, '010F');
+      expect(custom.parseType, DiagnosticsParseType.coolantTemp);
+      expect(custom.enabled, isFalse);
+      expect(custom.catalogKey, isNull);
+    },
+  );
 
   test('backup export skips orphan probes without a host car', () async {
     final (carId, _) = await repos.seedCarAndItem();
@@ -512,176 +520,180 @@ void main() {
     expect(await database.select(database.fuelRecords).get(), isEmpty);
   });
 
-  test('backup restore rejects diagnostics probe referencing missing car',
-      () async {
-    await repos.seedCarAndItem();
-    final backup = await backupRepository.exportBackupPayload();
-    // 备份 v5 的自定义检测点段带 carId：引用不存在的车辆时必须在事务外
-    // 被引用完整性预校验拒绝（与其余 5 类引用同一出口 typed
-    // backupInvalidData）。此前该段不在预校验里，直到事务内重映射才抛
-    // 裸 ArgumentError。
-    final invalid = BackupPayload(
-      schemaVersion: BackupCodec.currentSchemaVersion,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: backup.records,
-      diagnosticsProbes: [
-        DiagnosticsProbe(
-          carId: backup.cars.single.id! + 999,
-          name: '进气温度',
-          command: '012F',
-          parseType: DiagnosticsParseType.fuelLevel,
-          refreshIntervalSeconds: 60,
-          sync: sync,
-        ),
-      ],
-    );
-
-    expect(
-      () => backupRepository.restoreBackupPayload(invalid),
-      throwsA(
-        isA<LunioErrorException>()
-            .having(
-              (error) => error.kind,
-              'kind',
-              LunioErrorKind.backupInvalidData,
-            )
-            .having(
-              (error) => error.message,
-              'message',
-              contains('检测点'),
-            ),
-      ),
-    );
-    // 预校验在事务外执行：原库数据未被清空，也没有依赖事务回滚兜底。
-    expect(await database.select(database.cars).get(), hasLength(1));
-  });
-
-  test('backup restore rejects total tank capacity smaller than usable',
-      () async {
-    // 裸插一辆"总容积 < 可用容积"的车（绕过表单/仓库校验，模拟被篡改的
-    // 备份来源），导出后再恢复：备份业务规则必须与手工录入同一套校验
-    // （ADR 0022，FuelRules.validateTotalTankCapacity），在事务外拒绝。
-    await repos.insertCarForTest(
-      defaultCar(tankCapacityLiters: 60, totalTankCapacityLiters: 47),
-    );
-    final backup = await backupRepository.exportBackupPayload();
-    expect(backup.cars.single.totalTankCapacityLiters, 47);
-
-    expect(
-      () => backupRepository.restoreBackupPayload(backup),
-      throwsA(
-        isA<LunioErrorException>()
-            .having(
-              (error) => error.kind,
-              'kind',
-              LunioErrorKind.backupInvalidData,
-            )
-            .having(
-              (error) => error.message,
-              'message',
-              startsWith('备份文件中存在无效数据'),
-            ),
-      ),
-    );
-    // 预校验在事务外执行：原库未被清空（不是靠事务回滚兜底）。
-    expect(await database.select(database.cars).get(), hasLength(1));
-  });
-
-  test('backup restore rejects tampered business data before writing', () async {
-    final (carId, itemId) = await repos.seedCarAndItem();
-    final backup = await backupRepository.exportBackupPayload();
-    expect(backup.cars, hasLength(1));
-
-    MaintenanceRecord tamperedRecord({
-      required int costCents,
-      required int mileageKm,
-      List<int> itemIds = const [],
-    }) {
-      return MaintenanceRecord(
-        id: 1,
-        carId: carId,
-        date: const LocalDate(2026, 5, 19),
-        itemIds: itemIds,
-        costCents: costCents,
-        mileageKm: mileageKm,
-        sync: sync,
+  test(
+    'backup restore rejects diagnostics probe referencing missing car',
+    () async {
+      await repos.seedCarAndItem();
+      final backup = await backupRepository.exportBackupPayload();
+      // 备份 v5 的自定义检测点段带 carId：引用不存在的车辆时必须在事务外
+      // 被引用完整性预校验拒绝（与其余 5 类引用同一出口 typed
+      // backupInvalidData）。此前该段不在预校验里，直到事务内重映射才抛
+      // 裸 ArgumentError。
+      final invalid = BackupPayload(
+        schemaVersion: BackupCodec.currentSchemaVersion,
+        cars: backup.cars,
+        maintenanceItems: backup.maintenanceItems,
+        records: backup.records,
+        diagnosticsProbes: [
+          DiagnosticsProbe(
+            carId: backup.cars.single.id! + 999,
+            name: '进气温度',
+            command: '012F',
+            parseType: DiagnosticsParseType.fuelLevel,
+            refreshIntervalSeconds: 60,
+            sync: sync,
+          ),
+        ],
       );
-    }
 
-    final negativeCost = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [tamperedRecord(costCents: -1, mileageKm: 12000, itemIds: [itemId])],
-    );
-    final negativeMileage = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [tamperedRecord(costCents: 0, mileageKm: -1, itemIds: [itemId])],
-    );
-    final emptyItemIds = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: backup.maintenanceItems,
-      records: [tamperedRecord(costCents: 0, mileageKm: 12000)],
-    );
-    final invalidItemInterval = BackupPayload(
-      schemaVersion: 1,
-      cars: backup.cars,
-      maintenanceItems: [
-        MaintenanceItem(
-          id: itemId,
-          carsId: carId,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: null,
-          sortOrder: 1,
-          sync: sync,
+      expect(
+        () => backupRepository.restoreBackupPayload(invalid),
+        throwsA(
+          isA<LunioErrorException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                LunioErrorKind.backupInvalidData,
+              )
+              .having((error) => error.message, 'message', contains('检测点')),
         ),
-      ],
-      records: const [],
-    );
+      );
+      // 预校验在事务外执行：原库数据未被清空，也没有依赖事务回滚兜底。
+      expect(await database.select(database.cars).get(), hasLength(1));
+    },
+  );
 
-    // R35 校验失败自 ADR 0009 修订节起 typed 化（backupInvalidData），
-    // 不再是裸 ArgumentError。
-    final rejectedAsInvalidData = throwsA(
-      isA<LunioErrorException>().having(
-        (error) => error.kind,
-        'kind',
-        LunioErrorKind.backupInvalidData,
-      ),
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(negativeCost),
-      rejectedAsInvalidData,
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(negativeMileage),
-      rejectedAsInvalidData,
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(emptyItemIds),
-      rejectedAsInvalidData,
-    );
-    expect(
-      () => backupRepository.restoreBackupPayload(invalidItemInterval),
-      rejectedAsInvalidData,
-    );
-    // 预校验在事务外执行：库未被任何一次失败恢复改动。
-    expect(await database.select(database.cars).get(), hasLength(1));
-    expect(
-      await database.select(database.maintenanceItems).get(),
-      hasLength(1),
-    );
-    expect(
-      await database.select(database.maintenanceRecords).get(),
-      isEmpty,
-    );
-  });
+  test(
+    'backup restore rejects total tank capacity smaller than usable',
+    () async {
+      // 裸插一辆"总容积 < 可用容积"的车（绕过表单/仓库校验，模拟被篡改的
+      // 备份来源），导出后再恢复：备份业务规则必须与手工录入同一套校验
+      // （ADR 0022，FuelRules.validateTotalTankCapacity），在事务外拒绝。
+      await repos.insertCarForTest(
+        defaultCar(tankCapacityLiters: 60, totalTankCapacityLiters: 47),
+      );
+      final backup = await backupRepository.exportBackupPayload();
+      expect(backup.cars.single.totalTankCapacityLiters, 47);
+
+      expect(
+        () => backupRepository.restoreBackupPayload(backup),
+        throwsA(
+          isA<LunioErrorException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                LunioErrorKind.backupInvalidData,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                startsWith('备份文件中存在无效数据'),
+              ),
+        ),
+      );
+      // 预校验在事务外执行：原库未被清空（不是靠事务回滚兜底）。
+      expect(await database.select(database.cars).get(), hasLength(1));
+    },
+  );
+
+  test(
+    'backup restore rejects tampered business data before writing',
+    () async {
+      final (carId, itemId) = await repos.seedCarAndItem();
+      final backup = await backupRepository.exportBackupPayload();
+      expect(backup.cars, hasLength(1));
+
+      MaintenanceRecord tamperedRecord({
+        required int costCents,
+        required int mileageKm,
+        List<int> itemIds = const [],
+      }) {
+        return MaintenanceRecord(
+          id: 1,
+          carId: carId,
+          date: const LocalDate(2026, 5, 19),
+          itemIds: itemIds,
+          costCents: costCents,
+          mileageKm: mileageKm,
+          sync: sync,
+        );
+      }
+
+      final negativeCost = BackupPayload(
+        schemaVersion: 1,
+        cars: backup.cars,
+        maintenanceItems: backup.maintenanceItems,
+        records: [
+          tamperedRecord(costCents: -1, mileageKm: 12000, itemIds: [itemId]),
+        ],
+      );
+      final negativeMileage = BackupPayload(
+        schemaVersion: 1,
+        cars: backup.cars,
+        maintenanceItems: backup.maintenanceItems,
+        records: [
+          tamperedRecord(costCents: 0, mileageKm: -1, itemIds: [itemId]),
+        ],
+      );
+      final emptyItemIds = BackupPayload(
+        schemaVersion: 1,
+        cars: backup.cars,
+        maintenanceItems: backup.maintenanceItems,
+        records: [tamperedRecord(costCents: 0, mileageKm: 12000)],
+      );
+      final invalidItemInterval = BackupPayload(
+        schemaVersion: 1,
+        cars: backup.cars,
+        maintenanceItems: [
+          MaintenanceItem(
+            id: itemId,
+            carsId: carId,
+            name: '机油',
+            enabled: true,
+            remindByMileage: true,
+            remindByTime: false,
+            mileageIntervalKm: null,
+            sortOrder: 1,
+            sync: sync,
+          ),
+        ],
+        records: const [],
+      );
+
+      // R35 校验失败自 ADR 0009 修订节起 typed 化（backupInvalidData），
+      // 不再是裸 ArgumentError。
+      final rejectedAsInvalidData = throwsA(
+        isA<LunioErrorException>().having(
+          (error) => error.kind,
+          'kind',
+          LunioErrorKind.backupInvalidData,
+        ),
+      );
+      expect(
+        () => backupRepository.restoreBackupPayload(negativeCost),
+        rejectedAsInvalidData,
+      );
+      expect(
+        () => backupRepository.restoreBackupPayload(negativeMileage),
+        rejectedAsInvalidData,
+      );
+      expect(
+        () => backupRepository.restoreBackupPayload(emptyItemIds),
+        rejectedAsInvalidData,
+      );
+      expect(
+        () => backupRepository.restoreBackupPayload(invalidItemInterval),
+        rejectedAsInvalidData,
+      );
+      // 预校验在事务外执行：库未被任何一次失败恢复改动。
+      expect(await database.select(database.cars).get(), hasLength(1));
+      expect(
+        await database.select(database.maintenanceItems).get(),
+        hasLength(1),
+      );
+      expect(await database.select(database.maintenanceRecords).get(), isEmpty);
+    },
+  );
 
   test('backup restore rejects same-car same-date duplicate records', () async {
     final (carId, itemId) = await repos.seedCarAndItem();
@@ -813,64 +825,67 @@ void main() {
     );
   });
 
-  test('backup restore allows same-car same-day duplicate fuel records', () async {
-    // fuel_records 故意没有 {carId,date} 唯一约束（ADR 0014，同车同日
-    // 多箱合法）：同日查重只属于保养记录，不得波及加油记录。
-    final payload = BackupPayload(
-      schemaVersion: BackupCodec.currentSchemaVersion,
-      cars: [
-        Car(
-          id: 99,
-          brand: '本田',
-          model: '思域（燃油版）',
-          currentMileageKm: 12000,
-          roadDate: const LocalDate(2024, 1, 1),
-          sync: sync,
-        ),
-      ],
-      maintenanceItems: [
-        MaintenanceItem(
-          id: 199,
-          carsId: 99,
-          name: '机油',
-          enabled: true,
-          remindByMileage: true,
-          remindByTime: false,
-          mileageIntervalKm: 5000,
-          sortOrder: 1,
-          sync: sync,
-        ),
-      ],
-      records: [
-        MaintenanceRecord(
-          id: 299,
-          carId: 99,
-          date: const LocalDate(2026, 5, 20),
-          itemIds: const [199],
-          costCents: 12000,
-          mileageKm: 12000,
-          sync: sync,
-        ),
-      ],
-      fuelRecords: [
-        defaultFuelRecord(
-          99,
-          date: const LocalDate(2026, 5, 20),
-          unitPriceCents: 750,
-        ),
-        defaultFuelRecord(
-          99,
-          date: const LocalDate(2026, 5, 20),
-          unitPriceCents: 752,
-          payableCents: 37600,
-        ),
-      ],
-    );
+  test(
+    'backup restore allows same-car same-day duplicate fuel records',
+    () async {
+      // fuel_records 故意没有 {carId,date} 唯一约束（ADR 0014，同车同日
+      // 多箱合法）：同日查重只属于保养记录，不得波及加油记录。
+      final payload = BackupPayload(
+        schemaVersion: BackupCodec.currentSchemaVersion,
+        cars: [
+          Car(
+            id: 99,
+            brand: '本田',
+            model: '思域（燃油版）',
+            currentMileageKm: 12000,
+            roadDate: const LocalDate(2024, 1, 1),
+            sync: sync,
+          ),
+        ],
+        maintenanceItems: [
+          MaintenanceItem(
+            id: 199,
+            carsId: 99,
+            name: '机油',
+            enabled: true,
+            remindByMileage: true,
+            remindByTime: false,
+            mileageIntervalKm: 5000,
+            sortOrder: 1,
+            sync: sync,
+          ),
+        ],
+        records: [
+          MaintenanceRecord(
+            id: 299,
+            carId: 99,
+            date: const LocalDate(2026, 5, 20),
+            itemIds: const [199],
+            costCents: 12000,
+            mileageKm: 12000,
+            sync: sync,
+          ),
+        ],
+        fuelRecords: [
+          defaultFuelRecord(
+            99,
+            date: const LocalDate(2026, 5, 20),
+            unitPriceCents: 750,
+          ),
+          defaultFuelRecord(
+            99,
+            date: const LocalDate(2026, 5, 20),
+            unitPriceCents: 752,
+            payableCents: 37600,
+          ),
+        ],
+      );
 
-    await backupRepository.restoreBackupPayload(payload);
+      await backupRepository.restoreBackupPayload(payload);
 
-    expect(await database.select(database.fuelRecords).get(), hasLength(2));
-  });
+      expect(await database.select(database.fuelRecords).get(), hasLength(2));
+    },
+  );
 
   test('parking countdown is temporary preference outside backup', () async {
     final countdown = ParkingCountdown(
@@ -1019,7 +1034,8 @@ void main() {
 
   test('backup restore rejects record items from another car', () async {
     final (carId, _) = await repos.seedCarAndItem();
-    final otherCarId = await repos.insertCarForTest(defaultCar(
+    final otherCarId = await repos.insertCarForTest(
+      defaultCar(
         brand: '日产',
         model: '22款轩逸',
         roadDate: const LocalDate(2024, 1, 1),
@@ -1092,8 +1108,9 @@ void main() {
       DiagnosticsProbe(carId: carId, name: '节气门', command: '0111'),
     );
     expect(
-      (await database.select(database.diagnosticsProbes).get())
-          .where((row) => row.catalogKey == null),
+      (await database.select(database.diagnosticsProbes).get()).where(
+        (row) => row.catalogKey == null,
+      ),
       hasLength(1),
     );
 
@@ -1143,8 +1160,38 @@ void main() {
       ],
     );
 
-    expect(() => backupRepository.restoreBackupPayload(invalid), throwsA(anything));
+    expect(
+      () => backupRepository.restoreBackupPayload(invalid),
+      throwsA(anything),
+    );
     expect(await database.select(database.cars).get(), hasLength(1));
     expect(await preferences.getAppliedCarId(), carId);
+  });
+
+  test('backup restore rejects negative car mileage', () async {
+    // 手工录入门禁在 CarFormController（当前里程必须是非负整数），Car 实体
+    // 本身没有 validate；备份业务规则只校容积，负里程会随恢复直接进库。
+    await repos.insertCarForTest(defaultCar(currentMileageKm: -5));
+    final backup = await backupRepository.exportBackupPayload();
+    expect(backup.cars.single.currentMileageKm, -5);
+
+    expect(
+      () => backupRepository.restoreBackupPayload(backup),
+      throwsA(
+        isA<LunioErrorException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              LunioErrorKind.backupInvalidData,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              allOf(startsWith('备份文件中存在无效数据'), contains('里程')),
+            ),
+      ),
+    );
+    // 预校验在事务外执行：原库未被清空。
+    expect(await database.select(database.cars).get(), hasLength(1));
   });
 }
