@@ -179,10 +179,8 @@ Future<void> openProbeManagementSheet(WidgetTester tester) async {
 /// 管理 sheet 内的 finder 作用域：下层「我的」页车辆卡同样有「编辑/
 /// 删除」按钮，sheet 内定位一律收进 PrototypeSheetFrame 子树，避免
 /// 跨层串扰（ADR 0029 检测点入口迁车辆卡后新增的约束）。
-Finder inProbeSheet(Finder finder) => find.descendant(
-      of: find.byType(PrototypeSheetFrame),
-      matching: finder,
-    );
+Finder inProbeSheet(Finder finder) =>
+    find.descendant(of: find.byType(PrototypeSheetFrame), matching: finder);
 
 void main() {
   group('三区状态机', () {
@@ -395,6 +393,44 @@ void main() {
       }
     });
 
+    testWidgets('删除最后一辆车断开 App 级 OBD 连接', (tester) async {
+      final database = AppDatabase.inMemory();
+      addTearDown(database.close);
+      final rig = DiagnosticsRig();
+      final notificationCalls = <MethodCall>[];
+      final cleanupNotifications = mockAndroidNotifications(notificationCalls);
+      try {
+        await seedDeveloperDiagnostics(database);
+        await pumpApp(
+          tester,
+          database: database,
+          extraOverrides: rig.overrides,
+        );
+        await openDiagnosticsPage(tester);
+        await rig.advanceUntil(tester, find.text('38%'));
+        expect(rig.mock.disconnectCalls, 0);
+
+        // 离页不断开（App 级连接保持，ADR 0027）；随后删掉唯一车辆。
+        await leavePageAndFlush(tester);
+        expect(rig.mock.disconnectCalls, 0);
+
+        await tester.ensureVisible(find.widgetWithText(TextButton, '删除').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(TextButton, '删除').first);
+        await tester.pumpAndSettle();
+        expect(find.text('删除车辆'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, '删除'));
+        await tester.pumpAndSettle();
+
+        // 没有车就没有任何消费者：连接必须释放，不能继续空转轮询
+        // 已随车删除的探针（ADR 0027「不留给无人消费的空转轮询」）。
+        expect(rig.mock.disconnectCalls, 1);
+        expect(await database.select(database.cars).get(), isEmpty);
+      } finally {
+        cleanupNotifications();
+      }
+    });
+
     testWidgets('调试终端：暂停轮询后原始命令可发，验证脚本含私有 DID', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
@@ -415,10 +451,7 @@ void main() {
       await tester.pumpAndSettle();
       // 调试模式开关已删（2026-11-19 拍板懒暂停）：直接发原始命令。
 
-      await tester.enterText(
-        find.widgetWithText(TextField, '原始命令'),
-        'ATRV',
-      );
+      await tester.enterText(find.widgetWithText(TextField, '原始命令'), 'ATRV');
       await tester.tap(find.text('发送'));
       await rig.deliverChunks(tester);
       await tester.pump();
@@ -470,7 +503,9 @@ void main() {
       await tester.tap(find.text('一键检测'));
       await tester.pump();
 
-      final log = tester.widget<SelectableText>(find.byType(SelectableText)).data;
+      final log = tester
+          .widget<SelectableText>(find.byType(SelectableText))
+          .data;
       expect(log, contains('Lunio OBD 一键检测日志'));
       expect(log, contains('> ATI'));
       expect(rig.mock.sentCommands, contains('ATI'));
@@ -502,15 +537,11 @@ void main() {
 
       // 管理卡即时可见 + 库里第 8 行（内置七条 + 自定义一条）。
       expect(inProbeSheet(find.text('节气门')), findsOneWidget);
-      final probes = await testRepository(database)
-          .diagnosticsRepository
-          .listProbes(await appliedCarId(database));
+      final probes = await testRepository(
+        database,
+      ).diagnosticsRepository.listProbes(await appliedCarId(database));
       expect(probes, hasLength(8));
-      expect(
-        probes.last.command,
-        '012F',
-        reason: '保存前归一（大写 + 去空白），落库即发送文本',
-      );
+      expect(probes.last.command, '012F', reason: '保存前归一（大写 + 去空白），落库即发送文本');
       expect(probes.last.refreshIntervalSeconds, 60);
       expect(find.text('检测点已保存'), findsOneWidget);
 
@@ -527,15 +558,11 @@ void main() {
       final carId = await seedAppliedCar(database);
       final repo = testRepository(database).diagnosticsRepository;
       await repo.saveProbe(
-        DiagnosticsProbe(
-          carId: carId,
-          name: '节气门',
-          command: '0111',
-        ),
+        DiagnosticsProbe(carId: carId, name: '节气门', command: '0111'),
       );
-      final seededId = (await repo.listProbes(carId))
-          .firstWhere((p) => p.name == '节气门')
-          .id!;
+      final seededId = (await repo.listProbes(
+        carId,
+      )).firstWhere((p) => p.name == '节气门').id!;
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
 
@@ -548,15 +575,17 @@ void main() {
       expect(find.text('编辑检测点'), findsOneWidget);
       expect(find.text('仅用于读取类指令（如标准 PID 查询）'), findsOneWidget);
       expect(
-        tester.widget<TextField>(
-          find.widgetWithText(TextField, '检测点名称'),
-        ).controller!.text,
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, '检测点名称'))
+            .controller!
+            .text,
         '节气门',
       );
       expect(
-        tester.widget<TextField>(
-          find.widgetWithText(TextField, '指令原文'),
-        ).controller!.text,
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, '指令原文'))
+            .controller!
+            .text,
         '0111',
       );
 
@@ -564,10 +593,7 @@ void main() {
       await tester.enterText(find.widgetWithText(TextField, '检测点名称'), '进气压力');
       // 间隔改成 90 秒：默认已是 60，若用 60 则"每 60 秒刷新"在八张卡上
       // 都成立，断言无法定位到被编辑的那张卡。
-      await tester.enterText(
-        find.widgetWithText(TextField, '刷新间隔'),
-        '90',
-      );
+      await tester.enterText(find.widgetWithText(TextField, '刷新间隔'), '90');
       await tester.tap(find.text('保存修改'));
       await tester.pumpAndSettle();
       // 管理卡更新，旧名消失。
@@ -612,9 +638,7 @@ void main() {
       expect(find.text('编辑检测点'), findsOneWidget);
       expect(
         tester
-            .widget<TextField>(
-              find.widgetWithText(TextField, '检测点名称'),
-            )
+            .widget<TextField>(find.widgetWithText(TextField, '检测点名称'))
             .controller!
             .text,
         '电压',
@@ -632,11 +656,7 @@ void main() {
       final carId = await seedAppliedCar(database);
       final repo = testRepository(database).diagnosticsRepository;
       await repo.saveProbe(
-        DiagnosticsProbe(
-          carId: carId,
-          name: '节气门',
-          command: '0111',
-        ),
+        DiagnosticsProbe(carId: carId, name: '节气门', command: '0111'),
       );
       await seedDeveloperDiagnostics(database);
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
@@ -694,9 +714,7 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('sheet 内启停下一轮生效：禁用电压后不再发 0142，重开恢复', (
-      tester,
-    ) async {
+    testWidgets('sheet 内启停下一轮生效：禁用电压后不再发 0142，重开恢复', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -726,11 +744,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('已禁用'), findsOneWidget);
       expect(
-        (await testRepository(database)
-                .diagnosticsRepository
-                .listProbes(await appliedCarId(database)))
-            .firstWhere((probe) => probe.command == '0142')
-            .enabled,
+        (await testRepository(database).diagnosticsRepository.listProbes(
+          await appliedCarId(database),
+        )).firstWhere((probe) => probe.command == '0142').enabled,
         isFalse,
       );
       await tester.tapAt(const Offset(20, 20));
@@ -742,10 +758,7 @@ void main() {
       await openDiagnosticsPage(tester);
       await rig.advanceRound(tester);
       await rig.drainPendingChunks(tester);
-      expect(
-        rig.mock.sentCommands.where((c) => c == '0142'),
-        hasLength(1),
-      );
+      expect(rig.mock.sentCommands.where((c) => c == '0142'), hasLength(1));
       expect(
         rig.mock.sentCommands.where((c) => c == '012F'),
         hasLength(greaterThanOrEqualTo(2)),
@@ -792,10 +805,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('扫描中'), findsOneWidget);
       expect(find.text('选择适配器'), findsOneWidget);
-      expect(
-        find.text('正在扫描附近的蓝牙设备…'),
-        findsNWidgets(2),
-      );
+      expect(find.text('正在扫描附近的蓝牙设备…'), findsNWidgets(2));
       // 推入扫描结果：空名设备被扫描器过滤，列表只有有名字的设备
       //（2026-11-15 反转 story 5；过滤在扫描器数据源，sheet 只渲染）。
       rig.scanner.emit([
@@ -826,9 +836,7 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('扫描 sheet 无留白回归守卫：提示行→首卡/空态占位间距紧贴', (
-      tester,
-    ) async {
+    testWidgets('扫描 sheet 无留白回归守卫：提示行→首卡/空态占位间距紧贴', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -839,18 +847,19 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       // 空态：占位文案紧跟提示行（8dp 间隔 + 24dp 占位上边距）。
-      final hintBottom =
-          tester.getBottomLeft(find.text('正在扫描附近的蓝牙设备…').last).dy;
-      final emptyTop =
-          tester.getTopLeft(find.text('附近暂无蓝牙设备，请确认适配器已插车')).dy;
+      final hintBottom = tester
+          .getBottomLeft(find.text('正在扫描附近的蓝牙设备…').last)
+          .dy;
+      final emptyTop = tester.getTopLeft(find.text('附近暂无蓝牙设备，请确认适配器已插车')).dy;
       expect(emptyTop - hintBottom, lessThanOrEqualTo(40));
 
       // 有结果：首卡紧跟提示行（8dp 间隔；守卫 ListView 默认安全区
       // padding 回归——修复前此处凭空多 ~74px）。
       rig.scanner.emit([scanEntry('dev-A', 'IOS-Vlink', -58)]);
       await tester.pump();
-      final hintBottom2 =
-          tester.getBottomLeft(find.text('正在扫描附近的蓝牙设备…').last).dy;
+      final hintBottom2 = tester
+          .getBottomLeft(find.text('正在扫描附近的蓝牙设备…').last)
+          .dy;
       final cardTop = tester
           .getTopLeft(
             find.ancestor(
@@ -867,9 +876,7 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('扫描顺序稳定：信号抖动不换位，新设备插入有序（2026-11-15）', (
-      tester,
-    ) async {
+    testWidgets('扫描顺序稳定：信号抖动不换位，新设备插入有序（2026-11-15）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -926,9 +933,7 @@ void main() {
       await leavePageAndFlush(tester);
     });
 
-    testWidgets('已连接点「断开」：释放会话落未连接，记忆保留（2026-11-15）', (
-      tester,
-    ) async {
+    testWidgets('已连接点「断开」：释放会话落未连接，记忆保留（2026-11-15）', (tester) async {
       final database = AppDatabase.inMemory();
       addTearDown(database.close);
       final rig = DiagnosticsRig();
@@ -990,7 +995,7 @@ void main() {
           now: () => rig.fixedNow,
           delay: (d) => rig.timeGate.gate(d),
           responseTimeout: const Duration(milliseconds: 300),
-                  );
+        );
       }
 
       await seedDeveloperDiagnostics(database, obdDeviceId: null);
@@ -1035,7 +1040,6 @@ void main() {
       expect(find.text('已断开'), findsOneWidget);
       await leavePageAndFlush(tester);
     });
-
   });
 
   group('最后读数持久化（2026-11-15，ADR 0021 修订节）', () {
@@ -1056,12 +1060,12 @@ void main() {
 
       // 开页前预写最后读数（昨天 08:00:00）：油量 38% / 水温 95℃。
       final diagnostics = testRepository(database).diagnosticsRepository;
-      final fuelId = (await diagnostics.listProbes(await appliedCarId(database)))
-          .firstWhere((p) => p.name == '油量')
-          .id!;
-      final coolantId = (await diagnostics.listProbes(await appliedCarId(database)))
-          .firstWhere((p) => p.name == '水温')
-          .id!;
+      final fuelId = (await diagnostics.listProbes(
+        await appliedCarId(database),
+      )).firstWhere((p) => p.name == '油量').id!;
+      final coolantId = (await diagnostics.listProbes(
+        await appliedCarId(database),
+      )).firstWhere((p) => p.name == '水温').id!;
       await diagnostics.saveProbeReading(
         fuelId,
         value: '38%',
@@ -1156,9 +1160,9 @@ void main() {
 
       // 开页前预写油量最后读数（昨天 08:00:00）：30%。
       final diagnostics = testRepository(database).diagnosticsRepository;
-      final fuelId = (await diagnostics.listProbes(await appliedCarId(database)))
-          .firstWhere((p) => p.name == '油量')
-          .id!;
+      final fuelId = (await diagnostics.listProbes(
+        await appliedCarId(database),
+      )).firstWhere((p) => p.name == '油量').id!;
       await diagnostics.saveProbeReading(
         fuelId,
         value: '30%',
@@ -1185,7 +1189,10 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(of: fuelCard, matching: find.textContaining('11/17 08:00:00')),
+        find.descendant(
+          of: fuelCard,
+          matching: find.textContaining('11/17 08:00:00'),
+        ),
         findsOneWidget,
       );
       expect(
@@ -1215,8 +1222,9 @@ void main() {
     ) async {
       final diagnostics = testRepository(database).diagnosticsRepository;
       for (var i = 0; i < 20; i++) {
-        final probes =
-            await diagnostics.listProbes(await appliedCarId(database));
+        final probes = await diagnostics.listProbes(
+          await appliedCarId(database),
+        );
         if (probes.firstWhere((p) => p.name == '里程表').lastValue != null) {
           return;
         }
@@ -1257,10 +1265,9 @@ void main() {
       final rig = DiagnosticsRig();
       await seedAppliedCar(database, mileageKm: 70000);
       await seedDeveloperDiagnostics(database);
-      await testRepository(database).setPreferenceValue(
-        LunioPreferences.obdOdometerAutoSyncKey,
-        'true',
-      );
+      await testRepository(
+        database,
+      ).setPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey, 'true');
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
       await connectAndFinishFirstRound(tester, rig);
@@ -1288,10 +1295,9 @@ void main() {
       final rig = DiagnosticsRig();
       await seedAppliedCar(database, mileageKm: 10000);
       await seedDeveloperDiagnostics(database);
-      await testRepository(database).setPreferenceValue(
-        LunioPreferences.obdOdometerAutoSyncKey,
-        'true',
-      );
+      await testRepository(
+        database,
+      ).setPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey, 'true');
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
       await connectAndFinishFirstRound(tester, rig);
@@ -1315,28 +1321,25 @@ void main() {
       await openProbeManagementSheet(tester);
       expect(find.text('ECU 自动同步'), findsOneWidget);
       expect(
-        await testRepository(database).getPreferenceValue(
-          LunioPreferences.obdOdometerAutoSyncKey,
-        ),
+        await testRepository(
+          database,
+        ).getPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey),
         isNull,
       );
 
       // 打开开关 → 偏好写入（纪元 bump 后 provider 重算）。
       final syncSwitch = find.descendant(
         of: find
-            .ancestor(
-              of: find.text('ECU 自动同步'),
-              matching: find.byType(Row),
-            )
+            .ancestor(of: find.text('ECU 自动同步'), matching: find.byType(Row))
             .first,
         matching: find.byType(Switch),
       );
       await tester.tap(syncSwitch);
       await tester.pumpAndSettle();
       expect(
-        await testRepository(database).getPreferenceValue(
-          LunioPreferences.obdOdometerAutoSyncKey,
-        ),
+        await testRepository(
+          database,
+        ).getPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey),
         'true',
       );
 
@@ -1370,8 +1373,9 @@ void main() {
     ) async {
       final diagnostics = testRepository(database).diagnosticsRepository;
       for (var i = 0; i < 20; i++) {
-        final probes =
-            await diagnostics.listProbes(await appliedCarId(database));
+        final probes = await diagnostics.listProbes(
+          await appliedCarId(database),
+        );
         if (probes.firstWhere((p) => p.name == '油量').lastValue != null) {
           return;
         }
@@ -1386,10 +1390,9 @@ void main() {
       final rig = DiagnosticsRig();
       await seedAppliedCar(database, tankCapacity: 40.487);
       await seedDeveloperDiagnostics(database);
-      await testRepository(database).setPreferenceValue(
-        LunioPreferences.obdOdometerAutoSyncKey,
-        'true',
-      );
+      await testRepository(
+        database,
+      ).setPreferenceValue(LunioPreferences.obdOdometerAutoSyncKey, 'true');
       await pumpApp(tester, database: database, extraOverrides: rig.overrides);
       await openDiagnosticsPage(tester);
       await rig.advanceUntil(tester, find.text('已连接'));
@@ -1397,7 +1400,8 @@ void main() {
 
       // 信息卡显示 38%（37.6471 四舍五入），落库值同源。
       await pumpUntilFuelPercent(tester, database, 38);
-      final row = (await database.select(database.fuelPredictions).get()).single;
+      final row =
+          (await database.select(database.fuelPredictions).get()).single;
       expect(row.carId, await appliedCarId(database));
       await leavePageAndFlush(tester);
     });

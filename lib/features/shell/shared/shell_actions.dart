@@ -84,8 +84,8 @@ Future<void> updateCar(WidgetRef ref, Car car) async {
 /// 删除车辆：先弹确认对话框，确认后走协调器的删车清扫模板
 /// （内部先升同步代数作废在途任务（R8），删库后取消保养/里程提醒族
 /// 系统通知（R1：删最后一辆车后同步控制器无车短路不重排，必须显式
-/// 取消）），再 bump 车辆数据纪元（appliedCar 回退逻辑在 Repository
-/// 内处理）。
+/// 取消））；删掉最后一辆车时顺带断开 App 级 OBD 连接，再 bump 车辆
+/// 数据纪元（appliedCar 回退逻辑在 Repository 内处理）。
 Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
   final confirmed = await showConfirmDialog(
     context: context,
@@ -101,6 +101,13 @@ Future<void> deleteCar(BuildContext context, WidgetRef ref, Car car) async {
       .runCarDeletion(
         () => ref.read(lunioRepositoryProvider).deleteCar(car.id!),
       );
+  // 删最后一辆车：检测点已随车级联删除，提醒页没有车辆可服务、不会再
+  // 推送轮询清单，App 级连接会变成无人消费的空转轮询。与关闭诊断开关、
+  // 清空数据同一口径（ADR 0027：连接不留给无人消费的空转轮询）。
+  final remainingCars = await ref.read(lunioRepositoryProvider).listCars();
+  if (remainingCars.isEmpty) {
+    await ref.read(obdConnectionControllerProvider).disconnectManually();
+  }
   ref.read(vehicleDataEpochProvider.notifier).bump();
 }
 
