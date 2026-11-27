@@ -1201,6 +1201,38 @@ void main() {
     expect(await database.select(database.cars).get(), hasLength(1));
   });
 
+  test('backup restore rejects a car with blank brand or model', () async {
+    // 手工建车只能从车型目录选择，目录外自定义输入也要求品牌/车型非空
+    // （vehicle_model_picker.dart）；Car 实体没有 validate，备份业务校验
+    // 不补这一条会恢复出无名称车辆——编辑表单身份字段只读，用户无法修复。
+    final carId = await repos.insertCarForTest(
+      defaultCar(brand: ' ', model: ' '),
+    );
+    // 每车一个启用项目：满足其它业务预校验，让空白品牌成为唯一违规点。
+    await repos.saveItem(carId, '机油', 1);
+    final backup = await backupRepository.exportBackupPayload();
+    expect(backup.cars.single.brand, ' ');
+
+    expect(
+      () => backupRepository.restoreBackupPayload(backup),
+      throwsA(
+        isA<LunioErrorException>()
+            .having(
+              (error) => error.kind,
+              'kind',
+              LunioErrorKind.backupInvalidData,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              allOf(startsWith('备份文件中存在无效数据'), contains('品牌')),
+            ),
+      ),
+    );
+    // 预校验在事务外执行：原库未被清空。
+    expect(await database.select(database.cars).get(), hasLength(1));
+  });
+
   test(
     'backup restore rejects a car without enabled maintenance items',
     () async {

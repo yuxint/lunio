@@ -472,7 +472,7 @@ class BackupRepository {
   }
 
   /// 备份业务规则校验（恢复前、事务外执行，R35）：
-  /// 车辆校容积与里程、每车至少一个启用项目；项目过实体 validate、记录过
+  /// 车辆校品牌/车型非空、容积与里程、每车至少一个启用项目；项目过实体 validate、记录过
   /// RecordRules.validateRecord、加油预测设置与加油记录过实体 validate
   /// ——与手工录入走同一套规则，篡改过的备份（负金额/负里程/空项目/
   /// 非法间隔）在开事务前就被拒绝，保证"失败时未写入任何数据"；末段做
@@ -482,6 +482,13 @@ class BackupRepository {
   void _validateBackupBusinessRules(BackupPayload payload) {
     for (final car in payload.cars) {
       try {
+        // 品牌/车型非空与手工录入门禁同一口径：手工建车只能从车型目录
+        // 选择，目录外自定义输入也要求两项非空（vehicle_model_picker），
+        // Car 实体本身没有 validate；空白身份会恢复出无法修复的车
+        // （编辑表单品牌车型只读），只能删除。
+        if (car.brand.trim().isEmpty || car.model.trim().isEmpty) {
+          throw ArgumentError('品牌和车型不能为空');
+        }
         // 与手工新增/编辑车辆同一套容积规则（lunio_repository 的
         // createCar/updateCar）：可用容积 + 总容积，且总容积不得小于
         // 可用容积（ADR 0022）。只查可用容积会放过篡改/损坏备份里的
