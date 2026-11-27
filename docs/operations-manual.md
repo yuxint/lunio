@@ -331,7 +331,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 #### 5.1.3 删除车辆
 
-车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**guard.beginDataReset()**——先 bump() 通知同步代数作废在途任务，再置写库中间态旗（`isDataResetInFlight`，状态在守卫模块 `notification_sync_guard.dart`，见第 3 节），再执行 `repository.deleteCar`（lunio_repository.dart 主仓库，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车，经偏好门面）→加油预测行与加油记录（借道 `FuelRepository.deleteForCar`，ADR 0014）→车辆；删完按 AppliedCarRules 把应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**——同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001~9004 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ invalidate。收尾统一走 **guard.settleDataReset()**（finally：**再 bump 一次代数**——作废写库进行中才启动的同步任务——再关中间态旗；失败回滚时同样执行，对回滚后数据重算一轮无害）。
+车辆卡"删除" → `shell_actions.dart → deleteCar` → 确认框 → 协调器 `runCarDeletion`（`notification_coordinator.dart`：**guard.beginDataReset()**——先 bump() 通知同步代数作废在途任务，再置写库中间态旗（`isDataResetInFlight`，状态在守卫模块 `notification_sync_guard.dart`，见第 3 节），再执行 `repository.deleteCar`（lunio_repository.dart 主仓库，**事务级联**：记录关联→记录→项目→appliedCarId 偏好（仅当指向本车，经偏好门面）→加油预测行与加油记录（借道 `FuelRepository.deleteForCar`，ADR 0014）→车辆；删完按 AppliedCarRules 把应用车辆指向剩余第一辆，无剩余清空），删完 **取消保养/里程 8000/8900 系系统通知**——同步控制器在无车时短路不走重排，删最后一辆车后旧调度无人清理，必须显式取消；非最后一辆车的场景取消后会随 invalidate 触发的重排恢复。停车 9001~9004 与车辆无关，不在此处理。删库失败（异常）时旧通知原样保留）→ **删完已无车辆时断开 App 级 OBD 连接**（动作层读剩余车辆，空则 `disconnectManually()`；检测点已随车级联删除、提醒页不再推送轮询清单，连接不能留给无人消费的空转轮询，ADR 0027，与清空数据同口径）→ invalidate。收尾统一走 **guard.settleDataReset()**（finally：**再 bump 一次代数**——作废写库进行中才启动的同步任务——再关中间态旗；失败回滚时同样执行，对回滚后数据重算一轮无害）。
 
 #### 5.1.4 切换当前应用车辆
 
@@ -418,7 +418,7 @@ iOS 16.2+ 上停车倒计时另有系统托管的常驻实时卡片（锁屏 + �
 
 ### 5.10.1 检测点管理、刷新规则与调试终端（2026-11-15）
 
-- **每车一套检测点**（ADR 0021 修订节）：`diagnostics_probes` 挂 `car_id`；切车/删车随车变化，删车事务级联；`diagnosticsProbesProvider` 是按车 family；新增车辆时按车播种七条内置（`createCar` 动作收尾）：油量/水温/电压/两条燃油修正/**CVT 油温 222301（2026-11-18 实测转正）**/**里程表 01A6（2026-11-18 升内置，ADR 0026 修订节）**；水温 0105 存量迁移口径不变，bootstrap 按车补缺失、不纠偏用户编辑。
+- **每车一套检测点**（ADR 0021 修订节）：`diagnostics_probes` 挂 `car_id`；切车/删车随车变化，删车事务级联；`diagnosticsProbesProvider` 是按车 family；新增车辆时按车播种七条内置（`createCar` 动作收尾）：油量/水温/电压/两条燃油修正/**CVT 油温 222301（2026-11-18 实测转正）**/**里程表 01A6（2026-11-18 升内置，ADR 0026 修订节）**；播种失败不阻断建车（车已入库，异常就地吞掉，种子由 bootstrap 按车补缺失兜底），水温 0105 存量迁移口径不变，bootstrap 不纠偏用户编辑。
 - **检测点管理 sheet**：入口（2026-11-17 起，ADR 0029）在我的页车辆卡"检测点"按钮（"项目"后，按钮行改 Wrap 允许换行；锚定该车进 sheet）→ `probe_management_sheet.dart`；顶部"新增"、卡片 = 名称 + "每 N 秒刷新 · 解析类型" + 编辑/启停/删除；内置卡片"内置"标签、无删除；自定义可增改删；删除确认"删除检测点"。**「ECU 自动同步」开关行（ADR 0026 + 2026-11-18 修订节 + ADR 0030）**：页面级行开关，开 = **任何连接状态下**（提醒页背景三条含油量/水温/里程表、诊断页全量）两条静默写回——读到更大 ECU 里程写入车辆里程（App 级回调常驻，确认式入口已取消）；门限放行的仪表油量四舍五入写入当前应用车的加油页剩余油量（ADR 0030）。关（默认）= 两者都不写；偏好 `obdOdometerAutoSync`（键名沿用）不进备份，不随开发者模式连带（ADR 0028：关闭开发者模式只清手动日期）。
 - **刷新规则**：每个检测点自己的 `refresh_interval_seconds`（默认 60，范围 5–3600，ADR 0023；2026-11-21 起 10→60，存量 10/30 秒由 v6→v7 迁移一次性改写）；`Elm327Session` 按 1 秒拍倒计时调度；已连接时状态条行尾刷新图标 → `requestImmediatePoll` 立即轮询全部启用项；**App 回前台（resumed）自动触发一次立即轮询**（2026-11-19 拍板，未连接静默）；调试原始命令/一键检测懒暂停轮询（命令返回/整段结束恢复）。
 - **会话日志（2026-11-18 拍板）**：单次 OBD 连接的轮询读数记录为 JSONL 文件（App 文档目录 `obd_sessions/`，命名 `session-<日期时分秒>.jsonl`），值与无数据都记，一键检测整段日志追加进当次会话文件；保留策略 = 7 天 + 50 个文件双上限、超限删最旧（清理时机 = 每次新建会话时顺带清理，2026-11-18 深审统一口径）；入口 = 调试终端展开区"会话日志"行 → 列表 sheet（名称/条数/大小 + 导出/删除，导出复用备份导出的原生文件保存桥）；模块 `obd_session_log.dart`（store/recorder/生产 sink 三件）+ 列表 sheet `obd_session_log_sheet.dart`，controller 接缝 `sessionLogSink`（connected 起、读数追加、断开收尾）。
