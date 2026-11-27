@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lunio/app/providers.dart';
 import 'package:lunio/core/date/app_date_context.dart';
 import 'package:lunio/data/database/app_database.dart';
+import 'package:lunio/data/repositories/diagnostics_repository.dart';
 import 'package:lunio/data/repositories/lunio_repository.dart';
 import 'package:lunio/domain/entities/car.dart';
 import 'package:lunio/domain/entities/maintenance_item.dart';
@@ -25,6 +26,16 @@ class _ThrowingSaveRepository extends LunioRepository {
     List<MaintenanceItem> items,
   ) async {
     throw Exception('建车失败');
+  }
+}
+
+/// 播种必抛的诊断仓库替身：模拟建车已入库后检测点种子写入失败。
+class _ThrowingSeedDiagnosticsRepository extends DiagnosticsRepository {
+  _ThrowingSeedDiagnosticsRepository(super.database);
+
+  @override
+  Future<void> seedBuiltInProbesForCar(int carId) async {
+    throw StateError('播种失败');
   }
 }
 
@@ -51,6 +62,34 @@ void main() {
     );
   });
 
+  testWidgets('add car keeps the car when probe seeding fails', (tester) async {
+    final database = AppDatabase.inMemory();
+    addTearDown(database.close);
+    await pumpApp(
+      tester,
+      database: database,
+      extraOverrides: [
+        diagnosticsRepositoryProvider.overrideWithValue(
+          _ThrowingSeedDiagnosticsRepository(database),
+        ),
+      ],
+    );
+
+    await gotoTab(tester, '我的');
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存车辆'));
+    await tester.pumpAndSettle();
+
+    // 车辆已入库；播种失败应由 bootstrap 兜底，不能让整个建车流程报
+    // 失败（否则用户重试会建出第二辆车）。
+    expect(find.text('车辆已保存'), findsOneWidget);
+    expect(find.text('保存车辆'), findsNothing);
+    expect(await database.select(database.cars).get(), hasLength(1));
+    await drainToastTimer(tester);
+  });
 
   testWidgets('add car first step does not persist data', (tester) async {
     final database = await pumpApp(tester);
@@ -71,7 +110,6 @@ void main() {
     expect(await database.select(database.maintenanceItems).get(), isEmpty);
   });
 
-
   testWidgets('add car form opens vehicle model picker', (tester) async {
     await pumpApp(tester);
 
@@ -85,7 +123,6 @@ void main() {
     expect(find.text('搜索品牌或车型'), findsOneWidget);
     expect(find.text('奥迪'), findsWidgets);
   });
-
 
   testWidgets('add car wizard keeps selected model after going back', (
     tester,
@@ -113,46 +150,43 @@ void main() {
     expect(find.text('奥迪 奥迪A3'), findsNothing);
   });
 
+  testWidgets('add car wizard supports custom model input for catalog gaps', (
+    tester,
+  ) async {
+    await pumpApp(tester);
 
-  testWidgets(
-    'add car wizard supports custom model input for catalog gaps',
-    (tester) async {
-      await pumpApp(tester);
+    await gotoTab(tester, '我的');
+    await tester.tap(find.byTooltip('新增车辆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('奥迪 奥迪A3'));
+    await tester.pumpAndSettle();
+    // 目录外的老车（懂车帝已下架）走自定义输入兜底（ADR 0003）。
+    await tester.enterText(find.byType(TextField).last, '不存在的车系');
+    await tester.pumpAndSettle();
+    expect(find.text('没有匹配车型'), findsOneWidget);
+    await tester.tap(find.text('＋ 自定义输入…'));
+    await tester.pumpAndSettle();
+    // 自定义车型弹窗走 showLunioDialog seam（ADR 同族卡片，外层是
+    // Dialog），dialog 里只有品牌/车型两个输入框，从 Dialog 范围内定位。
+    final dialogFields = find.descendant(
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(dialogFields.at(0), '雪佛兰');
+    await tester.enterText(dialogFields.at(1), '科鲁泽');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
 
-      await gotoTab(tester, '我的');
-      await tester.tap(find.byTooltip('新增车辆'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('奥迪 奥迪A3'));
-      await tester.pumpAndSettle();
-      // 目录外的老车（懂车帝已下架）走自定义输入兜底（ADR 0003）。
-      await tester.enterText(find.byType(TextField).last, '不存在的车系');
-      await tester.pumpAndSettle();
-      expect(find.text('没有匹配车型'), findsOneWidget);
-      await tester.tap(find.text('＋ 自定义输入…'));
-      await tester.pumpAndSettle();
-      // 自定义车型弹窗走 showLunioDialog seam（ADR 同族卡片，外层是
-      // Dialog），dialog 里只有品牌/车型两个输入框，从 Dialog 范围内定位。
-      final dialogFields = find.descendant(
-        of: find.byType(Dialog),
-        matching: find.byType(TextField),
-      );
-      await tester.enterText(dialogFields.at(0), '雪佛兰');
-      await tester.enterText(dialogFields.at(1), '科鲁泽');
-      await tester.tap(find.text('确定'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('雪佛兰 科鲁泽'), findsOneWidget);
-      // 自定义车型没有目录推荐值，动力类型预选燃油。
-      expect(
-        tester
-            .widgetList<Text>(find.byType(Text))
-            .map((text) => text.data)
-            .whereType<String>(),
-        contains('燃油'),
-      );
-    },
-  );
-
+    expect(find.text('雪佛兰 科鲁泽'), findsOneWidget);
+    // 自定义车型没有目录推荐值，动力类型预选燃油。
+    expect(
+      tester
+          .widgetList<Text>(find.byType(Text))
+          .map((text) => text.data)
+          .whereType<String>(),
+      contains('燃油'),
+    );
+  });
 
   testWidgets('add car wizard reloads items after powertrain changes', (
     tester,
@@ -181,7 +215,6 @@ void main() {
     expect(find.text('减速器油'), findsOneWidget);
   });
 
-
   testWidgets('add car wizard shows template load error back on first step', (
     tester,
   ) async {
@@ -207,7 +240,6 @@ void main() {
     expect(find.text('上一步'), findsNothing);
     expect(find.text('保养项目'), findsNothing);
   });
-
 
   testWidgets('add car item step clears stale save error after going back', (
     tester,
@@ -238,7 +270,6 @@ void main() {
     expect(find.text('操作失败，请稍后重试'), findsNothing);
   });
 
-
   testWidgets('profile can edit car mileage', (tester) async {
     final database = await pumpApp(tester);
 
@@ -257,7 +288,6 @@ void main() {
       60000,
     );
   });
-
 
   testWidgets('add car item step can remove a loaded default item', (
     tester,
@@ -283,7 +313,6 @@ void main() {
     );
   });
 
-
   testWidgets('add car item step custom item form starts without intervals', (
     tester,
   ) async {
@@ -307,7 +336,6 @@ void main() {
       '',
     );
   });
-
 
   testWidgets('add car item step can restore removed default item draft', (
     tester,
@@ -340,7 +368,6 @@ void main() {
       hasLength(10),
     );
   });
-
 
   testWidgets('add car item step blocks disabling the last enabled item '
       'with a toast', (tester) async {
@@ -375,7 +402,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('至少保留一个可用保养项目'), findsNothing);
   });
-
 
   testWidgets('add car date picker today uses effective app date', (
     tester,

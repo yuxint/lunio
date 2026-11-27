@@ -61,10 +61,16 @@ Future<void> createCar(
       .read(lunioRepositoryProvider)
       .createCarWithMaintenanceItems(car, items);
   // 每车一套检测点（ADR 0021 修订节）：建车收尾按车播种内置七条；失败
-  // 由 bootstrap 兜底补种，不让建车本身回滚。
-  await ref
-      .read(diagnosticsRepositoryProvider)
-      .seedBuiltInProbesForCar(carId);
+  // 由 bootstrap 兜底补种，不让建车本身回滚。播种是建车事务之后的
+  // 附加步骤，异常必须就地吞掉——否则车已入库、UI 却报建车失败且纪元
+  // 不 bump，用户重试会建出重复车辆。
+  try {
+    await ref
+        .read(diagnosticsRepositoryProvider)
+        .seedBuiltInProbesForCar(carId);
+  } catch (error) {
+    debugPrint('建车后播种内置检测点失败，交由 bootstrap 兜底：$error');
+  }
   ref.invalidate(diagnosticsProbesProvider);
   ref.read(vehicleDataEpochProvider.notifier).bump();
 }
@@ -161,7 +167,9 @@ Future<void> setMaintenanceItemEnabled(
   MaintenanceItem item,
   bool enabled,
 ) async {
-  await ref.read(lunioRepositoryProvider).setMaintenanceItemEnabled(
+  await ref
+      .read(lunioRepositoryProvider)
+      .setMaintenanceItemEnabled(
         itemId: item.id!,
         enabled: enabled,
         sync: SyncMetadata(
@@ -219,9 +227,7 @@ Future<void> setDiagnosticsEnabled(WidgetRef ref, bool value) async {
   await ref.read(lunioPreferencesProvider).setDiagnosticsEnabled(value);
   ref.read(preferencesEpochProvider.notifier).bump();
   if (!value) {
-    await ref
-        .read(obdConnectionControllerProvider)
-        .disconnectManually();
+    await ref.read(obdConnectionControllerProvider).disconnectManually();
   }
 }
 
@@ -298,9 +304,7 @@ Future<bool> syncCarMileageFromEcu(Ref ref, int carId, int ecuKm) async {
 /// 偏好门面 typed 写 → bump 偏好纪元（消费方经 obdOdometerAutoSyncProvider
 /// 自动重算）。
 Future<void> setObdOdometerAutoSync(WidgetRef ref, bool value) async {
-  await ref
-      .read(lunioPreferencesProvider)
-      .setObdOdometerAutoSyncEnabled(value);
+  await ref.read(lunioPreferencesProvider).setObdOdometerAutoSyncEnabled(value);
   ref.read(preferencesEpochProvider.notifier).bump();
 }
 
@@ -431,7 +435,9 @@ Future<void> saveFuelManualPrice(
   required FuelGrade grade,
   required double? pricePerLiter,
 }) async {
-  await ref.read(fuelRepositoryProvider).setFuelManualPrice(
+  await ref
+      .read(fuelRepositoryProvider)
+      .setFuelManualPrice(
         province: province,
         grade: grade,
         pricePerLiter: pricePerLiter,
@@ -449,12 +455,9 @@ Future<void> saveNotificationSettings(
   LunioNotificationSettings settings,
 ) async {
   final coordinator = ref.read(notificationCoordinatorProvider);
-  final systemNotificationsEnabled =
-      await coordinator.reconcileSystemEnabled();
+  final systemNotificationsEnabled = await coordinator.reconcileSystemEnabled();
   await coordinator.saveNotificationSettings(
-    settings.copyWith(
-      systemNotificationsEnabled: systemNotificationsEnabled,
-    ),
+    settings.copyWith(systemNotificationsEnabled: systemNotificationsEnabled),
   );
 }
 
@@ -530,9 +533,7 @@ Future<bool> restoreBackupFromFile(BuildContext context, WidgetRef ref) async {
   await ref
       .read(notificationCoordinatorProvider)
       .runBackupRestore(
-        () => ref
-            .read(backupRepositoryProvider)
-            .restoreBackupPayload(payload),
+        () => ref.read(backupRepositoryProvider).restoreBackupPayload(payload),
         refreshProviders: () async {
           invalidateAllAppDataProviders(ref);
           // 屏障：等同步数据源清单内全部数据源重算落定（此刻写库中间态
@@ -577,9 +578,7 @@ Future<bool> clearAllData(BuildContext context, WidgetRef ref) async {
   }
   await ref
       .read(notificationCoordinatorProvider)
-      .runAllDataClear(
-        () => ref.read(backupRepositoryProvider).clearAllData(),
-      );
+      .runAllDataClear(() => ref.read(backupRepositoryProvider).clearAllData());
   // 偏好已删 = 诊断开关已回到默认关：释放 App 级连接，语义与设置页
   // 手动关开关（setDiagnosticsEnabled(false)）一致。
   await ref.read(obdConnectionControllerProvider).disconnectManually();
